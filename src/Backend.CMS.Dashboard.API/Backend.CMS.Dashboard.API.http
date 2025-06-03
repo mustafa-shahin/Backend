@@ -1,0 +1,6 @@
+@Backend.CMS.Dashboard.API_HostAddress = http://localhost:5142
+
+GET {{Backend.CMS.Dashboard.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
