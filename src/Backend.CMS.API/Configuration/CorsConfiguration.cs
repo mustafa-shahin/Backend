@@ -9,7 +9,7 @@
                 options.AddPolicy("Production", builder =>
                 {
                     builder
-                        .WithOrigins(configuration.GetSection("AllowedOrigins").Get<string[]>() ?? Array.Empty<string>())
+                        .WithOrigins(configuration.GetSection("AllowedOrigins").Get<string[]>() ?? [])
                         .WithHeaders("Authorization", "Content-Type", "X-Tenant-Id")
                         .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                         .AllowCredentials();

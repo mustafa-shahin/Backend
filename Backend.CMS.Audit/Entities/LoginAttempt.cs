@@ -6,7 +6,8 @@ using System.Threading.Tasks;
 
 namespace Backend.CMS.Audit.Entities
 {
-    internal class LoginAttempt
+    public class LoginAttempt
     {
+        public DateTime AttemptedAt { get; set; }
     }
 }

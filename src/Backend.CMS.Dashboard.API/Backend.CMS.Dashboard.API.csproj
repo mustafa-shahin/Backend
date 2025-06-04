@@ -19,6 +19,5 @@
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Backend.CMS.Application\Backend.CMS.Application.csproj" />
-		<ProjectReference Include="..\Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj" />
 	</ItemGroup>
 </Project>

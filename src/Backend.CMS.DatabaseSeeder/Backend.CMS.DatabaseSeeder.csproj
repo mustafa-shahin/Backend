@@ -31,9 +31,9 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj" />
 		<ProjectReference Include="..\Backend.CMS.Application\Backend.CMS.Application.csproj" />
 		<ProjectReference Include="..\Backend.CMS.Domain\Backend.CMS.Domain.csproj" />
+		<ProjectReference Include="..\Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
