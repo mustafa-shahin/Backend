@@ -5,8 +5,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Backend.CMS.Infrastructure.Data;
-using Org.BouncyCastle.Crypto.Generators;
-using BCrypt.Net;
+
 namespace Backend.CMS.Dashboard.API.Controllers
 {
     [ApiController]
@@ -59,7 +58,7 @@ namespace Backend.CMS.Dashboard.API.Controllers
             });
         }
 
-        private string GenerateJwtToken(Domain.Entities.User user)
+        private string GenerateJwtToken(Backend.CMS.Domain.Entities.User user)
         {
             var claims = new List<Claim>
             {

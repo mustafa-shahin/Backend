@@ -1,12 +1,14 @@
+using FluentValidation;
+using Backend.CMS.Application.Common.Interfaces;
+using Backend.CMS.Dashboard.API.Middleware;
+using Backend.CMS.Dashboard.API.Services;
+using Backend.CMS.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
-using Backend.CMS.Application.Common.Interfaces;
-using Backend.CMS.Dashboard.API.Middleware;
-using Backend.CMS.Dashboard.API.Services;
-using Backend.CMS.Infrastructure.Data;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services
@@ -68,6 +70,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
+// Add HTTP context accessor
+builder.Services.AddHttpContextAccessor();
+
 // Add database contexts
 builder.Services.AddDbContext<MasterDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("MasterDatabase")));
@@ -85,13 +90,13 @@ builder.Services.AddDbContext<CmsDbContext>((serviceProvider, options) =>
 });
 
 // Add MediatR
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(YourCompany.CMS.Application.Features.Pages.Commands.CreatePageCommand).Assembly));
+builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Backend.CMS.Application.Features.Pages.Commands.CreatePageCommand).Assembly));
 
 // Add AutoMapper
-builder.Services.AddAutoMapper(typeof(YourCompany.CMS.Application.Features.Pages.Mappings.PageMappingProfile).Assembly);
+builder.Services.AddAutoMapper(typeof(Backend.CMS.Application.Features.Pages.Mappings.PageMappingProfile).Assembly);
 
 // Add FluentValidation
-builder.Services.AddValidatorsFromAssembly(typeof(YourCompany.CMS.Application.Features.Pages.Validators.CreatePageValidator).Assembly);
+builder.Services.AddValidatorsFromAssembly(typeof(Backend.CMS.Application.Features.Pages.Validators.CreatePageValidator).Assembly);
 
 var app = builder.Build();
 
