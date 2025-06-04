@@ -5,11 +5,11 @@ namespace Backend.CMS.Dashboard.API.Middleware
 {
     public class TenantMiddleware : IMiddleware
     {
-        private readonly MasterDbContext _masterContext;
+        private readonly IServiceProvider _serviceProvider;
 
-        public TenantMiddleware(MasterDbContext masterContext)
+        public TenantMiddleware(IServiceProvider serviceProvider)
         {
-            _masterContext = masterContext;
+            _serviceProvider = serviceProvider;
         }
 
         public async Task InvokeAsync(HttpContext context, RequestDelegate next)
@@ -37,13 +37,27 @@ namespace Backend.CMS.Dashboard.API.Middleware
 
             if (!string.IsNullOrEmpty(tenantId))
             {
-                // Validate tenant exists
-                var tenantExists = await _masterContext.Tenants
-                    .AnyAsync(t => t.Identifier == tenantId && t.IsActive);
-
-                if (tenantExists)
+                try
                 {
-                    context.Items["TenantId"] = tenantId;
+                    // Create a scope to get the master context
+                    using var scope = _serviceProvider.CreateScope();
+                    var masterContext = scope.ServiceProvider.GetService<MasterDbContext>();
+
+                    if (masterContext != null)
+                    {
+                        // Validate tenant exists
+                        var tenantExists = await masterContext.Tenants
+                            .AnyAsync(t => t.Identifier == tenantId && t.IsActive);
+
+                        if (tenantExists)
+                        {
+                            context.Items["TenantId"] = tenantId;
+                        }
+                    }
+                }
+                catch
+                {
+                    // If we can't connect to master DB (e.g., during migrations), continue without tenant validation
                 }
             }
 

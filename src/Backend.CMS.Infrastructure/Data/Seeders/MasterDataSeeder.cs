@@ -15,7 +15,7 @@ namespace Backend.CMS.Infrastructure.Data.Seeders
                     Identifier = "demo",
                     Name = "Demo Tenant",
                     Domain = "demo.localhost",
-                    ConnectionString = "Host=localhost;Database=cms_tenant_demo;Username=postgres;Password=yourpassword",
+                    ConnectionString = "Host=localhost;Database=cms_tenant_demo;Username=postgres;Password=23041988",
                     IsActive = true,
                     Theme = "default"
                 };

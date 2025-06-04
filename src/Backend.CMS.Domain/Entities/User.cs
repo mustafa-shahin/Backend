@@ -16,5 +16,24 @@ namespace Backend.CMS.Domain.Entities
         public bool IsLocked { get; set; }
         public DateTime? LastLoginAt { get; set; }
         public ICollection<UserRole> UserRoles { get; set; } = new List<UserRole>();
+        public int FailedLoginAttempts { get; set; }
+        public DateTime? LockoutEnd { get; set; }
+        public bool TwoFactorEnabled { get; set; }
+        public string? TwoFactorSecret { get; set; }
+        public List<string> RecoveryCodes { get; set; } = new();
+
+        // Profile enhancements
+        public string? Avatar { get; set; }
+        public string? Timezone { get; set; }
+        public string? Language { get; set; }
+        public DateTime? EmailVerifiedAt { get; set; }
+        public string? EmailVerificationToken { get; set; }
+        public DateTime? PasswordChangedAt { get; set; }
+
+        // Preferences
+        public Dictionary<string, object> Preferences { get; set; } = new();
+
+        // Navigation properties
+        public ICollection<UserSession> Sessions { get; set; } = [];
     }
 }

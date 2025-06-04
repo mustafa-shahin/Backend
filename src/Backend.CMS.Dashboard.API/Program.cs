@@ -84,9 +84,31 @@ builder.Services.AddScoped<TenantMiddleware>();
 // Add tenant-specific DbContext
 builder.Services.AddDbContext<CmsDbContext>((serviceProvider, options) =>
 {
+    var httpContextAccessor = serviceProvider.GetService<IHttpContextAccessor>();
+    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+
+    // For design-time scenarios, use default connection
+    if (httpContextAccessor?.HttpContext == null)
+    {
+        var defaultConnectionString = configuration.GetConnectionString("Tenant_demo");
+        options.UseNpgsql(defaultConnectionString);
+        return;
+    }
+
     var tenantService = serviceProvider.GetRequiredService<ITenantService>();
-    var connectionString = tenantService.GetConnectionStringAsync(tenantService.GetCurrentTenantId()!).Result;
-    options.UseNpgsql(connectionString);
+    var tenantId = tenantService.GetCurrentTenantId() ?? "demo";
+
+    try
+    {
+        var connectionString = tenantService.GetConnectionStringAsync(tenantId).Result;
+        options.UseNpgsql(connectionString);
+    }
+    catch
+    {
+        // Fallback for cases where master DB is not available
+        var fallbackConnectionString = configuration.GetConnectionString("Tenant_demo");
+        options.UseNpgsql(fallbackConnectionString);
+    }
 });
 
 // Add MediatR

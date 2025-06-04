@@ -7,6 +7,7 @@ using Microsoft.OpenApi.Models;
 using System.Text;
 using Backend.CMS.API.Middleware;
 using Backend.CMS.API.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services
@@ -17,15 +18,25 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "CMS API", Version = "v1" });
 });
 
-// Add CORS
+// Add CORS - FIXED VERSION
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("CustomerPolicy", policy =>
     {
-        policy.WithOrigins(builder.Configuration.GetSection("AllowedOrigins").Get<string[]>() ?? new[] { "*" })
+        // For development - allow specific origins
+        policy.WithOrigins("http://localhost:3000", "http://localhost:5000", "https://localhost:7000")
               .AllowAnyMethod()
               .AllowAnyHeader()
               .AllowCredentials();
+    });
+
+    // Add a separate policy for development without credentials
+    options.AddPolicy("DevPolicy", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+        // Note: No .AllowCredentials() when using AllowAnyOrigin()
     });
 });
 
@@ -55,13 +66,25 @@ builder.Services.AddScoped<CustomerTenantMiddleware>();
 // Add tenant-specific DbContext
 builder.Services.AddDbContext<CmsDbContext>((serviceProvider, options) =>
 {
+    var httpContextAccessor = serviceProvider.GetService<IHttpContextAccessor>();
+    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+
+    // For design-time scenarios, use default connection
+    if (httpContextAccessor?.HttpContext == null)
+    {
+        var defaultConnectionString = configuration.GetConnectionString("DefaultConnection")
+            ?? configuration.GetConnectionString("Tenant_demo");
+        options.UseNpgsql(defaultConnectionString);
+        return;
+    }
+
     var tenantService = serviceProvider.GetRequiredService<ITenantService>();
     var tenantId = tenantService.GetCurrentTenantId();
 
     if (string.IsNullOrEmpty(tenantId))
     {
-        // Use a default connection string when tenant ID is not available (for migrations)
-        var defaultConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+        // Use a default connection string when tenant ID is not available
+        var defaultConnectionString = configuration.GetConnectionString("DefaultConnection");
         if (!string.IsNullOrEmpty(defaultConnectionString))
         {
             options.UseNpgsql(defaultConnectionString);
@@ -70,8 +93,13 @@ builder.Services.AddDbContext<CmsDbContext>((serviceProvider, options) =>
         throw new InvalidOperationException("Tenant ID is required");
     }
 
-    // In production, get connection string from configuration or database
-    var connectionString = builder.Configuration.GetConnectionString($"Tenant_{tenantId}");
+    // Get connection string for the tenant
+    var connectionString = configuration.GetConnectionString($"Tenant_{tenantId}");
+    if (string.IsNullOrEmpty(connectionString))
+    {
+        connectionString = configuration.GetConnectionString("DefaultConnection");
+    }
+
     options.UseNpgsql(connectionString);
 });
 
@@ -91,7 +119,17 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseCors("CustomerPolicy");
+
+// Use the development CORS policy
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors("DevPolicy");
+}
+else
+{
+    app.UseCors("CustomerPolicy");
+}
+
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -99,6 +137,13 @@ app.UseAuthorization();
 app.UseMiddleware<CustomerTenantMiddleware>();
 
 app.MapControllers();
+
+// Create wwwroot directory if it doesn't exist
+var wwwrootPath = Path.Combine(app.Environment.ContentRootPath, "wwwroot");
+if (!Directory.Exists(wwwrootPath))
+{
+    Directory.CreateDirectory(wwwrootPath);
+}
 
 // Serve static files and SPA
 app.UseDefaultFiles();

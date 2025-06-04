@@ -27,13 +27,19 @@ namespace Backend.CMS.API.Services
             }
 
             // Get from configuration for development
-            return _configuration["DefaultTenant"];
+            return _configuration["DefaultTenant"] ?? "demo";
         }
 
         public Task<string> GetConnectionStringAsync(string tenantId)
         {
             // In production, this would retrieve from a database or configuration service
             var connectionString = _configuration.GetConnectionString($"Tenant_{tenantId}");
+
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                // Fallback to default connection
+                connectionString = _configuration.GetConnectionString("DefaultConnection");
+            }
 
             if (string.IsNullOrEmpty(connectionString))
             {

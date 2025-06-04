@@ -21,8 +21,8 @@ namespace Backend.CMS.Domain.Entities
         public Guid? ParentPageId { get; set; }
         public Page? ParentPage { get; set; }
         public ICollection<Page> ChildPages { get; set; } = new List<Page>();
-        public ICollection<PageComponent> Components { get; set; } = new List<PageComponent>();
-        public ICollection<PagePermission> Permissions { get; set; } = new List<PagePermission>();
+        public ICollection<PageComponent> Components { get; set; } = [];
+        public ICollection<PagePermission> Permissions { get; set; } = [];
         public DateTime? PublishedOn { get; set; }
         public string? PublishedBy { get; set; }
     }
