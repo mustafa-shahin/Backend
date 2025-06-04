@@ -31,7 +31,7 @@
             {
               "$type": "Document",
               "DocumentIndex": 0,
-              "Title": "Backend.CMS.DatabaseSeeder",
+              "Title": "Backend.CMS.DatabaseSeeder.csproj",
               "DocumentMoniker": "D:\\git\\Backend\\Backend.CMS.DatabaseSeeder\\Backend.CMS.DatabaseSeeder.csproj",
               "RelativeDocumentMoniker": "Backend.CMS.DatabaseSeeder\\Backend.CMS.DatabaseSeeder.csproj",
               "ToolTip": "D:\\git\\Backend\\Backend.CMS.DatabaseSeeder\\Backend.CMS.DatabaseSeeder.csproj",
@@ -44,7 +44,7 @@
             {
               "$type": "Document",
               "DocumentIndex": 1,
-              "Title": "Backend.CMS.Shared",
+              "Title": "Backend.CMS.Shared.csproj",
               "DocumentMoniker": "D:\\git\\Backend\\Backend.CMS.Shared\\Backend.CMS.Shared.csproj",
               "RelativeDocumentMoniker": "Backend.CMS.Shared\\Backend.CMS.Shared.csproj",
               "ToolTip": "D:\\git\\Backend\\Backend.CMS.Shared\\Backend.CMS.Shared.csproj",
@@ -57,7 +57,7 @@
             {
               "$type": "Document",
               "DocumentIndex": 2,
-              "Title": "Backend.CMS.Security",
+              "Title": "Backend.CMS.Security.csproj",
               "DocumentMoniker": "D:\\git\\Backend\\Backend.CMS.Security\\Backend.CMS.Security.csproj",
               "RelativeDocumentMoniker": "Backend.CMS.Security\\Backend.CMS.Security.csproj",
               "ToolTip": "D:\\git\\Backend\\Backend.CMS.Security\\Backend.CMS.Security.csproj",
@@ -70,7 +70,7 @@
             {
               "$type": "Document",
               "DocumentIndex": 3,
-              "Title": "Backend.CMS.Notifications",
+              "Title": "Backend.CMS.Notifications.csproj",
               "DocumentMoniker": "D:\\git\\Backend\\Backend.CMS.Notifications\\Backend.CMS.Notifications.csproj",
               "RelativeDocumentMoniker": "Backend.CMS.Notifications\\Backend.CMS.Notifications.csproj",
               "ToolTip": "D:\\git\\Backend\\Backend.CMS.Notifications\\Backend.CMS.Notifications.csproj",
