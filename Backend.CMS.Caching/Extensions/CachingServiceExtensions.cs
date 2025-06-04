@@ -1,12 +1,26 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using Backend.CMS.Caching.Services;
+using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 
 namespace Backend.CMS.Caching.Extensions
 {
-    internal class CachingServiceExtensions
+    public static class CachingServiceExtensions
     {
+        public static IServiceCollection AddCaching(this IServiceCollection services, string? redisConnectionString = null)
+        {
+            if (!string.IsNullOrEmpty(redisConnectionString))
+            {
+                services.AddSingleton<IConnectionMultiplexer>(sp =>
+                    ConnectionMultiplexer.Connect(redisConnectionString));
+                services.AddScoped<ICacheService, RedisCacheService>();
+            }
+            else
+            {
+                services.AddMemoryCache();
+                services.AddScoped<ICacheService, MemoryCacheService>();
+            }
+
+            return services;
+        }
     }
 }

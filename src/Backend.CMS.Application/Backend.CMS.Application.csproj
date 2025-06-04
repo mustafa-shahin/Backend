@@ -12,8 +12,11 @@
 		<PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.0.0" />
 		<PackageReference Include="MediatR" Version="12.5.0" />
 		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.5" />
+		<PackageReference Include="HtmlSanitizer" Version="8.0.865" />
+		<PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="9.0.5" />
 	</ItemGroup>
 	<ItemGroup>
+		<ProjectReference Include="..\..\Backend.CMS.Caching\Backend.CMS.Caching.csproj" />
 		<ProjectReference Include="..\Backend.CMS.Domain\Backend.CMS.Domain.csproj" />
 		<ProjectReference Include="..\Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj" />
 	</ItemGroup>

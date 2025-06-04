@@ -1,12 +1,20 @@
+using Backend.CMS.API.HealthChecks;
+using Backend.CMS.API.Middleware;
+using Backend.CMS.API.Services;
 using Backend.CMS.Application.Common.Interfaces;
+using Backend.CMS.Caching.Extensions;
 using Backend.CMS.Infrastructure.Data;
+using Backend.CMS.Infrastructure.Repositories;
+using Backend.CMS.Security.Extensions;
+using Backend.CMS.Security.Middleware;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
-using Backend.CMS.API.Middleware;
-using Backend.CMS.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,32 +23,66 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "CMS API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "CMS API",
+        Version = "v1",
+        Description = "Production CMS API for multi-tenant content management"
+    });
+
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header using the Bearer scheme.",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
 });
 
-// Add CORS - FIXED VERSION
+// Add CORS with environment-specific configuration
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("CustomerPolicy", policy =>
+    if (builder.Environment.IsDevelopment())
     {
-        // For development - allow specific origins
-        policy.WithOrigins("http://localhost:3000", "http://localhost:5000", "https://localhost:7000")
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials();
-    });
-
-    // Add a separate policy for development without credentials
-    options.AddPolicy("DevPolicy", policy =>
+        options.AddPolicy("Development", policy =>
+        {
+            policy.WithOrigins("http://localhost:3000", "http://localhost:5000", "https://localhost:7000")
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        });
+    }
+    else
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-        // Note: No .AllowCredentials() when using AllowAnyOrigin()
-    });
+        options.AddPolicy("Production", policy =>
+        {
+            var allowedOrigins = builder.Configuration.GetSection("AllowedOrigins").Get<string[]>()
+                               ?? Array.Empty<string>();
+            policy.WithOrigins(allowedOrigins)
+                  .WithHeaders("Authorization", "Content-Type", "X-Tenant-Id")
+                  .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                  .AllowCredentials();
+        });
+    }
 });
 
-// Add authentication
+// Add authentication with enhanced configuration
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -52,18 +94,63 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateIssuerSigningKey = true,
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!))
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)),
+            ClockSkew = TimeSpan.FromMinutes(5)
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
+                {
+                    context.Response.Headers.Add("Token-Expired", "true");
+                }
+                return Task.CompletedTask;
+            }
         };
     });
 
 builder.Services.AddAuthorization();
+
+// Add caching
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+builder.Services.AddCaching(redisConnectionString);
+
+// Add security services
+builder.Services.AddSecurityServices();
+
+// Add health checks
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database")
+    .AddNpgSql(builder.Configuration.GetConnectionString("DefaultConnection")!)
+    .AddCheck("redis", () =>
+    {
+        if (!string.IsNullOrEmpty(redisConnectionString))
+        {
+            try
+            {
+                using var connection = StackExchange.Redis.ConnectionMultiplexer.Connect(redisConnectionString);
+                return HealthCheckResult.Healthy("Redis is accessible");
+            }
+            catch
+            {
+                return HealthCheckResult.Unhealthy("Redis is not accessible");
+            }
+        }
+        return HealthCheckResult.Healthy("Redis not configured");
+    });
 
 // Add multi-tenancy
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ITenantService, CustomerTenantService>();
 builder.Services.AddScoped<CustomerTenantMiddleware>();
 
-// Add tenant-specific DbContext
+// Add repositories
+builder.Services.AddScoped<IPageRepository, PageRepository>();
+builder.Services.Decorate<IPageRepository, CachedPageRepository>();
+
+// Add tenant-specific DbContext with retry policy
 builder.Services.AddDbContext<CmsDbContext>((serviceProvider, options) =>
 {
     var httpContextAccessor = serviceProvider.GetService<IHttpContextAccessor>();
@@ -74,7 +161,13 @@ builder.Services.AddDbContext<CmsDbContext>((serviceProvider, options) =>
     {
         var defaultConnectionString = configuration.GetConnectionString("DefaultConnection")
             ?? configuration.GetConnectionString("Tenant_demo");
-        options.UseNpgsql(defaultConnectionString);
+        options.UseNpgsql(defaultConnectionString, npgsqlOptions =>
+        {
+            npgsqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 3,
+                maxRetryDelay: TimeSpan.FromSeconds(30),
+                errorCodesToAdd: null);
+        });
         return;
     }
 
@@ -83,31 +176,44 @@ builder.Services.AddDbContext<CmsDbContext>((serviceProvider, options) =>
 
     if (string.IsNullOrEmpty(tenantId))
     {
-        // Use a default connection string when tenant ID is not available
         var defaultConnectionString = configuration.GetConnectionString("DefaultConnection");
         if (!string.IsNullOrEmpty(defaultConnectionString))
         {
-            options.UseNpgsql(defaultConnectionString);
+            options.UseNpgsql(defaultConnectionString, npgsqlOptions =>
+            {
+                npgsqlOptions.EnableRetryOnFailure(3, TimeSpan.FromSeconds(30), null);
+            });
             return;
         }
         throw new InvalidOperationException("Tenant ID is required");
     }
 
-    // Get connection string for the tenant
     var connectionString = configuration.GetConnectionString($"Tenant_{tenantId}");
     if (string.IsNullOrEmpty(connectionString))
     {
         connectionString = configuration.GetConnectionString("DefaultConnection");
     }
 
-    options.UseNpgsql(connectionString);
+    options.UseNpgsql(connectionString, npgsqlOptions =>
+    {
+        npgsqlOptions.EnableRetryOnFailure(3, TimeSpan.FromSeconds(30), null);
+    });
 });
 
 // Add MediatR
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(Backend.CMS.Application.Features.Pages.Commands.CreatePageCommand).Assembly));
+builder.Services.AddMediatR(cfg =>
+    cfg.RegisterServicesFromAssembly(typeof(Backend.CMS.Application.Features.Pages.Commands.CreatePageCommand).Assembly));
 
 // Add AutoMapper
 builder.Services.AddAutoMapper(typeof(Backend.CMS.Application.Features.Pages.Mappings.PageMappingProfile).Assembly);
+
+// Add FluentValidation
+builder.Services.AddValidatorsFromAssembly(typeof(Backend.CMS.Application.Features.Pages.Validators.CreatePageValidator).Assembly);
+
+// Add rate limiting configuration
+builder.Services.Configure<Dictionary<string, object>>(
+    "RateLimit",
+    builder.Configuration.GetSection("RateLimit"));
 
 var app = builder.Build();
 
@@ -115,26 +221,65 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
-}
-
-app.UseHttpsRedirection();
-
-// Use the development CORS policy
-if (app.Environment.IsDevelopment())
-{
-    app.UseCors("DevPolicy");
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "CMS API V1");
+        c.RoutePrefix = "swagger";
+    });
 }
 else
 {
-    app.UseCors("CustomerPolicy");
+    app.UseHsts();
 }
+
+// Add security headers
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
+app.UseHttpsRedirection();
+
+// Add CORS
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors("Development");
+}
+else
+{
+    app.UseCors("Production");
+}
+
+// Add global exception handling
+app.UseMiddleware<GlobalExceptionMiddleware>();
+
+// Add rate limiting
+app.UseMiddleware<RateLimitingMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 // Add tenant middleware
 app.UseMiddleware<CustomerTenantMiddleware>();
+
+// Add health checks
+app.MapHealthChecks("/health", new HealthCheckOptions
+{
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        var response = new
+        {
+            status = report.Status.ToString(),
+            checks = report.Entries.Select(x => new
+            {
+                name = x.Key,
+                status = x.Value.Status.ToString(),
+                exception = x.Value.Exception?.Message,
+                duration = x.Value.Duration.ToString()
+            }),
+            duration = report.TotalDuration.ToString()
+        };
+        await context.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(response));
+    }
+});
 
 app.MapControllers();
 

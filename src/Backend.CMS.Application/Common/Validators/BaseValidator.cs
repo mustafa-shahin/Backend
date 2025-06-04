@@ -1,10 +1,6 @@
 ﻿using FluentValidation;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using Ganss.Xss;
 using System.Linq.Expressions;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Backend.CMS.Application.Common.Validators
 {
@@ -21,10 +17,16 @@ namespace Backend.CMS.Application.Common.Validators
         {
             if (string.IsNullOrEmpty(html)) return true;
 
-            // Implement HTML sanitization logic
-            var sanitizer = new HtmlSanitizer();
-            var sanitized = sanitizer.Sanitize(html);
-            return sanitized == html;
+            try
+            {
+                var sanitizer = new HtmlSanitizer();
+                var sanitized = sanitizer.Sanitize(html);
+                return sanitized == html;
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

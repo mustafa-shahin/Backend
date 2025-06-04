@@ -1,12 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Security.Claims;
 
 namespace Backend.CMS.Security.Services
 {
-    internal class ITokenService
+    public interface ITokenService
     {
+        string GenerateAccessToken(IEnumerable<Claim> claims);
+        string GenerateRefreshToken();
+        ClaimsPrincipal? GetPrincipalFromExpiredToken(string token);
+        bool ValidateToken(string token);
     }
 }

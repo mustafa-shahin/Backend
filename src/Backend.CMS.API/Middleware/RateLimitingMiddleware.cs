@@ -28,6 +28,13 @@ namespace Backend.CMS.API.Middleware
 
             _cache.Set(key, requestCount + 1, TimeSpan.FromMinutes(1));
             await _next(context);
+
+        }
+        private string GetClientKey(HttpContext context)
+        {
+            var clientId = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var userAgent = context.Request.Headers["User-Agent"].ToString();
+            return $"{clientId}:{userAgent.GetHashCode()}";
         }
     }
 }

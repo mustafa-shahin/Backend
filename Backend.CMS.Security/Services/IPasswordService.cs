@@ -1,12 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Backend.CMS.Security.Services
+﻿namespace Backend.CMS.Security.Services
 {
-    internal class IPasswordService
+    public interface IPasswordService
     {
+        string HashPassword(string password);
+        bool VerifyPassword(string password, string hashedPassword);
+        bool IsPasswordStrong(string password);
+        string GenerateRandomPassword(int length = 12);
     }
 }

@@ -1,12 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Backend.CMS.Audit.Services
+﻿namespace Backend.CMS.Audit.Services
 {
-    internal interface IAuditService
+    public interface IAuditService
     {
+        Task LogAsync(string entityName, string entityId, string action, object? oldValues = null, object? newValues = null);
+        Task LogUserActionAsync(string userId, string action, string details);
+        Task LogSecurityEventAsync(string eventType, string details, string? userId = null);
     }
 }

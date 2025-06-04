@@ -1,12 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using Backend.CMS.Security.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Backend.CMS.Security.Extensions
 {
-    internal class SecurityServiceExtensions
+    public static class SecurityServiceExtensions
     {
+        public static IServiceCollection AddSecurityServices(this IServiceCollection services)
+        {
+            services.AddScoped<ITokenService, TokenService>();
+            services.AddScoped<IPasswordService, PasswordService>();
+
+            return services;
+        }
     }
 }
