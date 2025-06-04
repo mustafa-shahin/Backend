@@ -3,6 +3,7 @@ using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Data.Configurations;
 using Microsoft.EntityFrameworkCore;
 using Backend.CMS.Application.Common.Interfaces;
+
 namespace Backend.CMS.Infrastructure.Data
 {
     public class CmsDbContext : DbContext

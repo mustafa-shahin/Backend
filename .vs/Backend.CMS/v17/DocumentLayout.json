@@ -3,72 +3,20 @@
   "WorkspaceRootPath": "D:\\git\\Backend\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|d:\\git\\backend\\src\\backend.cms.api\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
-      "RelativeMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|solutionrelative:src\\backend.cms.api\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
+      "AbsoluteMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|d:\\git\\backend\\src\\backend.cms.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|solutionrelative:src\\backend.cms.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|d:\\git\\backend\\src\\backend.cms.dashboard.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|solutionrelative:src\\backend.cms.dashboard.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|d:\\git\\backend\\src\\backend.cms.dashboard.api\\controllers\\authcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|solutionrelative:src\\backend.cms.dashboard.api\\controllers\\authcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|d:\\git\\backend\\src\\backend.cms.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|solutionrelative:src\\backend.cms.api\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{FD6375A2-13E6-4BB7-BECA-A1F7DE3EB387}|src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj|d:\\git\\backend\\src\\backend.cms.infrastructure\\backend.cms.infrastructure.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
-      "RelativeMoniker": "D:0:0:{FD6375A2-13E6-4BB7-BECA-A1F7DE3EB387}|src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj|solutionrelative:src\\backend.cms.infrastructure\\backend.cms.infrastructure.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+      "AbsoluteMoniker": "D:0:0:{97879172-5CDE-47D8-97BA-EEFED6B77670}|src\\Backend.CMS.Application\\Backend.CMS.Application.csproj|d:\\git\\backend\\src\\backend.cms.application\\backend.cms.application.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{97879172-5CDE-47D8-97BA-EEFED6B77670}|src\\Backend.CMS.Application\\Backend.CMS.Application.csproj|solutionrelative:src\\backend.cms.application\\backend.cms.application.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
     },
     {
       "AbsoluteMoniker": "D:0:0:{FD6375A2-13E6-4BB7-BECA-A1F7DE3EB387}|src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj|d:\\git\\backend\\src\\backend.cms.infrastructure\\data\\cmsdbcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{FD6375A2-13E6-4BB7-BECA-A1F7DE3EB387}|src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj|solutionrelative:src\\backend.cms.infrastructure\\data\\cmsdbcontext.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{FD6375A2-13E6-4BB7-BECA-A1F7DE3EB387}|src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj|d:\\git\\backend\\src\\backend.cms.infrastructure\\data\\seeders\\tenantdataseeder.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{FD6375A2-13E6-4BB7-BECA-A1F7DE3EB387}|src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj|solutionrelative:src\\backend.cms.infrastructure\\data\\seeders\\tenantdataseeder.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{FD6375A2-13E6-4BB7-BECA-A1F7DE3EB387}|src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj|d:\\git\\backend\\src\\backend.cms.infrastructure\\data\\seeders\\masterdataseeder.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{FD6375A2-13E6-4BB7-BECA-A1F7DE3EB387}|src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj|solutionrelative:src\\backend.cms.infrastructure\\data\\seeders\\masterdataseeder.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|d:\\git\\backend\\src\\backend.cms.api\\middleware\\customertenantmiddleware.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|solutionrelative:src\\backend.cms.api\\middleware\\customertenantmiddleware.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|d:\\git\\backend\\src\\backend.cms.api\\services\\customertenantservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|solutionrelative:src\\backend.cms.api\\services\\customertenantservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|d:\\git\\backend\\src\\backend.cms.api\\controllers\\designcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|solutionrelative:src\\backend.cms.api\\controllers\\designcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|d:\\git\\backend\\src\\backend.cms.api\\controllers\\contentcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|solutionrelative:src\\backend.cms.api\\controllers\\contentcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|d:\\git\\backend\\src\\backend.cms.api\\backend.cms.api.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
-      "RelativeMoniker": "D:0:0:{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}|src\\Backend.CMS.API\\Backend.CMS.API.csproj|solutionrelative:src\\backend.cms.api\\backend.cms.api.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|d:\\git\\backend\\src\\backend.cms.dashboard.api\\middleware\\tenantmiddleware.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|solutionrelative:src\\backend.cms.dashboard.api\\middleware\\tenantmiddleware.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|d:\\git\\backend\\src\\backend.cms.dashboard.api\\services\\tenantservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|solutionrelative:src\\backend.cms.dashboard.api\\services\\tenantservice.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|d:\\git\\backend\\src\\backend.cms.dashboard.api\\controllers\\pagescontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|solutionrelative:src\\backend.cms.dashboard.api\\controllers\\pagescontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|d:\\git\\backend\\src\\backend.cms.dashboard.api\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
-      "RelativeMoniker": "D:0:0:{63B985CD-C145-48A7-8346-3F8A85E83C4A}|src\\Backend.CMS.Dashboard.API\\Backend.CMS.Dashboard.API.csproj|solutionrelative:src\\backend.cms.dashboard.api\\appsettings.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}"
     }
   ],
   "DocumentGroupContainers": [
@@ -78,60 +26,8 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 0,
+          "SelectedChildIndex": 2,
           "Children": [
-            {
-              "$type": "Document",
-              "DocumentIndex": 0,
-              "Title": "appsettings.json",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.API\\appsettings.json",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.API\\appsettings.json",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.API\\appsettings.json",
-              "RelativeToolTip": "src\\Backend.CMS.API\\appsettings.json",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABIAAAABAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
-              "WhenOpened": "2025-06-04T00:08:53.485Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 4,
-              "Title": "Backend.CMS.Infrastructure",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj",
-              "RelativeToolTip": "src\\Backend.CMS.Infrastructure\\Backend.CMS.Infrastructure.csproj",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAsAAAAtAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
-              "WhenOpened": "2025-06-03T23:58:58.513Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 5,
-              "Title": "CmsDbContext.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.Infrastructure\\Data\\CmsDbContext.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.Infrastructure\\Data\\CmsDbContext.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Infrastructure\\Data\\CmsDbContext.cs",
-              "RelativeToolTip": "src\\Backend.CMS.Infrastructure\\Data\\CmsDbContext.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAQAAAASAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:57:06.149Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 3,
-              "Title": "Program.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.API\\Program.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.API\\Program.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.API\\Program.cs",
-              "RelativeToolTip": "src\\Backend.CMS.API\\Program.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAGUAAAAKAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:38:57.594Z",
-              "EditorCaption": ""
-            },
             {
               "$type": "Document",
               "DocumentIndex": 1,
@@ -140,165 +36,48 @@
               "RelativeDocumentMoniker": "src\\Backend.CMS.Dashboard.API\\Program.cs",
               "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Dashboard.API\\Program.cs",
               "RelativeToolTip": "src\\Backend.CMS.Dashboard.API\\Program.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAQAAAAmAAAAAAAAAA==",
+              "ViewState": "AgIAAFEAAAAAAAAAAAAwwHcAAAAKAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:23:07.367Z",
+              "WhenOpened": "2025-06-04T00:28:06.844Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Program.cs",
+              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.API\\Program.cs",
+              "RelativeDocumentMoniker": "src\\Backend.CMS.API\\Program.cs",
+              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.API\\Program.cs",
+              "RelativeToolTip": "src\\Backend.CMS.API\\Program.cs",
+              "ViewState": "AgIAAC0AAAAAAAAAAAAgwFgAAAAVAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-06-04T00:28:03.758Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "CmsDbContext.cs",
+              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.Infrastructure\\Data\\CmsDbContext.cs",
+              "RelativeDocumentMoniker": "src\\Backend.CMS.Infrastructure\\Data\\CmsDbContext.cs",
+              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Infrastructure\\Data\\CmsDbContext.cs",
+              "RelativeToolTip": "src\\Backend.CMS.Infrastructure\\Data\\CmsDbContext.cs",
+              "ViewState": "AgIAAB4AAAAAAAAAAAAkwAgAAAAoAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-06-04T00:21:59.995Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
               "DocumentIndex": 2,
-              "Title": "AuthController.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.Dashboard.API\\Controllers\\AuthController.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.Dashboard.API\\Controllers\\AuthController.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Dashboard.API\\Controllers\\AuthController.cs",
-              "RelativeToolTip": "src\\Backend.CMS.Dashboard.API\\Controllers\\AuthController.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAGUAAAABAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:31:00.523Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 6,
-              "Title": "TenantDataSeeder.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.Infrastructure\\Data\\Seeders\\TenantDataSeeder.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.Infrastructure\\Data\\Seeders\\TenantDataSeeder.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Infrastructure\\Data\\Seeders\\TenantDataSeeder.cs",
-              "RelativeToolTip": "src\\Backend.CMS.Infrastructure\\Data\\Seeders\\TenantDataSeeder.cs",
-              "ViewState": "AgIAAEwAAAAAAAAAAAAgwF8AAAAqAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:50:23.404Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 7,
-              "Title": "MasterDataSeeder.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.Infrastructure\\Data\\Seeders\\MasterDataSeeder.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.Infrastructure\\Data\\Seeders\\MasterDataSeeder.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Infrastructure\\Data\\Seeders\\MasterDataSeeder.cs",
-              "RelativeToolTip": "src\\Backend.CMS.Infrastructure\\Data\\Seeders\\MasterDataSeeder.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABoAAAAFAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:49:47.222Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 8,
-              "Title": "CustomerTenantMiddleware.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.API\\Middleware\\CustomerTenantMiddleware.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.API\\Middleware\\CustomerTenantMiddleware.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.API\\Middleware\\CustomerTenantMiddleware.cs",
-              "RelativeToolTip": "src\\Backend.CMS.API\\Middleware\\CustomerTenantMiddleware.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABEAAAAFAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:46:05.764Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 9,
-              "Title": "CustomerTenantService.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.API\\Services\\CustomerTenantService.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.API\\Services\\CustomerTenantService.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.API\\Services\\CustomerTenantService.cs",
-              "RelativeToolTip": "src\\Backend.CMS.API\\Services\\CustomerTenantService.cs",
-              "ViewState": "AgIAABQAAAAAAAAAAAAcwCwAAAAFAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:45:23.903Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 10,
-              "Title": "DesignController.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.API\\Controllers\\DesignController.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.API\\Controllers\\DesignController.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.API\\Controllers\\DesignController.cs",
-              "RelativeToolTip": "src\\Backend.CMS.API\\Controllers\\DesignController.cs",
-              "ViewState": "AgIAAD8AAAAAAAAAAAAIwFwAAAAFAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:44:26.523Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 11,
-              "Title": "ContentController.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.API\\Controllers\\ContentController.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.API\\Controllers\\ContentController.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.API\\Controllers\\ContentController.cs",
-              "RelativeToolTip": "src\\Backend.CMS.API\\Controllers\\ContentController.cs",
-              "ViewState": "AgIAABUAAAAAAAAAAAAowC4AAAAFAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:43:44.71Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 12,
-              "Title": "Backend.CMS.API.csproj",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.API\\Backend.CMS.API.csproj",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.API\\Backend.CMS.API.csproj",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.API\\Backend.CMS.API.csproj",
-              "RelativeToolTip": "src\\Backend.CMS.API\\Backend.CMS.API.csproj",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABgAAAAAAAAAAAAAAA==",
+              "Title": "Backend.CMS.Application",
+              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.Application\\Backend.CMS.Application.csproj",
+              "RelativeDocumentMoniker": "src\\Backend.CMS.Application\\Backend.CMS.Application.csproj",
+              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Application\\Backend.CMS.Application.csproj",
+              "RelativeToolTip": "src\\Backend.CMS.Application\\Backend.CMS.Application.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA4AAAAvAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
-              "WhenOpened": "2025-06-03T23:42:23.007Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 13,
-              "Title": "TenantMiddleware.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.Dashboard.API\\Middleware\\TenantMiddleware.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.Dashboard.API\\Middleware\\TenantMiddleware.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Dashboard.API\\Middleware\\TenantMiddleware.cs",
-              "RelativeToolTip": "src\\Backend.CMS.Dashboard.API\\Middleware\\TenantMiddleware.cs",
-              "ViewState": "AgIAABMAAAAAAAAAAAAIwDMAAAAFAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:37:50.153Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 14,
-              "Title": "TenantService.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.Dashboard.API\\Services\\TenantService.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.Dashboard.API\\Services\\TenantService.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Dashboard.API\\Services\\TenantService.cs",
-              "RelativeToolTip": "src\\Backend.CMS.Dashboard.API\\Services\\TenantService.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAACsAAAAFAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:36:54.647Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 15,
-              "Title": "PagesController.cs",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.Dashboard.API\\Controllers\\PagesController.cs",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.Dashboard.API\\Controllers\\PagesController.cs",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Dashboard.API\\Controllers\\PagesController.cs",
-              "RelativeToolTip": "src\\Backend.CMS.Dashboard.API\\Controllers\\PagesController.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAGgAAAAFAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-06-03T23:26:12.074Z",
-              "EditorCaption": ""
-            },
-            {
-              "$type": "Document",
-              "DocumentIndex": 16,
-              "Title": "appsettings.json",
-              "DocumentMoniker": "D:\\git\\Backend\\src\\Backend.CMS.Dashboard.API\\appsettings.json",
-              "RelativeDocumentMoniker": "src\\Backend.CMS.Dashboard.API\\appsettings.json",
-              "ToolTip": "D:\\git\\Backend\\src\\Backend.CMS.Dashboard.API\\appsettings.json",
-              "RelativeToolTip": "src\\Backend.CMS.Dashboard.API\\appsettings.json",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABEAAAABAAAAAAAAAA==",
-              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
-              "WhenOpened": "2025-06-03T23:24:48.581Z",
+              "WhenOpened": "2025-06-04T00:18:52.532Z",
               "EditorCaption": ""
             }
           ]

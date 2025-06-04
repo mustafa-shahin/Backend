@@ -1,13 +1,12 @@
 using Backend.CMS.Application.Common.Interfaces;
 using Backend.CMS.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
 using Backend.CMS.API.Middleware;
 using Backend.CMS.API.Services;
-
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services
@@ -61,6 +60,13 @@ builder.Services.AddDbContext<CmsDbContext>((serviceProvider, options) =>
 
     if (string.IsNullOrEmpty(tenantId))
     {
+        // Use a default connection string when tenant ID is not available (for migrations)
+        var defaultConnectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+        if (!string.IsNullOrEmpty(defaultConnectionString))
+        {
+            options.UseNpgsql(defaultConnectionString);
+            return;
+        }
         throw new InvalidOperationException("Tenant ID is required");
     }
 
