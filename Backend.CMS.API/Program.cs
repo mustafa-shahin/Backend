@@ -185,7 +185,7 @@ try
                 Log.Warning("Authentication failed: {Error}", context.Exception.Message);
                 if (context.Exception.GetType() == typeof(SecurityTokenExpiredException))
                 {
-                    context.Response.Headers.Add("Token-Expired", "true");
+                    context.Response.Headers.Append("Token-Expired", "true");
                 }
                 return Task.CompletedTask;
             },
@@ -509,5 +509,5 @@ static void ConfigureNpgsql(DbContextOptionsBuilder options, string connectionSt
     options.EnableSensitiveDataLogging(false);
     options.EnableDetailedErrors(false);
     options.EnableServiceProviderCaching();
-    options.EnableQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+    options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 }

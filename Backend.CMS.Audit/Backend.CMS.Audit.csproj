@@ -15,4 +15,8 @@
     <ProjectReference Include="..\Backend.CMS.Domain\Backend.CMS.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Interceptors\" />
+  </ItemGroup>
+
 </Project>

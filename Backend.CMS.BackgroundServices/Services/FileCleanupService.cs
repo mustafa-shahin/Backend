@@ -54,19 +54,24 @@ namespace Backend.CMS.BackgroundServices.Services
             {
                 _logger.LogError(ex, "Error during temp file cleanup");
             }
+
+            await Task.CompletedTask;
         }
 
         public async Task CleanupOldLogsAsync()
         {
             try
             {
-                var logPath = _configuration.GetValue<string>("Logging:LogFilePath", "Logs");
+                var logPath = _configuration["Logging:LogFilePath"] ?? "Logs";
                 var logDirectory = Path.GetDirectoryName(logPath) ?? "Logs";
-                
+
                 if (!Directory.Exists(logDirectory))
                     return;
 
-                var maxLogFiles = _configuration.GetValue<int>("Logging:MaxLogFiles", 10);
+                // Parse maxLogFiles manually
+                var maxLogFilesString = _configuration["Logging:MaxLogFiles"];
+                var maxLogFiles = !string.IsNullOrEmpty(maxLogFilesString) && int.TryParse(maxLogFilesString, out var maxFiles) ? maxFiles : 10;
+
                 var logFiles = Directory.GetFiles(logDirectory, "*.log")
                     .OrderByDescending(f => File.GetCreationTime(f))
                     .Skip(maxLogFiles)
@@ -94,20 +99,22 @@ namespace Backend.CMS.BackgroundServices.Services
             {
                 _logger.LogError(ex, "Error during log file cleanup");
             }
+
+            await Task.CompletedTask;
         }
 
         public async Task OptimizeStorageAsync()
         {
             try
             {
-                var uploadsPath = _configuration.GetValue<string>("FileStorage:BasePath", "wwwroot/uploads");
-                
+                var uploadsPath = _configuration["FileStorage:BasePath"] ?? "wwwroot/uploads";
+
                 if (!Directory.Exists(uploadsPath))
                     return;
 
                 // Check for orphaned files (files not referenced in database)
                 // This would require comparing file system with database records
-                
+
                 // Compress old files
                 var compressionCutoff = DateTime.UtcNow.AddDays(-30);
                 var oldFiles = Directory.GetFiles(uploadsPath, "*", SearchOption.AllDirectories)
@@ -141,13 +148,13 @@ namespace Backend.CMS.BackgroundServices.Services
         {
             // Simple compression example - in production, consider more sophisticated compression
             var compressedPath = filePath + ".gz";
-            
+
             using var originalFile = File.OpenRead(filePath);
             using var compressedFile = File.Create(compressedPath);
             using var compressionStream = new System.IO.Compression.GZipStream(compressedFile, System.IO.Compression.CompressionMode.Compress);
-            
+
             await originalFile.CopyToAsync(compressionStream);
-            
+
             // Replace original with compressed version
             File.Delete(filePath);
             File.Move(compressedPath, filePath);

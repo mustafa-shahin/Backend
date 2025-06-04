@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using Backend.CMS.Audit.Services;
 using System.Security.Claims;
 using System.Text;
-using static IAuditService;
 
 namespace Backend.CMS.Security.Middleware
 {

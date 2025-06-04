@@ -8,10 +8,18 @@ namespace Backend.CMS.API.Middleware
         private readonly IMemoryCache _cache;
         private readonly IConfiguration _configuration;
 
+        public RateLimitingMiddleware(RequestDelegate next, IMemoryCache cache, IConfiguration configuration)
+        {
+            _next = next;
+            _cache = cache;
+            _configuration = configuration;
+        }
+
         public async Task InvokeAsync(HttpContext context)
         {
             var key = GetClientKey(context);
-            var limit = _configuration.GetValue<int>("RateLimit:RequestsPerMinute", 100);
+            var limitString = _configuration["RateLimit:RequestsPerMinute"];
+            var limit = !string.IsNullOrEmpty(limitString) && int.TryParse(limitString, out var parsedLimit) ? parsedLimit : 100;
 
             var requestCount = _cache.GetOrCreate(key, entry =>
             {
@@ -28,8 +36,8 @@ namespace Backend.CMS.API.Middleware
 
             _cache.Set(key, requestCount + 1, TimeSpan.FromMinutes(1));
             await _next(context);
-
         }
+
         private string GetClientKey(HttpContext context)
         {
             var clientId = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";

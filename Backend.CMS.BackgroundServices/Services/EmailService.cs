@@ -34,7 +34,11 @@ namespace Backend.CMS.BackgroundServices.Services
             try
             {
                 var smtpHost = _configuration["Email:Smtp:Host"];
-                var smtpPort = _configuration.GetValue<int>("Email:Smtp:Port", 587);
+
+                // Parse port manually instead of using GetValue
+                var smtpPortString = _configuration["Email:Smtp:Port"];
+                var smtpPort = !string.IsNullOrEmpty(smtpPortString) && int.TryParse(smtpPortString, out var port) ? port : 587;
+
                 var smtpUsername = _configuration["Email:Smtp:Username"];
                 var smtpPassword = _configuration["Email:Smtp:Password"];
                 var fromEmail = _configuration["Email:FromEmail"];

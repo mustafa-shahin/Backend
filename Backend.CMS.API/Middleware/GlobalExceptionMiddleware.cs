@@ -3,7 +3,7 @@ using System.Net;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
-
+using Backend.CMS.Audit.Services;
 namespace Backend.CMS.API.Middleware
 {
     public class GlobalExceptionMiddleware

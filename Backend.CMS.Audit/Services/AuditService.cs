@@ -4,19 +4,31 @@ using System.Text.Json;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Backend.CMS.Domain.Common;
+using Microsoft.EntityFrameworkCore;
 
 namespace Backend.CMS.Audit.Services
 {
+    public interface IAuditService
+    {
+        Task LogAsync(string entityName, string entityId, string action, object? oldValues = null, object? newValues = null);
+        Task LogUserActionAsync(string userId, string action, string details);
+        Task LogSecurityEventAsync(string eventType, string details, string? userId = null);
+        Task LogLoginAttemptAsync(string email, bool success, string? failureReason = null);
+        Task<IEnumerable<AuditLog>> GetAuditTrailAsync(string entityName, string entityId, int limit = 50);
+        Task<IEnumerable<LoginAttempt>> GetRecentLoginAttemptsAsync(string email, TimeSpan timeWindow);
+        Task<SecurityMetrics> GetSecurityMetricsAsync(DateTime from, DateTime to);
+    }
+
     public class AuditService : IAuditService
     {
         private readonly ILogger<AuditService> _logger;
         private readonly IHttpContextAccessor _httpContextAccessor;
-        private readonly CmsDbContext _context;
+        private readonly DbContext _context;
 
         public AuditService(
             ILogger<AuditService> logger,
             IHttpContextAccessor httpContextAccessor,
-            CmsDbContext context)
+            DbContext context)
         {
             _logger = logger;
             _httpContextAccessor = httpContextAccessor;
@@ -27,7 +39,6 @@ namespace Backend.CMS.Audit.Services
         {
             try
             {
-                var context = _httpContextAccessor.HttpContext;
                 var tenantId = GetTenantId();
                 var userId = GetUserId();
                 var ipAddress = GetIpAddress();
@@ -169,7 +180,7 @@ namespace Backend.CMS.Audit.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to get audit trail for {EntityName} {EntityId}", entityName, entityId);
-                return [];
+                return new List<AuditLog>();
             }
         }
 
@@ -247,7 +258,6 @@ namespace Backend.CMS.Audit.Services
             var context = _httpContextAccessor.HttpContext;
             if (context == null) return "unknown";
 
-            // Check for forwarded IP first (for load balancers/proxies)
             var forwardedFor = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
             if (!string.IsNullOrEmpty(forwardedFor))
             {
@@ -294,7 +304,6 @@ namespace Backend.CMS.Audit.Services
         }
     }
 
-    // Update the LoginAttempt entity
     public class LoginAttempt : BaseEntity
     {
         public string TenantId { get; set; } = string.Empty;
@@ -306,7 +315,6 @@ namespace Backend.CMS.Audit.Services
         public DateTime AttemptedAt { get; set; } = DateTime.UtcNow;
         public string? SessionId { get; set; }
         public Dictionary<string, string> Metadata { get; set; } = new();
-        public Guid Id { get; internal set; }
     }
 
     public class SecurityMetrics
@@ -320,5 +328,4 @@ namespace Backend.CMS.Audit.Services
         public int UniqueUsers { get; set; }
         public Dictionary<string, int> TopFailureReasons { get; set; } = new();
     }
-
 }

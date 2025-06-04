@@ -49,7 +49,7 @@ namespace Backend.CMS.Application.Common.Behaviors
                 // Audit failed operations
                 if (ShouldAuditRequest(requestName))
                 {
-                    await AuditRequestAsync(requestName, request, null, userId, false, ex);
+                    await AuditRequestAsync(requestName, request, default(TResponse), userId, false, ex);
                 }
 
                 throw;
@@ -97,19 +97,45 @@ namespace Backend.CMS.Application.Common.Behaviors
 
         private object GetSafeRequestData(TRequest request)
         {
-            // Remove sensitive data before auditing
-            var requestData = JsonSerializer.Serialize(request);
-            // In a real implementation, you would sanitize passwords, tokens, etc.
-            return JsonSerializer.Deserialize<object>(requestData);
+            try
+            {
+                // Remove sensitive data before auditing
+                var requestData = JsonSerializer.Serialize(request, GetJsonOptions());
+                // In a real implementation, you would sanitize passwords, tokens, etc.
+                return JsonSerializer.Deserialize<object>(requestData, GetJsonOptions()) ?? new object();
+            }
+            catch (Exception)
+            {
+                // If serialization fails, return a safe representation
+                return new { Type = typeof(TRequest).Name, Error = "Serialization failed" };
+            }
         }
 
         private object? GetSafeResponseData(TResponse? response)
         {
             if (response == null) return null;
 
-            // Remove sensitive data before auditing
-            var responseData = JsonSerializer.Serialize(response);
-            return JsonSerializer.Deserialize<object>(responseData);
+            try
+            {
+                // Remove sensitive data before auditing
+                var responseData = JsonSerializer.Serialize(response, GetJsonOptions());
+                return JsonSerializer.Deserialize<object>(responseData, GetJsonOptions());
+            }
+            catch (Exception)
+            {
+                // If serialization fails, return a safe representation
+                return new { Type = typeof(TResponse).Name, Error = "Serialization failed" };
+            }
+        }
+
+        private JsonSerializerOptions GetJsonOptions()
+        {
+            return new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = false,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            };
         }
     }
 }

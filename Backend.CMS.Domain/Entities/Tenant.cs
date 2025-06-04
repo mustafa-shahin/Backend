@@ -1,9 +1,4 @@
 ﻿using Backend.CMS.Domain.Common;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Backend.CMS.Domain.Entities
 {
@@ -17,5 +12,6 @@ namespace Backend.CMS.Domain.Entities
         public DateTime? SubscriptionExpiresAt { get; set; }
         public string? Theme { get; set; }
         public string? Settings { get; set; } // JSON settings
+        public bool AutoUpdate { get; set; } = false;
     }
 }

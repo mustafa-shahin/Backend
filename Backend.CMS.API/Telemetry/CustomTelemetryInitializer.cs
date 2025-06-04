@@ -6,13 +6,18 @@ namespace Backend.CMS.API.Telemetry
     {
         private readonly IHttpContextAccessor _httpContextAccessor;
 
+        public CustomTelemetryInitializer(IHttpContextAccessor httpContextAccessor)
+        {
+            _httpContextAccessor = httpContextAccessor;
+        }
+
         public void Initialize(ITelemetry telemetry)
         {
             var context = _httpContextAccessor.HttpContext;
             if (context != null)
             {
-                telemetry.Context.Properties["TenantId"] = context.Items["TenantId"]?.ToString();
-                telemetry.Context.Properties["UserId"] = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                telemetry.Context.Properties["TenantId"] = context.Items["TenantId"]?.ToString() ?? "";
+                telemetry.Context.Properties["UserId"] = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "";
             }
         }
     }
