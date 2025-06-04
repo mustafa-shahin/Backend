@@ -3,19 +3,19 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.Domain", "src\Backend.CMS.Domain\Backend.CMS.Domain.csproj", "{D1B45606-3FD6-42F1-9A6E-07EC0A4BE402}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.Domain", "Backend.CMS.Domain\Backend.CMS.Domain.csproj", "{D1B45606-3FD6-42F1-9A6E-07EC0A4BE402}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.Application", "src\Backend.CMS.Application\Backend.CMS.Application.csproj", "{97879172-5CDE-47D8-97BA-EEFED6B77670}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.Application", "Backend.CMS.Application\Backend.CMS.Application.csproj", "{97879172-5CDE-47D8-97BA-EEFED6B77670}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.Infrastructure", "src\Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj", "{FD6375A2-13E6-4BB7-BECA-A1F7DE3EB387}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.Infrastructure", "Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj", "{FD6375A2-13E6-4BB7-BECA-A1F7DE3EB387}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.API", "src\Backend.CMS.API\Backend.CMS.API.csproj", "{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.API", "Backend.CMS.API\Backend.CMS.API.csproj", "{2907DADE-3F16-4A8E-94C6-5E751A66A5F3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.Dashboard.API", "src\Backend.CMS.Dashboard.API\Backend.CMS.Dashboard.API.csproj", "{63B985CD-C145-48A7-8346-3F8A85E83C4A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.Dashboard.API", "Backend.CMS.Dashboard.API\Backend.CMS.Dashboard.API.csproj", "{63B985CD-C145-48A7-8346-3F8A85E83C4A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.Shared", "src\Backend.CMS.Shared\Backend.CMS.Shared.csproj", "{B3E29426-90A3-4C16-A0F8-97B8287680A4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.Shared", "Backend.CMS.Shared\Backend.CMS.Shared.csproj", "{B3E29426-90A3-4C16-A0F8-97B8287680A4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.DatabaseSeeder", "src\Backend.CMS.DatabaseSeeder\Backend.CMS.DatabaseSeeder.csproj", "{DC76EFF2-6583-4C14-AE06-EC4983BF9FA5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.DatabaseSeeder", "Backend.CMS.DatabaseSeeder\Backend.CMS.DatabaseSeeder.csproj", "{DC76EFF2-6583-4C14-AE06-EC4983BF9FA5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Backend.CMS.Security", "Backend.CMS.Security\Backend.CMS.Security.csproj", "{CF00EC3C-1344-4250-A171-B6C9E4C59713}"
 EndProject

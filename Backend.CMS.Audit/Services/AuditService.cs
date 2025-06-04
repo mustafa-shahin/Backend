@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
-using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Domain.Common;
 
 namespace Backend.CMS.Audit.Services

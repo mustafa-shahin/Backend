@@ -7,12 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.0" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.5" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\Backend.CMS.Domain\Backend.CMS.Domain.csproj" />
+    <ProjectReference Include="..\Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

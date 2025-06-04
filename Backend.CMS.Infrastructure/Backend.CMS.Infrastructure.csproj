@@ -18,8 +18,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\Backend.CMS.Audit\Backend.CMS.Audit.csproj" />
-    <ProjectReference Include="..\..\Backend.CMS.Caching\Backend.CMS.Caching.csproj" />
+    <ProjectReference Include="..\Backend.CMS.Audit\Backend.CMS.Audit.csproj" />
+    <ProjectReference Include="..\Backend.CMS.Caching\Backend.CMS.Caching.csproj" />
     <ProjectReference Include="..\Backend.CMS.Domain\Backend.CMS.Domain.csproj" />
   </ItemGroup>
 

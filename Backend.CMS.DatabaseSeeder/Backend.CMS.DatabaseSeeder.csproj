@@ -29,13 +29,11 @@
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.5" />
 		<PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
 	</ItemGroup>
-
 	<ItemGroup>
-		<ProjectReference Include="..\Backend.CMS.Application\Backend.CMS.Application.csproj" />
-		<ProjectReference Include="..\Backend.CMS.Domain\Backend.CMS.Domain.csproj" />
-		<ProjectReference Include="..\Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj" />
+	  <ProjectReference Include="..\Backend.CMS.Application\Backend.CMS.Application.csproj" />
+	  <ProjectReference Include="..\Backend.CMS.Domain\Backend.CMS.Domain.csproj" />
+	  <ProjectReference Include="..\Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj" />
 	</ItemGroup>
-
 	<ItemGroup>
 		<None Update="appsettings.json">
 			<CopyToOutputDirectory>Always</CopyToOutputDirectory>

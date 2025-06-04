@@ -12,9 +12,7 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.5" />
 	 <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="9.0.5" />
   </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\src\Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj" />
-  </ItemGroup>
-
+	<ItemGroup>
+	  <ProjectReference Include="..\Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj" />
+	</ItemGroup>
 </Project>
