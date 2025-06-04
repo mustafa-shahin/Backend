@@ -1,4 +1,5 @@
 ﻿using Backend.CMS.Domain.Common;
+using Backend.CMS.Domain.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;

@@ -148,7 +148,6 @@ builder.Services.AddScoped<CustomerTenantMiddleware>();
 
 // Add repositories
 builder.Services.AddScoped<IPageRepository, PageRepository>();
-builder.Services.Decorate<IPageRepository, CachedPageRepository>();
 
 // Add tenant-specific DbContext with retry policy
 builder.Services.AddDbContext<CmsDbContext>((serviceProvider, options) =>
@@ -210,11 +209,6 @@ builder.Services.AddAutoMapper(typeof(Backend.CMS.Application.Features.Pages.Map
 // Add FluentValidation
 builder.Services.AddValidatorsFromAssembly(typeof(Backend.CMS.Application.Features.Pages.Validators.CreatePageValidator).Assembly);
 
-// Add rate limiting configuration
-builder.Services.Configure<Dictionary<string, object>>(
-    "RateLimit",
-    builder.Configuration.GetSection("RateLimit"));
-
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
@@ -250,8 +244,8 @@ else
 // Add global exception handling
 app.UseMiddleware<GlobalExceptionMiddleware>();
 
-// Add rate limiting
-app.UseMiddleware<RateLimitingMiddleware>();
+// Add rate limiting (commented out until we fix the reference issue)
+// app.UseMiddleware<RateLimitingMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();

@@ -1,9 +1,8 @@
-﻿using Backend.CMS.API.Models;
+﻿using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
-using System.Net.Http;
 
-namespace Backend.CMS.API.Middleware
+namespace Backend.CMS.Security.Middleware
 {
     public class RateLimitingMiddleware
     {
@@ -34,11 +33,12 @@ namespace Backend.CMS.API.Middleware
                 context.Response.StatusCode = 429;
                 context.Response.ContentType = "application/json";
 
-                var errorResponse = new ApiErrorResponse
+                var errorResponse = new
                 {
                     Message = "Rate limit exceeded",
                     Details = $"Maximum {limit} requests per minute allowed",
-                    StatusCode = 429
+                    StatusCode = 429,
+                    Timestamp = DateTime.UtcNow
                 };
 
                 await context.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(errorResponse));
