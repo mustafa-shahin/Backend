@@ -1,12 +1,88 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "D:\\git\\Backend\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{DC76EFF2-6583-4C14-AE06-EC4983BF9FA5}|Backend.CMS.DatabaseSeeder\\Backend.CMS.DatabaseSeeder.csproj|d:\\git\\backend\\backend.cms.databaseseeder\\backend.cms.databaseseeder.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{DC76EFF2-6583-4C14-AE06-EC4983BF9FA5}|Backend.CMS.DatabaseSeeder\\Backend.CMS.DatabaseSeeder.csproj|solutionrelative:backend.cms.databaseseeder\\backend.cms.databaseseeder.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{B3E29426-90A3-4C16-A0F8-97B8287680A4}|Backend.CMS.Shared\\Backend.CMS.Shared.csproj|d:\\git\\backend\\backend.cms.shared\\backend.cms.shared.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{B3E29426-90A3-4C16-A0F8-97B8287680A4}|Backend.CMS.Shared\\Backend.CMS.Shared.csproj|solutionrelative:backend.cms.shared\\backend.cms.shared.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{CF00EC3C-1344-4250-A171-B6C9E4C59713}|Backend.CMS.Security\\Backend.CMS.Security.csproj|d:\\git\\backend\\backend.cms.security\\backend.cms.security.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{CF00EC3C-1344-4250-A171-B6C9E4C59713}|Backend.CMS.Security\\Backend.CMS.Security.csproj|solutionrelative:backend.cms.security\\backend.cms.security.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{12122A41-16FC-4F87-9187-B9B602E3F345}|Backend.CMS.Notifications\\Backend.CMS.Notifications.csproj|d:\\git\\backend\\backend.cms.notifications\\backend.cms.notifications.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|",
+      "RelativeMoniker": "D:0:0:{12122A41-16FC-4F87-9187-B9B602E3F345}|Backend.CMS.Notifications\\Backend.CMS.Notifications.csproj|solutionrelative:backend.cms.notifications\\backend.cms.notifications.csproj||{FA3CD31E-987B-443A-9B81-186104E8DAC1}|"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
       "VerticalTabListWidth": 256,
-      "DocumentGroups": []
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "Backend.CMS.DatabaseSeeder",
+              "DocumentMoniker": "D:\\git\\Backend\\Backend.CMS.DatabaseSeeder\\Backend.CMS.DatabaseSeeder.csproj",
+              "RelativeDocumentMoniker": "Backend.CMS.DatabaseSeeder\\Backend.CMS.DatabaseSeeder.csproj",
+              "ToolTip": "D:\\git\\Backend\\Backend.CMS.DatabaseSeeder\\Backend.CMS.DatabaseSeeder.csproj",
+              "RelativeToolTip": "Backend.CMS.DatabaseSeeder\\Backend.CMS.DatabaseSeeder.csproj",
+              "ViewState": "AgIAAA4AAAAAAAAAAAAowCsAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2025-06-04T19:17:28.111Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "Backend.CMS.Shared",
+              "DocumentMoniker": "D:\\git\\Backend\\Backend.CMS.Shared\\Backend.CMS.Shared.csproj",
+              "RelativeDocumentMoniker": "Backend.CMS.Shared\\Backend.CMS.Shared.csproj",
+              "ToolTip": "D:\\git\\Backend\\Backend.CMS.Shared\\Backend.CMS.Shared.csproj",
+              "RelativeToolTip": "Backend.CMS.Shared\\Backend.CMS.Shared.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2025-06-04T19:14:39.029Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "Backend.CMS.Security",
+              "DocumentMoniker": "D:\\git\\Backend\\Backend.CMS.Security\\Backend.CMS.Security.csproj",
+              "RelativeDocumentMoniker": "Backend.CMS.Security\\Backend.CMS.Security.csproj",
+              "ToolTip": "D:\\git\\Backend\\Backend.CMS.Security\\Backend.CMS.Security.csproj",
+              "RelativeToolTip": "Backend.CMS.Security\\Backend.CMS.Security.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2025-06-04T19:14:26.945Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "Backend.CMS.Notifications",
+              "DocumentMoniker": "D:\\git\\Backend\\Backend.CMS.Notifications\\Backend.CMS.Notifications.csproj",
+              "RelativeDocumentMoniker": "Backend.CMS.Notifications\\Backend.CMS.Notifications.csproj",
+              "ToolTip": "D:\\git\\Backend\\Backend.CMS.Notifications\\Backend.CMS.Notifications.csproj",
+              "RelativeToolTip": "Backend.CMS.Notifications\\Backend.CMS.Notifications.csproj",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
+              "WhenOpened": "2025-06-04T19:14:21.425Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
     }
   ]
 }
