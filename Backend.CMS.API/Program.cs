@@ -2,13 +2,12 @@
 using Backend.CMS.API.HealthChecks;
 using Backend.CMS.API.Middleware;
 using Backend.CMS.API.Services;
-using Backend.CMS.Application.Common.Interfaces;
 using Backend.CMS.Audit.Services;
 using Backend.CMS.Caching.Extensions;
-using Backend.CMS.Caching.Services;
 using Backend.CMS.Infrastructure.Configuration;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.Repositories;
+using Backend.CMS.Interfaces.Interfaces;
 using Backend.CMS.Security.Extensions;
 using Backend.CMS.Security.Middleware;
 using Backend.CMS.Security.Policies;
@@ -152,6 +151,14 @@ try
             });
         }
     });
+    // Register AuditService with CmsDbContext
+    builder.Services.AddScoped<IAuditService>(provider =>
+    {
+        var logger = provider.GetRequiredService<ILogger<AuditService>>();
+        var httpContextAccessor = provider.GetRequiredService<IHttpContextAccessor>();
+        var cmsDbContext = provider.GetRequiredService<CmsDbContext>();
+        return new AuditService(logger, httpContextAccessor, cmsDbContext);
+    });
 
     // Configure Authentication with enhanced settings
     builder.Services.AddAuthentication(options =>
@@ -253,7 +260,7 @@ try
     builder.Services.AddSecurityServices();
 
     // Add audit services
-    builder.Services.AddScoped<IAuditService, AuditService>();
+    //builder.Services.AddScoped<IAuditService, AuditService>();
 
     // Add comprehensive health checks
     var healthChecksBuilder = builder.Services.AddHealthChecks()
@@ -295,10 +302,6 @@ try
     builder.Services.AddScoped<ITenantService, CustomerTenantService>();
     builder.Services.AddScoped<CustomerTenantMiddleware>();
 
-    // Add middleware services
-    builder.Services.AddScoped<SecurityAuditMiddleware>();
-    builder.Services.AddScoped<TenantSecurityMiddleware>();
-    builder.Services.AddScoped<ApiKeyAuthenticationMiddleware>();
 
     // Add repositories with caching decorators
     builder.Services.AddScoped<PageRepository>();

@@ -33,6 +33,7 @@
 	  <ProjectReference Include="..\Backend.CMS.Audit\Backend.CMS.Audit.csproj" />
 	  <ProjectReference Include="..\Backend.CMS.Caching\Backend.CMS.Caching.csproj" />
 	  <ProjectReference Include="..\Backend.CMS.Infrastructure\Backend.CMS.Infrastructure.csproj" />
+	  <ProjectReference Include="..\Backend.CMS.Interfaces\Backend.CMS.Interfaces.csproj" />
 	  <ProjectReference Include="..\Backend.CMS.Security\Backend.CMS.Security.csproj" />
 	</ItemGroup>
 </Project>

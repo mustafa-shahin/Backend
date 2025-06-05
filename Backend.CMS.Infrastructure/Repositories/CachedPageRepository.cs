@@ -1,5 +1,5 @@
-﻿using Backend.CMS.Caching.Services;
-using Backend.CMS.Domain.Entities;
+﻿using Backend.CMS.Domain.Entities;
+using Backend.CMS.Interfaces.Interfaces;
 using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Repositories

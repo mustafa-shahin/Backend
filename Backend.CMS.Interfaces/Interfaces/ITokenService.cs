@@ -1,6 +1,6 @@
 ﻿using System.Security.Claims;
 
-namespace Backend.CMS.Security.Services
+namespace Backend.CMS.Interfaces.Interfaces
 {
     public interface ITokenService
     {

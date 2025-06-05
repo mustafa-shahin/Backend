@@ -1,5 +1,5 @@
-﻿using System.Security.Claims;
-
+﻿using Backend.CMS.Interfaces.Interfaces;
+using System.Security.Claims;
 namespace Backend.CMS.API.Telemetry
 {
     public class CustomTelemetryInitializer : ITelemetryInitializer

@@ -1,4 +1,4 @@
-﻿namespace Backend.CMS.API.Telemetry
+﻿namespace Backend.CMS.Interfaces.Interfaces
 {
     public interface ITelemetryInitializer
     {

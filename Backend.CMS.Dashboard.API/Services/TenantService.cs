@@ -1,6 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using Backend.CMS.Application.Common.Interfaces;
 using Backend.CMS.Infrastructure.Data;
+using Backend.CMS.Interfaces.Interfaces;
 
 namespace Backend.CMS.Dashboard.API.Services
 {

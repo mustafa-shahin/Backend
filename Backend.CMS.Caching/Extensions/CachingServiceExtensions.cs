@@ -1,4 +1,5 @@
 ﻿using Backend.CMS.Caching.Services;
+using Backend.CMS.Interfaces.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 

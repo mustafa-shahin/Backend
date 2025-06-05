@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using System.Text.Json;
-
+using Backend.CMS.Interfaces.Interfaces;
 namespace Backend.CMS.Caching.Services
 {
     public class RedisCacheService : ICacheService

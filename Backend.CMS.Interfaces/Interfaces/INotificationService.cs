@@ -4,9 +4,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Backend.CMS.FileManagement.Services
+namespace Backend.CMS.Interfaces.Interfaces
 {
-    internal interface IImageProcessingService
+    internal interface INotificationService
     {
     }
 }

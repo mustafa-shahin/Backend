@@ -5,7 +5,6 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Backend.CMS.Domain.Common;
 using Microsoft.EntityFrameworkCore;
-
 namespace Backend.CMS.Audit.Services
 {
     public interface IAuditService
@@ -34,7 +33,6 @@ namespace Backend.CMS.Audit.Services
             _httpContextAccessor = httpContextAccessor;
             _context = context;
         }
-
         public async Task LogAsync(string entityName, string entityId, string action, object? oldValues = null, object? newValues = null)
         {
             try

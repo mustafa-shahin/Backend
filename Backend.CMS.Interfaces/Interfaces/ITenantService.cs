@@ -1,5 +1,4 @@
-﻿
-namespace Backend.CMS.Application.Common.Interfaces
+﻿namespace Backend.CMS.Interfaces.Interfaces
 {
     public interface ITenantService
     {

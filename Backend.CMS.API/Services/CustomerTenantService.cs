@@ -1,4 +1,4 @@
-﻿using Backend.CMS.Application.Common.Interfaces;
+﻿using Backend.CMS.Interfaces.Interfaces;
 
 namespace Backend.CMS.API.Services
 {

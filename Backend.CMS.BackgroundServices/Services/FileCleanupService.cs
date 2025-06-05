@@ -1,14 +1,8 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
-
+using Backend.CMS.Interfaces.Interfaces;
 namespace Backend.CMS.BackgroundServices.Services
 {
-    public interface IFileCleanupService
-    {
-        Task CleanupTempFilesAsync();
-        Task CleanupOldLogsAsync();
-        Task OptimizeStorageAsync();
-    }
 
     public class FileCleanupService : IFileCleanupService
     {

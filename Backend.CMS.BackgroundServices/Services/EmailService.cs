@@ -3,15 +3,10 @@ using Microsoft.Extensions.Logging;
 using System.Net.Mail;
 using System.Net;
 using System.Text;
-
+using Backend.CMS.Interfaces.Interfaces;
 namespace Backend.CMS.BackgroundServices.Services
 {
-    public interface IEmailService
-    {
-        Task SendEmailAsync(string to, string subject, string body, bool isHtml = true);
-        Task SendEmailAsync(string[] to, string subject, string body, bool isHtml = true);
-        Task SendTemplatedEmailAsync(string to, string templateName, object model);
-    }
+
 
     public class EmailService : IEmailService
     {

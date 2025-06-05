@@ -1,4 +1,5 @@
-﻿using Backend.CMS.Security.Services;
+﻿using Backend.CMS.Interfaces.Interfaces;
+using Backend.CMS.Security.Services;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Backend.CMS.Security.Extensions

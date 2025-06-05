@@ -1,9 +1,9 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Backend.CMS.Caching.Services;
 using Backend.CMS.Infrastructure.Repositories;
 using Backend.CMS.Domain.Enums;
+using Backend.CMS.Interfaces.Interfaces;
 
 namespace Backend.CMS.BackgroundServices.Jobs
 {

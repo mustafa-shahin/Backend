@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.Data.Seeders;
-using Backend.CMS.Application.Common.Interfaces;
+using Backend.CMS.Interfaces.Interfaces;
 
 var builder = Host.CreateApplicationBuilder(args);
 

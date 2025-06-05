@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using Backend.CMS.Security.Services;
 using System.Security.Claims;
+using Backend.CMS.Interfaces.Interfaces;
 
 namespace Backend.CMS.Security.Middleware
 {

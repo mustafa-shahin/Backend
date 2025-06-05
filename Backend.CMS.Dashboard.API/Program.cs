@@ -1,5 +1,4 @@
 using FluentValidation;
-using Backend.CMS.Application.Common.Interfaces;
 using Backend.CMS.Dashboard.API.Middleware;
 using Backend.CMS.Dashboard.API.Services;
 using Backend.CMS.Infrastructure.Data;
@@ -8,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using Backend.CMS.Interfaces.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 

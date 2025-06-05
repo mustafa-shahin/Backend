@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Backend.CMS.Caching.Services
+namespace Backend.CMS.Interfaces.Interfaces
 {
     public interface ICacheService
     {
