@@ -24,8 +24,8 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<User?> GetWithAddressesAndContactsAsync(int userId)
         {
             return await _dbSet
-                .Include(u => u.Addresses)
-                .Include(u => u.ContactDetails)
+                .Include(u => u.Addresses.Where(a => !a.IsDeleted))
+                .Include(u => u.ContactDetails.Where(c => !c.IsDeleted))
                 .FirstOrDefaultAsync(u => u.Id == userId);
         }
 
@@ -42,10 +42,25 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<IEnumerable<User>> SearchUsersAsync(string searchTerm, int page, int pageSize)
         {
             return await _dbSet
+                .Include(u => u.Addresses.Where(a => !a.IsDeleted))
+                .Include(u => u.ContactDetails.Where(c => !c.IsDeleted))
                 .Where(u => u.FirstName.Contains(searchTerm) ||
                            u.LastName.Contains(searchTerm) ||
                            u.Email.Contains(searchTerm) ||
                            u.Username.Contains(searchTerm))
+                .OrderBy(u => u.FirstName)
+                .ThenBy(u => u.LastName)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+        }
+
+        // New method to get paginated users with related entities
+        public async Task<IEnumerable<User>> GetPagedWithRelatedAsync(int page, int pageSize)
+        {
+            return await _dbSet
+                .Include(u => u.Addresses.Where(a => !a.IsDeleted))
+                .Include(u => u.ContactDetails.Where(c => !c.IsDeleted))
                 .OrderBy(u => u.FirstName)
                 .ThenBy(u => u.LastName)
                 .Skip((page - 1) * pageSize)

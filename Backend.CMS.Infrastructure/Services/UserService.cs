@@ -65,14 +65,12 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<(List<UserListDto> users, int totalCount)> GetUsersAsync(int page = 1, int pageSize = 10, string? search = null)
         {
-            // Get total count first (without pagination)
             var totalCount = string.IsNullOrEmpty(search)
                 ? await _userRepository.CountAsync()
                 : await _userRepository.CountSearchAsync(search);
 
-            // Get paginated users
             var users = string.IsNullOrEmpty(search)
-                ? await _userRepository.GetPagedAsync(page, pageSize)
+                ? await _userRepository.GetPagedWithRelatedAsync(page, pageSize)
                 : await _userRepository.SearchUsersAsync(search, page, pageSize);
 
             var userDtos = _mapper.Map<List<UserListDto>>(users);

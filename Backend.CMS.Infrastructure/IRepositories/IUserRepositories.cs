@@ -10,6 +10,7 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<User?> GetWithRolesAsync(int userId);
         Task<User?> GetWithRolesAndPermissionsAsync(int userId);
         Task<IEnumerable<User>> SearchUsersAsync(string searchTerm, int page, int pageSize);
+        Task<IEnumerable<User>> GetPagedWithRelatedAsync(int page, int pageSize);
         Task<bool> EmailExistsAsync(string email, int? excludeUserId = null);
         Task<bool> UsernameExistsAsync(string username, int? excludeUserId = null);
         Task<User?> GetByEmailVerificationTokenAsync(string token);

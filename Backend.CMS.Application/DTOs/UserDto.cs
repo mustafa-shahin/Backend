@@ -100,5 +100,7 @@ namespace Backend.CMS.Application.DTOs
 
         public UserRole Role { get; set; }
         public string RoleName { get; set; } = string.Empty;
+        public List<AddressDto> Addresses { get; set; } = [];
+        public List<ContactDetailsDto> ContactDetails { get; set; } = [];
     }
 }
