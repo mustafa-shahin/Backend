@@ -133,7 +133,7 @@ static void ConfigureBasicServices(WebApplicationBuilder builder)
     }).AddJsonOptions(options =>
     {
         // Configure JSON serialization for enums
-        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        //options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
     });
