@@ -154,7 +154,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 if (userIdClaim != null && int.TryParse(userIdClaim.Value, out var userId))
                 {
-                    var user = await _userRepository.GetWithAddressesAndContactsAsync(userId);
+                    var user = await _userRepository.GetByIdAsync(userId);
                     if (user != null && user.IsActive && !user.IsLocked)
                     {
                         var session = await CreateSessionFromUserAsync(user);
@@ -188,7 +188,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var fullUser = await _userRepository.GetWithAddressesAndContactsAsync(user.Id);
+                var fullUser = await _userRepository.GetByIdAsync(user.Id);
                 if (fullUser == null)
                 {
                     throw new ArgumentException("User not found");
@@ -217,7 +217,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var session = await GetCurrentSessionAsync();
                 if (session?.CurrentUser != null)
                 {
-                    var user = await _userRepository.GetWithAddressesAndContactsAsync(session.CurrentUser.Id);
+                    var user = await _userRepository.GetByIdAsync(session.CurrentUser.Id);
                     if (user != null)
                     {
                         session.CurrentUser = user;
@@ -428,7 +428,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var userRepo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
 
                 // This will be a synchronous database call
-                return userRepo.GetWithAddressesAndContactsAsync(userId).GetAwaiter().GetResult();
+                return userRepo.GetByIdAsync(userId).GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {

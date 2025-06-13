@@ -44,7 +44,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<UserDto> GetUserByIdAsync(int userId)
         {
-            var user = await _userRepository.GetWithAddressesAndContactsAsync(userId);
+            var user = await _userRepository.GetByIdAsync(userId);
             return user == null ? throw new ArgumentException("User not found") : _mapper.Map<UserDto>(user);
         }
 
@@ -142,12 +142,13 @@ namespace Backend.CMS.Infrastructure.Services
 
             _logger.LogInformation("User {UserId} created successfully by user {CurrentUserId}", user.Id, currentUserId);
 
-            return _mapper.Map<UserDto>(user);
+            var createdUser = await _userRepository.GetByIdAsync(user.Id);
+            return _mapper.Map<UserDto>(createdUser);
         }
 
         public async Task<UserDto> UpdateUserAsync(int userId, UpdateUserDto updateUserDto)
         {
-            var user = await _userRepository.GetWithAddressesAndContactsAsync(userId);
+            var user = await _userRepository.GetByIdAsync(userId);
             if (user == null)
                 throw new ArgumentException("User not found");
 
@@ -254,7 +255,8 @@ namespace Backend.CMS.Infrastructure.Services
 
             _logger.LogInformation("User {UserId} updated successfully by user {CurrentUserId}", userId, currentUserId);
 
-            return _mapper.Map<UserDto>(user);
+            var updatedUser = await _userRepository.GetByIdAsync(userId);
+            return _mapper.Map<UserDto>(updatedUser);
         }
 
         public async Task<bool> DeleteUserAsync(int userId)

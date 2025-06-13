@@ -75,12 +75,22 @@ namespace Backend.CMS.API.Controllers
         /// Get all company locations
         /// </summary>
         [HttpGet("locations")]
-        public async Task<ActionResult<List<LocationDto>>> GetLocations()
+        public async Task<ActionResult<List<LocationDto>>> GetLocations(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
         {
             try
             {
-                var locations = await _locationService.GetLocationsAsync();
-                return Ok(locations);
+                var locations = await _locationService.GetLocationsAsync(page, pageSize);
+                var totalCount = locations.Count;
+                var result = new PagedResult<LocationDto>
+                {
+                    Items = locations,
+                    Page = page,
+                    PageSize = pageSize,
+                    TotalCount = totalCount
+                };
+                return Ok(result);
             }
             catch (Exception ex)
             {

@@ -20,7 +20,7 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get all locations
+        /// Get all locations with pagination 
         /// </summary>
         [HttpGet]
         public async Task<ActionResult<PagedResult<LocationDto>>> GetLocations(
@@ -29,17 +29,12 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
-                var allLocations = await _locationService.GetLocationsAsync();
-
-                var totalCount = allLocations.Count;
-                var items = allLocations
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToList();
+                var locations = await _locationService.GetLocationsAsync(page, pageSize);
+                var totalCount = locations.Count;
 
                 var result = new PagedResult<LocationDto>
                 {
-                    Items = items,
+                    Items = locations,
                     Page = page,
                     PageSize = pageSize,
                     TotalCount = totalCount
@@ -55,7 +50,7 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get location by ID
+        /// Get location by ID 
         /// </summary>
         [HttpGet("{id:int}")]
         public async Task<ActionResult<LocationDto>> GetLocation(int id)
@@ -78,7 +73,7 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get main location
+        /// Get main location 
         /// </summary>
         [HttpGet("main")]
         public async Task<ActionResult<LocationDto>> GetMainLocation()

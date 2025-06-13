@@ -255,7 +255,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (!userId.HasValue)
                     throw new UnauthorizedAccessException("No authenticated user found");
 
-                var user = await _userRepository.GetWithAddressesAndContactsAsync(userId.Value);
+                var user = await _userRepository.GetByIdAsync(userId.Value);
 
                 if (user == null)
                 {

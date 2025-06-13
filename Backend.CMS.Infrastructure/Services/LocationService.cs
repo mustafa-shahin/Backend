@@ -4,6 +4,7 @@ using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.IRepositories;
+using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 
 namespace Backend.CMS.Infrastructure.Services
@@ -41,16 +42,16 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<LocationDto> GetLocationByIdAsync(int locationId)
         {
-            var location = await _locationRepository.GetWithAddressesAndContactsAsync(locationId);
+            var location = await _locationRepository.GetByIdAsync(locationId);
             if (location == null)
                 throw new ArgumentException("Location not found");
 
             return _mapper.Map<LocationDto>(location);
         }
 
-        public async Task<List<LocationDto>> GetLocationsAsync()
+        public async Task<List<LocationDto>> GetLocationsAsync(int page, int pageSize)
         {
-            var locations = await _locationRepository.GetAllAsync();
+            var locations = await _locationRepository.GetPagedWithRelatedAsync(page, pageSize);
             return _mapper.Map<List<LocationDto>>(locations);
         }
 
@@ -132,12 +133,13 @@ namespace Backend.CMS.Infrastructure.Services
             }
 
             await _context.SaveChangesAsync();
-            return _mapper.Map<LocationDto>(location);
+            var createdLocation = await _locationRepository.GetByIdAsync(location.Id);
+            return _mapper.Map<LocationDto>(createdLocation);
         }
 
         public async Task<LocationDto> UpdateLocationAsync(int locationId, UpdateLocationDto updateLocationDto)
         {
-            var location = await _locationRepository.GetWithAddressesAndContactsAsync(locationId);
+            var location = await _locationRepository.GetByIdAsync(locationId);
             if (location == null)
                 throw new ArgumentException("Location not found");
 
@@ -243,7 +245,9 @@ namespace Backend.CMS.Infrastructure.Services
             }
 
             await _context.SaveChangesAsync();
-            return _mapper.Map<LocationDto>(location);
+
+            var updatedLocation = await _locationRepository.GetByIdAsync(locationId);
+            return _mapper.Map<LocationDto>(updatedLocation);
         }
 
         public async Task<bool> DeleteLocationAsync(int locationId)
@@ -286,12 +290,6 @@ namespace Backend.CMS.Infrastructure.Services
                 throw new ArgumentException("Main location not found");
 
             return _mapper.Map<LocationDto>(mainLocation);
-        }
-
-        public async Task<LocationDto?> GetLocationWithAddressesAndContactsAsync(int locationId)
-        {
-            var location = await _locationRepository.GetWithAddressesAndContactsAsync(locationId);
-            return location != null ? _mapper.Map<LocationDto>(location) : null;
         }
 
         public async Task<bool> LocationCodeExistsAsync(string locationCode, int? excludeLocationId = null)

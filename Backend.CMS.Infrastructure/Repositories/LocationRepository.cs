@@ -53,10 +53,22 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<IEnumerable<Location>> SearchLocationsAsync(string searchTerm, int page, int pageSize)
         {
             return await _dbSet
+                .Include(l => l.Addresses.Where(a => !a.IsDeleted))
+                .Include(l => l.ContactDetails.Where(c => !c.IsDeleted))
                 .Where(l => l.Name.Contains(searchTerm) ||
                            l.LocationCode!.Contains(searchTerm) ||
                            l.Description!.Contains(searchTerm))
                 .OrderBy(l => l.Name)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+        }
+        public async Task<IEnumerable<Location>> GetPagedWithRelatedAsync(int page, int pageSize)
+        {
+            return await _dbSet
+                .Include(u => u.Addresses.Where(a => !a.IsDeleted))
+                .Include(u => u.ContactDetails.Where(c => !c.IsDeleted))
+                .OrderBy(u => u.Id)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
