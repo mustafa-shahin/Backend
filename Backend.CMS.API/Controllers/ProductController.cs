@@ -36,7 +36,21 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
-                var result = await _productService.GetProductsAsync();
+                var allProducts = await _productService.GetProductsAsync();
+                var totalCount = allProducts.Count;
+                var items = allProducts
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+
+                var result = new PagedResult<ProductListDto>
+                {
+                    Items = items,
+                    Page = page,
+                    PageSize = pageSize,
+                    TotalCount = totalCount
+                };
+
                 return Ok(result);
             }
             catch (Exception ex)

@@ -92,37 +92,16 @@ namespace Backend.CMS.Infrastructure.Services
             });
         }
 
-        public async Task<PagedResult<ProductListDto>> GetProductsPagedAsync(int page = 1, int pageSize = 20)
+        public async Task<List<ProductListDto>> GetProductsAsync()
         {
-            var cacheKey = CacheKeys.ProductsList(page, pageSize);
-            var products = await _productRepository.GetPagedAsync(page, pageSize);
-            var tt = await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = CacheKeys.ProductsList();
+            return await _cacheService.GetAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.GetPagedAsync(page, pageSize);
-                var totalCount = await _productRepository.CountAsync();
-                var test = new PagedResult<ProductListDto>
-                {
-                    Items = _mapper.Map<List<ProductListDto>>(products),
-                    Page = page,
-                    PageSize = pageSize,
-                    TotalCount = totalCount,
-                };
-                return test;
-            }) ?? new PagedResult<ProductListDto>
-            {
-                Items = new List<ProductListDto>(),
-                Page = page,
-                PageSize = pageSize,
-                TotalCount = 0,
-            };
-            return tt;
+                var products = await _productRepository.GetAllAsync();
+                return _mapper.Map<List<ProductListDto>>(products);
+            }) ?? new List<ProductListDto>();
         }
 
-        public async Task<List<ProductListDto>> GetProductsAsync(int page = 1, int pageSize = 20)
-        {
-            var result = await GetProductsPagedAsync(page, pageSize);
-            return result.Items;
-        }
 
         public async Task<List<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 20)
         {

@@ -53,29 +53,15 @@ namespace Backend.CMS.Infrastructure.Services
 
             return variant;
         }
-
-        public async Task<PagedResult<ProductVariantDto>> GetVariantsPagedAsync(int page = 1, int pageSize = 20)
+        public async Task<List<ProductVariantDto>> GetVariantsAsync()
         {
-            var cacheKey = $"variants:paged:{page}:{pageSize}";
+  
+            var cacheKey = CacheKeys.ProductsVariantsList();
             return await _cacheService.GetAsync(cacheKey, async () =>
             {
-                var variants = await _variantRepository.GetPagedAsync(page, pageSize);
-                var totalCount = await _variantRepository.CountAsync();
-
-                return new PagedResult<ProductVariantDto>
-                {
-                    Items = _mapper.Map<List<ProductVariantDto>>(variants),
-                    Page = page,
-                    PageSize = pageSize,
-                    TotalCount = totalCount,
-                };
-            }) ?? new PagedResult<ProductVariantDto>
-            {
-                Items = new List<ProductVariantDto>(),
-                Page = page,
-                PageSize = pageSize,
-                TotalCount = 0,
-            };
+                var variants = await _variantRepository.GetAllAsync();
+                return _mapper.Map<List<ProductVariantDto>>(variants);
+            }) ?? new List<ProductVariantDto>();
         }
 
         public async Task<ProductVariantDto?> GetVariantBySKUAsync(string sku)
@@ -95,7 +81,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var variants = await _variantRepository.GetByProductIdAsync(productId);
                 return _mapper.Map<List<ProductVariantDto>>(variants);
-            });
+            }) ?? [];
         }
 
         public async Task<ProductVariantDto?> GetDefaultVariantAsync(int productId)
@@ -514,6 +500,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             await _cacheService.RemoveByPatternAsync(CacheKeys.ProductVariantsPattern(productId));
             await _cacheService.RemoveByPatternAsync(CacheKeys.ProductsPattern);
+            await _cacheService.RemoveAsync("variants:all");
         }
     }
 }

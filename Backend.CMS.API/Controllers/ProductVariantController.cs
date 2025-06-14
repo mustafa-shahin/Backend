@@ -27,13 +27,36 @@ namespace Backend.CMS.API.Controllers
         [HttpGet]
         [AllowAnonymous]
         public async Task<ActionResult<PagedResult<ProductVariantDto>>> GetVariants(
-            [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 20)
+            [FromQuery] int page = 1)
         {
             try
             {
-                var result = await _variantService.GetVariantsPagedAsync(page, pageSize);
-                return Ok(result);
+                // Each page will display 10 items.
+                const int pageSize = 10;
+
+                // 1. Fetch the full list of variants from the service.
+                var allVariants = await _variantService.GetVariantsAsync();
+
+                var totalCount = allVariants.Count;
+
+                // 2. Apply pagination logic here in the controller.
+                var items = allVariants
+                    .Skip((page - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToList();
+
+                // 3. Calculate the total number of pages.
+                var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
+
+                // 4. Return a structured response including pagination details.
+                return Ok(new
+                {
+                    Items = items,
+                    Page = page,
+                    PageSize = pageSize,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages
+                });
             }
             catch (Exception ex)
             {

@@ -113,7 +113,7 @@
         #region Product Cache Keys 
         public static string ProductById(int id) => $"product:id:{id}";
         public static string ProductBySlug(string slug) => $"product:slug:{slug}";
-        public static string ProductsList(int page, int pageSize) => $"products:list:page:{page}:size:{pageSize}";
+        public static string ProductsList() => "products:list:all";
         public static string ProductsByCategory(int categoryId, int page, int pageSize) => $"products:category:{categoryId}:page:{page}:size:{pageSize}";
         public static string FeaturedProducts(int count) => $"products:featured:count:{count}";
         public static string RelatedProducts(int productId, int count) => $"products:related:{productId}:count:{count}";
@@ -141,7 +141,7 @@
         #endregion
 
         #region ProductVariant Cache Keys
-
+        public static string ProductsVariantsList() => "variants:all";
         public static string ProductVariantById(int id) => $"product-variant:id:{id}";
         public static string ProductVariantBySKU(string sku) => $"product-variant:sku:{sku}";
         public static string ProductVariantsByProduct(int productId) => $"product-variants:product:{productId}";
