@@ -13,38 +13,25 @@ namespace Backend.CMS.Infrastructure.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "Users",
+                name: "Addresses",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    Email = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
-                    Username = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
-                    PasswordHash = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
-                    FirstName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    LastName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    Role = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
-                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
-                    IsLocked = table.Column<bool>(type: "boolean", nullable: false),
-                    LastLoginAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    FailedLoginAttempts = table.Column<int>(type: "integer", nullable: false),
-                    LockoutEnd = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    TwoFactorEnabled = table.Column<bool>(type: "boolean", nullable: false),
-                    TwoFactorSecret = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
-                    RecoveryCodes = table.Column<string>(type: "jsonb", nullable: false),
-                    Avatar = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    Timezone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    Language = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: true),
-                    EmailVerifiedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    EmailVerificationToken = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
-                    PasswordChangedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DateOfBirth = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    Gender = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    Preferences = table.Column<string>(type: "jsonb", nullable: false),
-                    ExternalId = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
-                    ProfilePictureUrl = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    IsExternalUser = table.Column<bool>(type: "boolean", nullable: false),
-                    LastExternalSync = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    Street = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
+                    Street2 = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    City = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    State = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Country = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    PostalCode = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    Region = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    District = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    IsDefault = table.Column<bool>(type: "boolean", nullable: false),
+                    AddressType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Notes = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    CompanyId = table.Column<int>(type: "integer", nullable: true),
+                    LocationId = table.Column<int>(type: "integer", nullable: true),
+                    UserId = table.Column<int>(type: "integer", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
@@ -55,7 +42,7 @@ namespace Backend.CMS.Infrastructure.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Users", x => x.Id);
+                    table.PrimaryKey("PK_Addresses", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -68,7 +55,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                     Slug = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     Description = table.Column<string>(type: "character varying(2000)", maxLength: 2000, nullable: true),
                     ShortDescription = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    Image = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     ParentCategoryId = table.Column<int>(type: "integer", nullable: true),
                     IsActive = table.Column<bool>(type: "boolean", nullable: false),
                     IsVisible = table.Column<bool>(type: "boolean", nullable: false),
@@ -94,24 +80,37 @@ namespace Backend.CMS.Infrastructure.Migrations
                         principalTable: "Categories",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "CategoryImages",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    CategoryId = table.Column<int>(type: "integer", nullable: false),
+                    FileId = table.Column<int>(type: "integer", nullable: false),
+                    Alt = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    Caption = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    Position = table.Column<int>(type: "integer", nullable: false),
+                    IsFeatured = table.Column<bool>(type: "boolean", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_CategoryImages", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Categories_Users_CreatedByUserId",
-                        column: x => x.CreatedByUserId,
-                        principalTable: "Users",
+                        name: "FK_CategoryImages_Categories_CategoryId",
+                        column: x => x.CategoryId,
+                        principalTable: "Categories",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_Categories_Users_DeletedByUserId",
-                        column: x => x.DeletedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_Categories_Users_UpdatedByUserId",
-                        column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -141,24 +140,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Companies", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Companies_Users_CreatedByUserId",
-                        column: x => x.CreatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_Companies_Users_DeletedByUserId",
-                        column: x => x.DeletedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_Companies_Users_UpdatedByUserId",
-                        column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
                 });
 
             migrationBuilder.CreateTable(
@@ -194,22 +175,165 @@ namespace Backend.CMS.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_ComponentTemplates", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ContactDetails",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    PrimaryPhone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    SecondaryPhone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Mobile = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Fax = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Email = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
+                    SecondaryEmail = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
+                    Website = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    LinkedInProfile = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    TwitterProfile = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    FacebookProfile = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    InstagramProfile = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    WhatsAppNumber = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    TelegramHandle = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    AdditionalContacts = table.Column<string>(type: "jsonb", nullable: false),
+                    IsDefault = table.Column<bool>(type: "boolean", nullable: false),
+                    ContactType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    CompanyId = table.Column<int>(type: "integer", nullable: true),
+                    LocationId = table.Column<int>(type: "integer", nullable: true),
+                    UserId = table.Column<int>(type: "integer", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ContactDetails", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_ComponentTemplates_Users_CreatedByUserId",
-                        column: x => x.CreatedByUserId,
-                        principalTable: "Users",
+                        name: "FK_ContactDetails_Companies_CompanyId",
+                        column: x => x.CompanyId,
+                        principalTable: "Companies",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "FileAccess",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    FileId = table.Column<int>(type: "integer", nullable: false),
+                    UserId = table.Column<int>(type: "integer", nullable: true),
+                    IpAddress = table.Column<string>(type: "character varying(45)", maxLength: 45, nullable: true),
+                    UserAgent = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    AccessType = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    AccessedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_FileAccess", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Files",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    OriginalFileName = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
+                    StoredFileName = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
+                    FileContent = table.Column<byte[]>(type: "bytea", nullable: false),
+                    ContentType = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    FileSize = table.Column<long>(type: "bigint", nullable: false),
+                    FileExtension = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false),
+                    FileType = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    Alt = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    Metadata = table.Column<string>(type: "jsonb", nullable: false),
+                    IsPublic = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
+                    FolderId = table.Column<int>(type: "integer", nullable: true),
+                    DownloadCount = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    LastAccessedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    ThumbnailContent = table.Column<byte[]>(type: "bytea", nullable: true),
+                    Width = table.Column<int>(type: "integer", nullable: true),
+                    Height = table.Column<int>(type: "integer", nullable: true),
+                    Duration = table.Column<TimeSpan>(type: "interval", nullable: true),
+                    Hash = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    IsProcessed = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
+                    ProcessingStatus = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Tags = table.Column<string>(type: "jsonb", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Files", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Users",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Email = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    Username = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    PasswordHash = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
+                    FirstName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    LastName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    Role = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
+                    IsLocked = table.Column<bool>(type: "boolean", nullable: false),
+                    LastLoginAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    FailedLoginAttempts = table.Column<int>(type: "integer", nullable: false),
+                    LockoutEnd = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    TwoFactorEnabled = table.Column<bool>(type: "boolean", nullable: false),
+                    TwoFactorSecret = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    RecoveryCodes = table.Column<string>(type: "jsonb", nullable: false),
+                    AvatarFileId = table.Column<int>(type: "integer", nullable: true),
+                    Timezone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Language = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: true),
+                    EmailVerifiedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    EmailVerificationToken = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    PasswordChangedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DateOfBirth = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    Gender = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Preferences = table.Column<string>(type: "jsonb", nullable: false),
+                    ExternalId = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    IsExternalUser = table.Column<bool>(type: "boolean", nullable: false),
+                    LastExternalSync = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Users", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_ComponentTemplates_Users_DeletedByUserId",
-                        column: x => x.DeletedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_ComponentTemplates_Users_UpdatedByUserId",
-                        column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
+                        name: "FK_Users_Files_AvatarFileId",
+                        column: x => x.AvatarFileId,
+                        principalTable: "Files",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.SetNull);
                 });
@@ -304,6 +428,58 @@ namespace Backend.CMS.Infrastructure.Migrations
                         onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
                         name: "FK_IndexingJobs_Users_UpdatedByUserId",
+                        column: x => x.UpdatedByUserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Locations",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    CompanyId = table.Column<int>(type: "integer", nullable: false),
+                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    LocationCode = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    LocationType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    IsMainLocation = table.Column<bool>(type: "boolean", nullable: false),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
+                    LocationSettings = table.Column<string>(type: "text", nullable: false),
+                    AdditionalInfo = table.Column<string>(type: "text", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Locations", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Locations_Companies_CompanyId",
+                        column: x => x.CompanyId,
+                        principalTable: "Companies",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_Locations_Users_CreatedByUserId",
+                        column: x => x.CreatedByUserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_Locations_Users_DeletedByUserId",
+                        column: x => x.DeletedByUserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_Locations_Users_UpdatedByUserId",
                         column: x => x.UpdatedByUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
@@ -676,20 +852,18 @@ namespace Backend.CMS.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "Locations",
+                name: "LocationOpeningHours",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    CompanyId = table.Column<int>(type: "integer", nullable: false),
-                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
-                    Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
-                    LocationCode = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    LocationType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
-                    IsMainLocation = table.Column<bool>(type: "boolean", nullable: false),
-                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
-                    LocationSettings = table.Column<string>(type: "text", nullable: false),
-                    AdditionalInfo = table.Column<string>(type: "text", nullable: false),
+                    LocationId = table.Column<int>(type: "integer", nullable: false),
+                    DayOfWeek = table.Column<int>(type: "integer", nullable: false),
+                    OpenTime = table.Column<TimeOnly>(type: "time without time zone", nullable: false),
+                    CloseTime = table.Column<TimeOnly>(type: "time without time zone", nullable: false),
+                    IsClosed = table.Column<bool>(type: "boolean", nullable: false),
+                    IsOpen24Hours = table.Column<bool>(type: "boolean", nullable: false),
+                    Notes = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
@@ -700,92 +874,27 @@ namespace Backend.CMS.Infrastructure.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Locations", x => x.Id);
+                    table.PrimaryKey("PK_LocationOpeningHours", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Locations_Companies_CompanyId",
-                        column: x => x.CompanyId,
-                        principalTable: "Companies",
+                        name: "FK_LocationOpeningHours_Locations_LocationId",
+                        column: x => x.LocationId,
+                        principalTable: "Locations",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "FK_Locations_Users_CreatedByUserId",
+                        name: "FK_LocationOpeningHours_Users_CreatedByUserId",
                         column: x => x.CreatedByUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
-                        name: "FK_Locations_Users_DeletedByUserId",
+                        name: "FK_LocationOpeningHours_Users_DeletedByUserId",
                         column: x => x.DeletedByUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
-                        name: "FK_Locations_Users_UpdatedByUserId",
-                        column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Files",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    OriginalFileName = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
-                    StoredFileName = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
-                    FileContent = table.Column<byte[]>(type: "bytea", nullable: false),
-                    ContentType = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    FileSize = table.Column<long>(type: "bigint", nullable: false),
-                    FileExtension = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false),
-                    FileType = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
-                    Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
-                    Alt = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
-                    Metadata = table.Column<string>(type: "jsonb", nullable: false),
-                    IsPublic = table.Column<bool>(type: "boolean", nullable: false, defaultValue: false),
-                    FolderId = table.Column<int>(type: "integer", nullable: true),
-                    DownloadCount = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
-                    LastAccessedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    ThumbnailContent = table.Column<byte[]>(type: "bytea", nullable: true),
-                    Width = table.Column<int>(type: "integer", nullable: true),
-                    Height = table.Column<int>(type: "integer", nullable: true),
-                    Duration = table.Column<TimeSpan>(type: "interval", nullable: true),
-                    Hash = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    IsProcessed = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
-                    ProcessingStatus = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    Tags = table.Column<string>(type: "jsonb", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Files", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Files_Folders_FolderId",
-                        column: x => x.FolderId,
-                        principalTable: "Folders",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_Files_Users_CreatedByUserId",
-                        column: x => x.CreatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_Files_Users_DeletedByUserId",
-                        column: x => x.DeletedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_Files_Users_UpdatedByUserId",
+                        name: "FK_LocationOpeningHours_Users_UpdatedByUserId",
                         column: x => x.UpdatedByUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
@@ -1064,6 +1173,61 @@ namespace Backend.CMS.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "ProductImages",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ProductId = table.Column<int>(type: "integer", nullable: false),
+                    FileId = table.Column<int>(type: "integer", nullable: false),
+                    Alt = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    Caption = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    Position = table.Column<int>(type: "integer", nullable: false),
+                    IsFeatured = table.Column<bool>(type: "boolean", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ProductImages", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_ProductImages_Files_FileId",
+                        column: x => x.FileId,
+                        principalTable: "Files",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_ProductImages_Products_ProductId",
+                        column: x => x.ProductId,
+                        principalTable: "Products",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_ProductImages_Users_CreatedByUserId",
+                        column: x => x.CreatedByUserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_ProductImages_Users_DeletedByUserId",
+                        column: x => x.DeletedByUserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_ProductImages_Users_UpdatedByUserId",
+                        column: x => x.UpdatedByUserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "ProductOptions",
                 columns: table => new
                 {
@@ -1129,7 +1293,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                     Weight = table.Column<decimal>(type: "numeric(18,3)", nullable: false),
                     WeightUnit = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: true),
                     Barcode = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    Image = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     Position = table.Column<int>(type: "integer", nullable: false),
                     IsDefault = table.Column<bool>(type: "boolean", nullable: false),
                     CustomFields = table.Column<string>(type: "text", nullable: false),
@@ -1168,254 +1331,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                     table.ForeignKey(
                         name: "FK_ProductVariants_Users_UpdatedByUserId",
                         column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Addresses",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    Street = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
-                    Street2 = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    City = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    State = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    Country = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    PostalCode = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
-                    Region = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    District = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    IsDefault = table.Column<bool>(type: "boolean", nullable: false),
-                    AddressType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    Notes = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
-                    CompanyId = table.Column<int>(type: "integer", nullable: true),
-                    LocationId = table.Column<int>(type: "integer", nullable: true),
-                    UserId = table.Column<int>(type: "integer", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Addresses", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_Addresses_Companies_CompanyId",
-                        column: x => x.CompanyId,
-                        principalTable: "Companies",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_Addresses_Locations_LocationId",
-                        column: x => x.LocationId,
-                        principalTable: "Locations",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_Addresses_Users_CreatedByUserId",
-                        column: x => x.CreatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_Addresses_Users_DeletedByUserId",
-                        column: x => x.DeletedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_Addresses_Users_UpdatedByUserId",
-                        column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_Addresses_Users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "ContactDetails",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    PrimaryPhone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    SecondaryPhone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    Mobile = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    Fax = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    Email = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
-                    SecondaryEmail = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
-                    Website = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    LinkedInProfile = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    TwitterProfile = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    FacebookProfile = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    InstagramProfile = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    WhatsAppNumber = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    TelegramHandle = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    AdditionalContacts = table.Column<string>(type: "jsonb", nullable: false),
-                    IsDefault = table.Column<bool>(type: "boolean", nullable: false),
-                    ContactType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    CompanyId = table.Column<int>(type: "integer", nullable: true),
-                    LocationId = table.Column<int>(type: "integer", nullable: true),
-                    UserId = table.Column<int>(type: "integer", nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_ContactDetails", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_ContactDetails_Companies_CompanyId",
-                        column: x => x.CompanyId,
-                        principalTable: "Companies",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_ContactDetails_Locations_LocationId",
-                        column: x => x.LocationId,
-                        principalTable: "Locations",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_ContactDetails_Users_CreatedByUserId",
-                        column: x => x.CreatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_ContactDetails_Users_DeletedByUserId",
-                        column: x => x.DeletedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_ContactDetails_Users_UpdatedByUserId",
-                        column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_ContactDetails_Users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "LocationOpeningHours",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    LocationId = table.Column<int>(type: "integer", nullable: false),
-                    DayOfWeek = table.Column<int>(type: "integer", nullable: false),
-                    OpenTime = table.Column<TimeOnly>(type: "time without time zone", nullable: false),
-                    CloseTime = table.Column<TimeOnly>(type: "time without time zone", nullable: false),
-                    IsClosed = table.Column<bool>(type: "boolean", nullable: false),
-                    IsOpen24Hours = table.Column<bool>(type: "boolean", nullable: false),
-                    Notes = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_LocationOpeningHours", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_LocationOpeningHours_Locations_LocationId",
-                        column: x => x.LocationId,
-                        principalTable: "Locations",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_LocationOpeningHours_Users_CreatedByUserId",
-                        column: x => x.CreatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_LocationOpeningHours_Users_DeletedByUserId",
-                        column: x => x.DeletedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_LocationOpeningHours_Users_UpdatedByUserId",
-                        column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "FileAccess",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    FileId = table.Column<int>(type: "integer", nullable: false),
-                    UserId = table.Column<int>(type: "integer", nullable: true),
-                    IpAddress = table.Column<string>(type: "character varying(45)", maxLength: 45, nullable: true),
-                    UserAgent = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    AccessType = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
-                    AccessedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_FileAccess", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_FileAccess_Files_FileId",
-                        column: x => x.FileId,
-                        principalTable: "Files",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_FileAccess_Users_CreatedByUserId",
-                        column: x => x.CreatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_FileAccess_Users_DeletedByUserId",
-                        column: x => x.DeletedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_FileAccess_Users_UpdatedByUserId",
-                        column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_FileAccess_Users_UserId",
-                        column: x => x.UserId,
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.SetNull);
@@ -1468,19 +1383,17 @@ namespace Backend.CMS.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "ProductImages",
+                name: "ProductVariantImages",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    ProductId = table.Column<int>(type: "integer", nullable: false),
-                    ProductVariantId = table.Column<int>(type: "integer", nullable: true),
-                    Url = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
-                    Alt = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    ProductVariantId = table.Column<int>(type: "integer", nullable: false),
+                    FileId = table.Column<int>(type: "integer", nullable: false),
+                    Alt = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
+                    Caption = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     Position = table.Column<int>(type: "integer", nullable: false),
-                    Width = table.Column<int>(type: "integer", nullable: true),
-                    Height = table.Column<int>(type: "integer", nullable: true),
-                    OriginalSource = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    IsFeatured = table.Column<bool>(type: "boolean", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
@@ -1491,33 +1404,33 @@ namespace Backend.CMS.Infrastructure.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_ProductImages", x => x.Id);
+                    table.PrimaryKey("PK_ProductVariantImages", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_ProductImages_ProductVariants_ProductVariantId",
-                        column: x => x.ProductVariantId,
-                        principalTable: "ProductVariants",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_ProductImages_Products_ProductId",
-                        column: x => x.ProductId,
-                        principalTable: "Products",
+                        name: "FK_ProductVariantImages_Files_FileId",
+                        column: x => x.FileId,
+                        principalTable: "Files",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "FK_ProductImages_Users_CreatedByUserId",
+                        name: "FK_ProductVariantImages_ProductVariants_ProductVariantId",
+                        column: x => x.ProductVariantId,
+                        principalTable: "ProductVariants",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_ProductVariantImages_Users_CreatedByUserId",
                         column: x => x.CreatedByUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
-                        name: "FK_ProductImages_Users_DeletedByUserId",
+                        name: "FK_ProductVariantImages_Users_DeletedByUserId",
                         column: x => x.DeletedByUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
-                        name: "FK_ProductImages_Users_UpdatedByUserId",
+                        name: "FK_ProductVariantImages_Users_UpdatedByUserId",
                         column: x => x.UpdatedByUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
@@ -1588,6 +1501,41 @@ namespace Backend.CMS.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_Categories_UpdatedByUserId",
                 table: "Categories",
+                column: "UpdatedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CategoryImages_CategoryId",
+                table: "CategoryImages",
+                column: "CategoryId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CategoryImages_CategoryId_IsFeatured",
+                table: "CategoryImages",
+                columns: new[] { "CategoryId", "IsFeatured" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CategoryImages_CategoryId_Position",
+                table: "CategoryImages",
+                columns: new[] { "CategoryId", "Position" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CategoryImages_CreatedByUserId",
+                table: "CategoryImages",
+                column: "CreatedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CategoryImages_DeletedByUserId",
+                table: "CategoryImages",
+                column: "DeletedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CategoryImages_FileId",
+                table: "CategoryImages",
+                column: "FileId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_CategoryImages_UpdatedByUserId",
+                table: "CategoryImages",
                 column: "UpdatedByUserId");
 
             migrationBuilder.CreateIndex(
@@ -2034,9 +1982,9 @@ namespace Backend.CMS.Infrastructure.Migrations
                 column: "DeletedByUserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_ProductImages_Position",
+                name: "IX_ProductImages_FileId",
                 table: "ProductImages",
-                column: "Position");
+                column: "FileId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_ProductImages_ProductId",
@@ -2044,9 +1992,14 @@ namespace Backend.CMS.Infrastructure.Migrations
                 column: "ProductId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_ProductImages_ProductVariantId",
+                name: "IX_ProductImages_ProductId_IsFeatured",
                 table: "ProductImages",
-                column: "ProductVariantId");
+                columns: new[] { "ProductId", "IsFeatured" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ProductImages_ProductId_Position",
+                table: "ProductImages",
+                columns: new[] { "ProductId", "Position" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_ProductImages_UpdatedByUserId",
@@ -2154,6 +2107,41 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "IX_Products_Vendor",
                 table: "Products",
                 column: "Vendor");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ProductVariantImages_CreatedByUserId",
+                table: "ProductVariantImages",
+                column: "CreatedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ProductVariantImages_DeletedByUserId",
+                table: "ProductVariantImages",
+                column: "DeletedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ProductVariantImages_FileId",
+                table: "ProductVariantImages",
+                column: "FileId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ProductVariantImages_ProductVariantId",
+                table: "ProductVariantImages",
+                column: "ProductVariantId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ProductVariantImages_ProductVariantId_IsFeatured",
+                table: "ProductVariantImages",
+                columns: new[] { "ProductVariantId", "IsFeatured" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ProductVariantImages_ProductVariantId_Position",
+                table: "ProductVariantImages",
+                columns: new[] { "ProductVariantId", "Position" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ProductVariantImages_UpdatedByUserId",
+                table: "ProductVariantImages",
+                column: "UpdatedByUserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_ProductVariants_CreatedByUserId",
@@ -2321,6 +2309,11 @@ namespace Backend.CMS.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_Users_AvatarFileId",
+                table: "Users",
+                column: "AvatarFileId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Users_CreatedByUserId",
                 table: "Users",
                 column: "CreatedByUserId");
@@ -2382,13 +2375,304 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "IX_UserSessions_UserId_IsRevoked_ExpiresAt",
                 table: "UserSessions",
                 columns: new[] { "UserId", "IsRevoked", "ExpiresAt" });
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Addresses_Companies_CompanyId",
+                table: "Addresses",
+                column: "CompanyId",
+                principalTable: "Companies",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Addresses_Locations_LocationId",
+                table: "Addresses",
+                column: "LocationId",
+                principalTable: "Locations",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Addresses_Users_CreatedByUserId",
+                table: "Addresses",
+                column: "CreatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Addresses_Users_DeletedByUserId",
+                table: "Addresses",
+                column: "DeletedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Addresses_Users_UpdatedByUserId",
+                table: "Addresses",
+                column: "UpdatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Addresses_Users_UserId",
+                table: "Addresses",
+                column: "UserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Categories_Users_CreatedByUserId",
+                table: "Categories",
+                column: "CreatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Categories_Users_DeletedByUserId",
+                table: "Categories",
+                column: "DeletedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Categories_Users_UpdatedByUserId",
+                table: "Categories",
+                column: "UpdatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_CategoryImages_Files_FileId",
+                table: "CategoryImages",
+                column: "FileId",
+                principalTable: "Files",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_CategoryImages_Users_CreatedByUserId",
+                table: "CategoryImages",
+                column: "CreatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_CategoryImages_Users_DeletedByUserId",
+                table: "CategoryImages",
+                column: "DeletedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_CategoryImages_Users_UpdatedByUserId",
+                table: "CategoryImages",
+                column: "UpdatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Companies_Users_CreatedByUserId",
+                table: "Companies",
+                column: "CreatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Companies_Users_DeletedByUserId",
+                table: "Companies",
+                column: "DeletedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Companies_Users_UpdatedByUserId",
+                table: "Companies",
+                column: "UpdatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ComponentTemplates_Users_CreatedByUserId",
+                table: "ComponentTemplates",
+                column: "CreatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ComponentTemplates_Users_DeletedByUserId",
+                table: "ComponentTemplates",
+                column: "DeletedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ComponentTemplates_Users_UpdatedByUserId",
+                table: "ComponentTemplates",
+                column: "UpdatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ContactDetails_Locations_LocationId",
+                table: "ContactDetails",
+                column: "LocationId",
+                principalTable: "Locations",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ContactDetails_Users_CreatedByUserId",
+                table: "ContactDetails",
+                column: "CreatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ContactDetails_Users_DeletedByUserId",
+                table: "ContactDetails",
+                column: "DeletedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ContactDetails_Users_UpdatedByUserId",
+                table: "ContactDetails",
+                column: "UpdatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ContactDetails_Users_UserId",
+                table: "ContactDetails",
+                column: "UserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_FileAccess_Files_FileId",
+                table: "FileAccess",
+                column: "FileId",
+                principalTable: "Files",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_FileAccess_Users_CreatedByUserId",
+                table: "FileAccess",
+                column: "CreatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_FileAccess_Users_DeletedByUserId",
+                table: "FileAccess",
+                column: "DeletedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_FileAccess_Users_UpdatedByUserId",
+                table: "FileAccess",
+                column: "UpdatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_FileAccess_Users_UserId",
+                table: "FileAccess",
+                column: "UserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Files_Folders_FolderId",
+                table: "Files",
+                column: "FolderId",
+                principalTable: "Folders",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Files_Users_CreatedByUserId",
+                table: "Files",
+                column: "CreatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Files_Users_DeletedByUserId",
+                table: "Files",
+                column: "DeletedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_Files_Users_UpdatedByUserId",
+                table: "Files",
+                column: "UpdatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropForeignKey(
+                name: "FK_Files_Users_CreatedByUserId",
+                table: "Files");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_Files_Users_DeletedByUserId",
+                table: "Files");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_Files_Users_UpdatedByUserId",
+                table: "Files");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_Folders_Users_CreatedByUserId",
+                table: "Folders");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_Folders_Users_DeletedByUserId",
+                table: "Folders");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_Folders_Users_UpdatedByUserId",
+                table: "Folders");
+
             migrationBuilder.DropTable(
                 name: "Addresses");
+
+            migrationBuilder.DropTable(
+                name: "CategoryImages");
 
             migrationBuilder.DropTable(
                 name: "ComponentTemplates");
@@ -2424,6 +2708,9 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "ProductOptionValues");
 
             migrationBuilder.DropTable(
+                name: "ProductVariantImages");
+
+            migrationBuilder.DropTable(
                 name: "RolePermissions");
 
             migrationBuilder.DropTable(
@@ -2439,9 +2726,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "UserSessions");
 
             migrationBuilder.DropTable(
-                name: "Files");
-
-            migrationBuilder.DropTable(
                 name: "Locations");
 
             migrationBuilder.DropTable(
@@ -2451,16 +2735,13 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "Categories");
 
             migrationBuilder.DropTable(
-                name: "ProductVariants");
-
-            migrationBuilder.DropTable(
                 name: "ProductOptions");
 
             migrationBuilder.DropTable(
-                name: "Permissions");
+                name: "ProductVariants");
 
             migrationBuilder.DropTable(
-                name: "Folders");
+                name: "Permissions");
 
             migrationBuilder.DropTable(
                 name: "Companies");
@@ -2470,6 +2751,12 @@ namespace Backend.CMS.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "Users");
+
+            migrationBuilder.DropTable(
+                name: "Files");
+
+            migrationBuilder.DropTable(
+                name: "Folders");
         }
     }
 }

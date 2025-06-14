@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Backend.CMS.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContextWithCacheInvalidation))]
-    [Migration("20250613173633_init")]
+    [Migration("20250614115421_init")]
     partial class init
     {
         /// <inheritdoc />
@@ -156,10 +156,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
-                    b.Property<string>("Image")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
@@ -225,6 +221,74 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.HasIndex("IsActive", "IsVisible");
 
                     b.ToTable("Categories");
+                });
+
+            modelBuilder.Entity("Backend.CMS.Domain.Entities.CategoryImage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Alt")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("Caption")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DeletedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FileId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsFeatured")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("DeletedByUserId");
+
+                    b.HasIndex("FileId");
+
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.HasIndex("CategoryId", "IsFeatured");
+
+                    b.HasIndex("CategoryId", "Position");
+
+                    b.ToTable("CategoryImages");
                 });
 
             modelBuilder.Entity("Backend.CMS.Domain.Entities.Company", b =>
@@ -1714,8 +1778,12 @@ namespace Backend.CMS.Infrastructure.Migrations
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
                     b.Property<string>("Alt")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("Caption")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1729,23 +1797,19 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.Property<int?>("DeletedByUserId")
                         .HasColumnType("integer");
 
-                    b.Property<int?>("Height")
+                    b.Property<int>("FileId")
                         .HasColumnType("integer");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("OriginalSource")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                    b.Property<bool>("IsFeatured")
+                        .HasColumnType("boolean");
 
                     b.Property<int>("Position")
                         .HasColumnType("integer");
 
                     b.Property<int>("ProductId")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("ProductVariantId")
                         .HasColumnType("integer");
 
                     b.Property<DateTime>("UpdatedAt")
@@ -1754,27 +1818,21 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.Property<int?>("UpdatedByUserId")
                         .HasColumnType("integer");
 
-                    b.Property<string>("Url")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<int?>("Width")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByUserId");
 
                     b.HasIndex("DeletedByUserId");
 
-                    b.HasIndex("Position");
+                    b.HasIndex("FileId");
 
                     b.HasIndex("ProductId");
 
-                    b.HasIndex("ProductVariantId");
-
                     b.HasIndex("UpdatedByUserId");
+
+                    b.HasIndex("ProductId", "IsFeatured");
+
+                    b.HasIndex("ProductId", "Position");
 
                     b.ToTable("ProductImages");
                 });
@@ -1926,10 +1984,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.Property<int?>("DeletedByUserId")
                         .HasColumnType("integer");
 
-                    b.Property<string>("Image")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
                     b.Property<bool>("IsDefault")
                         .HasColumnType("boolean");
 
@@ -2010,6 +2064,74 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.HasIndex("ProductId", "Position");
 
                     b.ToTable("ProductVariants");
+                });
+
+            modelBuilder.Entity("Backend.CMS.Domain.Entities.ProductVariantImage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Alt")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("Caption")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("CreatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DeletedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("FileId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsFeatured")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ProductVariantId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("UpdatedByUserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("DeletedByUserId");
+
+                    b.HasIndex("FileId");
+
+                    b.HasIndex("ProductVariantId");
+
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.HasIndex("ProductVariantId", "IsFeatured");
+
+                    b.HasIndex("ProductVariantId", "Position");
+
+                    b.ToTable("ProductVariantImages");
                 });
 
             modelBuilder.Entity("Backend.CMS.Domain.Entities.RolePermission", b =>
@@ -2169,9 +2291,8 @@ namespace Backend.CMS.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("Avatar")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
+                    b.Property<int?>("AvatarFileId")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -2258,10 +2379,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
-                    b.Property<string>("ProfilePictureUrl")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
                     b.Property<string>("RecoveryCodes")
                         .IsRequired()
                         .HasColumnType("jsonb");
@@ -2294,6 +2411,8 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .HasColumnType("character varying(256)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AvatarFileId");
 
                     b.HasIndex("CreatedByUserId");
 
@@ -2585,6 +2704,40 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("ParentCategory");
+                });
+
+            modelBuilder.Entity("Backend.CMS.Domain.Entities.CategoryImage", b =>
+                {
+                    b.HasOne("Backend.CMS.Domain.Entities.Category", "Category")
+                        .WithMany("Images")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("DeletedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Backend.CMS.Domain.Entities.FileEntity", "File")
+                        .WithMany()
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Category");
+
+                    b.Navigation("File");
                 });
 
             modelBuilder.Entity("Backend.CMS.Domain.Entities.Company", b =>
@@ -3001,25 +3154,26 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .HasForeignKey("DeletedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("Backend.CMS.Domain.Entities.FileEntity", "File")
+                        .WithMany()
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("Backend.CMS.Domain.Entities.Product", "Product")
                         .WithMany("Images")
                         .HasForeignKey("ProductId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("Backend.CMS.Domain.Entities.ProductVariant", "ProductVariant")
-                        .WithMany()
-                        .HasForeignKey("ProductVariantId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("Backend.CMS.Domain.Entities.User", null)
                         .WithMany()
                         .HasForeignKey("UpdatedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.Navigation("Product");
+                    b.Navigation("File");
 
-                    b.Navigation("ProductVariant");
+                    b.Navigation("Product");
                 });
 
             modelBuilder.Entity("Backend.CMS.Domain.Entities.ProductOption", b =>
@@ -3100,6 +3254,40 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.Navigation("Product");
                 });
 
+            modelBuilder.Entity("Backend.CMS.Domain.Entities.ProductVariantImage", b =>
+                {
+                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("DeletedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Backend.CMS.Domain.Entities.FileEntity", "File")
+                        .WithMany()
+                        .HasForeignKey("FileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Backend.CMS.Domain.Entities.ProductVariant", "ProductVariant")
+                        .WithMany("Images")
+                        .HasForeignKey("ProductVariantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("File");
+
+                    b.Navigation("ProductVariant");
+                });
+
             modelBuilder.Entity("Backend.CMS.Domain.Entities.RolePermission", b =>
                 {
                     b.HasOne("Backend.CMS.Domain.Entities.User", null)
@@ -3142,6 +3330,16 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("UpdatedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("Backend.CMS.Domain.Entities.User", b =>
+                {
+                    b.HasOne("Backend.CMS.Domain.Entities.FileEntity", "AvatarFile")
+                        .WithMany()
+                        .HasForeignKey("AvatarFileId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("AvatarFile");
                 });
 
             modelBuilder.Entity("Backend.CMS.Domain.Entities.UserExternalLogin", b =>
@@ -3232,6 +3430,8 @@ namespace Backend.CMS.Infrastructure.Migrations
 
             modelBuilder.Entity("Backend.CMS.Domain.Entities.Category", b =>
                 {
+                    b.Navigation("Images");
+
                     b.Navigation("ProductCategories");
 
                     b.Navigation("SubCategories");
@@ -3295,6 +3495,11 @@ namespace Backend.CMS.Infrastructure.Migrations
             modelBuilder.Entity("Backend.CMS.Domain.Entities.ProductOption", b =>
                 {
                     b.Navigation("Values");
+                });
+
+            modelBuilder.Entity("Backend.CMS.Domain.Entities.ProductVariant", b =>
+                {
+                    b.Navigation("Images");
                 });
 
             modelBuilder.Entity("Backend.CMS.Domain.Entities.User", b =>
