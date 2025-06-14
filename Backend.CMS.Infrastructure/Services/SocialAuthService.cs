@@ -19,6 +19,7 @@ namespace Backend.CMS.Infrastructure.Services
     {
         private readonly IUserRepository _userRepository;
         private readonly IRepository<UserExternalLogin> _externalLoginRepository;
+        private readonly IRepository<FileEntity> _fileRepository;
         private readonly IAuthService _authService;
         private readonly IUserService _userService;
         private readonly IHttpContextAccessor _httpContextAccessor;
@@ -30,6 +31,7 @@ namespace Backend.CMS.Infrastructure.Services
         public SocialAuthService(
             IUserRepository userRepository,
             IRepository<UserExternalLogin> externalLoginRepository,
+            IRepository<FileEntity> fileRepository,
             IAuthService authService,
             IUserService userService,
             IHttpContextAccessor httpContextAccessor,
@@ -40,6 +42,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             _userRepository = userRepository;
             _externalLoginRepository = externalLoginRepository;
+            _fileRepository = fileRepository;
             _authService = authService;
             _userService = userService;
             _httpContextAccessor = httpContextAccessor;
@@ -260,7 +263,7 @@ namespace Backend.CMS.Infrastructure.Services
                     Name = userInfo.GetProperty("name").GetString() ?? string.Empty,
                     FirstName = userInfo.TryGetProperty("given_name", out var givenName) ? givenName.GetString() : null,
                     LastName = userInfo.TryGetProperty("family_name", out var familyName) ? familyName.GetString() : null,
-                    Picture = userInfo.TryGetProperty("picture", out var picture) ? picture.GetString() : null,
+                    Picture = null, // Handle picture file creation separately
                     EmailVerified = userInfo.TryGetProperty("verified_email", out var verified) && verified.GetBoolean(),
                     Provider = "Google"
                 };
@@ -283,14 +286,6 @@ namespace Backend.CMS.Infrastructure.Services
                 var json = await response.Content.ReadAsStringAsync();
                 var userInfo = JsonSerializer.Deserialize<JsonElement>(json);
 
-                var pictureUrl = string.Empty;
-                if (userInfo.TryGetProperty("picture", out var pictureObj) &&
-                    pictureObj.TryGetProperty("data", out var pictureData) &&
-                    pictureData.TryGetProperty("url", out var picUrl))
-                {
-                    pictureUrl = picUrl.GetString();
-                }
-
                 return new SocialUserInfoDto
                 {
                     Id = userInfo.GetProperty("id").GetString() ?? string.Empty,
@@ -298,7 +293,7 @@ namespace Backend.CMS.Infrastructure.Services
                     Name = userInfo.GetProperty("name").GetString() ?? string.Empty,
                     FirstName = userInfo.TryGetProperty("first_name", out var firstName) ? firstName.GetString() : null,
                     LastName = userInfo.TryGetProperty("last_name", out var lastName) ? lastName.GetString() : null,
-                    Picture = pictureUrl,
+                    Picture = null, // Handle picture file creation separately
                     EmailVerified = true, // Facebook emails are generally verified
                     Provider = "Facebook"
                 };
@@ -320,8 +315,8 @@ namespace Backend.CMS.Infrastructure.Services
                 FirstName = socialUserInfo.FirstName ?? ExtractFirstName(socialUserInfo.Name),
                 LastName = socialUserInfo.LastName ?? ExtractLastName(socialUserInfo.Name),
                 IsActive = true,
-                Role = UserRole.Customer,
-                Avatar = socialUserInfo.Picture
+                Role = UserRole.Customer
+                // Note: Avatar will be handled separately if needed
             };
 
             var userDto = await _userService.CreateUserAsync(createUserDto);
@@ -332,7 +327,7 @@ namespace Backend.CMS.Infrastructure.Services
                 // Mark as external user and email verified
                 user.IsExternalUser = true;
                 user.EmailVerifiedAt = DateTime.UtcNow;
-                user.AvatarFile = socialUserInfo.Picture;
+                // Note: Avatar file handling would be done separately if needed
                 user.UpdatedAt = DateTime.UtcNow;
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
@@ -359,7 +354,7 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     ["email"] = socialUserInfo.Email,
                     ["name"] = socialUserInfo.Name,
-                    ["picture"] = socialUserInfo.Picture ?? new FileEntity(),
+                    ["picture"] = socialUserInfo.Picture?.Id.ToString() ?? string.Empty, // Store file ID as string
                     ["email_verified"] = socialUserInfo.EmailVerified
                 },
                 CreatedAt = DateTime.UtcNow,
@@ -385,7 +380,7 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     ["email"] = socialUserInfo.Email,
                     ["name"] = socialUserInfo.Name,
-                    ["picture"] = socialUserInfo.Picture ?? new FileEntity(),
+                    ["picture"] = socialUserInfo.Picture?.Id.ToString() ?? string.Empty, // Store file ID as string
                     ["email_verified"] = socialUserInfo.EmailVerified
                 };
                 externalLogin.UpdatedAt = DateTime.UtcNow;

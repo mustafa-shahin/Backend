@@ -29,15 +29,10 @@ namespace Backend.CMS.Infrastructure.IRepositories
         void RemoveRange(IEnumerable<T> entities);
         Task<bool> SoftDeleteAsync(int id, int? deletedByUserId = null);
         Task<bool> SoftDeleteAsync(T entity, int? deletedByUserId = null);
+        Task<bool> SoftDeleteRangeAsync(IEnumerable<T> entities, int? deletedByUserId = null);
         Task<bool> RestoreAsync(int id, int? restoredByUserId = null);
         Task<bool> RestoreAsync(T entity, int? restoredByUserId = null);
         Task<int> SaveChangesAsync();
-
-        // ADD ONLY THIS ONE METHOD:
-
-        /// <summary>
-        /// Gets the queryable for advanced queries (excludes soft deleted)
-        /// </summary>
         IQueryable<T> GetQueryable();
     }
 }

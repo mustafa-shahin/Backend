@@ -1,4 +1,5 @@
-﻿using Backend.CMS.Domain.Enums;
+﻿using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Enums;
 
 namespace Backend.CMS.Application.DTOs
 {
@@ -41,6 +42,7 @@ namespace Backend.CMS.Application.DTOs
         public Dictionary<string, object> Preferences { get; set; } = [];
         public List<CreateAddressDto> Addresses { get; set; } = [];
         public List<CreateContactDetailsDto> ContactDetails { get; set; } = [];
+        public FileEntity? Avatar { get; set; }
     }
 
     public class UpdateUserDto

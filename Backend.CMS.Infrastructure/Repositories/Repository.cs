@@ -154,6 +154,24 @@ namespace Backend.CMS.Infrastructure.Repositories
             return true;
         }
 
+        public virtual async Task<bool> SoftDeleteRangeAsync(IEnumerable<T> entities, int? deletedByUserId = null)
+        {
+            if (!entities.Any()) return true;
+
+            foreach (var entity in entities)
+            {
+                entity.IsDeleted = true;
+                entity.DeletedAt = DateTime.UtcNow;
+                entity.DeletedByUserId = deletedByUserId;
+                entity.UpdatedAt = DateTime.UtcNow;
+                entity.UpdatedByUserId = deletedByUserId;
+            }
+
+            UpdateRange(entities);
+            await SaveChangesAsync();
+            return true;
+        }
+
         public virtual async Task<bool> RestoreAsync(int id, int? restoredByUserId = null)
         {
             var entity = await GetByIdIncludeDeletedAsync(id);
@@ -179,10 +197,12 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             return await _context.SaveChangesAsync();
         }
+
         public IQueryable<T> GetQueryable()
         {
             return _dbSet.Where(e => !e.IsDeleted);
         }
+
         public async Task<IEnumerable<T>> FindWithOrderingAsync(
         Expression<Func<T, bool>>? predicate = null,
         Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy = null,

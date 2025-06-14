@@ -489,7 +489,7 @@ namespace Backend.CMS.Infrastructure.Validation
     }
     #endregion
 
-  
+
 
     #region Component Template Validators
     public class CreateComponentTemplateDtoValidator : AbstractValidator<Application.DTOs.Components.CreateComponentTemplateDto>
@@ -1316,7 +1316,7 @@ namespace Backend.CMS.Infrastructure.Validation
                 .GreaterThanOrEqualTo(0).WithMessage("Quantity must be greater than or equal to 0");
 
             RuleFor(x => x.Weight)
-                .GreaterThanOrEqualTo(0).WithMessage("Weight must be greater than or equal to 0");
+                 .GreaterThanOrEqualTo(0).WithMessage("Weight must be greater than or equal to 0");
 
             RuleFor(x => x.WeightUnit)
                 .MaximumLength(10).WithMessage("Weight unit cannot exceed 10 characters")
@@ -1325,7 +1325,6 @@ namespace Backend.CMS.Infrastructure.Validation
             RuleFor(x => x.Barcode)
                 .MaximumLength(100).WithMessage("Barcode cannot exceed 100 characters")
                 .When(x => !string.IsNullOrEmpty(x.Barcode));
-
 
             RuleFor(x => x.Option1)
                 .MaximumLength(100).WithMessage("Option 1 cannot exceed 100 characters")
@@ -1350,22 +1349,19 @@ namespace Backend.CMS.Infrastructure.Validation
     {
         public CreateProductImageDtoValidator()
         {
+            RuleFor(x => x.FileId)
+                .GreaterThan(0).WithMessage("File ID must be greater than 0");
 
             RuleFor(x => x.Alt)
                 .MaximumLength(200).WithMessage("Alt text cannot exceed 200 characters")
                 .When(x => !string.IsNullOrEmpty(x.Alt));
 
-            RuleFor(x => x.Width)
-                .GreaterThan(0).WithMessage("Width must be greater than 0")
-                .When(x => x.Width.HasValue);
+            RuleFor(x => x.Caption)
+                .MaximumLength(500).WithMessage("Caption cannot exceed 500 characters")
+                .When(x => !string.IsNullOrEmpty(x.Caption));
 
-            RuleFor(x => x.Height)
-                .GreaterThan(0).WithMessage("Height must be greater than 0")
-                .When(x => x.Height.HasValue);
-
-            RuleFor(x => x.OriginalSource)
-                .MaximumLength(500).WithMessage("Original source cannot exceed 500 characters")
-                .When(x => !string.IsNullOrEmpty(x.OriginalSource));
+            RuleFor(x => x.Position)
+                .GreaterThanOrEqualTo(0).WithMessage("Position must be greater than or equal to 0");
         }
     }
 
@@ -1373,25 +1369,19 @@ namespace Backend.CMS.Infrastructure.Validation
     {
         public UpdateProductImageDtoValidator()
         {
-            RuleFor(x => x.Url)
-                .NotEmpty().WithMessage("Image URL is required")
-                .MaximumLength(500).WithMessage("URL cannot exceed 500 characters");
+            RuleFor(x => x.FileId)
+                .GreaterThan(0).WithMessage("File ID must be greater than 0");
 
             RuleFor(x => x.Alt)
                 .MaximumLength(200).WithMessage("Alt text cannot exceed 200 characters")
                 .When(x => !string.IsNullOrEmpty(x.Alt));
 
-            RuleFor(x => x.Width)
-                .GreaterThan(0).WithMessage("Width must be greater than 0")
-                .When(x => x.Width.HasValue);
+            RuleFor(x => x.Caption)
+                .MaximumLength(500).WithMessage("Caption cannot exceed 500 characters")
+                .When(x => !string.IsNullOrEmpty(x.Caption));
 
-            RuleFor(x => x.Height)
-                .GreaterThan(0).WithMessage("Height must be greater than 0")
-                .When(x => x.Height.HasValue);
-
-            RuleFor(x => x.OriginalSource)
-                .MaximumLength(500).WithMessage("Original source cannot exceed 500 characters")
-                .When(x => !string.IsNullOrEmpty(x.OriginalSource));
+            RuleFor(x => x.Position)
+                .GreaterThanOrEqualTo(0).WithMessage("Position must be greater than or equal to 0");
         }
     }
     #endregion
