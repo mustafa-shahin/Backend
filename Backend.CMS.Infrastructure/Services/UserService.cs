@@ -63,7 +63,7 @@ namespace Backend.CMS.Infrastructure.Services
             return _mapper.Map<UserDto>(user);
         }
 
-        public async Task<(List<UserListDto> users, int totalCount)> GetUsersAsync(int page = 1, int pageSize = 10, string? search = null)
+        public async Task<(List<UserDto> users, int totalCount)> GetUsersAsync(int page = 1, int pageSize = 10, string? search = null)
         {
             var totalCount = string.IsNullOrEmpty(search)
                 ? await _userRepository.CountAsync()
@@ -73,7 +73,7 @@ namespace Backend.CMS.Infrastructure.Services
                 ? await _userRepository.GetPagedWithRelatedAsync(page, pageSize)
                 : await _userRepository.SearchUsersAsync(search, page, pageSize);
 
-            var userDtos = _mapper.Map<List<UserListDto>>(users);
+            var userDtos = _mapper.Map<List<UserDto>>(users);
 
             return (userDtos, totalCount);
         }

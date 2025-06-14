@@ -92,14 +92,19 @@ namespace Backend.CMS.Infrastructure.Services
             });
         }
 
-        public async Task<List<ProductListDto>> GetProductsAsync()
+        public async Task<List<ProductDto>> GetProductsAsync()
         {
             var cacheKey = CacheKeys.ProductsList();
+            var test = await _cacheService.GetAsync(cacheKey, async () =>
+            {
+                var products = await _productRepository.GetAllAsync();
+                return _mapper.Map<List<ProductDto>>(products);
+            }) ?? new List<ProductDto>();
             return await _cacheService.GetAsync(cacheKey, async () =>
             {
                 var products = await _productRepository.GetAllAsync();
-                return _mapper.Map<List<ProductListDto>>(products);
-            }) ?? new List<ProductListDto>();
+                return _mapper.Map<List<ProductDto>>(products);
+            }) ?? new List<ProductDto>();
         }
 
 
@@ -268,10 +273,10 @@ namespace Backend.CMS.Infrastructure.Services
             return true;
         }
 
-        public async Task<List<ProductListDto>> SearchProductsAsync(ProductSearchDto searchDto)
+        public async Task<List<ProductDto>> SearchProductsAsync(ProductSearchDto searchDto)
         {
             var products = await _productRepository.SearchProductsAsync(searchDto);
-            return _mapper.Map<List<ProductListDto>>(products);
+            return _mapper.Map<List<ProductDto>>(products);
         }
 
         public async Task<int> GetSearchCountAsync(ProductSearchDto searchDto)

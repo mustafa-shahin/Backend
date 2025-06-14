@@ -6,12 +6,12 @@ namespace Backend.CMS.Application.Interfaces
     {
         Task<ProductDto?> GetProductByIdAsync(int productId);
         Task<ProductDto?> GetProductBySlugAsync(string slug);
-        Task<List<ProductListDto>> GetProductsAsync();
+        Task<List<ProductDto>> GetProductsAsync();
         Task<List<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 20);
         Task<ProductDto> CreateProductAsync(CreateProductDto createProductDto);
         Task<ProductDto> UpdateProductAsync(int productId, UpdateProductDto updateProductDto);
         Task<bool> DeleteProductAsync(int productId);
-        Task<List<ProductListDto>> SearchProductsAsync(ProductSearchDto searchDto);
+        Task<List<ProductDto>> SearchProductsAsync(ProductSearchDto searchDto);
         Task<int> GetSearchCountAsync(ProductSearchDto searchDto);
         Task<bool> ValidateSlugAsync(string slug, int? excludeProductId = null);
         Task<bool> ValidateSKUAsync(string sku, int? excludeProductId = null);

@@ -43,7 +43,7 @@ namespace Backend.CMS.API.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult<PagedResult<UserListDto>>> GetUsers(
+        public async Task<ActionResult<PagedResult<UserDto>>> GetUsers(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? search = null)
@@ -52,7 +52,7 @@ namespace Backend.CMS.API.Controllers
             {
                 var (users, totalCount) = await _userService.GetUsersAsync(page, pageSize, search);
 
-                var result = new PagedResult<UserListDto>
+                var result = new PagedResult<UserDto>
                 {
                     Items = users,
                     Page = page,

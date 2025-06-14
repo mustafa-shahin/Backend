@@ -30,7 +30,7 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpGet]
         [AllowAnonymous]
-        public async Task<ActionResult<PagedResult<ProductListDto>>> GetProducts(
+        public async Task<ActionResult<PagedResult<ProductDto>>> GetProducts(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20)
         {
@@ -43,7 +43,7 @@ namespace Backend.CMS.API.Controllers
                     .Take(pageSize)
                     .ToList();
 
-                var result = new PagedResult<ProductListDto>
+                var result = new PagedResult<ProductDto>
                 {
                     Items = items,
                     Page = page,

@@ -10,7 +10,7 @@ namespace Backend.CMS.Application.Interfaces.Services
         Task<UserDto> GetUserByIdAsync(int userId);
         Task<UserDto> GetUserByEmailAsync(string email);
         Task<UserDto> GetUserByUsernameAsync(string username);
-        Task<(List<UserListDto> users, int totalCount)> GetUsersAsync(int page, int pageSize, string? search = null);
+        Task<(List<UserDto> users, int totalCount)> GetUsersAsync(int page, int pageSize, string? search = null);
         Task<UserDto> CreateUserAsync(CreateUserDto createUserDto);
         Task<UserDto> UpdateUserAsync(int userId, UpdateUserDto updateUserDto);
         Task<bool> DeleteUserAsync(int userId);
