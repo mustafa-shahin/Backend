@@ -5,6 +5,7 @@ namespace Backend.CMS.Application.Interfaces
     public interface IProductVariantService
     {
         Task<ProductVariantDto> GetVariantByIdAsync(int variantId);
+        Task<PagedResult<ProductVariantDto>> GetVariantsPagedAsync(int page = 1, int pageSize = 20);
         Task<ProductVariantDto?> GetVariantBySKUAsync(string sku);
         Task<List<ProductVariantDto>> GetVariantsByProductIdAsync(int productId);
         Task<ProductVariantDto?> GetDefaultVariantAsync(int productId);

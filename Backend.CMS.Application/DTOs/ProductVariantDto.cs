@@ -27,27 +27,22 @@
         public string? FeaturedImageUrl { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
-
         // Computed properties
-        public bool IsAvailable => Quantity > 0 || ContinueSellingWhenOutOfStock;
-        public decimal? DiscountPercentage => CompareAtPrice.HasValue && CompareAtPrice > Price ? Math.Round(((CompareAtPrice.Value - Price) / CompareAtPrice.Value) * 100, 2) : null;
-        public string DisplayTitle => !string.IsNullOrEmpty(Title) ? Title : GenerateVariantTitle();
-
-        private string GenerateVariantTitle()
-        {
-            var options = new[] { Option1, Option2, Option3 }.Where(o => !string.IsNullOrEmpty(o)).ToArray();
-            return options.Any() ? string.Join(" / ", options) : "Default";
-        }
+        public bool IsAvailable { get; set; }
+        public decimal? DiscountPercentage { get; set; }
+        public string DisplayTitle { get; set; } = string.Empty;
     }
+
 
     public class CreateProductVariantDto
     {
+        public int? ProductId { get; set; }
         public string Title { get; set; } = string.Empty;
         public string SKU { get; set; } = string.Empty;
         public decimal Price { get; set; }
         public decimal? CompareAtPrice { get; set; }
         public decimal? CostPerItem { get; set; }
-        public int Quantity { get; set; } = 0;
+        public int Quantity { get; set; }
         public bool TrackQuantity { get; set; } = true;
         public bool ContinueSellingWhenOutOfStock { get; set; } = false;
         public bool RequiresShipping { get; set; } = true;
@@ -89,6 +84,7 @@
         public List<UpdateProductVariantImageDto> Images { get; set; } = new();
     }
 
+
     public class ProductImageDto
     {
         public int Id { get; set; }
@@ -100,15 +96,18 @@
         public bool IsFeatured { get; set; }
         public string ImageUrl { get; set; } = string.Empty;
         public string? ThumbnailUrl { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
     }
+
 
     public class CreateProductImageDto
     {
         public int FileId { get; set; }
         public string? Alt { get; set; }
         public string? Caption { get; set; }
-        public int Position { get; set; } = 0;
-        public bool IsFeatured { get; set; } = false;
+        public int Position { get; set; }
+        public bool IsFeatured { get; set; }
     }
 
     public class UpdateProductImageDto
@@ -121,6 +120,8 @@
         public bool IsFeatured { get; set; }
     }
 
+
+
     public class ProductVariantImageDto
     {
         public int Id { get; set; }
@@ -132,15 +133,18 @@
         public bool IsFeatured { get; set; }
         public string ImageUrl { get; set; } = string.Empty;
         public string? ThumbnailUrl { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
     }
+
 
     public class CreateProductVariantImageDto
     {
         public int FileId { get; set; }
         public string? Alt { get; set; }
         public string? Caption { get; set; }
-        public int Position { get; set; } = 0;
-        public bool IsFeatured { get; set; } = false;
+        public int Position { get; set; }
+        public bool IsFeatured { get; set; }
     }
 
     public class UpdateProductVariantImageDto
@@ -160,12 +164,13 @@
         public string Name { get; set; } = string.Empty;
         public int Position { get; set; }
         public List<ProductOptionValueDto> Values { get; set; } = new();
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
     }
-
     public class CreateProductOptionDto
     {
         public string Name { get; set; } = string.Empty;
-        public int Position { get; set; } = 0;
+        public int Position { get; set; }
         public List<CreateProductOptionValueDto> Values { get; set; } = new();
     }
 
@@ -183,6 +188,8 @@
         public int ProductOptionId { get; set; }
         public string Value { get; set; } = string.Empty;
         public int Position { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
     }
 
     public class CreateProductOptionValueDto
@@ -208,7 +215,11 @@
         public int Id { get; set; }
         public int Position { get; set; }
     }
-
+    public class VariantPositionDto
+    {
+        public int Id { get; set; }
+        public int Position { get; set; }
+    }
     public class UpdateVariantStockDto
     {
         public int NewQuantity { get; set; }

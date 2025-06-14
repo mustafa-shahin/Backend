@@ -4,9 +4,10 @@ namespace Backend.CMS.Application.Interfaces
 {
     public interface IProductService
     {
-        Task<ProductDto> GetProductByIdAsync(int productId);
+        Task<ProductDto?> GetProductByIdAsync(int productId);
         Task<ProductDto?> GetProductBySlugAsync(string slug);
         Task<List<ProductListDto>> GetProductsAsync(int page = 1, int pageSize = 20);
+        Task<PagedResult<ProductListDto>> GetProductsPagedAsync(int page = 1, int pageSize = 20);
         Task<List<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 20);
         Task<ProductDto> CreateProductAsync(CreateProductDto createProductDto);
         Task<ProductDto> UpdateProductAsync(int productId, UpdateProductDto updateProductDto);

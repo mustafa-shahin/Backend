@@ -39,14 +39,43 @@ namespace Backend.CMS.Infrastructure.Services
         public async Task<ProductVariantDto> GetVariantByIdAsync(int variantId)
         {
             var cacheKey = CacheKeys.ProductVariantById(variantId);
+            var variant = await _cacheService.GetAsync(cacheKey, async () =>
+            {
+                var dbVariant = await _variantRepository.GetByIdAsync(variantId);
+                if (dbVariant == null)
+                    return null;
+
+                return _mapper.Map<ProductVariantDto>(dbVariant);
+            });
+
+            if (variant == null)
+                throw new ArgumentException($"Product variant with ID {variantId} not found");
+
+            return variant;
+        }
+
+        public async Task<PagedResult<ProductVariantDto>> GetVariantsPagedAsync(int page = 1, int pageSize = 20)
+        {
+            var cacheKey = $"variants:paged:{page}:{pageSize}";
             return await _cacheService.GetAsync(cacheKey, async () =>
             {
-                var variant = await _variantRepository.GetByIdAsync(variantId);
-                if (variant == null)
-                    throw new ArgumentException($"Product variant with ID {variantId} not found");
+                var variants = await _variantRepository.GetPagedAsync(page, pageSize);
+                var totalCount = await _variantRepository.CountAsync();
 
-                return _mapper.Map<ProductVariantDto>(variant);
-            });
+                return new PagedResult<ProductVariantDto>
+                {
+                    Items = _mapper.Map<List<ProductVariantDto>>(variants),
+                    Page = page,
+                    PageSize = pageSize,
+                    TotalCount = totalCount,
+                };
+            }) ?? new PagedResult<ProductVariantDto>
+            {
+                Items = new List<ProductVariantDto>(),
+                Page = page,
+                PageSize = pageSize,
+                TotalCount = 0,
+            };
         }
 
         public async Task<ProductVariantDto?> GetVariantBySKUAsync(string sku)

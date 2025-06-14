@@ -31,22 +31,12 @@ namespace Backend.CMS.API.Controllers
         [HttpGet]
         [AllowAnonymous]
         public async Task<ActionResult<PagedResult<ProductListDto>>> GetProducts(
-    [FromQuery] int page = 1,
-    [FromQuery] int pageSize = 20)
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
         {
             try
             {
-                var allProducts = await _productService.GetProductsAsync(page, pageSize);
-               
-
-                var result = new PagedResult<ProductListDto>
-                {
-                    Items = allProducts,
-                    Page = page,
-                    PageSize = pageSize,
-                    TotalCount = 10
-                };
-
+                var result = await _productService.GetProductsAsync();
                 return Ok(result);
             }
             catch (Exception ex)
@@ -66,6 +56,9 @@ namespace Backend.CMS.API.Controllers
             try
             {
                 var product = await _productService.GetProductByIdAsync(id);
+                if (product == null)
+                    return NotFound(new { Message = $"Product with ID {id} not found" });
+
                 return Ok(product);
             }
             catch (ArgumentException ex)
@@ -218,6 +211,39 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
+                // Log the incoming request for debugging
+                _logger.LogInformation("CreateProduct called with data: {@CreateProductDto}", createProductDto);
+
+                // Validate the model state
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.SelectMany(x => x.Value.Errors).Select(x => x.ErrorMessage);
+                    _logger.LogWarning("Model validation failed: {Errors}", string.Join(", ", errors));
+                    return BadRequest(new { Message = "Validation failed", Errors = errors });
+                }
+
+                // Additional validation
+                if (createProductDto == null)
+                {
+                    _logger.LogWarning("CreateProductDto is null");
+                    return BadRequest(new { Message = "Product data is required" });
+                }
+
+                if (string.IsNullOrWhiteSpace(createProductDto.Name))
+                {
+                    return BadRequest(new { Message = "Product name is required" });
+                }
+
+                if (string.IsNullOrWhiteSpace(createProductDto.SKU))
+                {
+                    return BadRequest(new { Message = "Product SKU is required" });
+                }
+
+                if (string.IsNullOrWhiteSpace(createProductDto.Slug))
+                {
+                    return BadRequest(new { Message = "Product slug is required" });
+                }
+
                 var product = await _productService.CreateProductAsync(createProductDto);
                 return CreatedAtAction(nameof(GetProduct), new { id = product.Id }, product);
             }

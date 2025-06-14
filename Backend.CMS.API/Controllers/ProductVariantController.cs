@@ -22,6 +22,27 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
+        /// Get all variants with pagination
+        /// </summary>
+        [HttpGet]
+        [AllowAnonymous]
+        public async Task<ActionResult<PagedResult<ProductVariantDto>>> GetVariants(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20)
+        {
+            try
+            {
+                var result = await _variantService.GetVariantsPagedAsync(page, pageSize);
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving variants");
+                return StatusCode(500, new { Message = "An error occurred while retrieving variants" });
+            }
+        }
+
+        /// <summary>
         /// Get variant by ID
         /// </summary>
         [HttpGet("{id:int}")]
@@ -31,6 +52,9 @@ namespace Backend.CMS.API.Controllers
             try
             {
                 var variant = await _variantService.GetVariantByIdAsync(id);
+                if (variant == null)
+                    return NotFound(new { Message = $"Variant with ID {id} not found" });
+
                 return Ok(variant);
             }
             catch (ArgumentException ex)
@@ -128,6 +152,34 @@ namespace Backend.CMS.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creating variant for product {ProductId}", productId);
+                return StatusCode(500, new { Message = "An error occurred while creating the variant" });
+            }
+        }
+
+        /// <summary>
+        /// Create a new variant (standalone)
+        /// </summary>
+        [HttpPost]
+        [AdminOrDev]
+        public async Task<ActionResult<ProductVariantDto>> CreateVariantStandalone([FromBody] CreateProductVariantDto createVariantDto)
+        {
+            try
+            {
+                // Extract productId from the DTO or require it
+                if (!createVariantDto.ProductId.HasValue)
+                    return BadRequest(new { Message = "ProductId is required" });
+
+                var variant = await _variantService.CreateVariantAsync(createVariantDto.ProductId.Value, createVariantDto);
+                return CreatedAtAction(nameof(GetVariant), new { id = variant.Id }, variant);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Variant creation failed: {Message}", ex.Message);
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating variant");
                 return StatusCode(500, new { Message = "An error occurred while creating the variant" });
             }
         }

@@ -110,20 +110,19 @@
         public static string CategoriesPattern => $"{CATEGORY_PREFIX}:*";
         #endregion
 
-        #region Product Cache Keys (if you're using the product catalog)
-        public static string ProductById(int productId) => $"{PRODUCT_PREFIX}:id:{productId}";
-        public static string ProductBySlug(string slug) => $"{PRODUCT_PREFIX}:slug:{slug}";
-        public static string ProductsList(int page, int pageSize) => $"{PRODUCT_PREFIX}:list:{page}:{pageSize}";
-        public static string ProductsByCategory(int categoryId, int page, int pageSize) => $"{PRODUCT_PREFIX}:category:{categoryId}:{page}:{pageSize}";
-        public static string FeaturedProducts(int count) => $"{PRODUCT_PREFIX}:featured:{count}";
-        public static string RelatedProducts(int productId, int count) => $"{PRODUCT_PREFIX}:related:{productId}:{count}";
-        public static string RecentProducts(int count) => $"{PRODUCT_PREFIX}:recent:{count}";
-        public static string ProductStatistics => $"{PRODUCT_PREFIX}:statistics";
-        public static string ProductPriceRange => $"{PRODUCT_PREFIX}:pricerange";
-        public static string ProductVendors => $"{PRODUCT_PREFIX}:vendors";
-        public static string ProductTags => $"{PRODUCT_PREFIX}:tags";
-        public static string ProductsPattern => $"{PRODUCT_PREFIX}:*";
-
+        #region Product Cache Keys 
+        public static string ProductById(int id) => $"product:id:{id}";
+        public static string ProductBySlug(string slug) => $"product:slug:{slug}";
+        public static string ProductsList(int page, int pageSize) => $"products:list:page:{page}:size:{pageSize}";
+        public static string ProductsByCategory(int categoryId, int page, int pageSize) => $"products:category:{categoryId}:page:{page}:size:{pageSize}";
+        public static string FeaturedProducts(int count) => $"products:featured:count:{count}";
+        public static string RelatedProducts(int productId, int count) => $"products:related:{productId}:count:{count}";
+        public static string RecentProducts(int count) => $"products:recent:count:{count}";
+        public static string ProductStatistics => "products:statistics";
+        public static string ProductPriceRange => "products:price-range";
+        public static string ProductVendors => "products:vendors";
+        public static string ProductTags => "products:tags";
+        public const string ProductsPattern = "products:*";
 
         #endregion
 
@@ -143,11 +142,11 @@
 
         #region ProductVariant Cache Keys
 
-        public static string ProductVariantById(int variantId) => $"{PRODUCT_VARIANT_PREFIX}:id:{variantId}";
-        public static string ProductVariantBySKU(string sku) => $"{PRODUCT_VARIANT_PREFIX}:sku:{sku}";
-        public static string ProductVariantsByProduct(int productId) => $"{PRODUCT_VARIANT_PREFIX}:product:{productId}";
-        public static string ProductDefaultVariant(int productId) => $"{PRODUCT_VARIANT_PREFIX}:default:{productId}";
-        public static string ProductVariantsPattern(int productId) => $"{PRODUCT_VARIANT_PREFIX}:product:{productId}:*";
+        public static string ProductVariantById(int id) => $"product-variant:id:{id}";
+        public static string ProductVariantBySKU(string sku) => $"product-variant:sku:{sku}";
+        public static string ProductVariantsByProduct(int productId) => $"product-variants:product:{productId}";
+        public static string ProductDefaultVariant(int productId) => $"product-variant:default:{productId}";
+        public static string ProductVariantsPattern(int productId) => $"product-variants:product:{productId}:*";
 
         #endregion
 
