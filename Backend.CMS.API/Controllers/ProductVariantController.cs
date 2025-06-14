@@ -1,6 +1,7 @@
 using Backend.CMS.API.Authorization;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Application.Interfaces;
+using Backend.CMS.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -398,6 +399,78 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error validating variant SKU");
                 return StatusCode(500, new { Message = "An error occurred while validating the SKU" });
+            }
+        }
+        [HttpPost("{id:int}/images")]
+        public async Task<IActionResult> AddVariantImage(int id, [FromBody] CreateProductVariantImageDto createImageDto)
+        {
+            try
+            {
+                var image = await _variantService.AddVariantImageAsync(id, createImageDto);
+                return CreatedAtAction(nameof(GetVariant), new { id }, image);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding image to variant {VariantId}", id);
+                return StatusCode(500, new { message = "Internal server error" });
+            }
+        }
+        [HttpPut("images/{imageId}")]
+        public async Task<IActionResult> UpdateVariantImage(int imageId, [FromBody] UpdateProductVariantImageDto updateImageDto)
+        {
+            try
+            {
+                updateImageDto.Id = imageId;
+                var image = await _variantService.UpdateVariantImageAsync(imageId, updateImageDto);
+                return Ok(image);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating variant image {ImageId}", imageId);
+                return StatusCode(500, new { message = "Internal server error" });
+            }
+        }
+        [HttpDelete("images/{imageId}")]
+        public async Task<IActionResult> DeleteVariantImage(int imageId)
+        {
+            try
+            {
+                var result = await _variantService.DeleteVariantImageAsync(imageId);
+                if (!result)
+                    return NotFound(new { message = "Variant image not found" });
+
+                return NoContent();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting variant image {ImageId}", imageId);
+                return StatusCode(500, new { message = "Internal server error" });
+            }
+        }
+        [HttpPost("{id}/images/reorder")]
+        public async Task<IActionResult> ReorderVariantImages(int id, [FromBody] List<(int ImageId, int Position)> imageOrders)
+        {
+            try
+            {
+                var images = await _variantService.ReorderVariantImagesAsync(id, imageOrders);
+                return Ok(images);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reordering variant images for variant {VariantId}", id);
+                return StatusCode(500, new { message = "Internal server error" });
             }
         }
     }

@@ -89,22 +89,17 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var product = await _productRepository.GetBySlugAsync(slug);
                 return product != null ? _mapper.Map<ProductDto>(product) : null;
-            });
+            }, cacheEmptyCollections: false);
         }
 
         public async Task<List<ProductDto>> GetProductsAsync()
         {
             var cacheKey = CacheKeys.ProductsList();
-            var test = await _cacheService.GetAsync(cacheKey, async () =>
-            {
-                var products = await _productRepository.GetAllAsync();
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? new List<ProductDto>();
             return await _cacheService.GetAsync(cacheKey, async () =>
             {
                 var products = await _productRepository.GetAllAsync();
                 return _mapper.Map<List<ProductDto>>(products);
-            }) ?? new List<ProductDto>();
+            }, cacheEmptyCollections: false) ?? [];
         }
 
 
@@ -115,7 +110,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var products = await _productRepository.GetByCategoryAsync(categoryId, page, pageSize);
                 return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+            }, cacheEmptyCollections: false) ?? [];
         }
 
         public async Task<ProductDto> CreateProductAsync(CreateProductDto createProductDto)
@@ -450,7 +445,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var products = await _productRepository.GetRelatedProductsAsync(productId, count);
                 return products != null ? _mapper.Map<List<ProductDto>>(products) : new List<ProductDto>();
-            }) ?? [];
+            }, cacheEmptyCollections: false) ?? [];
         }
 
         public async Task<List<ProductDto>> GetRecentProductsAsync(int count = 10)
@@ -460,7 +455,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var products = await _productRepository.GetRecentProductsAsync(count);
                 return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+            }, cacheEmptyCollections: false) ?? [];
         }
 
         public async Task<Dictionary<string, object>> GetProductStatisticsAsync()
@@ -481,7 +476,7 @@ namespace Backend.CMS.Infrastructure.Services
                     ["ArchivedProducts"] = archivedProducts,
                     ["LastUpdated"] = DateTime.UtcNow
                 } ?? [];
-            }) ?? [];
+            }, cacheEmptyCollections: false) ?? [];
         }
 
         public async Task<(decimal min, decimal max)> GetPriceRangeAsync()
@@ -492,7 +487,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var min = await _productRepository.GetMinPriceAsync();
                 var max = await _productRepository.GetMaxPriceAsync();
                 return new PriceRange { Min = min, Max = max };
-            });
+            }, cacheEmptyCollections: false);
 
             return priceRange == null
                 ? throw new InvalidOperationException("Price range data could not be retrieved.")
@@ -506,7 +501,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var vendors = await _productRepository.GetVendorsAsync();
                 return vendors.ToList();
-            }) ?? [];
+            }, cacheEmptyCollections: false) ?? [];
         }
 
         public async Task<List<string>> GetTagsAsync()
@@ -516,7 +511,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var tags = await _productRepository.GetTagsAsync();
                 return tags.ToList();
-            }) ?? [];
+            }, cacheEmptyCollections: false) ?? [];
         }
 
         public async Task UpdateStockAsync(int productId, int? variantId, int newQuantity)
@@ -777,6 +772,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             await _cacheService.RemoveByPatternAsync(CacheKeys.ProductsPattern);
         }
+
     }
 
     // Helper class for caching price range

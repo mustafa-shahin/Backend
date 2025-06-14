@@ -11,6 +11,28 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
         }
 
+        public override async Task<Category?> GetByIdAsync(int id)
+        {
+            return await _dbSet
+                .Include(c => c.ParentCategory)
+                .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .FirstOrDefaultAsync(c => c.Id == id);
+        }
+
+        public override async Task<IEnumerable<Category>> GetAllAsync()
+        {
+            return await _dbSet
+                .Include(c => c.ParentCategory)
+                .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .OrderBy(c => c.SortOrder)
+                .ThenBy(c => c.Name)
+                .ToListAsync();
+        }
+
         public async Task<Category?> GetBySlugAsync(string slug)
         {
             return await _dbSet
@@ -24,13 +46,13 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<IEnumerable<Category>> GetCategoryTreeAsync()
         {
             return await _dbSet
-     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
-     .Include(c => c.Images.Where(i => !i.IsDeleted))
-         .ThenInclude(i => i.File)
-     .Where(c => c.ParentCategoryId == null)
-     .OrderBy(c => c.SortOrder)
-     .ThenBy(c => c.Name)
-     .ToListAsync();
+                .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .Where(c => c.ParentCategoryId == null)
+                .OrderBy(c => c.SortOrder)
+                .ThenBy(c => c.Name)
+                .ToListAsync();
         }
 
         public async Task<IEnumerable<Category>> GetRootCategoriesAsync()
@@ -69,6 +91,8 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await _dbSet
                 .Include(c => c.ProductCategories.Where(pc => !pc.IsDeleted))
                     .ThenInclude(pc => pc.Product)
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .FirstOrDefaultAsync(c => c.Id == categoryId);
         }
 
@@ -89,6 +113,8 @@ namespace Backend.CMS.Infrastructure.Repositories
                            c.Description!.Contains(searchTerm) ||
                            c.Slug.Contains(searchTerm))
                 .Include(c => c.ParentCategory)
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .OrderBy(c => c.Name)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)

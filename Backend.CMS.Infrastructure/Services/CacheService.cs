@@ -5,6 +5,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
+using System.Collections;
 using System.Text.Json;
 
 namespace Backend.CMS.Infrastructure.Services
@@ -39,7 +40,32 @@ namespace Backend.CMS.Infrastructure.Services
         }
 
         #region Basic Cache Operations
+        public async Task<T?> GetAsync<T>(string key, Func<Task<T?>> getItem, bool cacheEmptyCollections = true) where T : class
+        {
+            var cachedItem = await GetAsync<T>(key);
+            if (cachedItem != null)
+                return cachedItem;
 
+            var item = await getItem();
+
+            // For collections, check if we should cache empty results
+            if (item != null)
+            {
+                bool shouldCache = true;
+
+                if (!cacheEmptyCollections && item is IEnumerable enumerable && !enumerable.Cast<object>().Any())
+                {
+                    shouldCache = false;
+                }
+
+                if (shouldCache)
+                {
+                    await SetAsync(key, item);
+                }
+            }
+
+            return item;
+        }
         public async Task<T?> GetAsync<T>(string key) where T : class
         {
             try

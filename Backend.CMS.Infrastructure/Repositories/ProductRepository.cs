@@ -13,6 +13,21 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
         }
 
+        public override async Task<Product?> GetByIdAsync(int id)
+        {
+            return await _dbSet
+                .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
+                    .ThenInclude(pc => pc.Category)
+                .Include(p => p.Variants.Where(v => !v.IsDeleted))
+                    .ThenInclude(v => v.Images.Where(i => !i.IsDeleted))
+                        .ThenInclude(i => i.File)
+                .Include(p => p.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .Include(p => p.Options.Where(o => !o.IsDeleted))
+                    .ThenInclude(o => o.Values.Where(v => !v.IsDeleted))
+                .FirstOrDefaultAsync(p => p.Id == id);
+        }
+
         public async Task<Product?> GetBySlugAsync(string slug)
         {
             return await _dbSet
@@ -30,7 +45,10 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public async Task<Product?> GetBySKUAsync(string sku)
         {
-            return await _dbSet.FirstOrDefaultAsync(p => p.SKU == sku);
+            return await _dbSet
+                .Include(p => p.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .FirstOrDefaultAsync(p => p.SKU == sku);
         }
 
         public async Task<Product?> GetWithDetailsAsync(int productId)
@@ -100,6 +118,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
                     .ThenInclude(pc => pc.Category)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .OrderBy(p => p.Name)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -113,6 +132,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
                     .ThenInclude(pc => pc.Category)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .OrderBy(p => p.Name)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -203,6 +223,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
                     .ThenInclude(pc => pc.Category)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .Skip((searchDto.Page - 1) * searchDto.PageSize)
                 .Take(searchDto.PageSize)
                 .ToListAsync();
@@ -278,6 +299,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await _dbSet
                 .Where(p => p.Status == ProductStatus.Active)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .OrderBy(p => Guid.NewGuid()) // Random order for featured products
                 .Take(count)
                 .ToListAsync();
@@ -298,6 +320,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                            p.Status == ProductStatus.Active &&
                            p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId) && !pc.IsDeleted))
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .OrderBy(p => Guid.NewGuid())
                 .Take(count)
                 .ToListAsync();
@@ -308,6 +331,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await _dbSet
                 .Where(p => p.Status == ProductStatus.Active)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .OrderByDescending(p => p.CreatedAt)
                 .Take(count)
                 .ToListAsync();
@@ -381,6 +405,17 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task RemoveProductCategoryAsync(ProductCategory productCategory)
         {
             _context.Set<ProductCategory>().Remove(productCategory);
+        }
+
+        public override async Task<IEnumerable<Product>> GetAllAsync()
+        {
+            return await _dbSet
+                .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
+                    .ThenInclude(pc => pc.Category)
+                .Include(p => p.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .Include(p => p.Variants.Where(v => !v.IsDeleted))
+                .ToListAsync();
         }
     }
 }

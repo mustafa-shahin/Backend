@@ -1,4 +1,6 @@
-﻿namespace Backend.CMS.Application.Interfaces
+﻿using Backend.CMS.Application.DTOs;
+
+namespace Backend.CMS.Application.Interfaces
 {
     /// <summary>
     /// Service for basic cache operations
@@ -13,7 +15,7 @@
         /// <summary>
         /// Get cached item by key, or execute function if not found and cache the result
         /// </summary>
-        Task<T?> GetAsync<T>(string key, Func<Task<T?>> getItem) where T : class;
+        Task<T?> GetAsync<T>(string key, Func<Task<T?>> getItem, bool cacheEmptyCollections = true) where T : class;
 
         /// <summary>
         /// Set cached item with optional expiration

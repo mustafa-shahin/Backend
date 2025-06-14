@@ -45,7 +45,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var categoryDto = _mapper.Map<CategoryDto>(category);
                 categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(categoryId, true);
                 return categoryDto;
-            });
+            },cacheEmptyCollections: false) ?? new CategoryDto();
         }
 
         public async Task<CategoryDto?> GetCategoryBySlugAsync(string slug)
@@ -59,12 +59,13 @@ namespace Backend.CMS.Infrastructure.Services
                 var categoryDto = _mapper.Map<CategoryDto>(category);
                 categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(category.Id, true);
                 return categoryDto;
-            });
+            } ,cacheEmptyCollections: false);
         }
-
         public async Task<List<CategoryDto>> GetCategoriesAsync()
         {
             var cacheKey = CacheKeys.AllCategories;
+
+            // Don't cache empty collections for categories
             return await _cacheService.GetAsync(cacheKey, async () =>
             {
                 var categories = await _categoryRepository.GetAllAsync();
@@ -76,7 +77,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 return categoryDtos.OrderBy(c => c.SortOrder).ThenBy(c => c.Name).ToList();
-            });
+            }, cacheEmptyCollections: false) ?? new List<CategoryDto>();
         }
 
         public async Task<List<CategoryTreeDto>> GetCategoryTreeAsync()
@@ -86,8 +87,9 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var rootCategories = await _categoryRepository.GetCategoryTreeAsync();
                 return await BuildCategoryTreeAsync(rootCategories);
-            });
+            }, cacheEmptyCollections: false) ?? new List<CategoryTreeDto>();
         }
+
 
         public async Task<List<CategoryDto>> GetRootCategoriesAsync()
         {
@@ -103,7 +105,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 return categoryDtos;
-            });
+            }, cacheEmptyCollections: false) ?? new List<CategoryDto>();
         }
 
         public async Task<List<CategoryDto>> GetSubCategoriesAsync(int parentCategoryId)
@@ -120,7 +122,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 return categoryDtos;
-            });
+            }, cacheEmptyCollections: false) ?? new List<CategoryDto>();
         }
 
         public async Task<CategoryDto> CreateCategoryAsync(CreateCategoryDto createCategoryDto)

@@ -23,6 +23,7 @@ namespace Backend.CMS.API.Controllers
             _productService = productService;
             _variantService = variantService;
             _logger = logger;
+  
         }
 
         /// <summary>
@@ -613,6 +614,43 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error retrieving variants for product {ProductId}", id);
                 return StatusCode(500, new { Message = "An error occurred while retrieving product variants" });
+            }
+        }
+        [HttpPost("{productId}/variant")]
+        public async Task<IActionResult> CreateProductVariant(int productId, [FromBody] CreateProductVariantDto createVariantDto)
+        {
+            try
+            {
+                var variant = await _variantService.CreateVariantAsync(productId, createVariantDto);
+                return Ok(variant);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating product variant for product {ProductId}", productId);
+                return StatusCode(500, new { message = "Internal server error" });
+            }
+        }
+
+        [HttpPut("{productId}/variant/{variantId}/set-default")]
+        public async Task<IActionResult> SetDefaultVariant(int productId, int variantId)
+        {
+            try
+            {
+                var variant = await _variantService.SetDefaultVariantAsync(variantId);
+                return Ok(variant);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error setting default variant {VariantId} for product {ProductId}", variantId, productId);
+                return StatusCode(500, new { message = "Internal server error" });
             }
         }
     }

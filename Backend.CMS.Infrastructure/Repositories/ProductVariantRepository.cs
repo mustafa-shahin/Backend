@@ -11,6 +11,26 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
         }
 
+        public override async Task<ProductVariant?> GetByIdAsync(int id)
+        {
+            return await _dbSet
+                .Include(v => v.Product)
+                .Include(v => v.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .FirstOrDefaultAsync(v => v.Id == id);
+        }
+
+        public override async Task<IEnumerable<ProductVariant>> GetAllAsync()
+        {
+            return await _dbSet
+                .Include(v => v.Product)
+                .Include(v => v.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .OrderBy(v => v.Position)
+                .ThenBy(v => v.Title)
+                .ToListAsync();
+        }
+
         public async Task<ProductVariant?> GetBySKUAsync(string sku)
         {
             return await _dbSet
@@ -34,15 +54,15 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<ProductVariant?> GetDefaultVariantAsync(int productId)
         {
             return await _dbSet
-     .Include(v => v.Images.Where(i => !i.IsDeleted))
-         .ThenInclude(i => i.File)
-     .FirstOrDefaultAsync(v => v.ProductId == productId && v.IsDefault) ??
-     await _dbSet
-         .Include(v => v.Images.Where(i => !i.IsDeleted))
-             .ThenInclude(i => i.File)
-         .Where(v => v.ProductId == productId)
-         .OrderBy(v => v.Position)
-         .FirstOrDefaultAsync();
+                .Include(v => v.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .FirstOrDefaultAsync(v => v.ProductId == productId && v.IsDefault) ??
+                await _dbSet
+                    .Include(v => v.Images.Where(i => !i.IsDeleted))
+                        .ThenInclude(i => i.File)
+                    .Where(v => v.ProductId == productId)
+                    .OrderBy(v => v.Position)
+                    .FirstOrDefaultAsync();
         }
 
         public async Task<bool> SKUExistsAsync(string sku, int? excludeVariantId = null)
@@ -59,6 +79,8 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             return await _dbSet
                 .Include(v => v.Product)
+                .Include(v => v.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .Where(v => v.TrackQuantity && v.Quantity <= threshold && v.Quantity > 0)
                 .OrderBy(v => v.Quantity)
                 .ToListAsync();
@@ -68,6 +90,8 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             return await _dbSet
                 .Include(v => v.Product)
+                .Include(v => v.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .Where(v => v.TrackQuantity && v.Quantity <= 0)
                 .OrderBy(v => v.Product.Name)
                 .ThenBy(v => v.Title)
