@@ -70,12 +70,15 @@ namespace Backend.CMS.Infrastructure.Data
 
         // Product catalog DbSets
         public DbSet<Category> Categories { get; set; }
+        public DbSet<CategoryImage> CategoryImages { get; set; }
         public DbSet<Product> Products { get; set; }
         public DbSet<ProductVariant> ProductVariants { get; set; }
+        public DbSet<ProductVariantImage> ProductVariantImages { get; set; }
         public DbSet<ProductCategory> ProductCategories { get; set; }
         public DbSet<ProductImage> ProductImages { get; set; }
         public DbSet<ProductOption> ProductOptions { get; set; }
         public DbSet<ProductOptionValue> ProductOptionValues { get; set; }
+
         private void ConfigureIndexes(ModelBuilder modelBuilder)
         {
             // User indexes
@@ -297,6 +300,7 @@ namespace Backend.CMS.Infrastructure.Data
                 entity.HasIndex(e => e.JobType);
             });
         }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -330,6 +334,7 @@ namespace Backend.CMS.Infrastructure.Data
                     .HasForeignKey(e => e.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
+
             // User configuration
             modelBuilder.Entity<User>(entity =>
             {
@@ -343,6 +348,13 @@ namespace Backend.CMS.Infrastructure.Data
                 entity.Property(e => e.Preferences).HasConversion(dictionaryConverter);
                 entity.Property(e => e.RecoveryCodes).HasConversion(listConverter);
                 entity.Property(e => e.Role).HasConversion<string>().HasMaxLength(50);
+
+                entity.HasOne(e => e.AvatarFile)
+                    .WithMany()
+                    .HasForeignKey(e => e.AvatarFileId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(e => e.AvatarFileId);
 
                 // User relationships
                 entity.HasMany(e => e.Sessions)
@@ -633,7 +645,6 @@ namespace Backend.CMS.Infrastructure.Data
                 entity.Property(e => e.Slug).HasMaxLength(200).IsRequired();
                 entity.Property(e => e.Description).HasMaxLength(2000);
                 entity.Property(e => e.ShortDescription).HasMaxLength(500);
-                entity.Property(e => e.Image).HasMaxLength(500);
                 entity.Property(e => e.MetaTitle).HasMaxLength(200);
                 entity.Property(e => e.MetaDescription).HasMaxLength(500);
                 entity.Property(e => e.MetaKeywords).HasMaxLength(500);
@@ -644,9 +655,38 @@ namespace Backend.CMS.Infrastructure.Data
                     .HasForeignKey(e => e.ParentCategoryId)
                     .OnDelete(DeleteBehavior.Restrict);
 
+                entity.HasMany(e => e.Images)
+                    .WithOne(e => e.Category)
+                    .HasForeignKey(e => e.CategoryId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
                 entity.HasIndex(e => e.ParentCategoryId);
                 entity.HasIndex(e => new { e.IsActive, e.IsVisible });
                 entity.HasIndex(e => e.SortOrder);
+            });
+
+            // CategoryImage configuration
+            modelBuilder.Entity<CategoryImage>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                entity.HasOne(e => e.Category)
+                    .WithMany(e => e.Images)
+                    .HasForeignKey(e => e.CategoryId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.File)
+                    .WithMany()
+                    .HasForeignKey(e => e.FileId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.Property(e => e.Alt).HasMaxLength(255);
+                entity.Property(e => e.Caption).HasMaxLength(500);
+
+                entity.HasIndex(e => e.CategoryId);
+                entity.HasIndex(e => e.FileId);
+                entity.HasIndex(e => new { e.CategoryId, e.Position });
+                entity.HasIndex(e => new { e.CategoryId, e.IsFeatured });
             });
 
             // Product configuration
@@ -698,7 +738,6 @@ namespace Backend.CMS.Infrastructure.Data
                 entity.Property(e => e.Weight).HasColumnType("decimal(18,3)");
                 entity.Property(e => e.WeightUnit).HasMaxLength(10);
                 entity.Property(e => e.Barcode).HasMaxLength(100);
-                entity.Property(e => e.Image).HasMaxLength(500);
                 entity.Property(e => e.Option1).HasMaxLength(100);
                 entity.Property(e => e.Option2).HasMaxLength(100);
                 entity.Property(e => e.Option3).HasMaxLength(100);
@@ -709,9 +748,38 @@ namespace Backend.CMS.Infrastructure.Data
                     .HasForeignKey(e => e.ProductId)
                     .OnDelete(DeleteBehavior.Cascade);
 
+                entity.HasMany(e => e.Images)
+                    .WithOne(e => e.ProductVariant)
+                    .HasForeignKey(e => e.ProductVariantId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
                 entity.HasIndex(e => e.ProductId);
                 entity.HasIndex(e => new { e.ProductId, e.IsDefault });
                 entity.HasIndex(e => new { e.ProductId, e.Position });
+            });
+
+            // ProductVariantImage configuration
+            modelBuilder.Entity<ProductVariantImage>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+
+                entity.HasOne(e => e.ProductVariant)
+                    .WithMany(e => e.Images)
+                    .HasForeignKey(e => e.ProductVariantId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(e => e.File)
+                    .WithMany()
+                    .HasForeignKey(e => e.FileId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.Property(e => e.Alt).HasMaxLength(255);
+                entity.Property(e => e.Caption).HasMaxLength(500);
+
+                entity.HasIndex(e => e.ProductVariantId);
+                entity.HasIndex(e => e.FileId);
+                entity.HasIndex(e => new { e.ProductVariantId, e.Position });
+                entity.HasIndex(e => new { e.ProductVariantId, e.IsFeatured });
             });
 
             // ProductCategory configuration (many-to-many)
@@ -735,23 +803,24 @@ namespace Backend.CMS.Infrastructure.Data
             modelBuilder.Entity<ProductImage>(entity =>
             {
                 entity.HasKey(e => e.Id);
-                entity.Property(e => e.Url).HasMaxLength(500).IsRequired();
-                entity.Property(e => e.Alt).HasMaxLength(200);
-                entity.Property(e => e.OriginalSource).HasMaxLength(500);
 
                 entity.HasOne(e => e.Product)
                     .WithMany(e => e.Images)
                     .HasForeignKey(e => e.ProductId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                entity.HasOne(e => e.ProductVariant)
+                entity.HasOne(e => e.File)
                     .WithMany()
-                    .HasForeignKey(e => e.ProductVariantId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .HasForeignKey(e => e.FileId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.Property(e => e.Alt).HasMaxLength(255);
+                entity.Property(e => e.Caption).HasMaxLength(500);
 
                 entity.HasIndex(e => e.ProductId);
-                entity.HasIndex(e => e.ProductVariantId);
-                entity.HasIndex(e => e.Position);
+                entity.HasIndex(e => e.FileId);
+                entity.HasIndex(e => new { e.ProductId, e.Position });
+                entity.HasIndex(e => new { e.ProductId, e.IsFeatured });
             });
 
             // ProductOption configuration

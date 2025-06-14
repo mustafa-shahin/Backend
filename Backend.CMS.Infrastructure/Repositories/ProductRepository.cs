@@ -16,13 +16,16 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<Product?> GetBySlugAsync(string slug)
         {
             return await _dbSet
-                .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
-                    .ThenInclude(pc => pc.Category)
-                .Include(p => p.Variants.Where(v => !v.IsDeleted))
-                .Include(p => p.Images.Where(i => !i.IsDeleted))
-                .Include(p => p.Options.Where(o => !o.IsDeleted))
-                    .ThenInclude(o => o.Values.Where(v => !v.IsDeleted))
-                .FirstOrDefaultAsync(p => p.Slug == slug);
+                 .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
+                     .ThenInclude(pc => pc.Category)
+                 .Include(p => p.Variants.Where(v => !v.IsDeleted))
+                     .ThenInclude(v => v.Images.Where(i => !i.IsDeleted))
+                         .ThenInclude(i => i.File)
+                 .Include(p => p.Images.Where(i => !i.IsDeleted))
+                     .ThenInclude(i => i.File)
+                 .Include(p => p.Options.Where(o => !o.IsDeleted))
+                     .ThenInclude(o => o.Values.Where(v => !v.IsDeleted))
+                 .FirstOrDefaultAsync(p => p.Slug == slug);
         }
 
         public async Task<Product?> GetBySKUAsync(string sku)
@@ -33,20 +36,25 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<Product?> GetWithDetailsAsync(int productId)
         {
             return await _dbSet
-                .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
-                    .ThenInclude(pc => pc.Category)
-                .Include(p => p.Variants.Where(v => !v.IsDeleted))
-                .Include(p => p.Images.Where(i => !i.IsDeleted))
-                .Include(p => p.Options.Where(o => !o.IsDeleted))
-                    .ThenInclude(o => o.Values.Where(v => !v.IsDeleted))
-                .FirstOrDefaultAsync(p => p.Id == productId);
+                 .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
+                     .ThenInclude(pc => pc.Category)
+                 .Include(p => p.Variants.Where(v => !v.IsDeleted))
+                     .ThenInclude(v => v.Images.Where(i => !i.IsDeleted))
+                         .ThenInclude(i => i.File)
+                 .Include(p => p.Images.Where(i => !i.IsDeleted))
+                     .ThenInclude(i => i.File)
+                 .Include(p => p.Options.Where(o => !o.IsDeleted))
+                     .ThenInclude(o => o.Values.Where(v => !v.IsDeleted))
+                 .FirstOrDefaultAsync(p => p.Id == productId);
         }
 
         public async Task<Product?> GetWithVariantsAsync(int productId)
         {
             return await _dbSet
-                .Include(p => p.Variants.Where(v => !v.IsDeleted))
-                .FirstOrDefaultAsync(p => p.Id == productId);
+                 .Include(p => p.Variants.Where(v => !v.IsDeleted))
+                     .ThenInclude(v => v.Images.Where(i => !i.IsDeleted))
+                         .ThenInclude(i => i.File)
+                 .FirstOrDefaultAsync(p => p.Id == productId);
         }
 
         public async Task<Product?> GetWithCategoriesAsync(int productId)
@@ -61,6 +69,7 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             return await _dbSet
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .FirstOrDefaultAsync(p => p.Id == productId);
         }
 

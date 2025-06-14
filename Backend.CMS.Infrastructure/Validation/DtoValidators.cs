@@ -900,9 +900,6 @@ namespace Backend.CMS.Infrastructure.Validation
                 .MaximumLength(500).WithMessage("Short description cannot exceed 500 characters")
                 .When(x => !string.IsNullOrEmpty(x.ShortDescription));
 
-            RuleFor(x => x.Image)
-                .MaximumLength(500).WithMessage("Image URL cannot exceed 500 characters")
-                .When(x => !string.IsNullOrEmpty(x.Image));
 
             RuleFor(x => x.ParentCategoryId)
                 .GreaterThan(0).WithMessage("Parent category ID must be greater than 0")
@@ -945,10 +942,6 @@ namespace Backend.CMS.Infrastructure.Validation
             RuleFor(x => x.ShortDescription)
                 .MaximumLength(500).WithMessage("Short description cannot exceed 500 characters")
                 .When(x => !string.IsNullOrEmpty(x.ShortDescription));
-
-            RuleFor(x => x.Image)
-                .MaximumLength(500).WithMessage("Image URL cannot exceed 500 characters")
-                .When(x => !string.IsNullOrEmpty(x.Image));
 
             RuleFor(x => x.ParentCategoryId)
                 .GreaterThan(0).WithMessage("Parent category ID must be greater than 0")
@@ -1081,9 +1074,6 @@ namespace Backend.CMS.Infrastructure.Validation
             RuleFor(x => x.CategoryIds)
                 .NotNull().WithMessage("Category IDs cannot be null");
 
-            RuleFor(x => x.Images)
-                .NotNull().WithMessage("Images cannot be null");
-
             RuleFor(x => x.Options)
                 .NotNull().WithMessage("Options cannot be null");
 
@@ -1095,10 +1085,6 @@ namespace Backend.CMS.Infrastructure.Validation
 
             RuleFor(x => x.SEOSettings)
                 .NotNull().WithMessage("SEO settings cannot be null");
-
-            RuleForEach(x => x.Images)
-                .SetValidator(new CreateProductImageDtoValidator())
-                .When(x => x.Images?.Any() == true);
 
             RuleForEach(x => x.Options)
                 .SetValidator(new CreateProductOptionDtoValidator())
@@ -1176,9 +1162,6 @@ namespace Backend.CMS.Infrastructure.Validation
 
             RuleFor(x => x.CategoryIds)
                 .NotNull().WithMessage("Category IDs cannot be null");
-
-            RuleFor(x => x.Images)
-                .NotNull().WithMessage("Images cannot be null");
 
             RuleFor(x => x.Options)
                 .NotNull().WithMessage("Options cannot be null");
@@ -1288,9 +1271,6 @@ namespace Backend.CMS.Infrastructure.Validation
                 .MaximumLength(100).WithMessage("Barcode cannot exceed 100 characters")
                 .When(x => !string.IsNullOrEmpty(x.Barcode));
 
-            RuleFor(x => x.Image)
-                .MaximumLength(500).WithMessage("Image URL cannot exceed 500 characters")
-                .When(x => !string.IsNullOrEmpty(x.Image));
 
             RuleFor(x => x.Option1)
                 .MaximumLength(100).WithMessage("Option 1 cannot exceed 100 characters")
@@ -1346,9 +1326,6 @@ namespace Backend.CMS.Infrastructure.Validation
                 .MaximumLength(100).WithMessage("Barcode cannot exceed 100 characters")
                 .When(x => !string.IsNullOrEmpty(x.Barcode));
 
-            RuleFor(x => x.Image)
-                .MaximumLength(500).WithMessage("Image URL cannot exceed 500 characters")
-                .When(x => !string.IsNullOrEmpty(x.Image));
 
             RuleFor(x => x.Option1)
                 .MaximumLength(100).WithMessage("Option 1 cannot exceed 100 characters")
@@ -1373,9 +1350,6 @@ namespace Backend.CMS.Infrastructure.Validation
     {
         public CreateProductImageDtoValidator()
         {
-            RuleFor(x => x.Url)
-                .NotEmpty().WithMessage("Image URL is required")
-                .MaximumLength(500).WithMessage("URL cannot exceed 500 characters");
 
             RuleFor(x => x.Alt)
                 .MaximumLength(200).WithMessage("Alt text cannot exceed 200 characters")

@@ -12,6 +12,8 @@ namespace Backend.CMS.Infrastructure.Services
     {
         private readonly IProductVariantRepository _variantRepository;
         private readonly IProductRepository _productRepository;
+        private readonly IRepository<ProductVariantImage> _variantImageRepository;
+        private readonly IRepository<FileEntity> _fileRepository;
         private readonly ICacheService _cacheService;
         private readonly IMapper _mapper;
         private readonly ILogger<ProductVariantService> _logger;
@@ -19,12 +21,16 @@ namespace Backend.CMS.Infrastructure.Services
         public ProductVariantService(
             IProductVariantRepository variantRepository,
             IProductRepository productRepository,
+            IRepository<ProductVariantImage> variantImageRepository,
+            IRepository<FileEntity> fileRepository,
             ICacheService cacheService,
             IMapper mapper,
             ILogger<ProductVariantService> logger)
         {
             _variantRepository = variantRepository;
             _productRepository = productRepository;
+            _variantImageRepository = variantImageRepository;
+            _fileRepository = fileRepository;
             _cacheService = cacheService;
             _mapper = mapper;
             _logger = logger;
@@ -84,6 +90,12 @@ namespace Backend.CMS.Infrastructure.Services
             if (await _variantRepository.SKUExistsAsync(createVariantDto.SKU))
                 throw new ArgumentException($"Product variant with SKU '{createVariantDto.SKU}' already exists");
 
+            // Validate images
+            if (createVariantDto.Images.Any())
+            {
+                await ValidateImagesAsync(createVariantDto.Images.Select(i => i.FileId).ToList());
+            }
+
             var variant = _mapper.Map<ProductVariant>(createVariantDto);
             variant.ProductId = productId;
 
@@ -96,6 +108,12 @@ namespace Backend.CMS.Infrastructure.Services
 
             await _variantRepository.AddAsync(variant);
             await _variantRepository.SaveChangesAsync();
+
+            // Add images
+            if (createVariantDto.Images.Any())
+            {
+                await AddVariantImagesAsync(variant.Id, createVariantDto.Images);
+            }
 
             // Update product to indicate it has variants
             if (!product.HasVariants)
@@ -121,7 +139,17 @@ namespace Backend.CMS.Infrastructure.Services
             if (await _variantRepository.SKUExistsAsync(updateVariantDto.SKU, variantId))
                 throw new ArgumentException($"Product variant with SKU '{updateVariantDto.SKU}' already exists");
 
+            // Validate images
+            if (updateVariantDto.Images.Any())
+            {
+                await ValidateImagesAsync(updateVariantDto.Images.Select(i => i.FileId).ToList());
+            }
+
             _mapper.Map(updateVariantDto, variant);
+
+            // Update images
+            await UpdateVariantImagesAsync(variantId, updateVariantDto.Images);
+
             _variantRepository.Update(variant);
             await _variantRepository.SaveChangesAsync();
 
@@ -255,7 +283,204 @@ namespace Backend.CMS.Infrastructure.Services
             return await _variantRepository.GetTotalStockAsync(productId);
         }
 
+        // Image management methods
+        public async Task<ProductVariantImageDto> AddVariantImageAsync(int variantId, CreateProductVariantImageDto createImageDto)
+        {
+            var variant = await _variantRepository.GetByIdAsync(variantId);
+            if (variant == null)
+                throw new ArgumentException($"Product variant with ID {variantId} not found");
+
+            await ValidateImageAsync(createImageDto.FileId);
+
+            var variantImage = _mapper.Map<ProductVariantImage>(createImageDto);
+            variantImage.ProductVariantId = variantId;
+
+            // If this is set as featured, remove featured flag from other images
+            if (createImageDto.IsFeatured)
+            {
+                await RemoveFeaturedFlagFromOtherVariantImagesAsync(variantId);
+            }
+
+            await _variantImageRepository.AddAsync(variantImage);
+            await _variantImageRepository.SaveChangesAsync();
+
+            await InvalidateVariantCache(variant.ProductId);
+
+            _logger.LogInformation("Added image to variant {VariantId}: FileId {FileId}", variantId, createImageDto.FileId);
+            return _mapper.Map<ProductVariantImageDto>(variantImage);
+        }
+
+        public async Task<ProductVariantImageDto> UpdateVariantImageAsync(int imageId, UpdateProductVariantImageDto updateImageDto)
+        {
+            var variantImage = await _variantImageRepository.GetByIdAsync(imageId);
+            if (variantImage == null)
+                throw new ArgumentException($"Product variant image with ID {imageId} not found");
+
+            await ValidateImageAsync(updateImageDto.FileId);
+
+            var oldIsFeatured = variantImage.IsFeatured;
+            _mapper.Map(updateImageDto, variantImage);
+
+            // If this image is being set as featured, remove featured flag from other images
+            if (updateImageDto.IsFeatured && !oldIsFeatured)
+            {
+                await RemoveFeaturedFlagFromOtherVariantImagesAsync(variantImage.ProductVariantId, imageId);
+            }
+
+            _variantImageRepository.Update(variantImage);
+            await _variantImageRepository.SaveChangesAsync();
+
+            var variant = await _variantRepository.GetByIdAsync(variantImage.ProductVariantId);
+            await InvalidateVariantCache(variant!.ProductId);
+
+            _logger.LogInformation("Updated variant image {ImageId}", imageId);
+            return _mapper.Map<ProductVariantImageDto>(variantImage);
+        }
+
+        public async Task<bool> DeleteVariantImageAsync(int imageId)
+        {
+            var variantImage = await _variantImageRepository.GetByIdAsync(imageId);
+            if (variantImage == null) return false;
+
+            var variantId = variantImage.ProductVariantId;
+            var variant = await _variantRepository.GetByIdAsync(variantId);
+
+            await _variantImageRepository.SoftDeleteAsync(variantImage);
+
+            if (variant != null)
+            {
+                await InvalidateVariantCache(variant.ProductId);
+            }
+
+            _logger.LogInformation("Deleted variant image {ImageId} from variant {VariantId}", imageId, variantId);
+            return true;
+        }
+
+        public async Task<List<ProductVariantImageDto>> ReorderVariantImagesAsync(int variantId, List<(int ImageId, int Position)> imageOrders)
+        {
+            var imageIds = imageOrders.Select(io => io.ImageId).ToList();
+            var images = await _variantImageRepository.FindAsync(i => i.ProductVariantId == variantId && imageIds.Contains(i.Id));
+
+            foreach (var image in images)
+            {
+                var newPosition = imageOrders.First(io => io.ImageId == image.Id).Position;
+                image.Position = newPosition;
+            }
+
+            _variantImageRepository.UpdateRange(images);
+            await _variantImageRepository.SaveChangesAsync();
+
+            var variant = await _variantRepository.GetByIdAsync(variantId);
+            if (variant != null)
+            {
+                await InvalidateVariantCache(variant.ProductId);
+            }
+
+            return _mapper.Map<List<ProductVariantImageDto>>(images.OrderBy(i => i.Position));
+        }
+
         // Private helper methods
+        private async Task ValidateImagesAsync(List<int> fileIds)
+        {
+            foreach (var fileId in fileIds)
+            {
+                await ValidateImageAsync(fileId);
+            }
+        }
+
+        private async Task ValidateImageAsync(int fileId)
+        {
+            var file = await _fileRepository.GetByIdAsync(fileId);
+            if (file == null)
+                throw new ArgumentException($"File with ID {fileId} not found");
+
+            if (file.FileType != Domain.Enums.FileType.Image)
+                throw new ArgumentException($"File with ID {fileId} is not an image");
+        }
+
+        private async Task AddVariantImagesAsync(int variantId, List<CreateProductVariantImageDto> images)
+        {
+            foreach (var imageDto in images)
+            {
+                var variantImage = _mapper.Map<ProductVariantImage>(imageDto);
+                variantImage.ProductVariantId = variantId;
+
+                await _variantImageRepository.AddAsync(variantImage);
+            }
+
+            // Ensure only one image is marked as featured
+            await EnsureSingleFeaturedVariantImageAsync(variantId);
+            await _variantImageRepository.SaveChangesAsync();
+        }
+
+        private async Task UpdateVariantImagesAsync(int variantId, List<UpdateProductVariantImageDto> images)
+        {
+            // Remove existing images
+            var existingImages = await _variantImageRepository.FindAsync(i => i.ProductVariantId == variantId);
+            await _variantImageRepository.SoftDeleteRangeAsync(existingImages);
+
+            // Add new images
+            foreach (var imageDto in images)
+            {
+                var variantImage = new ProductVariantImage
+                {
+                    ProductVariantId = variantId,
+                    FileId = imageDto.FileId,
+                    Alt = imageDto.Alt,
+                    Caption = imageDto.Caption,
+                    Position = imageDto.Position,
+                    IsFeatured = imageDto.IsFeatured
+                };
+
+                await _variantImageRepository.AddAsync(variantImage);
+            }
+
+            // Ensure only one image is marked as featured
+            await EnsureSingleFeaturedVariantImageAsync(variantId);
+        }
+
+        private async Task RemoveFeaturedFlagFromOtherVariantImagesAsync(int variantId, int? excludeImageId = null)
+        {
+            var otherImages = await _variantImageRepository.FindAsync(i =>
+                i.ProductVariantId == variantId &&
+                i.IsFeatured &&
+                (excludeImageId == null || i.Id != excludeImageId));
+
+            foreach (var image in otherImages)
+            {
+                image.IsFeatured = false;
+            }
+
+            _variantImageRepository.UpdateRange(otherImages);
+        }
+
+        private async Task EnsureSingleFeaturedVariantImageAsync(int variantId)
+        {
+            var featuredImages = await _variantImageRepository.FindAsync(i => i.ProductVariantId == variantId && i.IsFeatured);
+            var featuredImagesList = featuredImages.ToList();
+
+            if (featuredImagesList.Count > 1)
+            {
+                // Keep only the first one as featured
+                for (int i = 1; i < featuredImagesList.Count; i++)
+                {
+                    featuredImagesList[i].IsFeatured = false;
+                }
+
+                _variantImageRepository.UpdateRange(featuredImagesList.Skip(1));
+            }
+            else if (!featuredImagesList.Any())
+            {
+                // If no featured image, make the first one featured
+                var firstImage = await _variantImageRepository.FirstOrDefaultAsync(i => i.ProductVariantId == variantId);
+                if (firstImage != null)
+                {
+                    firstImage.IsFeatured = true;
+                    _variantImageRepository.Update(firstImage);
+                }
+            }
+        }
+
         private async Task InvalidateVariantCache(int productId)
         {
             await _cacheService.RemoveByPatternAsync(CacheKeys.ProductVariantsPattern(productId));

@@ -50,9 +50,10 @@ namespace Backend.CMS.Domain.Entities
         [Column(TypeName = "jsonb")] // For PostgreSQL, use nvarchar(max) for SQL Server if storing as JSON string
         public List<string> RecoveryCodes { get; set; } = [];
 
-        [StringLength(500)]
-        [Url]
-        public string? Avatar { get; set; }
+        public int? AvatarFileId { get; set; }
+
+        [ForeignKey("AvatarFileId")]
+        public FileEntity? AvatarFile { get; set; }
 
         [StringLength(50)]
         public string? Timezone { get; set; }
@@ -99,13 +100,12 @@ namespace Backend.CMS.Domain.Entities
         [StringLength(255)]
         public string? ExternalId { get; set; }
 
-        [StringLength(500)]
-        [Url]
-        public string? ProfilePictureUrl { get; set; }
-
         public bool IsExternalUser { get; set; }
 
         public DateTime? LastExternalSync { get; set; }
+
+        [NotMapped]
+        public string? AvatarUrl => AvatarFile != null ? $"/api/files/{AvatarFileId}/download" : null;
     }
 
     public class UserExternalLogin : BaseEntity

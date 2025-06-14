@@ -20,9 +20,6 @@ namespace Backend.CMS.Domain.Entities
         [StringLength(500)]
         public string? ShortDescription { get; set; }
 
-        [StringLength(500)]
-        public string? Image { get; set; }
-
         public int? ParentCategoryId { get; set; }
 
         public Category? ParentCategory { get; set; }
@@ -44,9 +41,48 @@ namespace Backend.CMS.Domain.Entities
         [StringLength(500)]
         public string? MetaKeywords { get; set; }
 
-        [Column(TypeName = "jsonb")] 
+        [Column(TypeName = "jsonb")]
         public Dictionary<string, object> CustomFields { get; set; } = new();
 
         public ICollection<ProductCategory> ProductCategories { get; set; } = new List<ProductCategory>();
+
+        // Images relationship
+        public ICollection<CategoryImage> Images { get; set; } = new List<CategoryImage>();
+
+        // Computed property for featured image
+        [NotMapped]
+        public string? FeaturedImageUrl => Images.OrderBy(i => i.Position).FirstOrDefault()?.ImageUrl;
+    }
+
+    public class CategoryImage : BaseEntity
+    {
+        [Required]
+        public int CategoryId { get; set; }
+
+        [ForeignKey("CategoryId")]
+        public Category Category { get; set; } = null!;
+
+        [Required]
+        public int FileId { get; set; }
+
+        [ForeignKey("FileId")]
+        public FileEntity File { get; set; } = null!;
+
+        [MaxLength(255)]
+        public string? Alt { get; set; }
+
+        [MaxLength(500)]
+        public string? Caption { get; set; }
+
+        public int Position { get; set; } = 0;
+
+        public bool IsFeatured { get; set; } = false;
+
+        // Computed property for image URL
+        [NotMapped]
+        public string ImageUrl => $"/api/files/{FileId}/download";
+
+        [NotMapped]
+        public string? ThumbnailUrl => $"/api/files/{FileId}/thumbnail";
     }
 }

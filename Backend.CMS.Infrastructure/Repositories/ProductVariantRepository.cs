@@ -14,27 +14,35 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<ProductVariant?> GetBySKUAsync(string sku)
         {
             return await _dbSet
-                .Include(v => v.Product)
-                .FirstOrDefaultAsync(v => v.SKU == sku);
+                 .Include(v => v.Product)
+                 .Include(v => v.Images.Where(i => !i.IsDeleted))
+                     .ThenInclude(i => i.File)
+                 .FirstOrDefaultAsync(v => v.SKU == sku);
         }
 
         public async Task<IEnumerable<ProductVariant>> GetByProductIdAsync(int productId)
         {
             return await _dbSet
-                .Where(v => v.ProductId == productId)
-                .OrderBy(v => v.Position)
-                .ThenBy(v => v.Title)
-                .ToListAsync();
+                 .Include(v => v.Images.Where(i => !i.IsDeleted))
+                     .ThenInclude(i => i.File)
+                 .Where(v => v.ProductId == productId)
+                 .OrderBy(v => v.Position)
+                 .ThenBy(v => v.Title)
+                 .ToListAsync();
         }
 
         public async Task<ProductVariant?> GetDefaultVariantAsync(int productId)
         {
             return await _dbSet
-                .FirstOrDefaultAsync(v => v.ProductId == productId && v.IsDefault) ??
-                await _dbSet
-                    .Where(v => v.ProductId == productId)
-                    .OrderBy(v => v.Position)
-                    .FirstOrDefaultAsync();
+     .Include(v => v.Images.Where(i => !i.IsDeleted))
+         .ThenInclude(i => i.File)
+     .FirstOrDefaultAsync(v => v.ProductId == productId && v.IsDefault) ??
+     await _dbSet
+         .Include(v => v.Images.Where(i => !i.IsDeleted))
+             .ThenInclude(i => i.File)
+         .Where(v => v.ProductId == productId)
+         .OrderBy(v => v.Position)
+         .FirstOrDefaultAsync();
         }
 
         public async Task<bool> SKUExistsAsync(string sku, int? excludeVariantId = null)

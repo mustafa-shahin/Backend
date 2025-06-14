@@ -16,22 +16,28 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await _dbSet
                 .Include(c => c.ParentCategory)
                 .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .FirstOrDefaultAsync(c => c.Slug == slug);
         }
 
         public async Task<IEnumerable<Category>> GetCategoryTreeAsync()
         {
             return await _dbSet
-                .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
-                .Where(c => c.ParentCategoryId == null)
-                .OrderBy(c => c.SortOrder)
-                .ThenBy(c => c.Name)
-                .ToListAsync();
+     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
+     .Include(c => c.Images.Where(i => !i.IsDeleted))
+         .ThenInclude(i => i.File)
+     .Where(c => c.ParentCategoryId == null)
+     .OrderBy(c => c.SortOrder)
+     .ThenBy(c => c.Name)
+     .ToListAsync();
         }
 
         public async Task<IEnumerable<Category>> GetRootCategoriesAsync()
         {
             return await _dbSet
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .Where(c => c.ParentCategoryId == null)
                 .OrderBy(c => c.SortOrder)
                 .ThenBy(c => c.Name)
@@ -41,6 +47,8 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<IEnumerable<Category>> GetSubCategoriesAsync(int parentCategoryId)
         {
             return await _dbSet
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
                 .Where(c => c.ParentCategoryId == parentCategoryId)
                 .OrderBy(c => c.SortOrder)
                 .ThenBy(c => c.Name)
@@ -50,8 +58,10 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<Category?> GetWithSubCategoriesAsync(int categoryId)
         {
             return await _dbSet
-                .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
-                .FirstOrDefaultAsync(c => c.Id == categoryId);
+               .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
+               .Include(c => c.Images.Where(i => !i.IsDeleted))
+                   .ThenInclude(i => i.File)
+               .FirstOrDefaultAsync(c => c.Id == categoryId);
         }
 
         public async Task<Category?> GetWithProductsAsync(int categoryId)

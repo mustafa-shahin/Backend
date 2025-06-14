@@ -12,7 +12,8 @@ namespace Backend.CMS.Application.DTOs
         public bool IsActive { get; set; }
         public bool IsLocked { get; set; }
         public DateTime? LastLoginAt { get; set; }
-        public string? Avatar { get; set; }
+        public int? AvatarFileId { get; set; }
+        public string? AvatarUrl { get; set; }
         public string? Timezone { get; set; }
         public string? Language { get; set; }
         public DateTime? EmailVerifiedAt { get; set; }
@@ -33,7 +34,7 @@ namespace Backend.CMS.Application.DTOs
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public bool IsActive { get; set; } = true;
-        public string? Avatar { get; set; }
+        public int? AvatarFileId { get; set; }
         public string? Timezone { get; set; }
         public string? Language { get; set; }
         public UserRole Role { get; set; } = UserRole.Customer;
@@ -49,7 +50,7 @@ namespace Backend.CMS.Application.DTOs
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public bool IsActive { get; set; }
-        public string? Avatar { get; set; }
+        public int? AvatarFileId { get; set; }
         public string? Timezone { get; set; }
         public string? Language { get; set; }
         public UserRole Role { get; set; }
@@ -57,6 +58,7 @@ namespace Backend.CMS.Application.DTOs
         public List<UpdateAddressDto> Addresses { get; set; } = [];
         public List<UpdateContactDetailsDto> ContactDetails { get; set; } = [];
     }
+
     public class ChangePasswordDto
     {
         public string CurrentPassword { get; set; } = string.Empty;
@@ -97,7 +99,7 @@ namespace Backend.CMS.Application.DTOs
         public bool IsLocked { get; set; }
         public DateTime? LastLoginAt { get; set; }
         public DateTime CreatedAt { get; set; }
-
+        public string? AvatarUrl { get; set; }
         public UserRole Role { get; set; }
         public string RoleName { get; set; } = string.Empty;
         public List<AddressDto> Addresses { get; set; } = [];

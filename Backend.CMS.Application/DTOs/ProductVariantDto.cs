@@ -17,13 +17,14 @@
         public decimal Weight { get; set; }
         public string? WeightUnit { get; set; }
         public string? Barcode { get; set; }
-        public string? Image { get; set; }
         public int Position { get; set; }
         public bool IsDefault { get; set; }
         public Dictionary<string, object> CustomFields { get; set; } = new();
         public string? Option1 { get; set; }
         public string? Option2 { get; set; }
         public string? Option3 { get; set; }
+        public List<ProductVariantImageDto> Images { get; set; } = new();
+        public string? FeaturedImageUrl { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
 
@@ -54,13 +55,13 @@
         public decimal Weight { get; set; } = 0;
         public string? WeightUnit { get; set; } = "kg";
         public string? Barcode { get; set; }
-        public string? Image { get; set; }
         public int Position { get; set; } = 0;
         public bool IsDefault { get; set; } = false;
         public Dictionary<string, object> CustomFields { get; set; } = new();
         public string? Option1 { get; set; }
         public string? Option2 { get; set; }
         public string? Option3 { get; set; }
+        public List<CreateProductVariantImageDto> Images { get; set; } = new();
     }
 
     public class UpdateProductVariantDto
@@ -79,49 +80,77 @@
         public decimal Weight { get; set; }
         public string? WeightUnit { get; set; }
         public string? Barcode { get; set; }
-        public string? Image { get; set; }
         public int Position { get; set; }
         public bool IsDefault { get; set; }
         public Dictionary<string, object> CustomFields { get; set; } = new();
         public string? Option1 { get; set; }
         public string? Option2 { get; set; }
         public string? Option3 { get; set; }
+        public List<UpdateProductVariantImageDto> Images { get; set; } = new();
     }
 
     public class ProductImageDto
     {
         public int Id { get; set; }
         public int ProductId { get; set; }
-        public int? ProductVariantId { get; set; }
-        public string Url { get; set; } = string.Empty;
+        public int FileId { get; set; }
         public string? Alt { get; set; }
+        public string? Caption { get; set; }
         public int Position { get; set; }
-        public int? Width { get; set; }
-        public int? Height { get; set; }
-        public string? OriginalSource { get; set; }
+        public bool IsFeatured { get; set; }
+        public string ImageUrl { get; set; } = string.Empty;
+        public string? ThumbnailUrl { get; set; }
     }
 
     public class CreateProductImageDto
     {
-        public int? ProductVariantId { get; set; }
-        public string Url { get; set; } = string.Empty;
+        public int FileId { get; set; }
         public string? Alt { get; set; }
+        public string? Caption { get; set; }
         public int Position { get; set; } = 0;
-        public int? Width { get; set; }
-        public int? Height { get; set; }
-        public string? OriginalSource { get; set; }
+        public bool IsFeatured { get; set; } = false;
     }
 
     public class UpdateProductImageDto
     {
         public int Id { get; set; }
-        public int? ProductVariantId { get; set; }
-        public string Url { get; set; } = string.Empty;
+        public int FileId { get; set; }
         public string? Alt { get; set; }
+        public string? Caption { get; set; }
         public int Position { get; set; }
-        public int? Width { get; set; }
-        public int? Height { get; set; }
-        public string? OriginalSource { get; set; }
+        public bool IsFeatured { get; set; }
+    }
+
+    public class ProductVariantImageDto
+    {
+        public int Id { get; set; }
+        public int ProductVariantId { get; set; }
+        public int FileId { get; set; }
+        public string? Alt { get; set; }
+        public string? Caption { get; set; }
+        public int Position { get; set; }
+        public bool IsFeatured { get; set; }
+        public string ImageUrl { get; set; } = string.Empty;
+        public string? ThumbnailUrl { get; set; }
+    }
+
+    public class CreateProductVariantImageDto
+    {
+        public int FileId { get; set; }
+        public string? Alt { get; set; }
+        public string? Caption { get; set; }
+        public int Position { get; set; } = 0;
+        public bool IsFeatured { get; set; } = false;
+    }
+
+    public class UpdateProductVariantImageDto
+    {
+        public int Id { get; set; }
+        public int FileId { get; set; }
+        public string? Alt { get; set; }
+        public string? Caption { get; set; }
+        public int Position { get; set; }
+        public bool IsFeatured { get; set; }
     }
 
     public class ProductOptionDto
@@ -168,6 +197,7 @@
         public string Value { get; set; } = string.Empty;
         public int Position { get; set; }
     }
+
     public class ReorderVariantsDto
     {
         public List<VariantOrderDto> Variants { get; set; } = new();

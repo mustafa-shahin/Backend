@@ -87,6 +87,12 @@ namespace Backend.CMS.Infrastructure.Services
             if (await _userRepository.UsernameExistsAsync(createUserDto.Username))
                 throw new ArgumentException("Username already exists");
 
+            // Validate avatar file if provided
+            if (createUserDto.AvatarFileId.HasValue)
+            {
+                await ValidateAvatarFileAsync(createUserDto.AvatarFileId.Value);
+            }
+
             var currentUserId = await GetCurrentUserIdSafeAsync();
             var currentUserRole = _userSessionService.GetCurrentUserRole();
 
@@ -160,6 +166,12 @@ namespace Backend.CMS.Infrastructure.Services
 
             if (await _userRepository.UsernameExistsAsync(updateUserDto.Username, userId))
                 throw new ArgumentException("Username already exists");
+
+            // Validate avatar file if provided
+            if (updateUserDto.AvatarFileId.HasValue)
+            {
+                await ValidateAvatarFileAsync(updateUserDto.AvatarFileId.Value);
+            }
 
             // Role validation
             if (!_userSessionService.CanCreateUserWithRole(updateUserDto.Role))
@@ -472,6 +484,58 @@ namespace Backend.CMS.Infrastructure.Services
             return true;
         }
 
+        public async Task<UserDto> UpdateUserAvatarAsync(int userId, int? avatarFileId)
+        {
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null)
+                throw new ArgumentException("User not found");
+
+            // Validate avatar file if provided
+            if (avatarFileId.HasValue)
+            {
+                await ValidateAvatarFileAsync(avatarFileId.Value);
+            }
+
+            var currentUserId = await GetCurrentUserIdSafeAsync();
+
+            user.AvatarFileId = avatarFileId;
+            user.UpdatedAt = DateTime.UtcNow;
+            user.UpdatedByUserId = currentUserId;
+
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+
+            // Invalidate user cache
+            await _cacheInvalidationService.InvalidateUserCacheAsync(userId);
+
+            _logger.LogInformation("Avatar updated for user {UserId}", userId);
+
+            return _mapper.Map<UserDto>(user);
+        }
+
+        public async Task<UserDto> RemoveUserAvatarAsync(int userId)
+        {
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null)
+                throw new ArgumentException("User not found");
+
+            var currentUserId = await GetCurrentUserIdSafeAsync();
+
+            user.AvatarFileId = null;
+            user.UpdatedAt = DateTime.UtcNow;
+            user.UpdatedByUserId = currentUserId;
+
+            _userRepository.Update(user);
+            await _userRepository.SaveChangesAsync();
+
+            // Invalidate user cache
+            await _cacheInvalidationService.InvalidateUserCacheAsync(userId);
+
+            _logger.LogInformation("Avatar removed for user {UserId}", userId);
+
+            return _mapper.Map<UserDto>(user);
+        }
+
         #region Private Helper Methods
 
         /// <summary>
@@ -504,6 +568,23 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogError(ex, "Error getting current user ID safely, using system fallback");
                 return null; // Or return a system user ID if you have one
             }
+        }
+
+        /// <summary>
+        /// Validates that the provided file ID is a valid image file for avatar use
+        /// </summary>
+        private async Task ValidateAvatarFileAsync(int fileId)
+        {
+            var file = await _context.Files.FirstOrDefaultAsync(f => f.Id == fileId && !f.IsDeleted);
+            if (file == null)
+                throw new ArgumentException($"File with ID {fileId} not found");
+
+            if (file.FileType != Domain.Enums.FileType.Image)
+                throw new ArgumentException($"File with ID {fileId} is not an image");
+
+            // Additional validation for avatar images (optional)
+            if (file.FileSize > 5 * 1024 * 1024) // 5MB limit
+                throw new ArgumentException("Avatar image must be smaller than 5MB");
         }
 
         #endregion

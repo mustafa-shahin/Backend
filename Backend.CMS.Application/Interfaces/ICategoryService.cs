@@ -19,5 +19,9 @@ namespace Backend.CMS.Application.Interfaces
         Task<bool> CanDeleteAsync(int categoryId);
         Task<CategoryDto> MoveCategoryAsync(int categoryId, int? newParentCategoryId);
         Task<List<CategoryDto>> ReorderCategoriesAsync(List<(int CategoryId, int SortOrder)> categoryOrders);
+        Task<CategoryImageDto> AddCategoryImageAsync(int categoryId, CreateCategoryImageDto createImageDto);
+        Task<CategoryImageDto> UpdateCategoryImageAsync(int imageId, UpdateCategoryImageDto updateImageDto);
+        Task<bool> DeleteCategoryImageAsync(int imageId);
+        Task<List<CategoryImageDto>> ReorderCategoryImagesAsync(int categoryId, List<(int ImageId, int Position)> imageOrders);
     }
 }

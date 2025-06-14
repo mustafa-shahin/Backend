@@ -25,6 +25,7 @@ namespace Backend.CMS.Infrastructure.Mapping
             ConfigureProductImageMappings();
             ConfigureProductOptionMappings();
             ConfigureDesignerMapping();
+            ConfigureImageMappings();
         }
 
         private void ConfigureAddressMappings()
@@ -53,15 +54,18 @@ namespace Backend.CMS.Infrastructure.Mapping
         {
             CreateMap<User, UserDto>()
                 .ForMember(dest => dest.RoleName, opt => opt.MapFrom(src => src.Role.ToString()))
+                .ForMember(dest => dest.AvatarUrl, opt => opt.MapFrom(src => src.AvatarUrl))
                 .ForMember(dest => dest.Addresses, opt => opt.MapFrom(src => src.Addresses.Where(a => !a.IsDeleted)))
                 .ForMember(dest => dest.ContactDetails, opt => opt.MapFrom(src => src.ContactDetails.Where(c => !c.IsDeleted)));
 
             CreateMap<User, UserListDto>()
-                .ForMember(dest => dest.RoleName, opt => opt.MapFrom(src => src.Role.ToString()));
+                .ForMember(dest => dest.RoleName, opt => opt.MapFrom(src => src.Role.ToString()))
+                .ForMember(dest => dest.AvatarUrl, opt => opt.MapFrom(src => src.AvatarUrl));
 
             CreateMap<CreateUserDto, User>()
                 .ForMember(dest => dest.PasswordHash, opt => opt.MapFrom(src => BCrypt.Net.BCrypt.HashPassword(src.Password)))
                 .IgnoreAuditProperties()
+                .ForMember(dest => dest.AvatarFile, opt => opt.Ignore())
                 .ForMember(dest => dest.Addresses, opt => opt.Ignore())
                 .ForMember(dest => dest.ContactDetails, opt => opt.Ignore())
                 .ForMember(dest => dest.Sessions, opt => opt.Ignore())
@@ -70,11 +74,13 @@ namespace Backend.CMS.Infrastructure.Mapping
             CreateMap<UpdateUserDto, User>()
                 .IgnoreBaseEntityProperties()
                 .ForMember(dest => dest.PasswordHash, opt => opt.Ignore())
+                .ForMember(dest => dest.AvatarFile, opt => opt.Ignore())
                 .ForMember(dest => dest.Addresses, opt => opt.Ignore())
                 .ForMember(dest => dest.ContactDetails, opt => opt.Ignore())
                 .ForMember(dest => dest.Sessions, opt => opt.Ignore())
                 .ForMember(dest => dest.PasswordResetTokens, opt => opt.Ignore());
         }
+
         private void ConfigureCompanyMappings()
         {
             CreateMap<Company, CompanyDto>()
@@ -126,7 +132,6 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.LocationId, opt => opt.Ignore());
         }
 
-
         private void ConfigurePageMappings()
         {
             CreateMap<Page, PageDto>()
@@ -164,7 +169,6 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .IgnoreAuditProperties()
                 .ForMember(dest => dest.Page, opt => opt.Ignore())
                 .ForMember(dest => dest.ParentComponent, opt => opt.Ignore());
-
         }
 
         private void ConfigureComponentMappings()
@@ -197,17 +201,28 @@ namespace Backend.CMS.Infrastructure.Mapping
             CreateMap<Category, CategoryDto>()
                 .ForMember(dest => dest.ParentCategoryName, opt => opt.MapFrom(src => src.ParentCategory != null ? src.ParentCategory.Name : null))
                 .ForMember(dest => dest.SubCategories, opt => opt.MapFrom(src => src.SubCategories.Where(sc => !sc.IsDeleted)))
+                .ForMember(dest => dest.Images, opt => opt.MapFrom(src => src.Images.Where(i => !i.IsDeleted).OrderBy(i => i.Position)))
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl))
                 .ForMember(dest => dest.ProductCount, opt => opt.Ignore()); // Will be set by service
 
             CreateMap<Category, CategoryTreeDto>()
                 .ForMember(dest => dest.Children, opt => opt.MapFrom(src => src.SubCategories.Where(sc => !sc.IsDeleted)))
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl))
                 .ForMember(dest => dest.ProductCount, opt => opt.Ignore()); // Will be set by service
 
             CreateMap<CreateCategoryDto, Category>()
-                .IgnoreAuditProperties();
+                .IgnoreAuditProperties()
+                .ForMember(dest => dest.Images, opt => opt.Ignore())
+                .ForMember(dest => dest.ParentCategory, opt => opt.Ignore())
+                .ForMember(dest => dest.SubCategories, opt => opt.Ignore())
+                .ForMember(dest => dest.ProductCategories, opt => opt.Ignore());
 
             CreateMap<UpdateCategoryDto, Category>()
-                .IgnoreBaseEntityProperties();
+                .IgnoreBaseEntityProperties()
+                .ForMember(dest => dest.Images, opt => opt.Ignore())
+                .ForMember(dest => dest.ParentCategory, opt => opt.Ignore())
+                .ForMember(dest => dest.SubCategories, opt => opt.Ignore())
+                .ForMember(dest => dest.ProductCategories, opt => opt.Ignore());
         }
 
         private void ConfigureProductMappings()
@@ -218,15 +233,15 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.Variants, opt => opt.MapFrom(src =>
                     src.Variants.Where(v => !v.IsDeleted)))
                 .ForMember(dest => dest.Images, opt => opt.MapFrom(src =>
-                    src.Images.Where(i => !i.IsDeleted)))
+                    src.Images.Where(i => !i.IsDeleted).OrderBy(i => i.Position)))
                 .ForMember(dest => dest.Options, opt => opt.MapFrom(src =>
-                    src.Options.Where(o => !o.IsDeleted)));
+                    src.Options.Where(o => !o.IsDeleted)))
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl));
 
             CreateMap<Product, ProductListDto>()
                 .ForMember(dest => dest.CategoryNames, opt => opt.MapFrom(src =>
                     src.ProductCategories.Where(pc => !pc.IsDeleted).Select(pc => pc.Category.Name).ToList()))
-                .ForMember(dest => dest.FeaturedImage, opt => opt.MapFrom(src =>
-                    src.Images.Where(i => !i.IsDeleted).OrderBy(i => i.Position).FirstOrDefault().Url));
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl));
 
             CreateMap<CreateProductDto, Product>()
                 .IgnoreAuditProperties()
@@ -245,34 +260,40 @@ namespace Backend.CMS.Infrastructure.Mapping
 
         private void ConfigureProductVariantMappings()
         {
-            CreateMap<ProductVariant, ProductVariantDto>();
+            CreateMap<ProductVariant, ProductVariantDto>()
+                .ForMember(dest => dest.Images, opt => opt.MapFrom(src => src.Images.Where(i => !i.IsDeleted).OrderBy(i => i.Position)))
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl));
 
             CreateMap<CreateProductVariantDto, ProductVariant>()
                 .IgnoreAuditProperties()
                 .ForMember(dest => dest.Product, opt => opt.Ignore())
-                .ForMember(dest => dest.ProductId, opt => opt.Ignore());
+                .ForMember(dest => dest.ProductId, opt => opt.Ignore())
+                .ForMember(dest => dest.Images, opt => opt.Ignore());
 
             CreateMap<UpdateProductVariantDto, ProductVariant>()
                 .IgnoreBaseEntityProperties()
                 .ForMember(dest => dest.Product, opt => opt.Ignore())
-                .ForMember(dest => dest.ProductId, opt => opt.Ignore());
+                .ForMember(dest => dest.ProductId, opt => opt.Ignore())
+                .ForMember(dest => dest.Images, opt => opt.Ignore());
         }
 
         private void ConfigureProductImageMappings()
         {
-            CreateMap<ProductImage, ProductImageDto>();
+            CreateMap<ProductImage, ProductImageDto>()
+                .ForMember(dest => dest.ImageUrl, opt => opt.MapFrom(src => src.ImageUrl))
+                .ForMember(dest => dest.ThumbnailUrl, opt => opt.MapFrom(src => src.ThumbnailUrl));
 
             CreateMap<CreateProductImageDto, ProductImage>()
                 .IgnoreAuditProperties()
                 .ForMember(dest => dest.Product, opt => opt.Ignore())
-                .ForMember(dest => dest.ProductVariant, opt => opt.Ignore())
-                .ForMember(dest => dest.ProductId, opt => opt.Ignore());
+                .ForMember(dest => dest.ProductId, opt => opt.Ignore())
+                .ForMember(dest => dest.File, opt => opt.Ignore());
 
             CreateMap<UpdateProductImageDto, ProductImage>()
                 .IgnoreBaseEntityProperties()
                 .ForMember(dest => dest.Product, opt => opt.Ignore())
-                .ForMember(dest => dest.ProductVariant, opt => opt.Ignore())
-                .ForMember(dest => dest.ProductId, opt => opt.Ignore());
+                .ForMember(dest => dest.ProductId, opt => opt.Ignore())
+                .ForMember(dest => dest.File, opt => opt.Ignore());
         }
 
         private void ConfigureProductOptionMappings()
@@ -304,6 +325,43 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .IgnoreBaseEntityProperties()
                 .ForMember(dest => dest.ProductOption, opt => opt.Ignore())
                 .ForMember(dest => dest.ProductOptionId, opt => opt.Ignore());
+        }
+
+        private void ConfigureImageMappings()
+        {
+            // Category Image mappings
+            CreateMap<CategoryImage, CategoryImageDto>()
+                .ForMember(dest => dest.ImageUrl, opt => opt.MapFrom(src => src.ImageUrl))
+                .ForMember(dest => dest.ThumbnailUrl, opt => opt.MapFrom(src => src.ThumbnailUrl));
+
+            CreateMap<CreateCategoryImageDto, CategoryImage>()
+                .IgnoreAuditProperties()
+                .ForMember(dest => dest.Category, opt => opt.Ignore())
+                .ForMember(dest => dest.CategoryId, opt => opt.Ignore())
+                .ForMember(dest => dest.File, opt => opt.Ignore());
+
+            CreateMap<UpdateCategoryImageDto, CategoryImage>()
+                .IgnoreBaseEntityProperties()
+                .ForMember(dest => dest.Category, opt => opt.Ignore())
+                .ForMember(dest => dest.CategoryId, opt => opt.Ignore())
+                .ForMember(dest => dest.File, opt => opt.Ignore());
+
+            // Product Variant Image mappings
+            CreateMap<ProductVariantImage, ProductVariantImageDto>()
+                .ForMember(dest => dest.ImageUrl, opt => opt.MapFrom(src => src.ImageUrl))
+                .ForMember(dest => dest.ThumbnailUrl, opt => opt.MapFrom(src => src.ThumbnailUrl));
+
+            CreateMap<CreateProductVariantImageDto, ProductVariantImage>()
+                .IgnoreAuditProperties()
+                .ForMember(dest => dest.ProductVariant, opt => opt.Ignore())
+                .ForMember(dest => dest.ProductVariantId, opt => opt.Ignore())
+                .ForMember(dest => dest.File, opt => opt.Ignore());
+
+            CreateMap<UpdateProductVariantImageDto, ProductVariantImage>()
+                .IgnoreBaseEntityProperties()
+                .ForMember(dest => dest.ProductVariant, opt => opt.Ignore())
+                .ForMember(dest => dest.ProductVariantId, opt => opt.Ignore())
+                .ForMember(dest => dest.File, opt => opt.Ignore());
         }
 
         private void ConfigureDesignerMapping()
@@ -378,6 +436,5 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember("IsDeleted", opt => opt.Ignore())
                 .ForMember("DeletedAt", opt => opt.Ignore());
         }
-
     }
 }

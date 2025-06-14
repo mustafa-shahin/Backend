@@ -13,12 +13,16 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public async Task<User?> GetByEmailAsync(string email)
         {
-            return await _dbSet.FirstOrDefaultAsync(u => u.Email == email);
+            return await _dbSet
+                           .Include(u => u.AvatarFile)
+                           .FirstOrDefaultAsync(u => u.Email == email);
         }
 
         public async Task<User?> GetByUsernameAsync(string username)
         {
-            return await _dbSet.FirstOrDefaultAsync(u => u.Username == username);
+            return await _dbSet
+                .Include(u => u.AvatarFile)
+                .FirstOrDefaultAsync(u => u.Username == username);
         }
 
         public async Task<User?> GetWithAddressesAndContactsAsync(int userId)
@@ -99,6 +103,14 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Where(u => u.Email.Contains(search) || u.Username.Contains(search) ||
                            u.FirstName.Contains(search) || u.LastName.Contains(search))
                 .CountAsync();
+        }
+        public async Task<User?> GetByIdAsync(int userId)
+        {
+            return await _dbSet
+                .Include(u => u.AvatarFile)
+                .Include(u => u.Addresses.Where(a => !a.IsDeleted))
+                .Include(u => u.ContactDetails.Where(c => !c.IsDeleted))
+                .FirstOrDefaultAsync(u => u.Id == userId);
         }
     }
 }

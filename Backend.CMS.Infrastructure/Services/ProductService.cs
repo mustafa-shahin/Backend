@@ -14,6 +14,8 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IProductRepository _productRepository;
         private readonly IProductVariantRepository _variantRepository;
         private readonly ICategoryRepository _categoryRepository;
+        private readonly IRepository<ProductImage> _productImageRepository;
+        private readonly IRepository<FileEntity> _fileRepository;
         private readonly ICacheService _cacheService;
         private readonly IMapper _mapper;
         private readonly ILogger<ProductService> _logger;
@@ -22,6 +24,8 @@ namespace Backend.CMS.Infrastructure.Services
             IProductRepository productRepository,
             IProductVariantRepository variantRepository,
             ICategoryRepository categoryRepository,
+            IRepository<ProductImage> productImageRepository,
+            IRepository<FileEntity> fileRepository,
             ICacheService cacheService,
             IMapper mapper,
             ILogger<ProductService> logger)
@@ -29,6 +33,8 @@ namespace Backend.CMS.Infrastructure.Services
             _productRepository = productRepository;
             _variantRepository = variantRepository;
             _categoryRepository = categoryRepository;
+            _productImageRepository = productImageRepository;
+            _fileRepository = fileRepository;
             _cacheService = cacheService;
             _mapper = mapper;
             _logger = logger;
@@ -127,6 +133,12 @@ namespace Backend.CMS.Infrastructure.Services
                 }
             }
 
+            // Validate images
+            if (createProductDto.Images.Any())
+            {
+                await ValidateImagesAsync(createProductDto.Images.Select(i => i.FileId).ToList());
+            }
+
             var product = _mapper.Map<Product>(createProductDto);
 
             // Set published date if status is active
@@ -151,6 +163,12 @@ namespace Backend.CMS.Infrastructure.Services
                     await _productRepository.AddProductCategoryAsync(pc);
                 }
                 await _productRepository.SaveChangesAsync();
+            }
+
+            // Add images
+            if (createProductDto.Images.Any())
+            {
+                await AddProductImagesAsync(product.Id, createProductDto.Images);
             }
 
             // Create variants if specified
@@ -188,6 +206,12 @@ namespace Backend.CMS.Infrastructure.Services
             if (await _productRepository.SKUExistsAsync(updateProductDto.SKU, productId))
                 throw new ArgumentException($"Product with SKU '{updateProductDto.SKU}' already exists");
 
+            // Validate images
+            if (updateProductDto.Images.Any())
+            {
+                await ValidateImagesAsync(updateProductDto.Images.Select(i => i.FileId).ToList());
+            }
+
             var oldStatus = product.Status;
             _mapper.Map(updateProductDto, product);
 
@@ -216,6 +240,9 @@ namespace Backend.CMS.Infrastructure.Services
                     await _productRepository.AddProductCategoryAsync(pc);
                 }
             }
+
+            // Update images
+            await UpdateProductImagesAsync(productId, updateProductDto.Images);
 
             await _productRepository.SaveChangesAsync();
 
@@ -364,6 +391,21 @@ namespace Backend.CMS.Infrastructure.Services
                 await _productRepository.AddProductCategoryAsync(newPc);
             }
 
+            // Duplicate images
+            foreach (var image in originalProduct.Images.Where(i => !i.IsDeleted))
+            {
+                var newImage = new ProductImage
+                {
+                    ProductId = duplicatedProduct.Id,
+                    FileId = image.FileId,
+                    Alt = image.Alt,
+                    Caption = image.Caption,
+                    Position = image.Position,
+                    IsFeatured = image.IsFeatured
+                };
+                await _productImageRepository.AddAsync(newImage);
+            }
+
             await _productRepository.SaveChangesAsync();
             await InvalidateProductCache();
 
@@ -376,13 +418,6 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<ProductDto>> GetFeaturedProductsAsync(int count = 10)
         {
-
-            //var cacheKey = CacheKeys.FeaturedProducts(count);
-            //return await _cacheService.GetAsync(cacheKey, async () =>
-            //{
-            //    var products = await _productRepository.GetFeaturedProductsAsync(count);
-            //    return _mapper.Map<List<ProductDto>>(products);
-            //});
             var cacheKey = CacheKeys.FeaturedProducts(count);
             async Task<List<ProductDto>> GetProductsFromRepositoryAndMapAsync()
             {
@@ -394,7 +429,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
                 catch (Exception ex)
                 {
-                   _logger.LogError($"[ERROR] Error fetching or mapping featured products: {ex.Message}");
+                    _logger.LogError($"[ERROR] Error fetching or mapping featured products: {ex.Message}");
                     throw;
                 }
             }
@@ -512,6 +547,92 @@ namespace Backend.CMS.Infrastructure.Services
             return _mapper.Map<List<ProductDto>>(products);
         }
 
+        // Image management methods
+        public async Task<ProductImageDto> AddProductImageAsync(int productId, CreateProductImageDto createImageDto)
+        {
+            var product = await _productRepository.GetByIdAsync(productId);
+            if (product == null)
+                throw new ArgumentException($"Product with ID {productId} not found");
+
+            await ValidateImageAsync(createImageDto.FileId);
+
+            var productImage = _mapper.Map<ProductImage>(createImageDto);
+            productImage.ProductId = productId;
+
+            // If this is set as featured, remove featured flag from other images
+            if (createImageDto.IsFeatured)
+            {
+                await RemoveFeaturedFlagFromOtherProductImagesAsync(productId);
+            }
+
+            await _productImageRepository.AddAsync(productImage);
+            await _productImageRepository.SaveChangesAsync();
+
+            await InvalidateProductCache();
+
+            _logger.LogInformation("Added image to product {ProductId}: FileId {FileId}", productId, createImageDto.FileId);
+            return _mapper.Map<ProductImageDto>(productImage);
+        }
+
+        public async Task<ProductImageDto> UpdateProductImageAsync(int imageId, UpdateProductImageDto updateImageDto)
+        {
+            var productImage = await _productImageRepository.GetByIdAsync(imageId);
+            if (productImage == null)
+                throw new ArgumentException($"Product image with ID {imageId} not found");
+
+            await ValidateImageAsync(updateImageDto.FileId);
+
+            var oldIsFeatured = productImage.IsFeatured;
+            _mapper.Map(updateImageDto, productImage);
+
+            // If this image is being set as featured, remove featured flag from other images
+            if (updateImageDto.IsFeatured && !oldIsFeatured)
+            {
+                await RemoveFeaturedFlagFromOtherProductImagesAsync(productImage.ProductId, imageId);
+            }
+
+            _productImageRepository.Update(productImage);
+            await _productImageRepository.SaveChangesAsync();
+
+            await InvalidateProductCache();
+
+            _logger.LogInformation("Updated product image {ImageId}", imageId);
+            return _mapper.Map<ProductImageDto>(productImage);
+        }
+
+        public async Task<bool> DeleteProductImageAsync(int imageId)
+        {
+            var productImage = await _productImageRepository.GetByIdAsync(imageId);
+            if (productImage == null) return false;
+
+            var productId = productImage.ProductId;
+            await _productImageRepository.SoftDeleteAsync(productImage);
+
+            await InvalidateProductCache();
+
+            _logger.LogInformation("Deleted product image {ImageId} from product {ProductId}", imageId, productId);
+            return true;
+        }
+
+        public async Task<List<ProductImageDto>> ReorderProductImagesAsync(int productId, List<(int ImageId, int Position)> imageOrders)
+        {
+            var imageIds = imageOrders.Select(io => io.ImageId).ToList();
+            var images = await _productImageRepository.FindAsync(i => i.ProductId == productId && imageIds.Contains(i.Id));
+
+            foreach (var image in images)
+            {
+                var newPosition = imageOrders.First(io => io.ImageId == image.Id).Position;
+                image.Position = newPosition;
+            }
+
+            _productImageRepository.UpdateRange(images);
+            await _productImageRepository.SaveChangesAsync();
+
+            await InvalidateProductCache();
+
+            return _mapper.Map<List<ProductImageDto>>(images.OrderBy(i => i.Position));
+        }
+
         // Private helper methods
         private async Task<string> GenerateUniqueSlugAsync(string name)
         {
@@ -543,6 +664,107 @@ namespace Backend.CMS.Infrastructure.Services
             }
 
             return sku;
+        }
+
+        private async Task ValidateImagesAsync(List<int> fileIds)
+        {
+            foreach (var fileId in fileIds)
+            {
+                await ValidateImageAsync(fileId);
+            }
+        }
+
+        private async Task ValidateImageAsync(int fileId)
+        {
+            var file = await _fileRepository.GetByIdAsync(fileId);
+            if (file == null)
+                throw new ArgumentException($"File with ID {fileId} not found");
+
+            if (file.FileType != Domain.Enums.FileType.Image)
+                throw new ArgumentException($"File with ID {fileId} is not an image");
+        }
+
+        private async Task AddProductImagesAsync(int productId, List<CreateProductImageDto> images)
+        {
+            foreach (var imageDto in images)
+            {
+                var productImage = _mapper.Map<ProductImage>(imageDto);
+                productImage.ProductId = productId;
+
+                await _productImageRepository.AddAsync(productImage);
+            }
+
+            // Ensure only one image is marked as featured
+            await EnsureSingleFeaturedProductImageAsync(productId);
+            await _productImageRepository.SaveChangesAsync();
+        }
+
+        private async Task UpdateProductImagesAsync(int productId, List<UpdateProductImageDto> images)
+        {
+            // Remove existing images
+            var existingImages = await _productImageRepository.FindAsync(i => i.ProductId == productId);
+            await _productImageRepository.SoftDeleteRangeAsync(existingImages);
+
+            // Add new images
+            foreach (var imageDto in images)
+            {
+                var productImage = new ProductImage
+                {
+                    ProductId = productId,
+                    FileId = imageDto.FileId,
+                    Alt = imageDto.Alt,
+                    Caption = imageDto.Caption,
+                    Position = imageDto.Position,
+                    IsFeatured = imageDto.IsFeatured
+                };
+
+                await _productImageRepository.AddAsync(productImage);
+            }
+
+            // Ensure only one image is marked as featured
+            await EnsureSingleFeaturedProductImageAsync(productId);
+        }
+
+        private async Task RemoveFeaturedFlagFromOtherProductImagesAsync(int productId, int? excludeImageId = null)
+        {
+            var otherImages = await _productImageRepository.FindAsync(i =>
+                i.ProductId == productId &&
+                i.IsFeatured &&
+                (excludeImageId == null || i.Id != excludeImageId));
+
+            foreach (var image in otherImages)
+            {
+                image.IsFeatured = false;
+            }
+
+            _productImageRepository.UpdateRange(otherImages);
+        }
+
+        private async Task EnsureSingleFeaturedProductImageAsync(int productId)
+        {
+            var featuredImages = await _productImageRepository.FindAsync(i => i.ProductId == productId && i.IsFeatured);
+            var featuredImagesList = featuredImages.ToList();
+
+            if (featuredImagesList.Count > 1)
+            {
+                // Keep only the first one as featured
+                for (int i = 1; i < featuredImagesList.Count; i++)
+                {
+                    featuredImagesList[i].IsFeatured = false;
+                }
+
+                _productImageRepository.UpdateRange(featuredImagesList.Skip(1));
+            }
+            else if (!featuredImagesList.Any())
+            {
+                // If no featured image, make the first one featured
+                var firstImage = await _productImageRepository.FirstOrDefaultAsync(i => i.ProductId == productId);
+                if (firstImage != null)
+                {
+                    firstImage.IsFeatured = true;
+                    _productImageRepository.Update(firstImage);
+                }
+            }
         }
 
         private async Task InvalidateProductCache()

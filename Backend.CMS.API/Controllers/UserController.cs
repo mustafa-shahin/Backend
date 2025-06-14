@@ -318,5 +318,51 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { Message = "An error occurred while sending verification email" });
             }
         }
+        [HttpPut("{id:int}/avatar")]
+        public async Task<ActionResult<UserDto>> UpdateUserAvatar(int id, [FromBody] UpdateUserAvatarDto updateAvatarDto)
+        {
+            try
+            {
+                var user = await _userService.UpdateUserAvatarAsync(id, updateAvatarDto.AvatarFileId);
+                return Ok(user);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Avatar update failed for {UserId}: {Message}", id, ex.Message);
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating avatar for user {UserId}", id);
+                return StatusCode(500, new { Message = "An error occurred while updating the avatar" });
+            }
+        }
+        /// <summary>
+        /// Remove user avatar
+        /// </summary>
+        [HttpDelete("{id:int}/avatar")]
+        public async Task<ActionResult<UserDto>> RemoveUserAvatar(int id)
+        {
+            try
+            {
+                var user = await _userService.RemoveUserAvatarAsync(id);
+                return Ok(user);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Avatar removal failed for {UserId}: {Message}", id, ex.Message);
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error removing avatar for user {UserId}", id);
+                return StatusCode(500, new { Message = "An error occurred while removing the avatar" });
+            }
+        }
+    }
+
+    public class UpdateUserAvatarDto
+    {
+        public int? AvatarFileId { get; set; }
     }
 }

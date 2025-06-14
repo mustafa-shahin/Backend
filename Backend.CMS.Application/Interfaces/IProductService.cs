@@ -29,5 +29,9 @@ namespace Backend.CMS.Application.Interfaces
         Task UpdateStockAsync(int productId, int? variantId, int newQuantity);
         Task<List<ProductDto>> GetLowStockProductsAsync(int threshold = 5);
         Task<List<ProductDto>> GetOutOfStockProductsAsync();
+        Task<ProductImageDto> AddProductImageAsync(int productId, CreateProductImageDto createImageDto);
+        Task<ProductImageDto> UpdateProductImageAsync(int imageId, UpdateProductImageDto updateImageDto);
+        Task<bool> DeleteProductImageAsync(int imageId);
+        Task<List<ProductImageDto>> ReorderProductImagesAsync(int productId, List<(int ImageId, int Position)> imageOrders);
     }
 }

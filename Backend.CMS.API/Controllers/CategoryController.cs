@@ -345,22 +345,119 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { Message = "An error occurred while checking delete permissions" });
             }
         }
-    }
+        // <summary>
+        /// Add image to category
+        /// </summary>
+        [HttpPost("{id:int}/images")]
+        [AdminOrDev]
+        public async Task<ActionResult<CategoryImageDto>> AddCategoryImage(int id, [FromBody] CreateCategoryImageDto createImageDto)
+        {
+            try
+            {
+                var image = await _categoryService.AddCategoryImageAsync(id, createImageDto);
+                return CreatedAtAction(nameof(GetCategory), new { id }, image);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Add category image failed for {CategoryId}: {Message}", id, ex.Message);
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error adding image to category {CategoryId}", id);
+                return StatusCode(500, new { Message = "An error occurred while adding the image" });
+            }
+        }
+        /// <summary>
+        /// Update category image
+        /// </summary>
+        [HttpPut("images/{imageId:int}")]
+        [AdminOrDev]
+        public async Task<ActionResult<CategoryImageDto>> UpdateCategoryImage(int imageId, [FromBody] UpdateCategoryImageDto updateImageDto)
+        {
+            try
+            {
+                var image = await _categoryService.UpdateCategoryImageAsync(imageId, updateImageDto);
+                return Ok(image);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Update category image failed for {ImageId}: {Message}", imageId, ex.Message);
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating category image {ImageId}", imageId);
+                return StatusCode(500, new { Message = "An error occurred while updating the image" });
+            }
+        }
 
-    // Supporting DTOs for controller actions
-    public class MoveCategoryDto
-    {
-        public int? NewParentCategoryId { get; set; }
-    }
+        /// <summary>
+        /// Delete category image
+        /// </summary>
+        [HttpDelete("images/{imageId:int}")]
+        [AdminOrDev]
+        public async Task<ActionResult> DeleteCategoryImage(int imageId)
+        {
+            try
+            {
+                var success = await _categoryService.DeleteCategoryImageAsync(imageId);
+                if (!success)
+                    return NotFound(new { Message = "Category image not found" });
 
-    public class ReorderCategoriesDto
-    {
-        public List<CategoryOrderDto> Categories { get; set; } = new();
-    }
+                return Ok(new { Message = "Category image deleted successfully" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting category image {ImageId}", imageId);
+                return StatusCode(500, new { Message = "An error occurred while deleting the image" });
+            }
+        }
+        // <summary>
+        /// Reorder category images
+        /// </summary>
+        [HttpPost("{id:int}/images/reorder")]
+        [AdminOrDev]
+        public async Task<ActionResult<List<CategoryImageDto>>> ReorderCategoryImages(int id, [FromBody] ReorderCategoryImagesDto reorderDto)
+        {
+            try
+            {
+                var imageOrders = reorderDto.Images.Select(i => (i.Id, i.Position)).ToList();
+                var images = await _categoryService.ReorderCategoryImagesAsync(id, imageOrders);
+                return Ok(images);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error reordering category images for category {CategoryId}", id);
+                return StatusCode(500, new { Message = "An error occurred while reordering images" });
+            }
+        }
+        // Supporting DTOs for controller actions
+        public class MoveCategoryDto
+        {
+            public int? NewParentCategoryId { get; set; }
+        }
 
-    public class CategoryOrderDto
-    {
-        public int Id { get; set; }
-        public int SortOrder { get; set; }
+        public class ReorderCategoriesDto
+        {
+            public List<CategoryOrderDto> Categories { get; set; } = new();
+        }
+
+        public class CategoryOrderDto
+        {
+            public int Id { get; set; }
+            public int SortOrder { get; set; }
+        }
+
+        public class ReorderCategoryImagesDto
+        {
+            public List<CategoryImageOrderDto> Images { get; set; } = new();
+        }
+
+        public class CategoryImageOrderDto
+        {
+            public int Id { get; set; }
+            public int Position { get; set; }
+        }
     }
 }

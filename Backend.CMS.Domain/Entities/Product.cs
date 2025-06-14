@@ -92,6 +92,10 @@ namespace Backend.CMS.Domain.Entities
         public ICollection<ProductImage> Images { get; set; } = new List<ProductImage>();
 
         public ICollection<ProductOption> Options { get; set; } = new List<ProductOption>();
+
+        // Computed property for featured image
+        [NotMapped]
+        public string? FeaturedImageUrl => Images.OrderBy(i => i.Position).FirstOrDefault()?.ImageUrl;
     }
 
     public class ProductVariant : BaseEntity
@@ -134,9 +138,6 @@ namespace Backend.CMS.Domain.Entities
         [MaxLength(255)]
         public string? Barcode { get; set; }
 
-        [MaxLength(1024)]
-        public string? Image { get; set; }
-
         public int Position { get; set; } = 0;
 
         public bool IsDefault { get; set; } = false;
@@ -152,8 +153,14 @@ namespace Backend.CMS.Domain.Entities
 
         [MaxLength(255)]
         public string? Option3 { get; set; }
-    }
 
+        // Images relationship
+        public ICollection<ProductVariantImage> Images { get; set; } = new List<ProductVariantImage>();
+
+        // Computed property for featured image
+        [NotMapped]
+        public string? FeaturedImageUrl => Images.OrderBy(i => i.Position).FirstOrDefault()?.ImageUrl;
+    }
 
     public class ProductCategory : BaseEntity
     {
@@ -172,7 +179,6 @@ namespace Backend.CMS.Domain.Entities
         public int SortOrder { get; set; } = 0;
     }
 
-
     public class ProductImage : BaseEntity
     {
         [Required]
@@ -181,28 +187,61 @@ namespace Backend.CMS.Domain.Entities
         [ForeignKey("ProductId")]
         public Product Product { get; set; } = null!;
 
-        public int? ProductVariantId { get; set; }
-
-        [ForeignKey("ProductVariantId")]
-        public ProductVariant? ProductVariant { get; set; }
-
         [Required]
-        [MaxLength(1024)]
-        public string Url { get; set; } = string.Empty;
+        public int FileId { get; set; }
+
+        [ForeignKey("FileId")]
+        public FileEntity File { get; set; } = null!;
 
         [MaxLength(255)]
         public string? Alt { get; set; }
 
+        [MaxLength(500)]
+        public string? Caption { get; set; }
+
         public int Position { get; set; } = 0;
 
-        public int? Width { get; set; }
+        public bool IsFeatured { get; set; } = false;
 
-        public int? Height { get; set; }
+        // Computed property for image URL
+        [NotMapped]
+        public string ImageUrl => $"/api/files/{FileId}/download";
 
-        [MaxLength(1024)]
-        public string? OriginalSource { get; set; }
+        [NotMapped]
+        public string? ThumbnailUrl => $"/api/files/{FileId}/thumbnail";
     }
 
+    public class ProductVariantImage : BaseEntity
+    {
+        [Required]
+        public int ProductVariantId { get; set; }
+
+        [ForeignKey("ProductVariantId")]
+        public ProductVariant ProductVariant { get; set; } = null!;
+
+        [Required]
+        public int FileId { get; set; }
+
+        [ForeignKey("FileId")]
+        public FileEntity File { get; set; } = null!;
+
+        [MaxLength(255)]
+        public string? Alt { get; set; }
+
+        [MaxLength(500)]
+        public string? Caption { get; set; }
+
+        public int Position { get; set; } = 0;
+
+        public bool IsFeatured { get; set; } = false;
+
+        // Computed property for image URL
+        [NotMapped]
+        public string ImageUrl => $"/api/files/{FileId}/download";
+
+        [NotMapped]
+        public string? ThumbnailUrl => $"/api/files/{FileId}/thumbnail";
+    }
 
     public class ProductOption : BaseEntity
     {
@@ -221,7 +260,6 @@ namespace Backend.CMS.Domain.Entities
         public ICollection<ProductOptionValue> Values { get; set; } = new List<ProductOptionValue>();
     }
 
-
     public class ProductOptionValue : BaseEntity
     {
         [Required]
@@ -236,5 +274,4 @@ namespace Backend.CMS.Domain.Entities
 
         public int Position { get; set; } = 0;
     }
-
 }

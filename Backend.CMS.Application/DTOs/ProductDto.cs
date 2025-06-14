@@ -47,7 +47,7 @@ namespace Backend.CMS.Application.DTOs
         public string TypeName => Type.ToString();
         public bool IsAvailable => Status == ProductStatus.Active && (HasVariants ? Variants.Any(v => v.IsAvailable) : Quantity > 0 || ContinueSellingWhenOutOfStock);
         public decimal? DiscountPercentage => CompareAtPrice.HasValue && CompareAtPrice > Price ? Math.Round(((CompareAtPrice.Value - Price) / CompareAtPrice.Value) * 100, 2) : null;
-        public string? FeaturedImage => Images.OrderBy(i => i.Position).FirstOrDefault()?.Url;
+        public string? FeaturedImageUrl => Images.OrderBy(i => i.Position).FirstOrDefault()?.ImageUrl;
     }
 
     public class CreateProductDto
@@ -134,7 +134,7 @@ namespace Backend.CMS.Application.DTOs
         public ProductType Type { get; set; }
         public int Quantity { get; set; }
         public bool HasVariants { get; set; }
-        public string? FeaturedImage { get; set; }
+        public string? FeaturedImageUrl { get; set; }
         public List<string> CategoryNames { get; set; } = new();
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
@@ -159,6 +159,7 @@ namespace Backend.CMS.Application.DTOs
         public string SortBy { get; set; } = "Name";
         public string SortDirection { get; set; } = "Asc";
     }
+
     public class DuplicateProductDto
     {
         public string NewName { get; set; } = string.Empty;

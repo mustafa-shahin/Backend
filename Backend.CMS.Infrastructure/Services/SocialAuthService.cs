@@ -332,7 +332,7 @@ namespace Backend.CMS.Infrastructure.Services
                 // Mark as external user and email verified
                 user.IsExternalUser = true;
                 user.EmailVerifiedAt = DateTime.UtcNow;
-                user.ProfilePictureUrl = socialUserInfo.Picture;
+                user.AvatarFile = socialUserInfo.Picture;
                 user.UpdatedAt = DateTime.UtcNow;
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
@@ -359,7 +359,7 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     ["email"] = socialUserInfo.Email,
                     ["name"] = socialUserInfo.Name,
-                    ["picture"] = socialUserInfo.Picture ?? string.Empty,
+                    ["picture"] = socialUserInfo.Picture ?? new FileEntity(),
                     ["email_verified"] = socialUserInfo.EmailVerified
                 },
                 CreatedAt = DateTime.UtcNow,
@@ -385,7 +385,7 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     ["email"] = socialUserInfo.Email,
                     ["name"] = socialUserInfo.Name,
-                    ["picture"] = socialUserInfo.Picture ?? string.Empty,
+                    ["picture"] = socialUserInfo.Picture ?? new FileEntity(),
                     ["email_verified"] = socialUserInfo.EmailVerified
                 };
                 externalLogin.UpdatedAt = DateTime.UtcNow;

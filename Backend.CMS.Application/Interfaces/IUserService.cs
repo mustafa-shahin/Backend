@@ -25,5 +25,7 @@ namespace Backend.CMS.Application.Interfaces.Services
         Task<UserDto> UpdateUserPreferencesAsync(int userId, Dictionary<string, object> preferences);
         Task<bool> VerifyEmailAsync(string token);
         Task<bool> SendEmailVerificationAsync(int userId);
+        Task<UserDto> UpdateUserAvatarAsync(int userId, int? avatarFileId);
+        Task<UserDto> RemoveUserAvatarAsync(int userId);
     }
 }
