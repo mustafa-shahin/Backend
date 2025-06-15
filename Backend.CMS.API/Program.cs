@@ -221,6 +221,8 @@ static void ConfigureCors(WebApplicationBuilder builder)
         options.AddDefaultPolicy(policy =>
         {
             policy.WithOrigins(
+                    "http://localhost:4200",
+                    "https://localhost:4200",
                     "http://localhost:3000",
                     "https://localhost:3000",
                     "http://localhost:3001",
@@ -238,6 +240,8 @@ static void ConfigureCors(WebApplicationBuilder builder)
         options.AddPolicy("Development", policy =>
         {
             policy.WithOrigins(
+                    "http://localhost:4200",
+                    "https://localhost:4200",
                     "http://localhost:3000",
                     "https://localhost:3000",
                     "http://localhost:3001",
