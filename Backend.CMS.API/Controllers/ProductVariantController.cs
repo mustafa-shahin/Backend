@@ -27,7 +27,8 @@ namespace Backend.CMS.API.Controllers
         [HttpGet]
         [AllowAnonymous]
         public async Task<ActionResult<PagedResult<ProductVariantDto>>> GetVariants(
-            [FromQuery] int page = 1)
+            [FromQuery] int page = 1,
+            [FromQuery] bool standaloneOnly = false)
         {
             try
             {
@@ -36,6 +37,12 @@ namespace Backend.CMS.API.Controllers
 
                 // 1. Fetch the full list of variants from the service.
                 var allVariants = await _variantService.GetVariantsAsync();
+
+                // Filter standalone variants if requested
+                if (standaloneOnly)
+                {
+                    allVariants = allVariants.Where(v => v.ProductId == 0 || v.ProductId == null).ToList();
+                }
 
                 var totalCount = allVariants.Count;
 
@@ -62,6 +69,26 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error retrieving variants");
                 return StatusCode(500, new { Message = "An error occurred while retrieving variants" });
+            }
+        }
+
+        /// <summary>
+        /// Get standalone variants (variants without product association)
+        /// </summary>
+        [HttpGet("standalone")]
+        [AllowAnonymous]
+        public async Task<ActionResult<List<ProductVariantDto>>> GetStandaloneVariants()
+        {
+            try
+            {
+                var allVariants = await _variantService.GetVariantsAsync();
+                var standaloneVariants = allVariants.Where(v => v.ProductId == 0 || v.ProductId == null).ToList();
+                return Ok(standaloneVariants);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving standalone variants");
+                return StatusCode(500, new { Message = "An error occurred while retrieving standalone variants" });
             }
         }
 
@@ -207,7 +234,7 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Create a new variant (standalone)
+        /// Create a new variant (standalone) - ProductId is optional
         /// </summary>
         [HttpPost]
         [AdminOrDev]
@@ -232,10 +259,6 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Variant data is required" });
                 }
 
-                // Extract productId from the DTO or require it
-                if (!createVariantDto.ProductId.HasValue)
-                    return BadRequest(new { Message = "ProductId is required" });
-
                 if (string.IsNullOrWhiteSpace(createVariantDto.Title))
                 {
                     return BadRequest(new { Message = "Variant title is required" });
@@ -246,7 +269,9 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Variant SKU is required" });
                 }
 
-                var variant = await _variantService.CreateVariantAsync(createVariantDto.ProductId.Value, createVariantDto);
+                // For standalone variants, use 0 or null as productId
+                var productId = createVariantDto.ProductId ?? 0;
+                var variant = await _variantService.CreateVariantAsync(productId, createVariantDto);
                 return CreatedAtAction(nameof(GetVariant), new { id = variant.Id }, variant);
             }
             catch (ArgumentException ex)
@@ -258,6 +283,74 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error creating variant");
                 return StatusCode(500, new { Message = "An error occurred while creating the variant" });
+            }
+        }
+
+        /// <summary>
+        /// Assign standalone variant to product
+        /// </summary>
+        [HttpPost("{variantId:int}/assign-to-product/{productId:int}")]
+        [AdminOrDev]
+        public async Task<ActionResult<ProductVariantDto>> AssignVariantToProduct(int variantId, int productId)
+        {
+            try
+            {
+                var variant = await _variantService.GetVariantByIdAsync(variantId);
+                if (variant == null)
+                    return NotFound(new { Message = $"Variant with ID {variantId} not found" });
+
+                if (variant.ProductId != 0 && variant.ProductId != null)
+                    return BadRequest(new { Message = "Variant is already assigned to a product" });
+
+                // Update the variant to assign it to the product
+                var updateDto = new UpdateProductVariantDto
+                {
+                    Id = variant.Id,
+                    Title = variant.Title,
+                    SKU = variant.SKU,
+                    Price = variant.Price,
+                    CompareAtPrice = variant.CompareAtPrice,
+                    CostPerItem = variant.CostPerItem,
+                    Quantity = variant.Quantity,
+                    TrackQuantity = variant.TrackQuantity,
+                    ContinueSellingWhenOutOfStock = variant.ContinueSellingWhenOutOfStock,
+                    RequiresShipping = variant.RequiresShipping,
+                    IsTaxable = variant.IsTaxable,
+                    Weight = variant.Weight,
+                    WeightUnit = variant.WeightUnit,
+                    Barcode = variant.Barcode,
+                    Position = variant.Position,
+                    IsDefault = variant.IsDefault,
+                    CustomFields = variant.CustomFields,
+                    Option1 = variant.Option1,
+                    Option2 = variant.Option2,
+                    Option3 = variant.Option3,
+                    Images = variant.Images.Select(i => new UpdateProductVariantImageDto
+                    {
+                        Id = i.Id,
+                        FileId = i.FileId,
+                        Alt = i.Alt,
+                        Caption = i.Caption,
+                        Position = i.Position,
+                        IsFeatured = i.IsFeatured
+                    }).ToList()
+                };
+
+                // Temporarily set ProductId for the service call
+                variant.ProductId = productId;
+                var updatedVariant = await _variantService.UpdateVariantAsync(variantId, updateDto);
+
+                return Ok(updatedVariant);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Variant assignment failed: {Message}", ex.Message);
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error assigning variant {VariantId} to product {ProductId}", variantId, productId);
+                return StatusCode(500, new { Message = "An error occurred while assigning the variant" });
             }
         }
 
