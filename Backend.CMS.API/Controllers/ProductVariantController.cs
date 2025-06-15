@@ -1,7 +1,6 @@
 using Backend.CMS.API.Authorization;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Application.Interfaces;
-using Backend.CMS.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -165,6 +164,33 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
+                _logger.LogInformation("CreateVariant called for product {ProductId} with data: {@CreateVariantDto}", productId, createVariantDto);
+
+                // Validate the model state
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.SelectMany(x => x.Value.Errors).Select(x => x.ErrorMessage);
+                    _logger.LogWarning("Model validation failed: {Errors}", string.Join(", ", errors));
+                    return BadRequest(new { Message = "Validation failed", Errors = errors });
+                }
+
+                // Additional validation
+                if (createVariantDto == null)
+                {
+                    _logger.LogWarning("CreateVariantDto is null");
+                    return BadRequest(new { Message = "Variant data is required" });
+                }
+
+                if (string.IsNullOrWhiteSpace(createVariantDto.Title))
+                {
+                    return BadRequest(new { Message = "Variant title is required" });
+                }
+
+                if (string.IsNullOrWhiteSpace(createVariantDto.SKU))
+                {
+                    return BadRequest(new { Message = "Variant SKU is required" });
+                }
+
                 var variant = await _variantService.CreateVariantAsync(productId, createVariantDto);
                 return CreatedAtAction(nameof(GetVariant), new { id = variant.Id }, variant);
             }
@@ -189,9 +215,36 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
+                _logger.LogInformation("CreateVariantStandalone called with data: {@CreateVariantDto}", createVariantDto);
+
+                // Validate the model state
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.SelectMany(x => x.Value.Errors).Select(x => x.ErrorMessage);
+                    _logger.LogWarning("Model validation failed: {Errors}", string.Join(", ", errors));
+                    return BadRequest(new { Message = "Validation failed", Errors = errors });
+                }
+
+                // Additional validation
+                if (createVariantDto == null)
+                {
+                    _logger.LogWarning("CreateVariantDto is null");
+                    return BadRequest(new { Message = "Variant data is required" });
+                }
+
                 // Extract productId from the DTO or require it
                 if (!createVariantDto.ProductId.HasValue)
                     return BadRequest(new { Message = "ProductId is required" });
+
+                if (string.IsNullOrWhiteSpace(createVariantDto.Title))
+                {
+                    return BadRequest(new { Message = "Variant title is required" });
+                }
+
+                if (string.IsNullOrWhiteSpace(createVariantDto.SKU))
+                {
+                    return BadRequest(new { Message = "Variant SKU is required" });
+                }
 
                 var variant = await _variantService.CreateVariantAsync(createVariantDto.ProductId.Value, createVariantDto);
                 return CreatedAtAction(nameof(GetVariant), new { id = variant.Id }, variant);
@@ -217,6 +270,23 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
+                _logger.LogInformation("UpdateVariant called for variant {VariantId} with data: {@UpdateVariantDto}", id, updateVariantDto);
+
+                // Validate the model state
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.SelectMany(x => x.Value.Errors).Select(x => x.ErrorMessage);
+                    _logger.LogWarning("Model validation failed: {Errors}", string.Join(", ", errors));
+                    return BadRequest(new { Message = "Validation failed", Errors = errors });
+                }
+
+                // Additional validation
+                if (updateVariantDto == null)
+                {
+                    _logger.LogWarning("UpdateVariantDto is null");
+                    return BadRequest(new { Message = "Variant data is required" });
+                }
+
                 updateVariantDto.Id = id; // Ensure consistency
                 var variant = await _variantService.UpdateVariantAsync(id, updateVariantDto);
                 return Ok(variant);
@@ -258,7 +328,7 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Set variant as default for its product
         /// </summary>
-        [HttpPost("{id:int}/set-default")]
+        [HttpPut("{id:int}/set-default")]
         [AdminOrDev]
         public async Task<ActionResult<ProductVariantDto>> SetDefaultVariant(int id)
         {
@@ -401,7 +471,9 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { Message = "An error occurred while validating the SKU" });
             }
         }
+
         [HttpPost("{id:int}/images")]
+        [AdminOrDev]
         public async Task<IActionResult> AddVariantImage(int id, [FromBody] CreateProductVariantImageDto createImageDto)
         {
             try
@@ -419,7 +491,9 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { message = "Internal server error" });
             }
         }
+
         [HttpPut("images/{imageId}")]
+        [AdminOrDev]
         public async Task<IActionResult> UpdateVariantImage(int imageId, [FromBody] UpdateProductVariantImageDto updateImageDto)
         {
             try
@@ -438,7 +512,9 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { message = "Internal server error" });
             }
         }
+
         [HttpDelete("images/{imageId}")]
+        [AdminOrDev]
         public async Task<IActionResult> DeleteVariantImage(int imageId)
         {
             try
@@ -455,7 +531,9 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { message = "Internal server error" });
             }
         }
+
         [HttpPost("{id}/images/reorder")]
+        [AdminOrDev]
         public async Task<IActionResult> ReorderVariantImages(int id, [FromBody] List<(int ImageId, int Position)> imageOrders)
         {
             try

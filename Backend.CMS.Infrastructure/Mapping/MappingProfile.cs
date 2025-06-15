@@ -244,26 +244,34 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.IsAvailable, opt => opt.MapFrom(src => src.Status == ProductStatus.Active && (src.HasVariants ? src.Variants.Any(v => v.Quantity > 0 || v.ContinueSellingWhenOutOfStock) : src.Quantity > 0 || src.ContinueSellingWhenOutOfStock)))
                 .ForMember(dest => dest.DiscountPercentage, opt => opt.MapFrom(src => src.CompareAtPrice.HasValue && src.CompareAtPrice > src.Price ? Math.Round(((src.CompareAtPrice.Value - src.Price) / src.CompareAtPrice.Value) * 100, 2) : (decimal?)null))
                 .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.Images.OrderBy(i => i.Position).FirstOrDefault() != null ? $"/api/files/{src.Images.OrderBy(i => i.Position).FirstOrDefault().FileId}/download" : null))
-                .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type));
+                .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type))
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status));
 
             CreateMap<Product, ProductListDto>()
                 .ForMember(dest => dest.CategoryNames, opt => opt.MapFrom(src =>
                     src.ProductCategories.Where(pc => !pc.IsDeleted).Select(pc => pc.Category.Name).ToList()))
-                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl));
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl))
+                .ForMember(dest => dest.StatusName, opt => opt.MapFrom(src => src.Status.ToString()))
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status))
+                .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type));
 
             CreateMap<CreateProductDto, Product>()
                 .IgnoreAuditProperties()
                 .ForMember(dest => dest.ProductCategories, opt => opt.Ignore())
                 .ForMember(dest => dest.Variants, opt => opt.Ignore())
                 .ForMember(dest => dest.Images, opt => opt.Ignore())
-                .ForMember(dest => dest.Options, opt => opt.Ignore());
+                .ForMember(dest => dest.Options, opt => opt.Ignore())
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status))
+                .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type));
 
             CreateMap<UpdateProductDto, Product>()
                 .IgnoreBaseEntityProperties()
                 .ForMember(dest => dest.ProductCategories, opt => opt.Ignore())
                 .ForMember(dest => dest.Variants, opt => opt.Ignore())
                 .ForMember(dest => dest.Images, opt => opt.Ignore())
-                .ForMember(dest => dest.Options, opt => opt.Ignore());
+                .ForMember(dest => dest.Options, opt => opt.Ignore())
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status))
+                .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type));
         }
 
         private void ConfigureProductVariantMappings()
@@ -274,7 +282,7 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.IsAvailable, opt => opt.MapFrom(src => src.Quantity > 0 || src.ContinueSellingWhenOutOfStock))
                 .ForMember(dest => dest.DiscountPercentage, opt => opt.MapFrom(src => src.CompareAtPrice.HasValue && src.CompareAtPrice > src.Price ? Math.Round(((src.CompareAtPrice.Value - src.Price) / src.CompareAtPrice.Value) * 100, 2) : (decimal?)null))
                 .ForMember(dest => dest.DisplayTitle, opt => opt.MapFrom(src => !string.IsNullOrEmpty(src.Title) ? src.Title : string.Join(" / ", new[] { src.Option1, src.Option2, src.Option3 }.Where(o => !string.IsNullOrEmpty(o)))))
-                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.Images.OrderBy(i => i.Position).FirstOrDefault() != null ? $"/api/files/{src.Images.OrderBy(i => i.Position).FirstOrDefault().FileId}/download" : null)); ;
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.Images.OrderBy(i => i.Position).FirstOrDefault() != null ? $"/api/files/{src.Images.OrderBy(i => i.Position).FirstOrDefault().FileId}/download" : null));
 
             CreateMap<CreateProductVariantDto, ProductVariant>()
                 .IgnoreAuditProperties()
