@@ -59,9 +59,6 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.Addresses, opt => opt.MapFrom(src => src.Addresses.Where(a => !a.IsDeleted)))
                 .ForMember(dest => dest.ContactDetails, opt => opt.MapFrom(src => src.ContactDetails.Where(c => !c.IsDeleted)));
 
-            CreateMap<User, UserListDto>()
-                .ForMember(dest => dest.RoleName, opt => opt.MapFrom(src => src.Role.ToString()))
-                .ForMember(dest => dest.AvatarUrl, opt => opt.MapFrom(src => src.AvatarUrl));
 
             CreateMap<CreateUserDto, User>()
                 .ForMember(dest => dest.PasswordHash, opt => opt.MapFrom(src => BCrypt.Net.BCrypt.HashPassword(src.Password)))
