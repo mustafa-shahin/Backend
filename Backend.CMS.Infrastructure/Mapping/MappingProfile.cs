@@ -55,7 +55,7 @@ namespace Backend.CMS.Infrastructure.Mapping
         {
             CreateMap<User, UserDto>()
                 .ForMember(dest => dest.RoleName, opt => opt.MapFrom(src => src.Role.ToString()))
-                .ForMember(dest => dest.AvatarUrl, opt => opt.MapFrom(src => src.AvatarUrl))
+                .ForMember(dest => dest.PictureUrl, opt => opt.MapFrom(src => src.PictureUrl))
                 .ForMember(dest => dest.Addresses, opt => opt.MapFrom(src => src.Addresses.Where(a => !a.IsDeleted)))
                 .ForMember(dest => dest.ContactDetails, opt => opt.MapFrom(src => src.ContactDetails.Where(c => !c.IsDeleted)));
 
@@ -63,7 +63,7 @@ namespace Backend.CMS.Infrastructure.Mapping
             CreateMap<CreateUserDto, User>()
                 .ForMember(dest => dest.PasswordHash, opt => opt.MapFrom(src => BCrypt.Net.BCrypt.HashPassword(src.Password)))
                 .IgnoreAuditProperties()
-                .ForMember(dest => dest.AvatarFile, opt => opt.Ignore())
+                .ForMember(dest => dest.Picture, opt => opt.Ignore())
                 .ForMember(dest => dest.Addresses, opt => opt.Ignore())
                 .ForMember(dest => dest.ContactDetails, opt => opt.Ignore())
                 .ForMember(dest => dest.Sessions, opt => opt.Ignore())
@@ -72,7 +72,7 @@ namespace Backend.CMS.Infrastructure.Mapping
             CreateMap<UpdateUserDto, User>()
                 .IgnoreBaseEntityProperties()
                 .ForMember(dest => dest.PasswordHash, opt => opt.Ignore())
-                .ForMember(dest => dest.AvatarFile, opt => opt.Ignore())
+                .ForMember(dest => dest.Picture, opt => opt.Ignore())
                 .ForMember(dest => dest.Addresses, opt => opt.Ignore())
                 .ForMember(dest => dest.ContactDetails, opt => opt.Ignore())
                 .ForMember(dest => dest.Sessions, opt => opt.Ignore())

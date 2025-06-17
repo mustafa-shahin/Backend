@@ -88,9 +88,9 @@ namespace Backend.CMS.Infrastructure.Services
                 throw new ArgumentException("Username already exists");
 
             // Validate avatar file if provided
-            if (createUserDto.AvatarFileId.HasValue)
+            if (createUserDto.PictureFileId.HasValue)
             {
-                await ValidateAvatarFileAsync(createUserDto.AvatarFileId.Value);
+                await ValidateAvatarFileAsync(createUserDto.PictureFileId.Value);
             }
 
             var currentUserId = await GetCurrentUserIdSafeAsync();
@@ -168,9 +168,9 @@ namespace Backend.CMS.Infrastructure.Services
                 throw new ArgumentException("Username already exists");
 
             // Validate avatar file if provided
-            if (updateUserDto.AvatarFileId.HasValue)
+            if (updateUserDto.PictureFileId.HasValue)
             {
-                await ValidateAvatarFileAsync(updateUserDto.AvatarFileId.Value);
+                await ValidateAvatarFileAsync(updateUserDto.PictureFileId.Value);
             }
 
             // Role validation
@@ -423,7 +423,6 @@ namespace Backend.CMS.Infrastructure.Services
             var user = await _userRepository.GetByIdAsync(userId) ?? throw new ArgumentException("User not found");
             var currentUserId = await GetCurrentUserIdSafeAsync();
 
-            user.Preferences = preferences;
             user.UpdatedAt = DateTime.UtcNow;
             user.UpdatedByUserId = currentUserId;
             _userRepository.Update(user);
@@ -484,21 +483,21 @@ namespace Backend.CMS.Infrastructure.Services
             return true;
         }
 
-        public async Task<UserDto> UpdateUserAvatarAsync(int userId, int? avatarFileId)
+        public async Task<UserDto> UpdateUserAvatarAsync(int userId, int? pictureFileId)
         {
             var user = await _userRepository.GetByIdAsync(userId);
             if (user == null)
                 throw new ArgumentException("User not found");
 
             // Validate avatar file if provided
-            if (avatarFileId.HasValue)
+            if (pictureFileId.HasValue)
             {
-                await ValidateAvatarFileAsync(avatarFileId.Value);
+                await ValidateAvatarFileAsync(pictureFileId.Value);
             }
 
             var currentUserId = await GetCurrentUserIdSafeAsync();
 
-            user.AvatarFileId = avatarFileId;
+            user.PictureFileId = pictureFileId;
             user.UpdatedAt = DateTime.UtcNow;
             user.UpdatedByUserId = currentUserId;
 
@@ -521,7 +520,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var currentUserId = await GetCurrentUserIdSafeAsync();
 
-            user.AvatarFileId = null;
+            user.PictureFileId = null;
             user.UpdatedAt = DateTime.UtcNow;
             user.UpdatedByUserId = currentUserId;
 

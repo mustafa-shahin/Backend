@@ -325,43 +325,6 @@ namespace Backend.CMS.Infrastructure.Services
             return IsInRole(UserRole.Dev);
         }
 
-        public T GetUserPreference<T>(string key, T defaultValue = default!)
-        {
-            var session = GetCurrentSession();
-
-            if (session == null)
-            {
-                return defaultValue;
-            }
-
-            var preference = session.GetPreference(key, defaultValue);
-
-            if (preference is null && defaultValue is not null)
-            {
-                return defaultValue;
-            }
-
-            return preference ?? defaultValue;
-        }
-
-        public async Task SetUserPreferenceAsync<T>(string key, T value)
-        {
-            var session = await GetCurrentSessionAsync();
-            if (session?.CurrentUser != null)
-            {
-                session.SetPreference(key, value);
-
-                session.CurrentUser.Preferences = session.Preferences;
-                session.CurrentUser.UpdatedAt = DateTime.UtcNow;
-                session.CurrentUser.UpdatedByUserId = session.CurrentUser.Id;
-
-                _userRepository.Update(session.CurrentUser);
-                await _userRepository.SaveChangesAsync();
-
-                // Update cache
-                await CacheSessionAsync(session);
-            }
-        }
 
         #endregion
 

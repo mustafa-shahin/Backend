@@ -28,10 +28,7 @@ namespace Backend.CMS.Application.Interfaces
         bool CanTriggerDeploymentJobs();
         bool CanTriggerTemplateSyncJobs();
 
-        // User Preferences - Fixed: Use proper generic constraints
-        T GetUserPreference<T>(string key, T defaultValue = default!);
-        Task SetUserPreferenceAsync<T>(string key, T value);
-
+ 
         // Audit Information
         string GetAuditUserName();
         string GetAuditUserId();

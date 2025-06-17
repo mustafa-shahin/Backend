@@ -42,7 +42,6 @@ namespace Backend.CMS.API.Controllers
                     FirstName = registerDto.FirstName,
                     LastName = registerDto.LastName,
                     IsActive = true, 
-                    Preferences = []
                 };
 
                 var user = await _userService.CreateUserAsync(createUserDto);
@@ -77,11 +76,6 @@ namespace Backend.CMS.API.Controllers
             try
             {
                 var result = await _authService.LoginAsync(loginDto);
-
-                if (result.RequiresTwoFactor)
-                {
-                    return Ok(new { RequiresTwoFactor = true, Message = "Two-factor authentication required" });
-                }
 
                 return Ok(result);
             }
@@ -205,80 +199,6 @@ namespace Backend.CMS.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Enable two-factor authentication
-        /// </summary>
-        [HttpPost("enable-2fa")]
-        [Authorize]
-        public async Task<ActionResult<Enable2FAResponseDto>> Enable2FA()
-        {
-            try
-            {
-                var userId = GetCurrentUserId();
-                var secret = await _authService.Generate2FASecretAsync(userId);
-
-                return Ok(new Enable2FAResponseDto
-                {
-                    Secret = secret,
-                    QrCodeUrl = GenerateQrCodeUrl(secret)
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error enabling 2FA");
-                return StatusCode(500, new { Message = "An error occurred while enabling 2FA" });
-            }
-        }
-
-        /// <summary>
-        /// Verify and complete 2FA setup
-        /// </summary>
-        [HttpPost("verify-2fa")]
-        [Authorize]
-        public async Task<ActionResult<List<string>>> Verify2FA([FromBody] Verify2FADto verify2FADto)
-        {
-            try
-            {
-                var userId = GetCurrentUserId();
-                var isValid = await _authService.Verify2FACodeAsync(userId, verify2FADto.Code);
-
-                if (!isValid)
-                {
-                    return BadRequest(new { Message = "Invalid verification code" });
-                }
-
-                await _authService.Enable2FAAsync(userId);
-                var recoveryCodes = await _authService.GenerateRecoveryCodesAsync(userId);
-
-                return Ok(recoveryCodes);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error verifying 2FA");
-                return StatusCode(500, new { Message = "An error occurred while verifying 2FA" });
-            }
-        }
-
-        /// <summary>
-        /// Disable two-factor authentication
-        /// </summary>
-        [HttpPost("disable-2fa")]
-        [Authorize]
-        public async Task<ActionResult> Disable2FA()
-        {
-            try
-            {
-                var userId = GetCurrentUserId();
-                await _authService.Disable2FAAsync(userId);
-
-                return Ok(new { Message = "Two-factor authentication disabled successfully" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error disabling 2FA");
-                return StatusCode(500, new { Message = "An error occurred while disabling 2FA" });
-            }
-        }
 
         /// <summary>
         /// Revoke all user sessions
@@ -313,20 +233,6 @@ namespace Backend.CMS.API.Controllers
             return userId;
         }
 
-        [HttpGet("test")]
-        public IActionResult Test()
-        {
-            Console.WriteLine("=== TEST ENDPOINT HIT ===");
-            return Ok(new { Message = "AuthController is working", Timestamp = DateTime.Now });
-        }
-    
-        private string GenerateQrCodeUrl(string secret)
-        {
-            // Generate QR code URL for 2FA apps like Google Authenticator
-            var issuer = "Backend CMS";
-            var user = User.FindFirst("email")?.Value ?? "user";
-            return $"otpauth://totp/{issuer}:{user}?secret={secret}&issuer={issuer}";
-        }
         [HttpGet("{provider}/login")]
         [AllowAnonymous]
         public async Task<ActionResult> SocialLogin(string provider, [FromQuery] string returnUrl = "/")

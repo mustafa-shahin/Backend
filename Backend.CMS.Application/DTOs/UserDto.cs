@@ -13,16 +13,13 @@ namespace Backend.CMS.Application.DTOs
         public bool IsActive { get; set; }
         public bool IsLocked { get; set; }
         public DateTime? LastLoginAt { get; set; }
-        public int? AvatarFileId { get; set; }
-        public string? AvatarUrl { get; set; }
-        public string? Timezone { get; set; }
-        public string? Language { get; set; }
+        public int? PictureFileId { get; set; }
+        public string? PictureUrl { get; set; }
         public DateTime? EmailVerifiedAt { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         public UserRole Role { get; set; }
         public string RoleName => Role.ToString();
-        public Dictionary<string, object> Preferences { get; set; } = [];
         public List<AddressDto> Addresses { get; set; } = [];
         public List<ContactDetailsDto> ContactDetails { get; set; } = [];
     }
@@ -35,14 +32,11 @@ namespace Backend.CMS.Application.DTOs
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public bool IsActive { get; set; } = true;
-        public int? AvatarFileId { get; set; }
-        public string? Timezone { get; set; }
-        public string? Language { get; set; }
+        public int? PictureFileId { get; set; }
         public UserRole Role { get; set; } = UserRole.Customer;
-        public Dictionary<string, object> Preferences { get; set; } = [];
         public List<CreateAddressDto> Addresses { get; set; } = [];
         public List<CreateContactDetailsDto> ContactDetails { get; set; } = [];
-        public FileEntity? Avatar { get; set; }
+        public FileEntity? Picture { get; set; }
     }
 
     public class UpdateUserDto
@@ -52,11 +46,8 @@ namespace Backend.CMS.Application.DTOs
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public bool IsActive { get; set; }
-        public int? AvatarFileId { get; set; }
-        public string? Timezone { get; set; }
-        public string? Language { get; set; }
+        public int? PictureFileId { get; set; }
         public UserRole Role { get; set; }
-        public Dictionary<string, object> Preferences { get; set; } = [];
         public List<UpdateAddressDto> Addresses { get; set; } = [];
         public List<UpdateContactDetailsDto> ContactDetails { get; set; } = [];
     }
@@ -73,7 +64,6 @@ namespace Backend.CMS.Application.DTOs
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public bool RememberMe { get; set; }
-        public string? TwoFactorCode { get; set; }
     }
 
     public class LoginResponseDto
@@ -82,7 +72,6 @@ namespace Backend.CMS.Application.DTOs
         public string RefreshToken { get; set; } = string.Empty;
         public DateTime ExpiresAt { get; set; }
         public UserDto User { get; set; } = null!;
-        public bool RequiresTwoFactor { get; set; }
     }
 
     public class RefreshTokenDto

@@ -66,28 +66,6 @@ namespace Backend.CMS.Infrastructure.Services
             // Check account status before proceeding
             await ValidateUserAccountStatusAsync(user);
 
-            // Check for 2FA
-            if (user.TwoFactorEnabled && string.IsNullOrEmpty(loginDto.TwoFactorCode))
-            {
-                return new LoginResponseDto
-                {
-                    RequiresTwoFactor = true
-                };
-            }
-
-            if (user.TwoFactorEnabled && !string.IsNullOrEmpty(loginDto.TwoFactorCode))
-            {
-                var isValidCode = await Verify2FACodeAsync(user.Id, loginDto.TwoFactorCode);
-                if (!isValidCode)
-                {
-                    // Check if it is a recovery code
-                    var isRecoveryCode = await UseRecoveryCodeAsync(user.Id, loginDto.TwoFactorCode);
-                    if (!isRecoveryCode)
-                    {
-                        throw new UnauthorizedAccessException("Invalid two-factor authentication code");
-                    }
-                }
-            }
 
             // Reset failed login attempts and update last login
             await UpdateSuccessfulLoginAsync(user);
@@ -121,7 +99,6 @@ namespace Backend.CMS.Infrastructure.Services
                 RefreshToken = refreshToken,
                 ExpiresAt = DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
                 User = userDto,
-                RequiresTwoFactor = false
             };
         }
 
@@ -387,90 +364,6 @@ namespace Backend.CMS.Infrastructure.Services
             return true;
         }
 
-        public async Task<bool> Enable2FAAsync(int userId)
-        {
-            var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null) return false;
-
-            user.TwoFactorEnabled = true;
-            user.UpdatedAt = DateTime.UtcNow;
-            user.UpdatedByUserId = userId;
-
-            _userRepository.Update(user);
-            await _userRepository.SaveChangesAsync();
-
-            // Send confirmation email
-            await _emailService.Send2FAEnabledEmailAsync(user.Email, user.FirstName);
-
-            return true;
-        }
-
-        public async Task<bool> Disable2FAAsync(int userId)
-        {
-            var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null) return false;
-
-            user.TwoFactorEnabled = false;
-            user.TwoFactorSecret = null;
-            user.RecoveryCodes.Clear();
-            user.UpdatedAt = DateTime.UtcNow;
-            user.UpdatedByUserId = userId;
-
-            _userRepository.Update(user);
-            await _userRepository.SaveChangesAsync();
-            return true;
-        }
-
-        public async Task<string> Generate2FASecretAsync(int userId)
-        {
-            var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null) throw new ArgumentException("User not found");
-
-            var secret = Base32Encoding.ToString(KeyGeneration.GenerateRandomKey(20));
-            user.TwoFactorSecret = secret;
-            user.UpdatedAt = DateTime.UtcNow;
-            user.UpdatedByUserId = userId;
-
-            _userRepository.Update(user);
-            await _userRepository.SaveChangesAsync();
-
-            return secret;
-        }
-
-        public async Task<bool> Verify2FACodeAsync(int userId, string code)
-        {
-            if (string.IsNullOrWhiteSpace(code))
-                return false;
-
-            var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null || string.IsNullOrEmpty(user.TwoFactorSecret))
-                return false;
-
-            try
-            {
-                var secretBytes = Base32Encoding.ToBytes(user.TwoFactorSecret);
-                var totp = new Totp(secretBytes);
-
-                // Verify current window and one window before/after for clock drift
-                var currentTime = DateTime.UtcNow;
-
-                for (int i = -1; i <= 1; i++)
-                {
-                    var timeToCheck = currentTime.AddSeconds(i * 30);
-                    var expectedCode = totp.ComputeTotp(timeToCheck);
-                    if (expectedCode == code)
-                    {
-                        return true;
-                    }
-                }
-
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
-        }
 
         public async Task<List<string>> GenerateRecoveryCodesAsync(int userId)
         {
@@ -714,7 +607,6 @@ namespace Backend.CMS.Infrastructure.Services
                 RefreshToken = refreshToken,
                 ExpiresAt = DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
                 User = userDto,
-                RequiresTwoFactor = false
             };
         }
         private static bool IsValidPassword(string password)

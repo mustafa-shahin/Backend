@@ -345,16 +345,15 @@ namespace Backend.CMS.Infrastructure.Data
                 entity.Property(e => e.Username).HasMaxLength(256);
                 entity.Property(e => e.FirstName).HasMaxLength(100);
                 entity.Property(e => e.LastName).HasMaxLength(100);
-                entity.Property(e => e.Preferences).HasConversion(dictionaryConverter);
                 entity.Property(e => e.RecoveryCodes).HasConversion(listConverter);
                 entity.Property(e => e.Role).HasConversion<string>().HasMaxLength(50);
 
-                entity.HasOne(e => e.AvatarFile)
+                entity.HasOne(e => e.Picture)
                     .WithMany()
-                    .HasForeignKey(e => e.AvatarFileId)
+                    .HasForeignKey(e => e.PictureFileId)
                     .OnDelete(DeleteBehavior.SetNull);
 
-                entity.HasIndex(e => e.AvatarFileId);
+                entity.HasIndex(e => e.PictureFileId);
 
                 // User relationships
                 entity.HasMany(e => e.Sessions)

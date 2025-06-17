@@ -15,7 +15,7 @@ namespace Backend.CMS.Application.Common
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
         public UserRole? Role { get; set; }
-        public FileEntity? Avatar { get; set; }
+        public FileEntity? Picture { get; set; }
         public bool IsActive { get; set; }
         public bool IsLocked { get; set; }
         public string? Timezone { get; set; }
@@ -104,56 +104,6 @@ namespace Backend.CMS.Application.Common
             return Claims[claimType]?.ToString() == claimValue;
         }
 
-        public T GetPreference<T>(string key, T defaultValue = default!)
-        {
-            // Try CurrentUser preferences first (if available)
-            if (CurrentUser?.Preferences != null && CurrentUser.Preferences.ContainsKey(key))
-            {
-                try
-                {
-                    var value = CurrentUser.Preferences[key];
-                    return ConvertPreferenceValue<T>(value, defaultValue);
-                }
-                catch
-                {
-                    // Fall through to cached preferences
-                }
-            }
-
-            // Fall back to cached preferences
-            if (Preferences.ContainsKey(key))
-            {
-                try
-                {
-                    var value = Preferences[key];
-                    return ConvertPreferenceValue<T>(value, defaultValue);
-                }
-                catch
-                {
-                    return defaultValue;
-                }
-            }
-
-            return defaultValue;
-        }
-
-        public void SetPreference<T>(string key, T value)
-        {
-            // Update both CurrentUser and cached preferences
-            if (CurrentUser?.Preferences != null)
-            {
-                if (value != null)
-                    CurrentUser.Preferences[key] = value;
-                else
-                    CurrentUser.Preferences.Remove(key);
-            }
-
-            // Update cached preferences
-            if (value != null)
-                Preferences[key] = value;
-            else
-                Preferences.Remove(key);
-        }
 
         public void UpdateLastActivity()
         {
@@ -176,17 +126,9 @@ namespace Backend.CMS.Application.Common
                 FirstName = CurrentUser.FirstName;
                 LastName = CurrentUser.LastName;
                 Role = CurrentUser.Role;
-                Avatar = CurrentUser.AvatarFile;
+                Picture = CurrentUser.Picture;
                 IsActive = CurrentUser.IsActive;
                 IsLocked = CurrentUser.IsLocked;
-                Timezone = CurrentUser.Timezone;
-                Language = CurrentUser.Language;
-
-                // Sync preferences
-                if (CurrentUser.Preferences != null)
-                {
-                    Preferences = new Dictionary<string, object>(CurrentUser.Preferences);
-                }
             }
         }
 

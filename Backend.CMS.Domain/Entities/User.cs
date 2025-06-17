@@ -42,24 +42,14 @@ namespace Backend.CMS.Domain.Entities
 
         public DateTime? LockoutEnd { get; set; }
 
-        public bool TwoFactorEnabled { get; set; }
-
-        [StringLength(255)]
-        public string? TwoFactorSecret { get; set; }
 
         [Column(TypeName = "jsonb")] // For PostgreSQL, use nvarchar(max) for SQL Server if storing as JSON string
         public List<string> RecoveryCodes { get; set; } = [];
 
-        public int? AvatarFileId { get; set; }
+        public int? PictureFileId { get; set; }
 
-        [ForeignKey("AvatarFileId")]
-        public FileEntity? AvatarFile { get; set; }
-
-        [StringLength(50)]
-        public string? Timezone { get; set; }
-
-        [StringLength(10)]
-        public string? Language { get; set; }
+        [ForeignKey("PictureFileId")]
+        public FileEntity? Picture { get; set; }
 
         public DateTime? EmailVerifiedAt { get; set; }
 
@@ -72,9 +62,6 @@ namespace Backend.CMS.Domain.Entities
 
         [StringLength(50)]
         public string? Gender { get; set; }
-
-        [Column(TypeName = "jsonb")] // For PostgreSQL, use nvarchar(max) for SQL Server if storing as JSON string
-        public Dictionary<string, object> Preferences { get; set; } = [];
 
         public ICollection<UserSession> Sessions { get; set; } = [];
         public ICollection<PasswordResetToken> PasswordResetTokens { get; set; } = [];
@@ -105,7 +92,7 @@ namespace Backend.CMS.Domain.Entities
         public DateTime? LastExternalSync { get; set; }
 
         [NotMapped]
-        public string? AvatarUrl => AvatarFile != null ? $"/api/files/{AvatarFileId}/download" : null;
+        public string? PictureUrl => Picture != null ? $"/api/files/{PictureFileId}/download" : null;
     }
 
     public class UserExternalLogin : BaseEntity
