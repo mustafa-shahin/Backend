@@ -536,6 +536,7 @@ static void RegisterBusinessServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IPermissionService, PermissionService>();
     builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
     builder.Services.AddScoped<IComponentConfigValidator, ComponentConfigValidator>();
+    builder.Services.AddScoped<IDesignerService, DesignerService>();
 }
 
 static void RegisterCachingServices(WebApplicationBuilder builder)
