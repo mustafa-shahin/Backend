@@ -25,13 +25,9 @@ namespace Backend.CMS.Domain.Entities
         public string ComponentKey { get; set; } = string.Empty;
 
         public int GridColumn { get; set; } = 1;
-
         public int GridColumnSpan { get; set; } = 12;
-
         public int GridRow { get; set; } = 1;
-
         public int GridRowSpan { get; set; } = 1;
-
         public int Order { get; set; }
 
         public int? ParentComponentId { get; set; }
@@ -42,34 +38,15 @@ namespace Backend.CMS.Domain.Entities
         public ICollection<PageComponent> ChildComponents { get; set; } = new List<PageComponent>();
 
         [Column(TypeName = "jsonb")]
-        public Dictionary<string, object> Properties { get; set; } = new();
-
-        [Column(TypeName = "jsonb")]
-        public Dictionary<string, object> Styles { get; set; } = new();
-
-        [Column(TypeName = "jsonb")]
-        public Dictionary<string, object> Content { get; set; } = new();
-
-        [Column(TypeName = "jsonb")]
-        public Dictionary<string, object> Settings { get; set; } = new();
+        public Dictionary<string, object> Config { get; set; } = new();
 
         public bool IsVisible { get; set; } = true;
-
         public bool IsLocked { get; set; } = false;
 
         [StringLength(500)]
         public string? CssClasses { get; set; }
 
-        [StringLength(int.MaxValue)] // For potentially large custom CSS
+        [StringLength(int.MaxValue)]
         public string? CustomCss { get; set; }
-
-        [Column(TypeName = "jsonb")]
-        public Dictionary<string, object> ResponsiveSettings { get; set; } = new();
-
-        [Column(TypeName = "jsonb")]
-        public Dictionary<string, object> AnimationSettings { get; set; } = new();
-
-        [Column(TypeName = "jsonb")]
-        public Dictionary<string, object> InteractionSettings { get; set; } = new();
     }
 }

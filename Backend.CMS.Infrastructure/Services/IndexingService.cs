@@ -163,7 +163,6 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 await UpdateIndexingJobAsync(job.Id, "Running");
 
-                // Clear existing index
                 var existingIndexes = await _searchIndexRepository.GetAllAsync();
                 foreach (var index in existingIndexes)
                 {
@@ -174,7 +173,6 @@ namespace Backend.CMS.Infrastructure.Services
                 var totalEntities = 0;
                 var processedEntities = 0;
 
-                // Count total entities
                 var pageCount = await _pageRepository.CountAsync();
                 var fileCount = await _fileRepository.CountAsync();
                 var userCount = await _userRepository.CountAsync();
@@ -183,28 +181,24 @@ namespace Backend.CMS.Infrastructure.Services
 
                 await UpdateIndexingJobAsync(job.Id, "Running", totalEntities: totalEntities);
 
-                // Index pages
                 if (await IndexPagesAsync())
                 {
                     processedEntities += pageCount;
                     await UpdateIndexingJobAsync(job.Id, "Running", processedEntities);
                 }
 
-                // Index files
                 if (await IndexFilesAsync())
                 {
                     processedEntities += fileCount;
                     await UpdateIndexingJobAsync(job.Id, "Running", processedEntities);
                 }
 
-                // Index users
                 if (await IndexUsersAsync())
                 {
                     processedEntities += userCount;
                     await UpdateIndexingJobAsync(job.Id, "Running", processedEntities);
                 }
 
-                // Index component templates
                 if (await IndexComponentTemplatesAsync())
                 {
                     processedEntities += templateCount;
@@ -224,7 +218,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> IncrementalIndexAsync(DateTime? since = null)
         {
-            var sinceDate = since ?? DateTime.UtcNow.AddHours(-1); // Default to last hour
+            var sinceDate = since ?? DateTime.UtcNow.AddHours(-1);
             var job = await CreateIndexingJobAsync("Incremental", new Dictionary<string, object>
             {
                 { "since", sinceDate },
@@ -237,7 +231,6 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var processedEntities = 0;
 
-                // Index updated pages
                 var updatedPages = await _pageRepository.FindAsync(p => p.UpdatedAt >= sinceDate);
                 foreach (var page in updatedPages)
                 {
@@ -245,7 +238,6 @@ namespace Backend.CMS.Infrastructure.Services
                     processedEntities++;
                 }
 
-                // Index updated files
                 var updatedFiles = await _fileRepository.FindAsync(f => f.UpdatedAt >= sinceDate);
                 foreach (var file in updatedFiles)
                 {
@@ -253,7 +245,6 @@ namespace Backend.CMS.Infrastructure.Services
                     processedEntities++;
                 }
 
-                // Index updated users
                 var updatedUsers = await _userRepository.FindAsync(u => u.UpdatedAt >= sinceDate);
                 foreach (var user in updatedUsers)
                 {
@@ -261,7 +252,6 @@ namespace Backend.CMS.Infrastructure.Services
                     processedEntities++;
                 }
 
-                // Index updated component templates
                 var updatedTemplates = await _componentTemplateRepository.FindAsync(t => t.UpdatedAt >= sinceDate);
                 foreach (var template in updatedTemplates)
                 {
@@ -423,7 +413,7 @@ namespace Backend.CMS.Infrastructure.Services
             searchIndex.Title = user.FullName;
             searchIndex.Content = content;
             searchIndex.SearchVector = searchVector;
-            searchIndex.IsPublic = false; // Users are typically not public
+            searchIndex.IsPublic = false;
             searchIndex.LastIndexedAt = DateTime.UtcNow;
             searchIndex.Metadata = new Dictionary<string, object>
             {
@@ -496,7 +486,6 @@ namespace Backend.CMS.Infrastructure.Services
             contentBuilder.AppendLine(page.Title);
             contentBuilder.AppendLine(page.Description);
 
-            // Extract content from page components
             foreach (var component in page.Components.Where(c => !c.IsDeleted))
             {
                 ExtractComponentContent(component, contentBuilder);
@@ -509,25 +498,22 @@ namespace Backend.CMS.Infrastructure.Services
         {
             contentBuilder.AppendLine(component.Name);
 
-            // Extract text from properties
-            foreach (var prop in component.Properties)
+            // Extract text from unified config
+            foreach (var kvp in component.Config)
             {
-                if (prop.Value is string stringValue && !string.IsNullOrWhiteSpace(stringValue))
+                if (kvp.Value is string stringValue && !string.IsNullOrWhiteSpace(stringValue))
                 {
-                    contentBuilder.AppendLine(stringValue);
+                    // Extract text content from common properties
+                    if (kvp.Key.ToLower().Contains("text") ||
+                        kvp.Key.ToLower().Contains("content") ||
+                        kvp.Key.ToLower().Contains("title") ||
+                        kvp.Key.ToLower().Contains("alt"))
+                    {
+                        contentBuilder.AppendLine(stringValue);
+                    }
                 }
             }
 
-            // Extract text from content
-            foreach (var content in component.Content)
-            {
-                if (content.Value is string stringValue && !string.IsNullOrWhiteSpace(stringValue))
-                {
-                    contentBuilder.AppendLine(stringValue);
-                }
-            }
-
-            // Recursively extract from child components
             foreach (var child in component.ChildComponents.Where(c => !c.IsDeleted))
             {
                 ExtractComponentContent(child, contentBuilder);
@@ -548,10 +534,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(text))
                 return string.Empty;
 
-            // Remove HTML tags
             text = Regex.Replace(text, "<.*?>", " ");
-
-            // Remove extra whitespace
             text = Regex.Replace(text, @"\s+", " ");
 
             return text.Trim();

@@ -14,9 +14,11 @@ namespace Backend.CMS.Application.Interfaces
         Task<ComponentTemplateDto> UpdateComponentTemplateAsync(int templateId, UpdateComponentTemplateDto updateComponentTemplateDto);
         Task<bool> DeleteComponentTemplateAsync(int templateId);
         Task<bool> ValidateComponentDataAsync(ComponentType type, Dictionary<string, object> data);
-        Task<Dictionary<string, object>> GetDefaultPropertiesAsync(ComponentType type);
-        Task<Dictionary<string, object>> GetDefaultStylesAsync(ComponentType type);
+        //Task<Dictionary<string, object>> GetDefaultPropertiesAsync(ComponentType type);
+        //Task<Dictionary<string, object>> GetDefaultStylesAsync(ComponentType type);
         Task<List<ComponentTemplateDto>> GetSystemTemplatesAsync();
         Task<List<ComponentTemplateDto>> GetCustomTemplatesAsync();
+        Task<Dictionary<string, object>> GetConfigSchemaAsync(ComponentType type);
+        Task<Dictionary<string, object>> GetDefaultConfigAsync(ComponentType type);
     }
 }

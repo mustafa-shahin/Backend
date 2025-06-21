@@ -24,16 +24,14 @@ namespace Backend.CMS.Application.DTOs.Components
         public ComponentType Type { get; set; }
         public string? Icon { get; set; }
         public string? Category { get; set; }
-        public Dictionary<string, object> DefaultProperties { get; set; } = [];
-        public Dictionary<string, object> DefaultStyles { get; set; } = [];
-        public Dictionary<string, object> Schema { get; set; } = [];
+        public Dictionary<string, object> DefaultConfig { get; set; } = [];
+        public Dictionary<string, object> ConfigSchema { get; set; } = [];
         public string? PreviewHtml { get; set; }
         public string? PreviewImage { get; set; }
         public bool IsSystemTemplate { get; set; }
         public bool IsActive { get; set; }
         public int SortOrder { get; set; }
         public string? Tags { get; set; }
-        public Dictionary<string, object> ConfigSchema { get; set; } = [];
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
     }
@@ -46,16 +44,14 @@ namespace Backend.CMS.Application.DTOs.Components
         public ComponentType Type { get; set; }
         public string? Icon { get; set; }
         public string? Category { get; set; }
-        public Dictionary<string, object> DefaultProperties { get; set; } = [];
-        public Dictionary<string, object> DefaultStyles { get; set; } = [];
-        public Dictionary<string, object> Schema { get; set; } = [];
+        public Dictionary<string, object> DefaultConfig { get; set; } = [];
+        public Dictionary<string, object> ConfigSchema { get; set; } = [];
         public string? PreviewHtml { get; set; }
         public string? PreviewImage { get; set; }
         public bool IsSystemTemplate { get; set; }
         public bool IsActive { get; set; } = true;
         public int SortOrder { get; set; }
         public string? Tags { get; set; }
-        public Dictionary<string, object> ConfigSchema { get; set; } = [];
     }
 
     public class UpdateComponentTemplateDto
@@ -66,16 +62,14 @@ namespace Backend.CMS.Application.DTOs.Components
         public ComponentType Type { get; set; }
         public string? Icon { get; set; }
         public string? Category { get; set; }
-        public Dictionary<string, object> DefaultProperties { get; set; } = [];
-        public Dictionary<string, object> DefaultStyles { get; set; } = [];
-        public Dictionary<string, object> Schema { get; set; } = [];
+        public Dictionary<string, object> DefaultConfig { get; set; } = [];
+        public Dictionary<string, object> ConfigSchema { get; set; } = [];
         public string? PreviewHtml { get; set; }
         public string? PreviewImage { get; set; }
         public bool IsSystemTemplate { get; set; }
         public bool IsActive { get; set; }
         public int SortOrder { get; set; }
         public string? Tags { get; set; }
-        public Dictionary<string, object> ConfigSchema { get; set; } = [];
     }
 
     public class ComponentTemplateListDto

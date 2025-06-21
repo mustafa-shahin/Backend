@@ -84,17 +84,15 @@ namespace Backend.CMS.Infrastructure.Validation
                 .NotEmpty().WithMessage("Component name is required")
                 .MaximumLength(200).WithMessage("Component name cannot exceed 200 characters");
 
+            RuleFor(x => x.ComponentKey)
+                .NotEmpty().WithMessage("Component key is required")
+                .MaximumLength(255).WithMessage("Component key cannot exceed 255 characters");
+
             RuleFor(x => x.Order)
                 .GreaterThanOrEqualTo(0).WithMessage("Order must be greater than or equal to 0");
 
-            RuleFor(x => x.Properties)
-                .NotNull().WithMessage("Properties cannot be null");
-
-            RuleFor(x => x.Styles)
-                .NotNull().WithMessage("Styles cannot be null");
-
-            RuleFor(x => x.Content)
-                .NotNull().WithMessage("Content cannot be null");
+            RuleFor(x => x.Config)
+                .NotNull().WithMessage("Config cannot be null");
 
             RuleForEach(x => x.ChildComponents)
                 .SetValidator(new PageComponentDtoValidator());

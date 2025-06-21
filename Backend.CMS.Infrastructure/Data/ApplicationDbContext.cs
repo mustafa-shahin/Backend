@@ -490,20 +490,16 @@ namespace Backend.CMS.Infrastructure.Data
             {
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Name).HasMaxLength(200);
-                entity.Property(e => e.Properties).HasConversion(dictionaryConverter);
-                entity.Property(e => e.Styles).HasConversion(dictionaryConverter);
-                entity.Property(e => e.Content).HasConversion(dictionaryConverter);
-                entity.Property(e => e.Settings).HasConversion(dictionaryConverter); // ADD THIS LINE
-                entity.Property(e => e.ResponsiveSettings).HasConversion(dictionaryConverter);
-                entity.Property(e => e.AnimationSettings).HasConversion(dictionaryConverter);
-                entity.Property(e => e.InteractionSettings).HasConversion(dictionaryConverter);
+                entity.Property(e => e.ComponentKey).HasMaxLength(255);
+
+                // Single unified config property instead of multiple dictionaries
+                entity.Property(e => e.Config).HasConversion(dictionaryConverter);
 
                 entity.HasOne(e => e.ParentComponent)
                     .WithMany(e => e.ChildComponents)
                     .HasForeignKey(e => e.ParentComponentId)
                     .OnDelete(DeleteBehavior.Restrict);
             });
-
             // PageVersion configuration
             modelBuilder.Entity<PageVersion>(entity =>
             {
@@ -525,9 +521,7 @@ namespace Backend.CMS.Infrastructure.Data
                 entity.Property(e => e.DisplayName).HasMaxLength(200);
                 entity.Property(e => e.Category).HasMaxLength(100);
                 entity.Property(e => e.Icon).HasMaxLength(100);
-                entity.Property(e => e.DefaultProperties).HasConversion(dictionaryConverter);
-                entity.Property(e => e.DefaultStyles).HasConversion(dictionaryConverter);
-                entity.Property(e => e.Schema).HasConversion(dictionaryConverter);
+                entity.Property(e => e.DefaultConfig).HasConversion(dictionaryConverter);
                 entity.Property(e => e.ConfigSchema).HasConversion(dictionaryConverter);
             });
 
@@ -946,7 +940,7 @@ namespace Backend.CMS.Infrastructure.Data
             ApplyComparersToEntity<Company>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<Location>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<ContactDetails>(modelBuilder, dictionaryComparer, listComparer);
-            ApplyComparersToEntity<PageComponent>(modelBuilder, dictionaryComparer, listComparer); // ADD THIS LINE
+            ApplyComparersToEntity<PageComponent>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<ComponentTemplate>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<FileEntity>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<Folder>(modelBuilder, dictionaryComparer, listComparer);

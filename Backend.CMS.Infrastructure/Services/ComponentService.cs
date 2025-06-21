@@ -11,11 +11,16 @@ namespace Backend.CMS.Infrastructure.Services
     public class ComponentService : IComponentService
     {
         private readonly IRepository<ComponentTemplate> _templateRepository;
+        private readonly IComponentConfigValidator _configValidator;
         private readonly IMapper _mapper;
 
-        public ComponentService(IRepository<ComponentTemplate> templateRepository, IMapper mapper)
+        public ComponentService(
+            IRepository<ComponentTemplate> templateRepository,
+            IComponentConfigValidator configValidator,
+            IMapper mapper)
         {
             _templateRepository = templateRepository;
+            _configValidator = configValidator;
             _mapper = mapper;
         }
 
@@ -97,26 +102,20 @@ namespace Backend.CMS.Infrastructure.Services
             return true;
         }
 
-        public async Task<bool> ValidateComponentDataAsync(ComponentType type, Dictionary<string, object> data)
+        public async Task<bool> ValidateComponentDataAsync(ComponentType type, Dictionary<string, object> config)
         {
-            // Implementation for validating component data against schema
-            return true;
+            var result = await _configValidator.ValidateAsync(type, config);
+            return result.IsValid;
         }
 
-        public async Task<Dictionary<string, object>> GetDefaultPropertiesAsync(ComponentType type)
+        public async Task<Dictionary<string, object>> GetDefaultConfigAsync(ComponentType type)
         {
-            var templates = await _templateRepository.FindAsync(t => t.Type == type && t.IsSystemTemplate);
-            var template = templates.FirstOrDefault();
-
-            return template?.DefaultProperties ?? new Dictionary<string, object>();
+            return await _configValidator.GetDefaultConfigAsync(type);
         }
 
-        public async Task<Dictionary<string, object>> GetDefaultStylesAsync(ComponentType type)
+        public async Task<Dictionary<string, object>> GetConfigSchemaAsync(ComponentType type)
         {
-            var templates = await _templateRepository.FindAsync(t => t.Type == type && t.IsSystemTemplate);
-            var template = templates.FirstOrDefault();
-
-            return template?.DefaultStyles ?? new Dictionary<string, object>();
+            return await _configValidator.GetConfigSchemaAsync(type);
         }
 
         public async Task<List<ComponentTemplateDto>> GetSystemTemplatesAsync()

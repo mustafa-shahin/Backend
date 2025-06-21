@@ -14,6 +14,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IPageRepository _pageRepository;
         private readonly IRepository<PageComponent> _componentRepository;
         private readonly IRepository<PageVersion> _versionRepository;
+        private readonly IComponentConfigValidator _configValidator;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
 
@@ -21,12 +22,14 @@ namespace Backend.CMS.Infrastructure.Services
             IPageRepository pageRepository,
             IRepository<PageComponent> componentRepository,
             IRepository<PageVersion> versionRepository,
+            IComponentConfigValidator configValidator,
             IUserSessionService userSessionService,
             IMapper mapper)
         {
             _pageRepository = pageRepository;
             _componentRepository = componentRepository;
             _versionRepository = versionRepository;
+            _configValidator = configValidator;
             _mapper = mapper;
             _userSessionService = userSessionService;
         }
@@ -57,7 +60,6 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<PageListDto>> GetPagesAsync(int page = 1, int pageSize = 10, string? search = null)
         {
-            // Input validation
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 10;
 
@@ -76,7 +78,6 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<PageDto> CreatePageAsync(CreatePageDto createPageDto)
         {
-            //  Input validation
             if (string.IsNullOrWhiteSpace(createPageDto.Name))
                 throw new ArgumentException("Page name is required");
 
@@ -86,14 +87,11 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(createPageDto.Slug))
                 throw new ArgumentException("Page slug is required");
 
-            // Normalize slug
             var normalizedSlug = NormalizeSlug(createPageDto.Slug);
 
-            // Check if slug already exists
             if (await _pageRepository.SlugExistsAsync(normalizedSlug))
                 throw new ArgumentException("A page with this slug already exists");
 
-            //  Validate parent page exists if specified
             if (createPageDto.ParentPageId.HasValue)
             {
                 var parentPage = await _pageRepository.GetByIdAsync(createPageDto.ParentPageId.Value);
@@ -121,7 +119,6 @@ namespace Backend.CMS.Infrastructure.Services
             if (pageId <= 0)
                 throw new ArgumentException("Invalid page ID");
 
-            //  Input validation
             if (string.IsNullOrWhiteSpace(updatePageDto.Name))
                 throw new ArgumentException("Page name is required");
 
@@ -135,12 +132,10 @@ namespace Backend.CMS.Infrastructure.Services
             if (page == null)
                 throw new ArgumentException("Page not found");
 
-            //  Normalize slug and check uniqueness
             var normalizedSlug = NormalizeSlug(updatePageDto.Slug);
             if (await _pageRepository.SlugExistsAsync(normalizedSlug, pageId))
                 throw new ArgumentException("A page with this slug already exists");
 
-            //  Validate parent page if specified and prevent circular references
             if (updatePageDto.ParentPageId.HasValue)
             {
                 if (updatePageDto.ParentPageId == pageId)
@@ -150,7 +145,6 @@ namespace Backend.CMS.Infrastructure.Services
                 if (parentPage == null)
                     throw new ArgumentException("Parent page not found");
 
-                // Check for circular reference
                 if (await WouldCreateCircularReferenceAsync(pageId, updatePageDto.ParentPageId.Value))
                     throw new ArgumentException("Setting this parent would create a circular reference");
             }
@@ -173,7 +167,6 @@ namespace Backend.CMS.Infrastructure.Services
             if (pageId <= 0)
                 return false;
 
-            //  Check if page has children
             var childPages = await _pageRepository.GetChildPagesAsync(pageId);
             if (childPages.Any())
                 throw new InvalidOperationException("Cannot delete a page that has child pages. Delete or move child pages first.");
@@ -196,16 +189,13 @@ namespace Backend.CMS.Infrastructure.Services
 
             var currentUserId = _userSessionService.GetCurrentUserId();
 
-            //  Create a backup version before making changes
             await CreatePageVersionAsync(savePageStructureDto.PageId, "Auto-backup before structure changes");
 
-            // Soft delete existing components
             foreach (var component in page.Components)
             {
                 await _componentRepository.SoftDeleteAsync(component, currentUserId);
             }
 
-            //  Validate and add new components with proper hierarchy
             var validatedComponents = ValidateComponentHierarchy(savePageStructureDto.Components);
             var components = await CreateComponentsFromDtosAsync(validatedComponents, savePageStructureDto.PageId, currentUserId);
 
@@ -219,7 +209,6 @@ namespace Backend.CMS.Infrastructure.Services
             _pageRepository.Update(page);
             await _pageRepository.SaveChangesAsync();
 
-            // Return updated page
             var updatedPage = await _pageRepository.GetWithComponentsAsync(savePageStructureDto.PageId);
             return _mapper.Map<PageDto>(updatedPage);
         }
@@ -235,7 +224,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             var currentUserId = _userSessionService.GetCurrentUserId();
 
-            //  Validate page is ready for publishing
             await ValidatePageForPublishingAsync(page);
 
             page.Status = PageStatus.Published;
@@ -285,7 +273,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             var currentUserId = _userSessionService.GetCurrentUserId();
 
-            //  Generate unique slug
             var baseSlug = NormalizeSlug(newName);
             var uniqueSlug = await GenerateUniqueSlugAsync(baseSlug);
 
@@ -313,7 +300,6 @@ namespace Backend.CMS.Infrastructure.Services
             await _pageRepository.AddAsync(duplicatedPage);
             await _pageRepository.SaveChangesAsync();
 
-            //  Duplicate components with proper hierarchy mapping
             await DuplicateComponentsAsync(originalPage.Components, duplicatedPage.Id, currentUserId);
 
             await _componentRepository.SaveChangesAsync();
@@ -357,11 +343,9 @@ namespace Backend.CMS.Infrastructure.Services
 
             var currentUserId = _userSessionService.GetCurrentUserId();
 
-            // Get the next version number
             var existingVersions = await _versionRepository.FindAsync(v => v.PageId == pageId);
             var nextVersionNumber = existingVersions.Any() ? existingVersions.Max(v => v.VersionNumber) + 1 : 1;
 
-            //  Create a proper snapshot of the current page with better serialization
             var pageSnapshot = CreatePageSnapshot(page);
 
             var version = new PageVersion
@@ -398,7 +382,7 @@ namespace Backend.CMS.Infrastructure.Services
                               Id = v.Id,
                               VersionNumber = v.VersionNumber,
                               ChangeNotes = v.ChangeNotes,
-                              CreatedAt = v.CreatedAt, 
+                              CreatedAt = v.CreatedAt,
                           }).ToList();
         }
 
@@ -420,10 +404,8 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Create a backup before restoration
                 await CreatePageVersionAsync(pageId, $"Backup before restoring version {version.VersionNumber}");
 
-                // Properly deserialize and restore the version data
                 var versionData = JsonSerializer.Deserialize<PageSnapshotDto>(version.Data, new JsonSerializerOptions
                 {
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -448,7 +430,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        //  Private helper methods with proper implementation
+        // Private helper methods
         private static string NormalizeSlug(string slug)
         {
             return slug.Trim().ToLowerInvariant()
@@ -489,30 +471,24 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task ValidatePageForPublishingAsync(Page page)
         {
-            // Check if required fields are present
             if (string.IsNullOrWhiteSpace(page.Title))
                 throw new InvalidOperationException("Page title is required for publishing");
 
             if (string.IsNullOrWhiteSpace(page.Slug))
                 throw new InvalidOperationException("Page slug is required for publishing");
 
-            // Additional validation can be added here
             await Task.CompletedTask;
         }
 
         private List<PageComponentDto> ValidateComponentHierarchy(List<PageComponentDto> components)
         {
-            //Validate component hierarchy
             var validatedComponents = new List<PageComponentDto>();
             var processedIds = new HashSet<int>();
 
-            // Process root components first (no parent)
             foreach (var component in components.Where(c => c.ParentComponentId == null).OrderBy(c => c.Order))
             {
                 validatedComponents.Add(component);
                 processedIds.Add(component.Id);
-
-                // Recursively add child components
                 AddChildComponents(component, components, validatedComponents, processedIds);
             }
 
@@ -542,35 +518,40 @@ namespace Backend.CMS.Infrastructure.Services
 
             foreach (var dto in componentDtos)
             {
+                // Validate and sanitize config
+                var validationResult = await _configValidator.ValidateAsync(dto.Type, dto.Config);
+                if (!validationResult.IsValid)
+                {
+                    throw new ArgumentException($"Invalid configuration for component {dto.Name}: {string.Join(", ", validationResult.Errors)}");
+                }
+
                 var component = new PageComponent
                 {
                     PageId = pageId,
                     Type = dto.Type,
                     Name = dto.Name,
-                    Properties = new Dictionary<string, object>(dto.Properties),
-                    Styles = new Dictionary<string, object>(dto.Styles),
-                    Content = new Dictionary<string, object>(dto.Content),
+                    ComponentKey = dto.ComponentKey,
+                    Config = validationResult.SanitizedConfig,
+                    GridColumn = dto.GridColumn,
+                    GridColumnSpan = dto.GridColumnSpan,
+                    GridRow = dto.GridRow,
+                    GridRowSpan = dto.GridRowSpan,
                     Order = dto.Order,
                     IsVisible = dto.IsVisible,
                     CssClasses = dto.CssClasses,
                     CustomCss = dto.CustomCss,
-                    ResponsiveSettings = new Dictionary<string, object>(dto.ResponsiveSettings),
-                    AnimationSettings = new Dictionary<string, object>(dto.AnimationSettings),
-                    InteractionSettings = new Dictionary<string, object>(dto.InteractionSettings),
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     CreatedByUserId = currentUserId,
                     UpdatedByUserId = currentUserId
                 };
 
-                // Handle parent relationship after all components are created
                 if (dto.ParentComponentId.HasValue && idMapping.ContainsKey(dto.ParentComponentId.Value))
                 {
                     component.ParentComponentId = idMapping[dto.ParentComponentId.Value];
                 }
 
                 components.Add(component);
-                // Note: This assumes the DTO ID is meaningful for mapping - may need adjustment
                 if (dto.Id > 0)
                 {
                     idMapping[dto.Id] = component.Id;
@@ -582,9 +563,8 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task DuplicateComponentsAsync(ICollection<PageComponent> originalComponents, int newPageId, int? currentUserId)
         {
-            var idMapping = new Dictionary<int, int>(); // old ID -> new component for parent mapping
+            var idMapping = new Dictionary<int, int>();
 
-            // First pass: create all components without parent relationships
             foreach (var originalComponent in originalComponents.Where(c => c.ParentComponentId == null).OrderBy(c => c.Order))
             {
                 await DuplicateComponentRecursivelyAsync(originalComponent, newPageId, null, currentUserId, idMapping);
@@ -599,17 +579,17 @@ namespace Backend.CMS.Infrastructure.Services
                 PageId = newPageId,
                 Type = originalComponent.Type,
                 Name = originalComponent.Name,
-                Properties = new Dictionary<string, object>(originalComponent.Properties),
-                Styles = new Dictionary<string, object>(originalComponent.Styles),
-                Content = new Dictionary<string, object>(originalComponent.Content),
+                ComponentKey = originalComponent.ComponentKey,
+                Config = new Dictionary<string, object>(originalComponent.Config),
+                GridColumn = originalComponent.GridColumn,
+                GridColumnSpan = originalComponent.GridColumnSpan,
+                GridRow = originalComponent.GridRow,
+                GridRowSpan = originalComponent.GridRowSpan,
                 Order = originalComponent.Order,
                 ParentComponentId = newParentId,
                 IsVisible = originalComponent.IsVisible,
                 CssClasses = originalComponent.CssClasses,
                 CustomCss = originalComponent.CustomCss,
-                ResponsiveSettings = new Dictionary<string, object>(originalComponent.ResponsiveSettings),
-                AnimationSettings = new Dictionary<string, object>(originalComponent.AnimationSettings),
-                InteractionSettings = new Dictionary<string, object>(originalComponent.InteractionSettings),
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 CreatedByUserId = currentUserId,
@@ -617,12 +597,10 @@ namespace Backend.CMS.Infrastructure.Services
             };
 
             await _componentRepository.AddAsync(duplicatedComponent);
-            await _componentRepository.SaveChangesAsync(); // Save to get the new ID
+            await _componentRepository.SaveChangesAsync();
 
-            // Map old ID to new ID
             idMapping[originalComponent.Id] = duplicatedComponent.Id;
 
-            // Recursively duplicate child components
             var childComponents = originalComponent.ChildComponents.OrderBy(c => c.Order);
             foreach (var childComponent in childComponents)
             {
@@ -651,24 +629,23 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     Type = c.Type,
                     Name = c.Name,
-                    Properties = c.Properties,
-                    Styles = c.Styles,
-                    Content = c.Content,
+                    ComponentKey = c.ComponentKey,
+                    Config = c.Config,
+                    GridColumn = c.GridColumn,
+                    GridColumnSpan = c.GridColumnSpan,
+                    GridRow = c.GridRow,
+                    GridRowSpan = c.GridRowSpan,
                     Order = c.Order,
                     ParentComponentId = c.ParentComponentId,
                     IsVisible = c.IsVisible,
                     CssClasses = c.CssClasses,
-                    CustomCss = c.CustomCss,
-                    ResponsiveSettings = c.ResponsiveSettings,
-                    AnimationSettings = c.AnimationSettings,
-                    InteractionSettings = c.InteractionSettings
+                    CustomCss = c.CustomCss
                 }).ToList()
             };
         }
 
         private async Task RestorePageFromSnapshotAsync(Page page, PageSnapshotDto snapshot, int? currentUserId)
         {
-            // Restore page properties
             page.Name = snapshot.Name;
             page.Title = snapshot.Title;
             page.Description = snapshot.Description;
@@ -680,39 +657,44 @@ namespace Backend.CMS.Infrastructure.Services
             page.RequiresLogin = snapshot.RequiresLogin;
             page.AdminOnly = snapshot.AdminOnly;
 
-            // Delete existing components
             foreach (var component in page.Components)
             {
                 await _componentRepository.SoftDeleteAsync(component, currentUserId);
             }
 
-            // Restore components
             foreach (var componentSnapshot in snapshot.Components)
             {
-                var component = new PageComponent
-                {
-                    PageId = page.Id,
-                    Type = componentSnapshot.Type,
-                    Name = componentSnapshot.Name,
-                    Properties = new Dictionary<string, object>(componentSnapshot.Properties),
-                    Styles = new Dictionary<string, object>(componentSnapshot.Styles),
-                    Content = new Dictionary<string, object>(componentSnapshot.Content),
-                    Order = componentSnapshot.Order,
-                    ParentComponentId = componentSnapshot.ParentComponentId,
-                    IsVisible = componentSnapshot.IsVisible,
-                    CssClasses = componentSnapshot.CssClasses,
-                    CustomCss = componentSnapshot.CustomCss,
-                    ResponsiveSettings = new Dictionary<string, object>(componentSnapshot.ResponsiveSettings),
-                    AnimationSettings = new Dictionary<string, object>(componentSnapshot.AnimationSettings),
-                    InteractionSettings = new Dictionary<string, object>(componentSnapshot.InteractionSettings),
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    CreatedByUserId = currentUserId,
-                    UpdatedByUserId = currentUserId
-                };
-
-                await _componentRepository.AddAsync(component);
+                await RestoreComponentFromSnapshotAsync(componentSnapshot, page.Id, currentUserId);
             }
+        }
+
+        private async Task RestoreComponentFromSnapshotAsync(ComponentSnapshotDto snapshot, int pageId, int? currentUserId)
+        {
+            var validationResult = await _configValidator.ValidateAsync(snapshot.Type, snapshot.Config);
+
+            var component = new PageComponent
+            {
+                PageId = pageId,
+                Type = snapshot.Type,
+                Name = snapshot.Name,
+                ComponentKey = snapshot.ComponentKey,
+                Config = validationResult.IsValid ? validationResult.SanitizedConfig : snapshot.Config,
+                GridColumn = snapshot.GridColumn,
+                GridColumnSpan = snapshot.GridColumnSpan,
+                GridRow = snapshot.GridRow,
+                GridRowSpan = snapshot.GridRowSpan,
+                Order = snapshot.Order,
+                ParentComponentId = snapshot.ParentComponentId,
+                IsVisible = snapshot.IsVisible,
+                CssClasses = snapshot.CssClasses,
+                CustomCss = snapshot.CustomCss,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                CreatedByUserId = currentUserId,
+                UpdatedByUserId = currentUserId
+            };
+
+            await _componentRepository.AddAsync(component);
         }
     }
 }

@@ -535,6 +535,7 @@ static void RegisterBusinessServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IPermissionService, PermissionService>();
     builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
+    builder.Services.AddScoped<IComponentConfigValidator, ComponentConfigValidator>();
 }
 
 static void RegisterCachingServices(WebApplicationBuilder builder)
@@ -861,7 +862,6 @@ static async Task SeedDatabase(ApplicationDbContext context)
 
             // using the admin user ID for subsequent entities
             await SeedCompanyData(context, adminUserId);
-            await SeedComponentTemplates(context, adminUserId);
         }
     }
     catch (Exception ex)
@@ -1004,131 +1004,6 @@ static async Task SeedCompanyData(ApplicationDbContext context, int adminUserId)
     }
 }
 
-static async Task SeedComponentTemplates(ApplicationDbContext context, int adminUserId)
-{
-    // Seed component templates
-    if (!context.ComponentTemplates.Any())
-    {
-        var componentTemplates = new[]
-        {
-            new ComponentTemplate
-            {
-                Name = "text-block",
-                DisplayName = "Text Block",
-                Description = "Simple text content block",
-                Type = ComponentType.Text,
-                Category = "Content",
-                Icon = "type",
-                IsSystemTemplate = true,
-                IsActive = true,
-                SortOrder = 1,
-                DefaultProperties = new Dictionary<string, object>
-                {
-                    { "text", "Enter your text here..." },
-                    { "fontSize", "16px" },
-                    { "fontWeight", "normal" },
-                    { "textAlign", "left" }
-                },
-                DefaultStyles = new Dictionary<string, object>
-                {
-                    { "margin", "0" },
-                    { "padding", "16px" }
-                },
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = adminUserId,
-                UpdatedByUserId = adminUserId
-            },
-            new ComponentTemplate
-            {
-                Name = "image-block",
-                DisplayName = "Image",
-                Description = "Image display component",
-                Type = ComponentType.Image,
-                Category = "Media",
-                Icon = "image",
-                IsSystemTemplate = true,
-                IsActive = true,
-                SortOrder = 2,
-                DefaultProperties = new Dictionary<string, object>
-                {
-                    { "src", "" },
-                    { "alt", "Image" },
-                    { "width", "100%" },
-                    { "height", "auto" }
-                },
-                DefaultStyles = new Dictionary<string, object>
-                {
-                    { "display", "block" },
-                    { "maxWidth", "100%" }
-                },
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = adminUserId,
-                UpdatedByUserId = adminUserId
-            },
-            new ComponentTemplate
-            {
-                Name = "button",
-                DisplayName = "Button",
-                Description = "Clickable button component",
-                Type = ComponentType.Button,
-                Category = "Interactive",
-                Icon = "hand-pointer",
-                IsSystemTemplate = true,
-                IsActive = true,
-                SortOrder = 3,
-                DefaultProperties = new Dictionary<string, object>
-                {
-                    { "text", "Click Me" },
-                    { "type", "button" },
-                    { "variant", "primary" },
-                    { "size", "medium" }
-                },
-                DefaultStyles = new Dictionary<string, object>
-                {
-                    { "padding", "12px 24px" },
-                    { "border", "none" },
-                    { "borderRadius", "4px" },
-                    { "cursor", "pointer" }
-                },
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = adminUserId,
-                UpdatedByUserId = adminUserId
-            },
-            new ComponentTemplate
-            {
-                Name = "container",
-                DisplayName = "Container",
-                Description = "Layout container for other components",
-                Type = ComponentType.Container,
-                Category = "Layout",
-                Icon = "square",
-                IsSystemTemplate = true,
-                IsActive = true,
-                SortOrder = 4,
-                DefaultProperties = new Dictionary<string, object>
-                {
-                    { "maxWidth", "1200px" },
-                    { "centered", true }
-                },
-                DefaultStyles = new Dictionary<string, object>
-                {
-                    { "margin", "0 auto" },
-                    { "padding", "20px" }
-                },
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = adminUserId,
-                UpdatedByUserId = adminUserId
-            }
-        };
-
-        context.ComponentTemplates.AddRange(componentTemplates);
-        await context.SaveChangesAsync();
-    }
-}
 
 #endregion
 

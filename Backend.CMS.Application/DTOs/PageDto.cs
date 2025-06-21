@@ -1,6 +1,5 @@
 ﻿using Backend.CMS.Domain.Enums;
 
-
 namespace Backend.CMS.Application.DTOs
 {
     public class PageDto
@@ -17,11 +16,8 @@ namespace Backend.CMS.Application.DTOs
         public string? Template { get; set; }
         public int? Priority { get; set; }
         public int? ParentPageId { get; set; }
-
-        // Add access control
         public bool RequiresLogin { get; set; }
         public bool AdminOnly { get; set; }
-
         public DateTime? PublishedOn { get; set; }
         public string? PublishedBy { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -43,8 +39,6 @@ namespace Backend.CMS.Application.DTOs
         public string? Template { get; set; }
         public int? Priority { get; set; }
         public int? ParentPageId { get; set; }
-
-        // Add access control
         public bool RequiresLogin { get; set; } = false;
         public bool AdminOnly { get; set; } = false;
     }
@@ -62,8 +56,6 @@ namespace Backend.CMS.Application.DTOs
         public string? Template { get; set; }
         public int? Priority { get; set; }
         public int? ParentPageId { get; set; }
-
-        // Add access control
         public bool RequiresLogin { get; set; }
         public bool AdminOnly { get; set; }
     }
@@ -73,18 +65,20 @@ namespace Backend.CMS.Application.DTOs
         public int Id { get; set; }
         public ComponentType Type { get; set; }
         public string Name { get; set; } = string.Empty;
-        public Dictionary<string, object> Properties { get; set; } = new();
-        public Dictionary<string, object> Styles { get; set; } = new();
-        public Dictionary<string, object> Content { get; set; } = new();
+        public string ComponentKey { get; set; } = string.Empty;
+
+        public Dictionary<string, object> Config { get; set; } = new();
+
+        public int GridColumn { get; set; } = 1;
+        public int GridColumnSpan { get; set; } = 12;
+        public int GridRow { get; set; } = 1;
+        public int GridRowSpan { get; set; } = 1;
         public int Order { get; set; }
         public int? ParentComponentId { get; set; }
         public List<PageComponentDto> ChildComponents { get; set; } = new();
         public bool IsVisible { get; set; } = true;
         public string? CssClasses { get; set; }
         public string? CustomCss { get; set; }
-        public Dictionary<string, object> ResponsiveSettings { get; set; } = new();
-        public Dictionary<string, object> AnimationSettings { get; set; } = new();
-        public Dictionary<string, object> InteractionSettings { get; set; } = new();
     }
 
     public class SavePageStructureDto
@@ -105,6 +99,7 @@ namespace Backend.CMS.Application.DTOs
         public DateTime? PublishedOn { get; set; }
         public bool HasChildren { get; set; }
     }
+
     public class PageSnapshotDto
     {
         public string Name { get; set; } = string.Empty;
@@ -122,21 +117,22 @@ namespace Backend.CMS.Application.DTOs
         public bool AdminOnly { get; set; }
         public List<ComponentSnapshotDto> Components { get; set; } = new();
     }
+
     public class ComponentSnapshotDto
     {
         public ComponentType Type { get; set; }
         public string Name { get; set; } = string.Empty;
-        public Dictionary<string, object> Properties { get; set; } = new();
-        public Dictionary<string, object> Styles { get; set; } = new();
-        public Dictionary<string, object> Content { get; set; } = new();
+        public string ComponentKey { get; set; } = string.Empty;
+        public Dictionary<string, object> Config { get; set; } = new();
+        public int GridColumn { get; set; } = 1;
+        public int GridColumnSpan { get; set; } = 12;
+        public int GridRow { get; set; } = 1;
+        public int GridRowSpan { get; set; } = 1;
         public int Order { get; set; }
         public int? ParentComponentId { get; set; }
         public bool IsVisible { get; set; } = true;
         public string? CssClasses { get; set; }
         public string? CustomCss { get; set; }
-        public Dictionary<string, object> ResponsiveSettings { get; set; } = new();
-        public Dictionary<string, object> AnimationSettings { get; set; } = new();
-        public Dictionary<string, object> InteractionSettings { get; set; } = new();
     }
 
     public class DuplicatePageDto
