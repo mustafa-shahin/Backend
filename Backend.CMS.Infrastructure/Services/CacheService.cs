@@ -10,14 +10,19 @@ using System.Text.Json;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class CacheService : ICacheService, ICacheInvalidationService
+    public class CacheService : ICacheService, ICacheInvalidationService, IDisposable
     {
         private readonly IDistributedCache _distributedCache;
         private readonly IConnectionMultiplexer _connectionMultiplexer;
         private readonly IConfiguration _configuration;
         private readonly ILogger<CacheService> _logger;
         private readonly TimeSpan _defaultExpiration;
+        private readonly TimeSpan _longExpiration;
         private readonly JsonSerializerOptions _jsonOptions;
+        private readonly SemaphoreSlim _invalidationSemaphore;
+        private readonly Dictionary<string, SemaphoreSlim> _keySemaphores;
+        private readonly object _semaphoreLock = new object();
+        private bool _disposed = false;
 
         public CacheService(
             IDistributedCache distributedCache,
@@ -25,56 +30,50 @@ namespace Backend.CMS.Infrastructure.Services
             IConfiguration configuration,
             ILogger<CacheService> logger)
         {
-            _distributedCache = distributedCache;
-            _connectionMultiplexer = connectionMultiplexer;
-            _configuration = configuration;
-            _logger = logger;
-            _defaultExpiration = TimeSpan.FromMinutes(int.Parse(configuration["CacheSettings:DefaultExpirationMinutes"] ?? "30"));
+            _distributedCache = distributedCache ?? throw new ArgumentNullException(nameof(distributedCache));
+            _connectionMultiplexer = connectionMultiplexer ?? throw new ArgumentNullException(nameof(connectionMultiplexer));
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+            _defaultExpiration = TimeSpan.FromMinutes(GetConfigValue("CacheSettings:DefaultExpirationMinutes", 30));
+            _longExpiration = TimeSpan.FromHours(GetConfigValue("CacheSettings:LongExpirationHours", 24));
+            _invalidationSemaphore = new SemaphoreSlim(1, 1);
+            _keySemaphores = new Dictionary<string, SemaphoreSlim>();
 
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = false,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+                PropertyNameCaseInsensitive = true
             };
         }
 
         #region Basic Cache Operations
-        public async Task<T?> GetAsync<T>(string key, Func<Task<T?>> getItem, bool cacheEmptyCollections = true) where T : class
-        {
-            var cachedItem = await GetAsync<T>(key);
-            if (cachedItem != null)
-                return cachedItem;
 
-            var item = await getItem();
-
-            // For collections, check if we should cache empty results
-            if (item != null)
-            {
-                bool shouldCache = true;
-
-                if (!cacheEmptyCollections && item is IEnumerable enumerable && !enumerable.Cast<object>().Any())
-                {
-                    shouldCache = false;
-                }
-
-                if (shouldCache)
-                {
-                    await SetAsync(key, item);
-                }
-            }
-
-            return item;
-        }
         public async Task<T?> GetAsync<T>(string key) where T : class
         {
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("Cache key cannot be null or empty", nameof(key));
+
             try
             {
                 var cachedValue = await _distributedCache.GetStringAsync(key);
                 if (string.IsNullOrEmpty(cachedValue))
+                {
+                    _logger.LogDebug("Cache miss for key: {Key}", key);
                     return null;
+                }
 
-                return JsonSerializer.Deserialize<T>(cachedValue, _jsonOptions);
+                var result = JsonSerializer.Deserialize<T>(cachedValue, _jsonOptions);
+                _logger.LogDebug("Cache hit for key: {Key}", key);
+                return result;
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Failed to deserialize cached item with key: {Key}", key);
+                await RemoveAsync(key); 
+                return null;
             }
             catch (Exception ex)
             {
@@ -83,23 +82,55 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<T?> GetAsync<T>(string key, Func<Task<T?>> getItem) where T : class
+        public async Task<T?> GetAsync<T>(string key, Func<Task<T?>> getItem, bool cacheEmptyCollections = true) where T : class
         {
             var cachedItem = await GetAsync<T>(key);
             if (cachedItem != null)
                 return cachedItem;
 
-            var item = await getItem();
-            if (item != null)
+            // Use semaphore to prevent cache stampede
+            var semaphore = GetKeySemaphore(key);
+            await semaphore.WaitAsync();
+            try
             {
-                await SetAsync(key, item);
-            }
+                // Double-check pattern
+                cachedItem = await GetAsync<T>(key);
+                if (cachedItem != null)
+                    return cachedItem;
 
-            return item;
+                var item = await getItem();
+                if (item != null)
+                {
+                    bool shouldCache = true;
+
+                    if (!cacheEmptyCollections && item is IEnumerable enumerable && !enumerable.Cast<object>().Any())
+                    {
+                        shouldCache = false;
+                    }
+
+                    if (shouldCache)
+                    {
+                        await SetAsync(key, item);
+                    }
+                }
+
+                return item;
+            }
+            finally
+            {
+                semaphore.Release();
+                ReleaseKeySemaphore(key);
+            }
         }
 
         public async Task SetAsync<T>(string key, T value, TimeSpan? expiration = null) where T : class
         {
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("Cache key cannot be null or empty", nameof(key));
+
+            if (value == null)
+                throw new ArgumentNullException(nameof(value));
+
             try
             {
                 var serializedValue = JsonSerializer.Serialize(value, _jsonOptions);
@@ -109,16 +140,20 @@ namespace Backend.CMS.Infrastructure.Services
                 };
 
                 await _distributedCache.SetStringAsync(key, serializedValue, options);
-                _logger.LogDebug("Cache item set with key: {Key}", key);
+                _logger.LogDebug("Cache item set with key: {Key}, expiration: {Expiration}",
+                    key, options.AbsoluteExpirationRelativeToNow);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error setting cached item with key: {Key}", key);
+                throw;
             }
         }
 
         public async Task RemoveAsync(string key)
         {
+            if (string.IsNullOrWhiteSpace(key)) return;
+
             try
             {
                 await _distributedCache.RemoveAsync(key);
@@ -132,40 +167,75 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task RemoveAsync(IEnumerable<string> keys)
         {
+            if (keys?.Any() != true) return;
+
+            var keysList = keys.ToList();
             try
             {
-                var tasks = keys.Select(key => _distributedCache.RemoveAsync(key));
-                await Task.WhenAll(tasks);
-                _logger.LogDebug("Multiple cache items removed: {Count}", keys.Count());
+                var database = _connectionMultiplexer.GetDatabase();
+                var redisKeys = keysList.Select(k => new RedisKey(k)).ToArray();
+
+                if (redisKeys.Length > 0)
+                {
+                    await database.KeyDeleteAsync(redisKeys);
+                    _logger.LogDebug("Removed {Count} cache items", redisKeys.Length);
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error removing multiple cached items");
+                // Fallback to individual removal
+                var tasks = keysList.Select(RemoveAsync);
+                await Task.WhenAll(tasks);
             }
         }
 
         public async Task RemoveByPatternAsync(string pattern)
         {
+            if (string.IsNullOrWhiteSpace(pattern)) return;
+
+            await _invalidationSemaphore.WaitAsync();
             try
             {
                 var database = _connectionMultiplexer.GetDatabase();
-                var server = _connectionMultiplexer.GetServer(_connectionMultiplexer.GetEndPoints().First());
+                var endpoints = _connectionMultiplexer.GetEndPoints();
 
-                var keys = server.Keys(pattern: pattern).ToArray();
-                if (keys.Length > 0)
+                if (!endpoints.Any())
                 {
-                    await database.KeyDeleteAsync(keys);
-                    _logger.LogInformation("Removed {Count} cache items matching pattern: {Pattern}", keys.Length, pattern);
+                    _logger.LogWarning("No Redis endpoints available for pattern deletion");
+                    return;
                 }
+
+                var server = _connectionMultiplexer.GetServer(endpoints.First());
+                const int batchSize = 1000;
+                var deletedCount = 0;
+
+                await foreach (var keyBatch in GetKeysBatched(server, pattern, batchSize))
+                {
+                    if (keyBatch.Any())
+                    {
+                        await database.KeyDeleteAsync(keyBatch.ToArray());
+                        deletedCount += keyBatch.Count();
+                    }
+                }
+
+                _logger.LogInformation("Removed {Count} cache items matching pattern: {Pattern}",
+                    deletedCount, pattern);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error removing cached items by pattern: {Pattern}", pattern);
             }
+            finally
+            {
+                _invalidationSemaphore.Release();
+            }
         }
 
         public async Task<bool> ExistsAsync(string key)
         {
+            if (string.IsNullOrWhiteSpace(key)) return false;
+
             try
             {
                 var database = _connectionMultiplexer.GetDatabase();
@@ -180,6 +250,8 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task RefreshAsync(string key)
         {
+            if (string.IsNullOrWhiteSpace(key)) return;
+
             try
             {
                 await _distributedCache.RefreshAsync(key);
@@ -192,8 +264,11 @@ namespace Backend.CMS.Infrastructure.Services
 
         public string GenerateKey(string prefix, params object[] identifiers)
         {
+            if (string.IsNullOrWhiteSpace(prefix))
+                throw new ArgumentException("Prefix cannot be null or empty", nameof(prefix));
+
             var keyParts = new List<string> { prefix };
-            keyParts.AddRange(identifiers.Select(id => id.ToString()));
+            keyParts.AddRange(identifiers.Select(id => id?.ToString() ?? "null"));
             return string.Join(":", keyParts);
         }
 
@@ -205,16 +280,26 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var keysToRemove = new List<string>
+                if (userId <= 0)
                 {
-                    CacheKeys.UserById(userId),
-                    CacheKeys.UserPermissions(userId)
-                };
+                    // Invalidate all user caches
+                    await RemoveByPatternAsync(CacheKeys.UsersPattern);
+                    await RemoveByPatternAsync(CacheKeys.Pattern(CacheKeys.USER_PREFIX));
+                }
+                else
+                {
+                    var keysToRemove = new List<string>
+                    {
+                        CacheKeys.UserById(userId),
+                        CacheKeys.UserPermissions(userId),
+                        CacheKeys.UserSessions(userId)
+                    };
 
-                await RemoveAsync(keysToRemove);
-                await RemoveByPatternAsync(CacheKeys.UsersPattern);
+                    await RemoveAsync(keysToRemove);
+                    await RemoveByPatternAsync($"user:*:{userId}");
+                }
 
-                _logger.LogInformation("Invalidated cache for user {UserId}", userId);
+                _logger.LogInformation("Invalidated cache for user {UserId}", userId <= 0 ? "all" : userId.ToString());
             }
             catch (Exception ex)
             {
@@ -226,25 +311,37 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var keysToRemove = new List<string>
+                if (pageId <= 0)
                 {
-                    CacheKeys.PageById(pageId),
+                    // Invalidate all page caches
+                    await RemoveByPatternAsync(CacheKeys.PagesPattern);
+                    await RemoveByPatternAsync(CacheKeys.DesignerPattern);
+                    await RemoveByPatternAsync("preview:*");
+                }
+                else
+                {
+                    var keysToRemove = new List<string>
+                    {
+                        CacheKeys.PageById(pageId),
+                        CacheKeys.PageWithComponents(pageId),
+                        CacheKeys.PageVersions(pageId),
+                        CacheKeys.DesignerPage(pageId)
+                    };
+
+                    await RemoveAsync(keysToRemove);
+                    await RemoveByPatternAsync($"page:*:{pageId}");
+                    await RemoveByPatternAsync($"designer:*:{pageId}");
+                }
+
+                // Always invalidate these when any page changes
+                var globalKeysToRemove = new List<string>
+                {
                     CacheKeys.PublishedPages,
-                    CacheKeys.PageHierarchy,
-                    $"designer:page:{pageId}",
-                    $"page:slug:*", // Will be handled by pattern removal
-                    $"page:versions:{pageId}"
+                    CacheKeys.PageHierarchy
                 };
+                await RemoveAsync(globalKeysToRemove);
 
-                await RemoveAsync(keysToRemove);
-
-                // Remove page-related patterns
-                await RemoveByPatternAsync(CacheKeys.PagesPattern);
-                await RemoveByPatternAsync($"page:*:{pageId}");
-                await RemoveByPatternAsync($"designer:page:{pageId}*");
-                await RemoveByPatternAsync($"preview:*"); // Remove all previews as they might be related
-
-                _logger.LogInformation("Invalidated cache for page {PageId}", pageId);
+                _logger.LogInformation("Invalidated cache for page {PageId}", pageId <= 0 ? "all" : pageId.ToString());
             }
             catch (Exception ex)
             {
@@ -257,7 +354,8 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 await RemoveByPatternAsync(CacheKeys.ComponentsPattern);
-                await RemoveByPatternAsync("designer:component-library");
+                await RemoveAsync(CacheKeys.ComponentLibrary);
+
                 _logger.LogInformation("Invalidated all component cache");
             }
             catch (Exception ex)
@@ -283,7 +381,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                if (locationId.HasValue)
+                if (locationId.HasValue && locationId.Value > 0)
                 {
                     await RemoveAsync(CacheKeys.LocationById(locationId.Value));
                 }
@@ -296,7 +394,8 @@ namespace Backend.CMS.Infrastructure.Services
                 await RemoveAsync(keysToRemove);
                 await RemoveByPatternAsync(CacheKeys.LocationsPattern);
 
-                _logger.LogInformation("Invalidated location cache {LocationId}", locationId?.ToString() ?? "all");
+                _logger.LogInformation("Invalidated location cache {LocationId}",
+                    locationId?.ToString() ?? "all");
             }
             catch (Exception ex)
             {
@@ -308,7 +407,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                if (fileId.HasValue)
+                if (fileId.HasValue && fileId.Value > 0)
                 {
                     await RemoveAsync(CacheKeys.FileById(fileId.Value));
                 }
@@ -322,7 +421,8 @@ namespace Backend.CMS.Infrastructure.Services
                 await RemoveAsync(keysToRemove);
                 await RemoveByPatternAsync(CacheKeys.FilesPattern);
 
-                _logger.LogInformation("Invalidated file cache {FileId}", fileId?.ToString() ?? "all");
+                _logger.LogInformation("Invalidated file cache {FileId}",
+                    fileId?.ToString() ?? "all");
             }
             catch (Exception ex)
             {
@@ -334,7 +434,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                if (folderId.HasValue)
+                if (folderId.HasValue && folderId.Value > 0)
                 {
                     await RemoveAsync(CacheKeys.FolderById(folderId.Value));
                 }
@@ -347,7 +447,8 @@ namespace Backend.CMS.Infrastructure.Services
                 await RemoveAsync(keysToRemove);
                 await RemoveByPatternAsync(CacheKeys.FoldersPattern);
 
-                _logger.LogInformation("Invalidated folder cache {FolderId}", folderId?.ToString() ?? "all");
+                _logger.LogInformation("Invalidated folder cache {FolderId}",
+                    folderId?.ToString() ?? "all");
             }
             catch (Exception ex)
             {
@@ -357,21 +458,32 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task InvalidateAllCacheAsync()
         {
+            await _invalidationSemaphore.WaitAsync();
             try
             {
                 var database = _connectionMultiplexer.GetDatabase();
-                var server = _connectionMultiplexer.GetServer(_connectionMultiplexer.GetEndPoints().First());
+                var endpoints = _connectionMultiplexer.GetEndPoints();
 
-                var keys = server.Keys(pattern: "*").ToArray();
-                if (keys.Length > 0)
+                if (!endpoints.Any())
                 {
-                    await database.KeyDeleteAsync(keys);
-                    _logger.LogInformation("Invalidated all cache - removed {Count} keys", keys.Length);
+                    _logger.LogWarning("No Redis endpoints available for cache invalidation");
+                    return;
                 }
+
+                var server = _connectionMultiplexer.GetServer(endpoints.First());
+
+                await database.ExecuteAsync("FLUSHDB");
+
+                _logger.LogInformation("Invalidated all cache entries");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error invalidating all cache");
+                throw;
+            }
+            finally
+            {
+                _invalidationSemaphore.Release();
             }
         }
 
@@ -381,20 +493,23 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _logger.LogInformation("Starting cache warmup...");
 
-                // Cache warmup logic here
-                // This could include pre-loading commonly accessed data
-                // For example:
-                // - Load main company data
-                // - Load published pages
-                // - Load component library
-                // - Load main categories
-                // - Load featured products
+                var tasks = new List<Task>
+                {
+                    WarmupCompanyDataAsync(),
+                    WarmupPublishedPagesAsync(),
+                    WarmupComponentLibraryAsync(),
+                    WarmupMainLocationAsync(),
+                    WarmupPermissionsAsync()
+                };
 
-                _logger.LogInformation("Cache warmup completed");
+                await Task.WhenAll(tasks);
+
+                _logger.LogInformation("Cache warmup completed successfully");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during cache warmup");
+                throw;
             }
         }
 
@@ -403,24 +518,40 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var database = _connectionMultiplexer.GetDatabase();
-                var server = _connectionMultiplexer.GetServer(_connectionMultiplexer.GetEndPoints().First());
+                var endpoints = _connectionMultiplexer.GetEndPoints();
 
-                var info = await server.InfoAsync();
-                var allKeys = server.Keys(pattern: "*").ToArray();
-
-                var statistics = new Dictionary<string, object>
+                if (!endpoints.Any())
                 {
-                    ["TotalKeys"] = allKeys.Length,
-                    ["UserCacheKeys"] = server.Keys(pattern: CacheKeys.UsersPattern).Count(),
-                    ["PageCacheKeys"] = server.Keys(pattern: CacheKeys.PagesPattern).Count(),
-                    ["ComponentCacheKeys"] = server.Keys(pattern: CacheKeys.ComponentsPattern).Count(),
-                    ["FileCacheKeys"] = server.Keys(pattern: CacheKeys.FilesPattern).Count(),
-                    ["DesignerCacheKeys"] = server.Keys(pattern: "designer:*").Count(),
-                    ["PreviewCacheKeys"] = server.Keys(pattern: "preview:*").Count(),
-                    ["MemoryUsed"] = info.SelectMany(g => g).FirstOrDefault(kv => kv.Key == "used_memory_human").Value ?? "Unknown",
-                    ["KeyspaceHits"] = info.SelectMany(g => g).FirstOrDefault(kv => kv.Key == "keyspace_hits").Value ?? "0",
-                    ["KeyspaceMisses"] = info.SelectMany(g => g).FirstOrDefault(kv => kv.Key == "keyspace_misses").Value ?? "0"
-                };
+                    return new Dictionary<string, object> { ["Error"] = "No Redis endpoints available" };
+                }
+
+                var server = _connectionMultiplexer.GetServer(endpoints.First());
+                var info = await server.InfoAsync();
+
+                var statistics = new Dictionary<string, object>();
+
+                // Get basic Redis info
+                var infoDict = info.SelectMany(g => g).ToDictionary(kv => kv.Key, kv => kv.Value);
+
+                statistics["MemoryUsed"] = infoDict.GetValueOrDefault("used_memory_human", "Unknown");
+                statistics["KeyspaceHits"] = long.Parse(infoDict.GetValueOrDefault("keyspace_hits", "0"));
+                statistics["KeyspaceMisses"] = long.Parse(infoDict.GetValueOrDefault("keyspace_misses", "0"));
+                statistics["ConnectedClients"] = infoDict.GetValueOrDefault("connected_clients", "0");
+                statistics["Uptime"] = infoDict.GetValueOrDefault("uptime_in_seconds", "0");
+
+                // Calculate hit ratio
+                var hits = (long)statistics["KeyspaceHits"];
+                var misses = (long)statistics["KeyspaceMisses"];
+                var total = hits + misses;
+                statistics["HitRatio"] = total > 0 ? Math.Round((double)hits / total * 100, 2) : 0;
+
+                // Get key counts by pattern
+                statistics["TotalKeys"] = await GetKeyCountAsync(server, "*");
+                statistics["UserCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.UsersPattern);
+                statistics["PageCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.PagesPattern);
+                statistics["ComponentCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.ComponentsPattern);
+                statistics["FileCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.FilesPattern);
+                statistics["SessionCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.SessionsPattern);
 
                 return statistics;
             }
@@ -435,208 +566,191 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var server = _connectionMultiplexer.GetServer(_connectionMultiplexer.GetEndPoints().First());
-                var keys = server.Keys(pattern: pattern).Select(k => k.ToString()).ToList();
+                var endpoints = _connectionMultiplexer.GetEndPoints();
+                if (!endpoints.Any())
+                {
+                    _logger.LogWarning("No Redis endpoints available");
+                    return new List<string>();
+                }
+
+                var server = _connectionMultiplexer.GetServer(endpoints.First());
+                var keys = new List<string>();
+
+                await foreach (var keyBatch in GetKeysBatched(server, pattern, 1000))
+                {
+                    keys.AddRange(keyBatch.Select(k => k.ToString()));
+                }
+
                 return keys;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting cache keys with pattern: {Pattern}", pattern);
-                return [];
+                return new List<string>();
             }
         }
 
         #endregion
 
-        #region Session Cache Methods
+        #region Warmup Methods
 
-        public async Task InvalidateUserSessionsAsync(int userId)
+        private async Task WarmupCompanyDataAsync()
         {
             try
             {
-                // Remove all sessions for a specific user
-                await RemoveByPatternAsync($"session:*");
-
-                // Also remove user-specific cache
-                await InvalidateUserCacheAsync(userId);
-
-                _logger.LogInformation("Invalidated all sessions for user {UserId}", userId);
+                // This would typically fetch company data and cache it
+                _logger.LogDebug("Warming up company data cache");
+                // Implementation would depend on your specific services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error invalidating user sessions for user {UserId}", userId);
+                _logger.LogWarning(ex, "Failed to warmup company data cache");
             }
         }
 
-        public async Task InvalidateAllSessionsAsync()
+        private async Task WarmupPublishedPagesAsync()
         {
             try
             {
-                await RemoveByPatternAsync(CacheKeys.SessionsPattern);
-                _logger.LogInformation("Invalidated all sessions");
+                _logger.LogDebug("Warming up published pages cache");
+                // Implementation would depend on your specific services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error invalidating all sessions");
+                _logger.LogWarning(ex, "Failed to warmup published pages cache");
             }
         }
 
-        public async Task<List<string>> GetActiveSessionsAsync()
+        private async Task WarmupComponentLibraryAsync()
         {
             try
             {
-                return await GetCacheKeysAsync(CacheKeys.SessionsPattern);
+                _logger.LogDebug("Warming up component library cache");
+                // Implementation would depend on your specific services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting active sessions");
-                return new List<string>();
+                _logger.LogWarning(ex, "Failed to warmup component library cache");
             }
         }
 
-        public async Task<bool> IsSessionActiveAsync(string sessionId)
+        private async Task WarmupMainLocationAsync()
         {
             try
             {
-                var cacheKey = CacheKeys.SessionById(sessionId);
-                return await ExistsAsync(cacheKey);
+                _logger.LogDebug("Warming up main location cache");
+                // Implementation would depend on your specific services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error checking if session {SessionId} is active", sessionId);
-                return false;
+                _logger.LogWarning(ex, "Failed to warmup main location cache");
             }
         }
 
-        public async Task ExtendSessionAsync(string sessionId, TimeSpan? customExpiration = null)
+        private async Task WarmupPermissionsAsync()
         {
             try
             {
-                var cacheKey = CacheKeys.SessionById(sessionId);
-                var session = await GetAsync<UserSessionContext>(cacheKey);
+                _logger.LogDebug("Warming up permissions cache");
+                // Implementation would depend on your specific services
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to warmup permissions cache");
+            }
+        }
 
-                if (session != null)
+        #endregion
+
+        #region Helper Methods
+
+        private async IAsyncEnumerable<IEnumerable<RedisKey>> GetKeysBatched(IServer server, string pattern, int batchSize)
+        {
+            var keys = new List<RedisKey>();
+
+            await foreach (var key in server.KeysAsync(pattern: pattern))
+            {
+                keys.Add(key);
+
+                if (keys.Count >= batchSize)
                 {
-                    session.UpdateLastActivity();
-                    await SetAsync(cacheKey, session, customExpiration ?? _defaultExpiration);
-                    _logger.LogDebug("Extended session {SessionId}", sessionId);
+                    yield return keys.ToArray();
+                    keys.Clear();
                 }
             }
-            catch (Exception ex)
+
+            if (keys.Any())
             {
-                _logger.LogError(ex, "Error extending session {SessionId}", sessionId);
+                yield return keys.ToArray();
             }
         }
 
-        public async Task<Dictionary<string, object>> GetSessionStatisticsAsync()
+        private async Task<long> GetKeyCountAsync(IServer server, string pattern)
         {
-            try
+            long count = 0;
+            await foreach (var _ in server.KeysAsync(pattern: pattern))
             {
-                var server = _connectionMultiplexer.GetServer(_connectionMultiplexer.GetEndPoints().First());
-                var sessionKeys = server.Keys(pattern: CacheKeys.SessionsPattern).ToArray();
-
-                var activeSessions = 0;
-                var expiredSessions = 0;
-                var userSessions = new Dictionary<int, int>();
-
-                foreach (var key in sessionKeys)
-                {
-                    try
-                    {
-                        var database = _connectionMultiplexer.GetDatabase();
-                        var sessionData = await database.StringGetAsync(key);
-
-                        if (!string.IsNullOrEmpty(sessionData))
-                        {
-                            var session = JsonSerializer.Deserialize<UserSessionContext>(sessionData, _jsonOptions);
-                            if (session != null)
-                            {
-                                if (session.IsSessionExpired(_defaultExpiration))
-                                {
-                                    expiredSessions++;
-                                }
-                                else
-                                {
-                                    activeSessions++;
-
-                                    if (session.UserId.HasValue)
-                                    {
-                                        userSessions[session.UserId.Value] = userSessions.GetValueOrDefault(session.UserId.Value, 0) + 1;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Error processing session key {Key}", key);
-                    }
-                }
-
-                return new Dictionary<string, object>
-                {
-                    ["TotalSessions"] = sessionKeys.Length,
-                    ["ActiveSessions"] = activeSessions,
-                    ["ExpiredSessions"] = expiredSessions,
-                    ["UsersWithSessions"] = userSessions.Count,
-                    ["SessionsPerUser"] = userSessions
-                };
+                count++;
             }
-            catch (Exception ex)
+            return count;
+        }
+
+        private SemaphoreSlim GetKeySemaphore(string key)
+        {
+            lock (_semaphoreLock)
             {
-                _logger.LogError(ex, "Error getting session statistics");
-                return new Dictionary<string, object> { ["Error"] = ex.Message };
+                if (!_keySemaphores.TryGetValue(key, out var semaphore))
+                {
+                    semaphore = new SemaphoreSlim(1, 1);
+                    _keySemaphores[key] = semaphore;
+                }
+                return semaphore;
             }
         }
 
-        public async Task CleanupExpiredSessionsAsync()
+        private void ReleaseKeySemaphore(string key)
         {
-            try
+            lock (_semaphoreLock)
             {
-                var server = _connectionMultiplexer.GetServer(_connectionMultiplexer.GetEndPoints().First());
-                var sessionKeys = server.Keys(pattern: CacheKeys.SessionsPattern).ToArray();
-                var expiredKeys = new List<RedisKey>();
-
-                foreach (var key in sessionKeys)
+                if (_keySemaphores.TryGetValue(key, out var semaphore) && semaphore.CurrentCount > 0)
                 {
-                    try
-                    {
-                        var database = _connectionMultiplexer.GetDatabase();
-                        var sessionData = await database.StringGetAsync(key);
-
-                        if (!string.IsNullOrEmpty(sessionData))
-                        {
-                            var session = JsonSerializer.Deserialize<UserSessionContext>(sessionData, _jsonOptions);
-                            if (session?.IsSessionExpired(_defaultExpiration) == true)
-                            {
-                                expiredKeys.Add(key);
-                            }
-                        }
-                        else
-                        {
-                            // Empty session data, consider it expired
-                            expiredKeys.Add(key);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Error checking session {Key}, marking for cleanup", key);
-                        expiredKeys.Add(key);
-                    }
+                    _keySemaphores.Remove(key);
+                    semaphore.Dispose();
                 }
-
-                if (expiredKeys.Count > 0)
-                {
-                    var database = _connectionMultiplexer.GetDatabase();
-                    await database.KeyDeleteAsync(expiredKeys.ToArray());
-                    _logger.LogInformation("Cleaned up {Count} expired sessions", expiredKeys.Count);
-                }
-
-                return;
             }
-            catch (Exception ex)
+        }
+
+        private int GetConfigValue(string key, int defaultValue)
+        {
+            return int.TryParse(_configuration[key], out var value) ? value : defaultValue;
+        }
+
+        #endregion
+
+        #region IDisposable
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed && disposing)
             {
-                _logger.LogError(ex, "Error during session cleanup");
+                _invalidationSemaphore?.Dispose();
+
+                lock (_semaphoreLock)
+                {
+                    foreach (var semaphore in _keySemaphores.Values)
+                    {
+                        semaphore.Dispose();
+                    }
+                    _keySemaphores.Clear();
+                }
+
+                _disposed = true;
             }
         }
 

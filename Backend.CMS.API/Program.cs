@@ -31,7 +31,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 
-
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure logging
@@ -132,12 +131,9 @@ static void ConfigureBasicServices(WebApplicationBuilder builder)
         options.Filters.Add<ValidationActionFilter>();
     }).AddJsonOptions(options =>
     {
-        // Configure JSON serialization for enums
-        //options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
     });
-
 
     builder.Services.AddHttpContextAccessor();
 
@@ -170,7 +166,6 @@ static void ConfigureDatabases(WebApplicationBuilder builder)
 
     builder.Services.AddScoped<IDatabaseInitializer, DatabaseInitializer>();
 }
-
 
 static void ConfigureRedis(WebApplicationBuilder builder)
 {
@@ -437,13 +432,6 @@ static void ConfigureValidationAndMapping(WebApplicationBuilder builder)
 
 static void ConfigureSession(WebApplicationBuilder builder)
 {
-    // Configure distributed cache for session storage
-    builder.Services.AddStackExchangeRedisCache(options =>
-    {
-        options.Configuration = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
-        options.InstanceName = "BackendCMS";
-    });
-
     // Configure session with Redis backing store
     builder.Services.AddSession(options =>
     {
@@ -462,18 +450,18 @@ static void ConfigureSession(WebApplicationBuilder builder)
     builder.Services.AddHostedService<SessionCleanupService>();
 }
 
-
 static void RegisterServices(WebApplicationBuilder builder)
 {
     RegisterRepositories(builder);
     RegisterCoreServices(builder);
-    RegisterBusinessServices(builder);
     RegisterCachingServices(builder);
+    RegisterBusinessServices(builder);
     RegisterSearchServices(builder);
     RegisterFileServices(builder);
     RegisterBackgroundJobs(builder);
     RegisterSocialAuthServices(builder);
     RegisterProductServices(builder);
+    RegisterBackgroundServices(builder);
 }
 
 static void RegisterRepositories(WebApplicationBuilder builder)
@@ -485,6 +473,7 @@ static void RegisterRepositories(WebApplicationBuilder builder)
     builder.Services.AddScoped<IPageRepository, PageRepository>();
     builder.Services.AddScoped<IUserRepository, UserRepository>();
     builder.Services.AddScoped<ILocationRepository, LocationRepository>();
+    builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 
     // Entity repositories
     builder.Services.AddScoped<IRepository<UserSession>, Repository<UserSession>>();
@@ -505,7 +494,6 @@ static void RegisterRepositories(WebApplicationBuilder builder)
     builder.Services.AddScoped<IRepository<UserPermission>, Repository<UserPermission>>();
     builder.Services.AddScoped<IRepository<SearchIndex>, Repository<SearchIndex>>();
     builder.Services.AddScoped<IRepository<IndexingJob>, Repository<IndexingJob>>();
-    builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
 }
 
 static void RegisterSocialAuthServices(WebApplicationBuilder builder)
@@ -524,6 +512,17 @@ static void RegisterCoreServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IContactDetailsService, ContactDetailsService>();
 }
 
+static void RegisterCachingServices(WebApplicationBuilder builder)
+{
+    // Register cache event handler for automatic cache invalidation
+    builder.Services.AddScoped<ICacheEventHandler, CacheEventHandler>();
+
+    // Register the single CacheService that implements both interfaces
+    builder.Services.AddScoped<CacheService>();
+    builder.Services.AddScoped<ICacheService>(provider => provider.GetRequiredService<CacheService>());
+    builder.Services.AddScoped<ICacheInvalidationService>(provider => provider.GetRequiredService<CacheService>());
+}
+
 static void RegisterBusinessServices(WebApplicationBuilder builder)
 {
     // Business services
@@ -539,17 +538,6 @@ static void RegisterBusinessServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IDesignerService, DesignerService>();
 }
 
-static void RegisterCachingServices(WebApplicationBuilder builder)
-{
-    builder.Services.AddScoped<ICacheService, CacheService>();
-
-    builder.Services.AddScoped<ICacheInvalidationService, CacheService>();
-
-    builder.Services.AddScoped<CacheService>();
-    builder.Services.AddScoped<ICacheService>(provider => provider.GetService<CacheService>());
-    builder.Services.AddScoped<ICacheInvalidationService>(provider => provider.GetService<CacheService>());
-}
-
 static void RegisterSearchServices(WebApplicationBuilder builder)
 {
     builder.Services.AddScoped<IIndexingService, IndexingService>();
@@ -558,13 +546,20 @@ static void RegisterSearchServices(WebApplicationBuilder builder)
 
 static void RegisterFileServices(WebApplicationBuilder builder)
 {
-    builder.Services.AddScoped<FileService>();
+    // Register file caching service
     builder.Services.AddScoped<IFileCachingService, FileCachingService>();
+
+    // Register base file service
+    builder.Services.AddScoped<FileService>();
+
+    // Register additional file services
     builder.Services.AddScoped<IImageProcessingService, ImageProcessingService>();
     builder.Services.AddScoped<IFileValidationService, FileValidationService>();
     builder.Services.AddScoped<IFolderService, FolderService>();
     builder.Services.AddScoped<DatabaseFilePerformanceService>();
     builder.Services.AddScoped<IDownloadTokenService, DownloadTokenService>();
+
+    // Register the cached file service as the main IFileService implementation
     builder.Services.AddScoped<IFileService>(provider =>
     {
         var baseService = provider.GetRequiredService<FileService>();
@@ -597,6 +592,11 @@ static void RegisterProductServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IRepository<ProductImage>, Repository<ProductImage>>();
     builder.Services.AddScoped<IRepository<ProductOption>, Repository<ProductOption>>();
     builder.Services.AddScoped<IRepository<ProductOptionValue>, Repository<ProductOptionValue>>();
+}
+
+static void RegisterBackgroundServices(WebApplicationBuilder builder)
+{
+    builder.Services.AddHostedService<CacheManagementService>();
 }
 
 static void ConfigureSwagger(WebApplicationBuilder builder)
@@ -645,6 +645,7 @@ static void ConfigureMiddleware(WebApplication app)
     app.UseMiddleware<GlobalExceptionMiddleware>();
     app.UseRateLimiter();
 }
+
 static void ConfigureRequestPipeline(WebApplication app)
 {
     // Configure the HTTP request pipeline
@@ -1005,7 +1006,6 @@ static async Task SeedCompanyData(ApplicationDbContext context, int adminUserId)
     }
 }
 
-
 #endregion
 
 #region Support Classes
@@ -1062,34 +1062,36 @@ public class SessionCleanupService : BackgroundService
         try
         {
             using var scope = _serviceProvider.CreateScope();
-            // Change ICacheService to ICacheInvalidationService
-            var cacheService = scope.ServiceProvider.GetRequiredService<ICacheInvalidationService>();
+            var cacheService = scope.ServiceProvider.GetService<ICacheInvalidationService>();
 
-            // Get all session keys
-            var sessionKeys = await cacheService.GetCacheKeysAsync("session:*");
-            var expiredKeys = new List<string>();
-
-            foreach (var key in sessionKeys)
+            if (cacheService != null)
             {
-                try
+                // Get all session keys
+                var sessionKeys = await cacheService.GetCacheKeysAsync("session:*");
+                var expiredKeys = new List<string>();
+
+                foreach (var key in sessionKeys)
                 {
-                    var session = await ((ICacheService)cacheService).GetAsync<UserSessionContext>(key);
-                    if (session != null && session.IsSessionExpired(TimeSpan.FromMinutes(30)))
+                    try
                     {
-                        expiredKeys.Add(key);
+                        var session = await ((ICacheService)cacheService).GetAsync<UserSessionContext>(key);
+                        if (session != null && session.IsSessionExpired(TimeSpan.FromMinutes(30)))
+                        {
+                            expiredKeys.Add(key);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Error checking session {Key} for expiration", key);
+                        expiredKeys.Add(key); // Remove invalid sessions
                     }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Error checking session {Key} for expiration", key);
-                    expiredKeys.Add(key); // Remove invalid sessions
-                }
-            }
 
-            if (expiredKeys.Count > 0)
-            {
-                await ((ICacheService)cacheService).RemoveAsync(expiredKeys);
-                _logger.LogInformation("Cleaned up {Count} expired sessions", expiredKeys.Count);
+                if (expiredKeys.Count > 0)
+                {
+                    await ((ICacheService)cacheService).RemoveAsync(expiredKeys);
+                    _logger.LogInformation("Cleaned up {Count} expired sessions", expiredKeys.Count);
+                }
             }
         }
         catch (Exception ex)

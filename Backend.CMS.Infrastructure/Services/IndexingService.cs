@@ -2,12 +2,14 @@
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Collections.Concurrent;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class IndexingService : IIndexingService
+    public class IndexingService : IIndexingService, IDisposable
     {
         private readonly IRepository<SearchIndex> _searchIndexRepository;
         private readonly IRepository<IndexingJob> _indexingJobRepository;
@@ -17,6 +19,12 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IRepository<ComponentTemplate> _componentTemplateRepository;
         private readonly IUserSessionService _userSessionService;
         private readonly ILogger<IndexingService> _logger;
+        private readonly SemaphoreSlim _indexingSemaphore;
+        private readonly ConcurrentDictionary<string, DateTime> _lastIndexedTimes;
+        private readonly int _batchSize;
+        private readonly TimeSpan _indexingTimeout;
+        private readonly bool _enableParallelProcessing;
+        private bool _disposed = false;
 
         public IndexingService(
             IRepository<SearchIndex> searchIndexRepository,
@@ -26,112 +34,307 @@ namespace Backend.CMS.Infrastructure.Services
             IUserRepository userRepository,
             IRepository<ComponentTemplate> componentTemplateRepository,
             IUserSessionService userSessionService,
+            IConfiguration configuration,
             ILogger<IndexingService> logger)
         {
-            _searchIndexRepository = searchIndexRepository;
-            _indexingJobRepository = indexingJobRepository;
-            _pageRepository = pageRepository;
-            _fileRepository = fileRepository;
-            _userRepository = userRepository;
-            _componentTemplateRepository = componentTemplateRepository;
-            _userSessionService = userSessionService;
-            _logger = logger;
+            _searchIndexRepository = searchIndexRepository ?? throw new ArgumentNullException(nameof(searchIndexRepository));
+            _indexingJobRepository = indexingJobRepository ?? throw new ArgumentNullException(nameof(indexingJobRepository));
+            _pageRepository = pageRepository ?? throw new ArgumentNullException(nameof(pageRepository));
+            _fileRepository = fileRepository ?? throw new ArgumentNullException(nameof(fileRepository));
+            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+            _componentTemplateRepository = componentTemplateRepository ?? throw new ArgumentNullException(nameof(componentTemplateRepository));
+            _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+            _indexingSemaphore = new SemaphoreSlim(1, 1);
+            _lastIndexedTimes = new ConcurrentDictionary<string, DateTime>();
+
+            // Load configuration
+            _batchSize = int.TryParse(configuration["Indexing:BatchSize"], out var batchSize) ? batchSize : 100;
+            _indexingTimeout = TimeSpan.FromMinutes(int.TryParse(configuration["Indexing:TimeoutMinutes"], out var timeout) ? timeout : 60);
+            _enableParallelProcessing = bool.TryParse(configuration["Indexing:EnableParallelProcessing"], out var parallel) && parallel;
+
+            _logger.LogInformation("IndexingService initialized - BatchSize: {BatchSize}, Timeout: {Timeout}min, Parallel: {Parallel}",
+                _batchSize, _indexingTimeout.TotalMinutes, _enableParallelProcessing);
         }
 
         public async Task<bool> IndexPagesAsync(IEnumerable<int>? pageIds = null)
         {
+            using var cancellationTokenSource = new CancellationTokenSource(_indexingTimeout);
+            var cancellationToken = cancellationTokenSource.Token;
+
             try
             {
                 var pages = pageIds?.Any() == true
                     ? await _pageRepository.FindAsync(p => pageIds.Contains(p.Id))
                     : await _pageRepository.GetAllAsync();
 
-                foreach (var page in pages)
+                var pagesList = pages.ToList();
+                if (!pagesList.Any())
                 {
-                    await IndexPageAsync(page);
+                    _logger.LogInformation("No pages found to index");
+                    return true;
                 }
 
+                _logger.LogInformation("Starting to index {Count} pages", pagesList.Count);
+
+                var successCount = 0;
+                var errorCount = 0;
+
+                if (_enableParallelProcessing)
+                {
+                    var semaphore = new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount);
+                    var tasks = pagesList.Select(async page =>
+                    {
+                        await semaphore.WaitAsync(cancellationToken);
+                        try
+                        {
+                            await IndexPageAsync(page, cancellationToken);
+                            Interlocked.Increment(ref successCount);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error indexing page {PageId}", page.Id);
+                            Interlocked.Increment(ref errorCount);
+                        }
+                        finally
+                        {
+                            semaphore.Release();
+                        }
+                    });
+
+                    await Task.WhenAll(tasks);
+                    semaphore.Dispose();
+                }
+                else
+                {
+                    foreach (var batch in pagesList.Chunk(_batchSize))
+                    {
+                        foreach (var page in batch)
+                        {
+                            try
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+                                await IndexPageAsync(page, cancellationToken);
+                                successCount++;
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Error indexing page {PageId}", page.Id);
+                                errorCount++;
+                            }
+                        }
+
+                        // Save in batches to avoid memory issues
+                        await _searchIndexRepository.SaveChangesAsync();
+                    }
+                }
+
+                // Final save
                 await _searchIndexRepository.SaveChangesAsync();
-                return true;
+
+                _logger.LogInformation("Page indexing completed - Success: {SuccessCount}, Errors: {ErrorCount}",
+                    successCount, errorCount);
+
+                return errorCount == 0;
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("Page indexing was cancelled due to timeout");
+                return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error indexing pages");
+                _logger.LogError(ex, "Error during page indexing");
                 return false;
             }
         }
 
         public async Task<bool> IndexFilesAsync(IEnumerable<int>? fileIds = null)
         {
+            using var cancellationTokenSource = new CancellationTokenSource(_indexingTimeout);
+            var cancellationToken = cancellationTokenSource.Token;
+
             try
             {
                 var files = fileIds?.Any() == true
                     ? await _fileRepository.FindAsync(f => fileIds.Contains(f.Id))
                     : await _fileRepository.GetAllAsync();
 
-                foreach (var file in files)
+                var filesList = files.ToList();
+                if (!filesList.Any())
                 {
-                    await IndexFileAsync(file);
+                    _logger.LogInformation("No files found to index");
+                    return true;
                 }
 
-                await _searchIndexRepository.SaveChangesAsync();
-                return true;
+                _logger.LogInformation("Starting to index {Count} files", filesList.Count);
+
+                var successCount = 0;
+                var errorCount = 0;
+
+                foreach (var batch in filesList.Chunk(_batchSize))
+                {
+                    foreach (var file in batch)
+                    {
+                        try
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            await IndexFileAsync(file, cancellationToken);
+                            successCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error indexing file {FileId}", file.Id);
+                            errorCount++;
+                        }
+                    }
+
+                    await _searchIndexRepository.SaveChangesAsync();
+                }
+
+                _logger.LogInformation("File indexing completed - Success: {SuccessCount}, Errors: {ErrorCount}",
+                    successCount, errorCount);
+
+                return errorCount == 0;
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("File indexing was cancelled due to timeout");
+                return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error indexing files");
+                _logger.LogError(ex, "Error during file indexing");
                 return false;
             }
         }
 
         public async Task<bool> IndexUsersAsync(IEnumerable<int>? userIds = null)
         {
+            using var cancellationTokenSource = new CancellationTokenSource(_indexingTimeout);
+            var cancellationToken = cancellationTokenSource.Token;
+
             try
             {
                 var users = userIds?.Any() == true
                     ? await _userRepository.FindAsync(u => userIds.Contains(u.Id))
                     : await _userRepository.GetAllAsync();
 
-                foreach (var user in users)
+                var usersList = users.ToList();
+                if (!usersList.Any())
                 {
-                    await IndexUserAsync(user);
+                    _logger.LogInformation("No users found to index");
+                    return true;
                 }
 
-                await _searchIndexRepository.SaveChangesAsync();
-                return true;
+                _logger.LogInformation("Starting to index {Count} users", usersList.Count);
+
+                var successCount = 0;
+                var errorCount = 0;
+
+                foreach (var batch in usersList.Chunk(_batchSize))
+                {
+                    foreach (var user in batch)
+                    {
+                        try
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            await IndexUserAsync(user, cancellationToken);
+                            successCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error indexing user {UserId}", user.Id);
+                            errorCount++;
+                        }
+                    }
+
+                    await _searchIndexRepository.SaveChangesAsync();
+                }
+
+                _logger.LogInformation("User indexing completed - Success: {SuccessCount}, Errors: {ErrorCount}",
+                    successCount, errorCount);
+
+                return errorCount == 0;
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("User indexing was cancelled due to timeout");
+                return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error indexing users");
+                _logger.LogError(ex, "Error during user indexing");
                 return false;
             }
         }
 
         public async Task<bool> IndexComponentTemplatesAsync(IEnumerable<int>? templateIds = null)
         {
+            using var cancellationTokenSource = new CancellationTokenSource(_indexingTimeout);
+            var cancellationToken = cancellationTokenSource.Token;
+
             try
             {
                 var templates = templateIds?.Any() == true
                     ? await _componentTemplateRepository.FindAsync(t => templateIds.Contains(t.Id))
                     : await _componentTemplateRepository.GetAllAsync();
 
-                foreach (var template in templates)
+                var templatesList = templates.ToList();
+                if (!templatesList.Any())
                 {
-                    await IndexComponentTemplateAsync(template);
+                    _logger.LogInformation("No component templates found to index");
+                    return true;
                 }
 
-                await _searchIndexRepository.SaveChangesAsync();
-                return true;
+                _logger.LogInformation("Starting to index {Count} component templates", templatesList.Count);
+
+                var successCount = 0;
+                var errorCount = 0;
+
+                foreach (var batch in templatesList.Chunk(_batchSize))
+                {
+                    foreach (var template in batch)
+                    {
+                        try
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            await IndexComponentTemplateAsync(template, cancellationToken);
+                            successCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Error indexing component template {TemplateId}", template.Id);
+                            errorCount++;
+                        }
+                    }
+
+                    await _searchIndexRepository.SaveChangesAsync();
+                }
+
+                _logger.LogInformation("Component template indexing completed - Success: {SuccessCount}, Errors: {ErrorCount}",
+                    successCount, errorCount);
+
+                return errorCount == 0;
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("Component template indexing was cancelled due to timeout");
+                return false;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error indexing component templates");
+                _logger.LogError(ex, "Error during component template indexing");
                 return false;
             }
         }
 
         public async Task<bool> RemoveFromIndexAsync(string entityType, int entityId)
         {
+            if (string.IsNullOrWhiteSpace(entityType) || entityId <= 0)
+                return false;
+
             try
             {
                 var existingIndex = await _searchIndexRepository.FirstOrDefaultAsync(
@@ -141,6 +344,8 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     await _searchIndexRepository.SoftDeleteAsync(existingIndex, _userSessionService.GetCurrentUserId());
                     await _searchIndexRepository.SaveChangesAsync();
+
+                    _logger.LogDebug("Removed {EntityType} {EntityId} from search index", entityType, entityId);
                 }
 
                 return true;
@@ -154,65 +359,114 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> FullReindexAsync()
         {
-            var job = await CreateIndexingJobAsync("Full", new Dictionary<string, object>
-            {
-                { "description", "Full reindex of all entities" }
-            });
-
+            await _indexingSemaphore.WaitAsync();
             try
             {
-                await UpdateIndexingJobAsync(job.Id, "Running");
-
-                var existingIndexes = await _searchIndexRepository.GetAllAsync();
-                foreach (var index in existingIndexes)
+                var job = await CreateIndexingJobAsync("Full", new Dictionary<string, object>
                 {
-                    await _searchIndexRepository.SoftDeleteAsync(index, _userSessionService.GetCurrentUserId());
-                }
-                await _searchIndexRepository.SaveChangesAsync();
+                    { "description", "Full reindex of all entities" },
+                    { "startTime", DateTime.UtcNow }
+                });
 
-                var totalEntities = 0;
-                var processedEntities = 0;
-
-                var pageCount = await _pageRepository.CountAsync();
-                var fileCount = await _fileRepository.CountAsync();
-                var userCount = await _userRepository.CountAsync();
-                var templateCount = await _componentTemplateRepository.CountAsync();
-                totalEntities = pageCount + fileCount + userCount + templateCount;
-
-                await UpdateIndexingJobAsync(job.Id, "Running", totalEntities: totalEntities);
-
-                if (await IndexPagesAsync())
+                try
                 {
-                    processedEntities += pageCount;
-                    await UpdateIndexingJobAsync(job.Id, "Running", processedEntities);
-                }
+                    await UpdateIndexingJobAsync(job.Id, "Running");
 
-                if (await IndexFilesAsync())
+                    // Mark existing indexes as deleted instead of physically deleting them
+                    // This allows search to continue working during reindexing
+                    var existingIndexes = await _searchIndexRepository.GetAllAsync();
+                    var existingList = existingIndexes.ToList();
+
+                    if (existingList.Any())
+                    {
+                        foreach (var batch in existingList.Chunk(_batchSize))
+                        {
+                            foreach (var index in batch)
+                            {
+                                index.IsDeleted = true;
+                                index.DeletedAt = DateTime.UtcNow;
+                                index.DeletedByUserId = _userSessionService.GetCurrentUserId();
+                            }
+                        }
+                        await _searchIndexRepository.SaveChangesAsync();
+                    }
+
+                    var totalEntities = 0;
+                    var processedEntities = 0;
+                    var failedEntities = 0;
+
+                    // Count total entities
+                    var pageCount = await _pageRepository.CountAsync();
+                    var fileCount = await _fileRepository.CountAsync();
+                    var userCount = await _userRepository.CountAsync();
+                    var templateCount = await _componentTemplateRepository.CountAsync();
+                    totalEntities = pageCount + fileCount + userCount + templateCount;
+
+                    await UpdateIndexingJobAsync(job.Id, "Running", totalEntities: totalEntities);
+
+                    // Index pages
+                    if (await IndexPagesAsync())
+                    {
+                        processedEntities += pageCount;
+                    }
+                    else
+                    {
+                        failedEntities += pageCount;
+                    }
+                    await UpdateIndexingJobAsync(job.Id, "Running", processedEntities, failedEntities);
+
+                    // Index files
+                    if (await IndexFilesAsync())
+                    {
+                        processedEntities += fileCount;
+                    }
+                    else
+                    {
+                        failedEntities += fileCount;
+                    }
+                    await UpdateIndexingJobAsync(job.Id, "Running", processedEntities, failedEntities);
+
+                    // Index users
+                    if (await IndexUsersAsync())
+                    {
+                        processedEntities += userCount;
+                    }
+                    else
+                    {
+                        failedEntities += userCount;
+                    }
+                    await UpdateIndexingJobAsync(job.Id, "Running", processedEntities, failedEntities);
+
+                    // Index component templates
+                    if (await IndexComponentTemplatesAsync())
+                    {
+                        processedEntities += templateCount;
+                    }
+                    else
+                    {
+                        failedEntities += templateCount;
+                    }
+                    await UpdateIndexingJobAsync(job.Id, "Running", processedEntities, failedEntities);
+
+                    // Clean up old deleted indexes
+                    await CleanupDeletedIndexesAsync();
+
+                    var success = failedEntities == 0;
+                    await CompleteIndexingJobAsync(job.Id, success,
+                        success ? null : $"Failed to index {failedEntities} out of {totalEntities} entities");
+
+                    return success;
+                }
+                catch (Exception ex)
                 {
-                    processedEntities += fileCount;
-                    await UpdateIndexingJobAsync(job.Id, "Running", processedEntities);
+                    _logger.LogError(ex, "Error during full reindex");
+                    await CompleteIndexingJobAsync(job.Id, false, ex.Message);
+                    return false;
                 }
-
-                if (await IndexUsersAsync())
-                {
-                    processedEntities += userCount;
-                    await UpdateIndexingJobAsync(job.Id, "Running", processedEntities);
-                }
-
-                if (await IndexComponentTemplatesAsync())
-                {
-                    processedEntities += templateCount;
-                    await UpdateIndexingJobAsync(job.Id, "Running", processedEntities);
-                }
-
-                await CompleteIndexingJobAsync(job.Id, true);
-                return true;
             }
-            catch (Exception ex)
+            finally
             {
-                _logger.LogError(ex, "Error during full reindex");
-                await CompleteIndexingJobAsync(job.Id, false, ex.Message);
-                return false;
+                _indexingSemaphore.Release();
             }
         }
 
@@ -222,7 +476,7 @@ namespace Backend.CMS.Infrastructure.Services
             var job = await CreateIndexingJobAsync("Incremental", new Dictionary<string, object>
             {
                 { "since", sinceDate },
-                { "description", $"Incremental index since {sinceDate}" }
+                { "description", $"Incremental index since {sinceDate:yyyy-MM-dd HH:mm:ss}" }
             });
 
             try
@@ -230,38 +484,32 @@ namespace Backend.CMS.Infrastructure.Services
                 await UpdateIndexingJobAsync(job.Id, "Running");
 
                 var processedEntities = 0;
+                var failedEntities = 0;
 
-                var updatedPages = await _pageRepository.FindAsync(p => p.UpdatedAt >= sinceDate);
-                foreach (var page in updatedPages)
+                // Process updated entities
+                var tasks = new List<Task<(int processed, int failed)>>
                 {
-                    await IndexPageAsync(page);
-                    processedEntities++;
-                }
+                    IndexUpdatedPagesAsync(sinceDate),
+                    IndexUpdatedFilesAsync(sinceDate),
+                    IndexUpdatedUsersAsync(sinceDate),
+                    IndexUpdatedTemplatesAsync(sinceDate)
+                };
 
-                var updatedFiles = await _fileRepository.FindAsync(f => f.UpdatedAt >= sinceDate);
-                foreach (var file in updatedFiles)
-                {
-                    await IndexFileAsync(file);
-                    processedEntities++;
-                }
+                var results = await Task.WhenAll(tasks);
 
-                var updatedUsers = await _userRepository.FindAsync(u => u.UpdatedAt >= sinceDate);
-                foreach (var user in updatedUsers)
+                foreach (var (processed, failed) in results)
                 {
-                    await IndexUserAsync(user);
-                    processedEntities++;
-                }
-
-                var updatedTemplates = await _componentTemplateRepository.FindAsync(t => t.UpdatedAt >= sinceDate);
-                foreach (var template in updatedTemplates)
-                {
-                    await IndexComponentTemplateAsync(template);
-                    processedEntities++;
+                    processedEntities += processed;
+                    failedEntities += failed;
                 }
 
                 await _searchIndexRepository.SaveChangesAsync();
-                await CompleteIndexingJobAsync(job.Id, true);
-                return true;
+
+                var success = failedEntities == 0;
+                await CompleteIndexingJobAsync(job.Id, success,
+                    success ? null : $"Failed to index {failedEntities} entities");
+
+                return success;
             }
             catch (Exception ex)
             {
@@ -276,7 +524,7 @@ namespace Backend.CMS.Infrastructure.Services
             var currentUserId = _userSessionService.GetCurrentUserId();
             var job = new IndexingJob
             {
-                JobType = jobType,
+                JobType = jobType ?? "Unknown",
                 Status = "Pending",
                 StartedAt = DateTime.UtcNow,
                 TotalEntities = 0,
@@ -289,15 +537,22 @@ namespace Backend.CMS.Infrastructure.Services
 
             await _indexingJobRepository.AddAsync(job);
             await _indexingJobRepository.SaveChangesAsync();
+
+            _logger.LogInformation("Created indexing job {JobId} of type {JobType}", job.Id, jobType);
             return job;
         }
 
-        public async Task<bool> UpdateIndexingJobAsync(int jobId, string status, int? processedEntities = null, int? failedEntities = null, string? errorMessage = null, int? totalEntities = null)
+        public async Task<bool> UpdateIndexingJobAsync(int jobId, string status, int? processedEntities = null,
+            int? failedEntities = null, string? errorMessage = null, int? totalEntities = null)
         {
             try
             {
                 var job = await _indexingJobRepository.GetByIdAsync(jobId);
-                if (job == null) return false;
+                if (job == null)
+                {
+                    _logger.LogWarning("Indexing job {JobId} not found for update", jobId);
+                    return false;
+                }
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
                 job.Status = status;
@@ -324,7 +579,11 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var job = await _indexingJobRepository.GetByIdAsync(jobId);
-                if (job == null) return false;
+                if (job == null)
+                {
+                    _logger.LogWarning("Indexing job {JobId} not found for completion", jobId);
+                    return false;
+                }
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
                 job.Status = success ? "Completed" : "Failed";
@@ -335,6 +594,8 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _indexingJobRepository.Update(job);
                 await _indexingJobRepository.SaveChangesAsync();
+
+                _logger.LogInformation("Completed indexing job {JobId} with status {Status}", jobId, job.Status);
                 return true;
             }
             catch (Exception ex)
@@ -344,25 +605,121 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        // Private helper methods for indexing specific entities
-        private async Task IndexPageAsync(Page page)
+        #region Private Helper Methods
+
+        private async Task<(int processed, int failed)> IndexUpdatedPagesAsync(DateTime since)
         {
+            var updatedPages = await _pageRepository.FindAsync(p => p.UpdatedAt >= since);
+            var processed = 0;
+            var failed = 0;
+
+            foreach (var page in updatedPages)
+            {
+                try
+                {
+                    await IndexPageAsync(page);
+                    processed++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error indexing updated page {PageId}", page.Id);
+                    failed++;
+                }
+            }
+
+            return (processed, failed);
+        }
+
+        private async Task<(int processed, int failed)> IndexUpdatedFilesAsync(DateTime since)
+        {
+            var updatedFiles = await _fileRepository.FindAsync(f => f.UpdatedAt >= since);
+            var processed = 0;
+            var failed = 0;
+
+            foreach (var file in updatedFiles)
+            {
+                try
+                {
+                    await IndexFileAsync(file);
+                    processed++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error indexing updated file {FileId}", file.Id);
+                    failed++;
+                }
+            }
+
+            return (processed, failed);
+        }
+
+        private async Task<(int processed, int failed)> IndexUpdatedUsersAsync(DateTime since)
+        {
+            var updatedUsers = await _userRepository.FindAsync(u => u.UpdatedAt >= since);
+            var processed = 0;
+            var failed = 0;
+
+            foreach (var user in updatedUsers)
+            {
+                try
+                {
+                    await IndexUserAsync(user);
+                    processed++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error indexing updated user {UserId}", user.Id);
+                    failed++;
+                }
+            }
+
+            return (processed, failed);
+        }
+
+        private async Task<(int processed, int failed)> IndexUpdatedTemplatesAsync(DateTime since)
+        {
+            var updatedTemplates = await _componentTemplateRepository.FindAsync(t => t.UpdatedAt >= since);
+            var processed = 0;
+            var failed = 0;
+
+            foreach (var template in updatedTemplates)
+            {
+                try
+                {
+                    await IndexComponentTemplateAsync(template);
+                    processed++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error indexing updated template {TemplateId}", template.Id);
+                    failed++;
+                }
+            }
+
+            return (processed, failed);
+        }
+
+        private async Task IndexPageAsync(Page page, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var content = ExtractPageContent(page);
             var searchVector = GenerateSearchVector(page.Title, content, page.MetaKeywords, page.Description);
 
             var searchIndex = await GetOrCreateSearchIndexAsync("Page", page.Id);
-            searchIndex.Title = page.Title;
-            searchIndex.Content = content;
-            searchIndex.SearchVector = searchVector;
+            searchIndex.Title = TruncateString(page.Title, 500);
+            searchIndex.Content = TruncateString(content, 10000);
+            searchIndex.SearchVector = TruncateString(searchVector, 5000);
             searchIndex.IsPublic = page.Status == Domain.Enums.PageStatus.Published && !page.RequiresLogin;
             searchIndex.LastIndexedAt = DateTime.UtcNow;
             searchIndex.Metadata = new Dictionary<string, object>
             {
-                { "slug", page.Slug },
+                { "slug", page.Slug ?? "" },
                 { "status", page.Status.ToString() },
                 { "requiresLogin", page.RequiresLogin },
                 { "adminOnly", page.AdminOnly },
-                { "parentPageId", page.ParentPageId ?? 0 }
+                { "parentPageId", page.ParentPageId ?? 0 },
+                { "priority", page.Priority }
             };
 
             if (searchIndex.Id == 0)
@@ -373,25 +730,29 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _searchIndexRepository.Update(searchIndex);
             }
+
+            _lastIndexedTimes[$"Page_{page.Id}"] = DateTime.UtcNow;
         }
 
-        private async Task IndexFileAsync(FileEntity file)
+        private async Task IndexFileAsync(FileEntity file, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var content = $"{file.OriginalFileName} {file.Description} {file.Alt}".Trim();
             var searchVector = GenerateSearchVector(file.OriginalFileName, content);
 
             var searchIndex = await GetOrCreateSearchIndexAsync("File", file.Id);
-            searchIndex.Title = file.OriginalFileName;
-            searchIndex.Content = content;
-            searchIndex.SearchVector = searchVector;
+            searchIndex.Title = TruncateString(file.OriginalFileName, 500);
+            searchIndex.Content = TruncateString(content, 10000);
+            searchIndex.SearchVector = TruncateString(searchVector, 5000);
             searchIndex.IsPublic = file.IsPublic;
             searchIndex.LastIndexedAt = DateTime.UtcNow;
             searchIndex.Metadata = new Dictionary<string, object>
             {
                 { "fileType", file.FileType.ToString() },
-                { "contentType", file.ContentType },
+                { "contentType", file.ContentType ?? "" },
                 { "fileSize", file.FileSize },
-                { "folderId", file.FolderId ?? 0 }
+                { "folderId", file.FolderId ?? 0 },
             };
 
             if (searchIndex.Id == 0)
@@ -402,24 +763,29 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _searchIndexRepository.Update(searchIndex);
             }
+
+            _lastIndexedTimes[$"File_{file.Id}"] = DateTime.UtcNow;
         }
 
-        private async Task IndexUserAsync(User user)
+        private async Task IndexUserAsync(User user, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var content = $"{user.FirstName} {user.LastName} {user.Username} {user.Email}".Trim();
             var searchVector = GenerateSearchVector(user.FullName, content);
 
             var searchIndex = await GetOrCreateSearchIndexAsync("User", user.Id);
-            searchIndex.Title = user.FullName;
-            searchIndex.Content = content;
-            searchIndex.SearchVector = searchVector;
-            searchIndex.IsPublic = false;
+            searchIndex.Title = TruncateString(user.FullName, 500);
+            searchIndex.Content = TruncateString(content, 10000);
+            searchIndex.SearchVector = TruncateString(searchVector, 5000);
+            searchIndex.IsPublic = false; // User data is never public in search
             searchIndex.LastIndexedAt = DateTime.UtcNow;
             searchIndex.Metadata = new Dictionary<string, object>
             {
                 { "role", user.Role.ToString() },
                 { "isActive", user.IsActive },
-                { "isLocked", user.IsLocked }
+                { "isLocked", user.IsLocked },
+                { "emailVerified", user.EmailVerifiedAt.HasValue }
             };
 
             if (searchIndex.Id == 0)
@@ -430,17 +796,21 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _searchIndexRepository.Update(searchIndex);
             }
+
+            _lastIndexedTimes[$"User_{user.Id}"] = DateTime.UtcNow;
         }
 
-        private async Task IndexComponentTemplateAsync(ComponentTemplate template)
+        private async Task IndexComponentTemplateAsync(ComponentTemplate template, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var content = $"{template.DisplayName} {template.Description} {template.Category} {template.Tags}".Trim();
             var searchVector = GenerateSearchVector(template.DisplayName, content);
 
             var searchIndex = await GetOrCreateSearchIndexAsync("ComponentTemplate", template.Id);
-            searchIndex.Title = template.DisplayName;
-            searchIndex.Content = content;
-            searchIndex.SearchVector = searchVector;
+            searchIndex.Title = TruncateString(template.DisplayName, 500);
+            searchIndex.Content = TruncateString(content, 10000);
+            searchIndex.SearchVector = TruncateString(searchVector, 5000);
             searchIndex.IsPublic = true;
             searchIndex.LastIndexedAt = DateTime.UtcNow;
             searchIndex.Metadata = new Dictionary<string, object>
@@ -448,7 +818,8 @@ namespace Backend.CMS.Infrastructure.Services
                 { "type", template.Type.ToString() },
                 { "category", template.Category ?? "" },
                 { "isSystemTemplate", template.IsSystemTemplate },
-                { "isActive", template.IsActive }
+                { "isActive", template.IsActive },
+                { "tags", template.Tags ?? "" }
             };
 
             if (searchIndex.Id == 0)
@@ -459,12 +830,14 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _searchIndexRepository.Update(searchIndex);
             }
+
+            _lastIndexedTimes[$"ComponentTemplate_{template.Id}"] = DateTime.UtcNow;
         }
 
         private async Task<SearchIndex> GetOrCreateSearchIndexAsync(string entityType, int entityId)
         {
             var existing = await _searchIndexRepository.FirstOrDefaultAsync(
-                si => si.EntityType == entityType && si.EntityId == entityId);
+                si => si.EntityType == entityType && si.EntityId == entityId && !si.IsDeleted);
 
             if (existing != null)
                 return existing;
@@ -475,7 +848,9 @@ namespace Backend.CMS.Infrastructure.Services
                 EntityType = entityType,
                 EntityId = entityId,
                 CreatedByUserId = currentUserId,
-                UpdatedByUserId = currentUserId
+                UpdatedByUserId = currentUserId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
             };
         }
 
@@ -486,9 +861,12 @@ namespace Backend.CMS.Infrastructure.Services
             contentBuilder.AppendLine(page.Title);
             contentBuilder.AppendLine(page.Description);
 
-            foreach (var component in page.Components.Where(c => !c.IsDeleted))
+            if (page.Components?.Any() == true)
             {
-                ExtractComponentContent(component, contentBuilder);
+                foreach (var component in page.Components.Where(c => !c.IsDeleted))
+                {
+                    ExtractComponentContent(component, contentBuilder);
+                }
             }
 
             return CleanText(contentBuilder.ToString());
@@ -499,32 +877,40 @@ namespace Backend.CMS.Infrastructure.Services
             contentBuilder.AppendLine(component.Name);
 
             // Extract text from unified config
-            foreach (var kvp in component.Config)
+            if (component.Config?.Any() == true)
             {
-                if (kvp.Value is string stringValue && !string.IsNullOrWhiteSpace(stringValue))
+                foreach (var kvp in component.Config)
                 {
-                    // Extract text content from common properties
-                    if (kvp.Key.ToLower().Contains("text") ||
-                        kvp.Key.ToLower().Contains("content") ||
-                        kvp.Key.ToLower().Contains("title") ||
-                        kvp.Key.ToLower().Contains("alt"))
+                    if (kvp.Value is string stringValue && !string.IsNullOrWhiteSpace(stringValue))
                     {
-                        contentBuilder.AppendLine(stringValue);
+                        // Extract text content from common properties
+                        var key = kvp.Key.ToLowerInvariant();
+                        if (key.Contains("text") || key.Contains("content") ||
+                            key.Contains("title") || key.Contains("alt") ||
+                            key.Contains("description") || key.Contains("label"))
+                        {
+                            contentBuilder.AppendLine(stringValue);
+                        }
                     }
                 }
             }
 
-            foreach (var child in component.ChildComponents.Where(c => !c.IsDeleted))
+            if (component.ChildComponents?.Any() == true)
             {
-                ExtractComponentContent(child, contentBuilder);
+                foreach (var child in component.ChildComponents.Where(c => !c.IsDeleted))
+                {
+                    ExtractComponentContent(child, contentBuilder);
+                }
             }
         }
 
-        private string GenerateSearchVector(params string[] texts)
+        private string GenerateSearchVector(params string?[] texts)
         {
-            var cleanedTexts = texts.Where(t => !string.IsNullOrWhiteSpace(t))
-                                   .Select(CleanText)
-                                   .Where(t => !string.IsNullOrWhiteSpace(t));
+            var cleanedTexts = texts
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .Select(t => CleanText(t!))
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .Distinct();
 
             return string.Join(" ", cleanedTexts).Trim();
         }
@@ -534,10 +920,70 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(text))
                 return string.Empty;
 
-            text = Regex.Replace(text, "<.*?>", " ");
-            text = Regex.Replace(text, @"\s+", " ");
+            // Remove HTML tags
+            text = Regex.Replace(text, "<.*?>", " ", RegexOptions.Compiled);
+
+            // Remove extra whitespace
+            text = Regex.Replace(text, @"\s+", " ", RegexOptions.Compiled);
+
+            // Remove special characters but keep alphanumeric and common punctuation
+            text = Regex.Replace(text, @"[^\w\s\-\.,!?]", " ", RegexOptions.Compiled);
 
             return text.Trim();
         }
+
+        private string TruncateString(string input, int maxLength)
+        {
+            if (string.IsNullOrEmpty(input) || input.Length <= maxLength)
+                return input ?? string.Empty;
+
+            return input.Substring(0, maxLength - 3) + "...";
+        }
+
+        private async Task CleanupDeletedIndexesAsync()
+        {
+            try
+            {
+                // Remove indexes that have been marked as deleted for more than 24 hours
+                var cutoffDate = DateTime.UtcNow.AddDays(-1);
+                var oldDeletedIndexes = await _searchIndexRepository.FindAsync(
+                    si => si.IsDeleted && si.DeletedAt.HasValue && si.DeletedAt.Value < cutoffDate);
+
+                var indexesToDelete = oldDeletedIndexes.ToList();
+                if (indexesToDelete.Any())
+                {
+                    _searchIndexRepository.RemoveRange(indexesToDelete);
+                    await _searchIndexRepository.SaveChangesAsync();
+
+                    _logger.LogInformation("Cleaned up {Count} old deleted search indexes", indexesToDelete.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error during cleanup of deleted indexes");
+            }
+        }
+
+        #endregion
+
+        #region IDisposable
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed && disposing)
+            {
+                _indexingSemaphore?.Dispose();
+                _lastIndexedTimes.Clear();
+                _disposed = true;
+            }
+        }
+
+        #endregion
     }
 }
