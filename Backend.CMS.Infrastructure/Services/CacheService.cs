@@ -597,7 +597,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 _logger.LogDebug("Warming up company data cache");
-                // Implementation would depend on your specific services
+                // Implementation would depend on specific services
                 await Task.CompletedTask;
             }
             catch (Exception ex)
