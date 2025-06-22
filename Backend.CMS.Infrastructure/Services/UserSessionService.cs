@@ -17,7 +17,6 @@ namespace Backend.CMS.Infrastructure.Services
     public class UserSessionService : IUserSessionService, IDisposable
     {
         private readonly IHttpContextAccessor _httpContextAccessor;
-        private readonly IUserRepository _userRepository;
         private readonly IConfiguration _configuration;
         private readonly ILogger<UserSessionService> _logger;
         private readonly IServiceProvider _serviceProvider;
@@ -29,19 +28,16 @@ namespace Backend.CMS.Infrastructure.Services
         // Thread-safe memory cache with expiration
         private readonly ConcurrentDictionary<string, (UserSessionContext Session, DateTime ExpiresAt)> _memorySessionCache;
         private readonly Timer _cleanupTimer;
-        private readonly SemaphoreSlim _sessionLoadSemaphore;
         private bool _disposed = false;
 
         public UserSessionService(
             IHttpContextAccessor httpContextAccessor,
-            IUserRepository userRepository,
             IConfiguration configuration,
             ILogger<UserSessionService> logger,
             IServiceProvider serviceProvider,
             ICacheService cacheService)
         {
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
-            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
@@ -53,7 +49,6 @@ namespace Backend.CMS.Infrastructure.Services
             _maxConcurrentSessions = _configuration.GetValue("SessionSettings:MaxConcurrentSessions", 1000);
 
             _memorySessionCache = new ConcurrentDictionary<string, (UserSessionContext, DateTime)>();
-            _sessionLoadSemaphore = new SemaphoreSlim(1, 1);
 
             // Cleanup expired sessions every 5 minutes
             _cleanupTimer = new Timer(CleanupExpiredMemorySessions, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
@@ -101,9 +96,6 @@ namespace Backend.CMS.Infrastructure.Services
 
                     // Cache the session
                     CacheSessionInMemory(sessionId, session);
-
-                    // Load full user data asynchronously without blocking
-                    _ = Task.Run(async () => await LoadAndCacheFullSessionAsync(userId, sessionId));
 
                     return session;
                 }
@@ -157,7 +149,7 @@ namespace Backend.CMS.Infrastructure.Services
                     return cachedSession;
                 }
 
-                // Load from database
+                // Load from database using proper scoping
                 var userIdClaim = httpContext.User.FindFirst("sub") ??
                                  httpContext.User.FindFirst("userId") ??
                                  httpContext.User.FindFirst(ClaimTypes.NameIdentifier);
@@ -220,7 +212,11 @@ namespace Backend.CMS.Infrastructure.Services
                 var session = await GetCurrentSessionAsync();
                 if (session?.UserId != null)
                 {
-                    var user = await _userRepository.GetByIdAsync(session.UserId.Value);
+                    // Use scoped service to get user data
+                    using var scope = _serviceProvider.CreateScope();
+                    var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                    var user = await userRepository.GetByIdAsync(session.UserId.Value);
+
                     if (user != null)
                     {
                         await RefreshSessionWithUser(session, user);
@@ -407,7 +403,9 @@ namespace Backend.CMS.Infrastructure.Services
                 SessionStartTime = DateTime.UtcNow,
                 LastActivity = DateTime.UtcNow,
                 Permissions = GetBasicPermissionsForRole(role),
-                Claims = user.Claims.ToDictionary(c => c.Type, c => (object)c.Value)
+                Claims = user.Claims
+    .GroupBy(c => c.Type)
+    .ToDictionary(g => g.Key, g => (object)g.First().Value)
             };
 
             return session;
@@ -417,7 +415,11 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var user = await _userRepository.GetByIdAsync(userId);
+                // Use scoped service to ensure proper DbContext handling
+                using var scope = _serviceProvider.CreateScope();
+                var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+
+                var user = await userRepository.GetByIdAsync(userId);
                 if (user == null || !user.IsActive || user.IsLocked)
                 {
                     _logger.LogWarning("User {UserId} not found, deactivated, or locked", userId);
@@ -433,37 +435,6 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private async Task LoadAndCacheFullSessionAsync(int userId, string sessionId)
-        {
-            try
-            {
-                await _sessionLoadSemaphore.WaitAsync();
-
-                // Check if session was already loaded by another thread
-                if (_memorySessionCache.TryGetValue(sessionId, out var existingEntry) &&
-                    existingEntry.Session.CurrentUser != null)
-                {
-                    return;
-                }
-
-                var fullSession = await LoadFullSessionAsync(userId, sessionId);
-                if (fullSession != null)
-                {
-                    fullSession.SessionId = sessionId;
-                    CacheSessionInMemory(sessionId, fullSession);
-                    await CacheSessionInDistributedCacheAsync(sessionId, fullSession);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error loading and caching full session for user {UserId}", userId);
-            }
-            finally
-            {
-                _sessionLoadSemaphore.Release();
-            }
-        }
-
         private async Task<UserSessionContext> CreateSessionFromUserAsync(User user, string? ipAddress = null, string? userAgent = null)
         {
             var session = UserSessionContext.CreateFromUser(
@@ -474,10 +445,11 @@ namespace Backend.CMS.Infrastructure.Services
             session.RequestId = _httpContextAccessor.HttpContext?.TraceIdentifier;
             session.CorrelationId = _httpContextAccessor.HttpContext?.Request.Headers["X-Correlation-ID"].FirstOrDefault() ?? Guid.NewGuid().ToString();
 
-            // Load permissions
+            // Load permissions using scoped service
             try
             {
-                var permissionResolver = _serviceProvider.GetService<IPermissionResolver>();
+                using var scope = _serviceProvider.CreateScope();
+                var permissionResolver = scope.ServiceProvider.GetService<IPermissionResolver>();
                 if (permissionResolver != null)
                 {
                     var rolePermissions = await permissionResolver.GetRolePermissionsAsync(user.Role);
@@ -671,7 +643,6 @@ namespace Backend.CMS.Infrastructure.Services
             if (!_disposed && disposing)
             {
                 _cleanupTimer?.Dispose();
-                _sessionLoadSemaphore?.Dispose();
                 _memorySessionCache?.Clear();
                 _disposed = true;
             }

@@ -21,6 +21,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly TimeSpan _longExpiration;
         private readonly JsonSerializerOptions _jsonOptions;
         private readonly SemaphoreSlim _invalidationSemaphore;
+        private readonly bool _isAdminModeAvailable;
 
         // Thread-safe semaphore management with automatic cleanup
         private readonly ConcurrentDictionary<string, (SemaphoreSlim Semaphore, DateTime LastUsed)> _keySemaphores;
@@ -54,6 +55,9 @@ namespace Backend.CMS.Infrastructure.Services
                 DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
                 PropertyNameCaseInsensitive = true
             };
+
+            // Check if admin mode is available
+            _isAdminModeAvailable = CheckAdminModeAvailability();
 
             // Cleanup semaphores every 2 minutes
             _semaphoreCleanupTimer = new Timer(CleanupExpiredSemaphores, null, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(2));
@@ -469,9 +473,34 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var database = _connectionMultiplexer.GetDatabase();
-                await database.ExecuteAsync("FLUSHDB");
 
-                _logger.LogInformation("Invalidated all cache entries");
+                if (_isAdminModeAvailable)
+                {
+                    await database.ExecuteAsync("FLUSHDB");
+                    _logger.LogInformation("Invalidated all cache entries using FLUSHDB");
+                }
+                else
+                {
+                    // Fallback method when admin mode is not available
+                    var patterns = new[]
+                    {
+                        CacheKeys.UsersPattern,
+                        CacheKeys.PagesPattern,
+                        CacheKeys.ComponentsPattern,
+                        CacheKeys.CompanyPattern,
+                        CacheKeys.LocationsPattern,
+                        CacheKeys.FilesPattern,
+                        CacheKeys.FoldersPattern,
+                        CacheKeys.SessionsPattern,
+                        CacheKeys.SearchPattern,
+                        CacheKeys.DesignerPattern
+                    };
+
+                    var tasks = patterns.Select(RemoveByPatternAsync);
+                    await Task.WhenAll(tasks);
+
+                    _logger.LogInformation("Invalidated all cache entries using pattern-based removal");
+                }
             }
             catch (Exception ex)
             {
@@ -523,26 +552,41 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 var server = _connectionMultiplexer.GetServer(endpoints.First());
-                var info = await server.InfoAsync();
-
                 var statistics = new Dictionary<string, object>();
 
-                // Get basic Redis info
-                var infoDict = info.SelectMany(g => g).ToDictionary(kv => kv.Key, kv => kv.Value);
+                if (_isAdminModeAvailable)
+                {
+                    try
+                    {
+                        var info = await server.InfoAsync();
 
-                statistics["MemoryUsed"] = infoDict.GetValueOrDefault("used_memory_human", "Unknown");
-                statistics["KeyspaceHits"] = long.Parse(infoDict.GetValueOrDefault("keyspace_hits", "0"));
-                statistics["KeyspaceMisses"] = long.Parse(infoDict.GetValueOrDefault("keyspace_misses", "0"));
-                statistics["ConnectedClients"] = infoDict.GetValueOrDefault("connected_clients", "0");
-                statistics["Uptime"] = infoDict.GetValueOrDefault("uptime_in_seconds", "0");
+                        // Get basic Redis info
+                        var infoDict = info.SelectMany(g => g).ToDictionary(kv => kv.Key, kv => kv.Value);
 
-                // Calculate hit ratio
-                var hits = (long)statistics["KeyspaceHits"];
-                var misses = (long)statistics["KeyspaceMisses"];
-                var total = hits + misses;
-                statistics["HitRatio"] = total > 0 ? Math.Round((double)hits / total * 100, 2) : 0;
+                        statistics["MemoryUsed"] = infoDict.GetValueOrDefault("used_memory_human", "Unknown");
+                        statistics["KeyspaceHits"] = long.Parse(infoDict.GetValueOrDefault("keyspace_hits", "0"));
+                        statistics["KeyspaceMisses"] = long.Parse(infoDict.GetValueOrDefault("keyspace_misses", "0"));
+                        statistics["ConnectedClients"] = infoDict.GetValueOrDefault("connected_clients", "0");
+                        statistics["Uptime"] = infoDict.GetValueOrDefault("uptime_in_seconds", "0");
 
-                // Get key counts by pattern
+                        // Calculate hit ratio
+                        var hits = (long)statistics["KeyspaceHits"];
+                        var misses = (long)statistics["KeyspaceMisses"];
+                        var total = hits + misses;
+                        statistics["HitRatio"] = total > 0 ? Math.Round((double)hits / total * 100, 2) : 0;
+                    }
+                    catch (RedisCommandException ex) when (ex.Message.Contains("admin mode"))
+                    {
+                        _logger.LogWarning("Redis admin mode not available for INFO command, using fallback statistics");
+                        statistics = GetFallbackStatistics();
+                    }
+                }
+                else
+                {
+                    statistics = GetFallbackStatistics();
+                }
+
+                // Get key counts by pattern (these don't require admin mode)
                 statistics["TotalKeys"] = await GetKeyCountAsync(server, "*");
                 statistics["UserCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.UsersPattern);
                 statistics["PageCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.PagesPattern);
@@ -550,13 +594,19 @@ namespace Backend.CMS.Infrastructure.Services
                 statistics["FileCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.FilesPattern);
                 statistics["SessionCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.SessionsPattern);
                 statistics["ActiveSemaphores"] = _keySemaphores.Count;
+                statistics["AdminModeAvailable"] = _isAdminModeAvailable;
 
                 return statistics;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting cache statistics");
-                return new Dictionary<string, object> { ["Error"] = ex.Message };
+                return new Dictionary<string, object>
+                {
+                    ["Error"] = ex.Message,
+                    ["AdminModeAvailable"] = _isAdminModeAvailable,
+                    ["ActiveSemaphores"] = _keySemaphores.Count
+                };
             }
         }
 
@@ -661,6 +711,55 @@ namespace Backend.CMS.Infrastructure.Services
         #endregion
 
         #region Helper Methods
+
+        private bool CheckAdminModeAvailability()
+        {
+            try
+            {
+                var endpoints = _connectionMultiplexer.GetEndPoints();
+                if (!endpoints.Any())
+                {
+                    _logger.LogWarning("No Redis endpoints available to check admin mode");
+                    return false;
+                }
+
+                var server = _connectionMultiplexer.GetServer(endpoints.First());
+                var database = _connectionMultiplexer.GetDatabase();
+
+                // Test if we can execute admin commands
+                var testResult = database.Execute("PING");
+
+                // Try to get basic info - this will throw if admin mode is not available
+                var info = server.InfoAsync().GetAwaiter().GetResult();
+
+                _logger.LogInformation("Redis admin mode is available");
+                return true;
+            }
+            catch (RedisCommandException ex) when (ex.Message.Contains("admin mode"))
+            {
+                _logger.LogWarning("Redis admin mode is not available: {Message}", ex.Message);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not determine Redis admin mode availability");
+                return false;
+            }
+        }
+
+        private Dictionary<string, object> GetFallbackStatistics()
+        {
+            return new Dictionary<string, object>
+            {
+                ["MemoryUsed"] = "N/A (Admin mode required)",
+                ["KeyspaceHits"] = "N/A (Admin mode required)",
+                ["KeyspaceMisses"] = "N/A (Admin mode required)",
+                ["ConnectedClients"] = "N/A (Admin mode required)",
+                ["Uptime"] = "N/A (Admin mode required)",
+                ["HitRatio"] = "N/A (Admin mode required)",
+                ["AdminModeNote"] = "Redis admin mode is not enabled. Some statistics are unavailable."
+            };
+        }
 
         private async IAsyncEnumerable<IEnumerable<RedisKey>> GetKeysBatched(IServer server, string pattern, int batchSize)
         {

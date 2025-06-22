@@ -375,6 +375,12 @@ namespace Backend.CMS.Infrastructure.Services
 
             var currentUserId = await GetCurrentUserIdSafeAsync();
 
+            // Check if user can delete other users
+            if (currentUserId != userId && !_userSessionService.CanManageUsers())
+            {
+                throw new UnauthorizedAccessException("You don't have permission to delete other users");
+            }
+
             try
             {
                 var user = await _userRepository.GetByIdAsync(userId);
@@ -459,6 +465,12 @@ namespace Backend.CMS.Infrastructure.Services
             ValidatePasswordStrength(changePasswordDto.NewPassword);
 
             var currentUserId = await GetCurrentUserIdSafeAsync();
+
+            // Check if user can change password for this user
+            if (currentUserId != userId && !_userSessionService.CanManageUsers())
+            {
+                throw new UnauthorizedAccessException("You don't have permission to change passwords for other users");
+            }
 
             try
             {
@@ -551,6 +563,12 @@ namespace Backend.CMS.Infrastructure.Services
                 throw new ArgumentNullException(nameof(preferences));
 
             var currentUserId = await GetCurrentUserIdSafeAsync();
+
+            // Check if user can update preferences for this user
+            if (currentUserId != userId && !_userSessionService.CanManageUsers())
+            {
+                throw new UnauthorizedAccessException("You don't have permission to update preferences for other users");
+            }
 
             try
             {
@@ -670,6 +688,12 @@ namespace Backend.CMS.Infrastructure.Services
 
             var currentUserId = await GetCurrentUserIdSafeAsync();
 
+            // Check if user can update status for this user
+            if (currentUserId != userId && !_userSessionService.CanManageUsers())
+            {
+                throw new UnauthorizedAccessException("You don't have permission to change status for other users");
+            }
+
             try
             {
                 var user = await _userRepository.GetByIdAsync(userId);
@@ -704,6 +728,12 @@ namespace Backend.CMS.Infrastructure.Services
                 throw new ArgumentException("User ID must be greater than 0", nameof(userId));
 
             var currentUserId = await GetCurrentUserIdSafeAsync();
+
+            // Check if user can update field for this user
+            if (currentUserId != userId && !_userSessionService.CanManageUsers())
+            {
+                throw new UnauthorizedAccessException($"You don't have permission to update {actionDescription} for other users");
+            }
 
             try
             {
@@ -746,6 +776,10 @@ namespace Backend.CMS.Infrastructure.Services
                 await ValidateAvatarFileAsync(createUserDto.PictureFileId.Value);
             }
 
+            // Only admin/dev can create users
+            if (!_userSessionService.CanManageUsers())
+                throw new UnauthorizedAccessException("You don't have permission to create users");
+
             if (!_userSessionService.CanCreateUserWithRole(createUserDto.Role))
                 throw new UnauthorizedAccessException("You don't have permission to create users with this role");
 
@@ -765,8 +799,29 @@ namespace Backend.CMS.Infrastructure.Services
                 await ValidateAvatarFileAsync(updateUserDto.PictureFileId.Value);
             }
 
-            if (!_userSessionService.CanCreateUserWithRole(updateUserDto.Role))
-                throw new UnauthorizedAccessException("You don't have permission to assign this role");
+            var currentUserId = await GetCurrentUserIdSafeAsync();
+            var isUpdatingSelf = currentUserId == userId;
+
+            // If updating someone else's profile, check permissions
+            if (!isUpdatingSelf)
+            {
+                if (!_userSessionService.CanManageUsers())
+                    throw new UnauthorizedAccessException("You don't have permission to update other users");
+
+                if (!_userSessionService.CanCreateUserWithRole(updateUserDto.Role))
+                    throw new UnauthorizedAccessException("You don't have permission to assign this role to other users");
+            }
+            else
+            {
+                // If updating self, check if they're trying to change their role inappropriately
+                var currentUserRole = _userSessionService.GetCurrentUserRole();
+                if (currentUserRole != updateUserDto.Role)
+                {
+                    // Only allow role change if they have permission to create users with that role
+                    if (!_userSessionService.CanCreateUserWithRole(updateUserDto.Role))
+                        throw new UnauthorizedAccessException("You don't have permission to change your role to this level");
+                }
+            }
         }
 
         private async Task ValidateAvatarFileAsync(int fileId)

@@ -198,8 +198,15 @@ namespace Backend.CMS.Infrastructure.Services
                 var beforeKeyCount = 0L;
                 if (cacheInvalidationService != null)
                 {
-                    var beforeStats = await cacheInvalidationService.GetCacheStatisticsAsync();
-                    beforeKeyCount = GetStatisticsValue(beforeStats, "TotalKeys");
+                    try
+                    {
+                        var beforeStats = await cacheInvalidationService.GetCacheStatisticsAsync();
+                        beforeKeyCount = GetStatisticsValue(beforeStats, "TotalKeys");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Could not get cache statistics before cleanup - Redis admin mode may not be available");
+                    }
                 }
 
                 // Perform cleanup operations using only ICacheService
@@ -213,15 +220,30 @@ namespace Backend.CMS.Infrastructure.Services
                 var afterKeyCount = 0L;
                 if (cacheInvalidationService != null)
                 {
-                    var afterStats = await cacheInvalidationService.GetCacheStatisticsAsync();
-                    afterKeyCount = GetStatisticsValue(afterStats, "TotalKeys");
+                    try
+                    {
+                        var afterStats = await cacheInvalidationService.GetCacheStatisticsAsync();
+                        afterKeyCount = GetStatisticsValue(afterStats, "TotalKeys");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Could not get cache statistics after cleanup - Redis admin mode may not be available");
+                    }
                 }
 
                 Interlocked.Increment(ref _totalCleanupOperations);
                 Interlocked.Add(ref _totalKeysRemoved, totalCleaned);
 
-                _logger.LogInformation("Cache cleanup completed - Removed approximately {CleanedKeys} keys ({Before} -> {After}), Total operations: {TotalOps}, Total removed: {TotalRemoved}",
-                    totalCleaned, beforeKeyCount, afterKeyCount, _totalCleanupOperations, _totalKeysRemoved);
+                if (beforeKeyCount > 0 || afterKeyCount > 0)
+                {
+                    _logger.LogInformation("Cache cleanup completed - Removed approximately {CleanedKeys} keys ({Before} -> {After}), Total operations: {TotalOps}, Total removed: {TotalRemoved}",
+                        totalCleaned, beforeKeyCount, afterKeyCount, _totalCleanupOperations, _totalKeysRemoved);
+                }
+                else
+                {
+                    _logger.LogInformation("Cache cleanup completed - Removed approximately {CleanedKeys} keys, Total operations: {TotalOps}, Total removed: {TotalRemoved}",
+                        totalCleaned, _totalCleanupOperations, _totalKeysRemoved);
+                }
             }
             catch (Exception ex)
             {
@@ -234,7 +256,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 await cacheService.RemoveByPatternAsync("session:*");
-                var cleanedCount = 20;
+                var cleanedCount = 20; 
                 _logger.LogDebug("Cleaned up approximately {Count} expired session keys", cleanedCount);
                 return cleanedCount;
             }
@@ -304,7 +326,7 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     if (cancellationToken.IsCancellationRequested) break;
                     await cacheService.RemoveByPatternAsync(pattern);
-                    totalCleaned += 5;
+                    totalCleaned += 5; 
                 }
 
                 if (totalCleaned > 0)
@@ -345,11 +367,24 @@ namespace Backend.CMS.Infrastructure.Services
                     ["LastOperationTimes"] = _lastOperationTimes.ToDictionary(kv => kv.Key, kv => kv.Value.ToString("yyyy-MM-dd HH:mm:ss"))
                 };
 
-                _logger.LogInformation("Cache Management Statistics: {Statistics}",
-                    System.Text.Json.JsonSerializer.Serialize(enhancedStats, new System.Text.Json.JsonSerializerOptions
-                    {
-                        WriteIndented = true
-                    }));
+                // Check if we have Redis admin access for detailed stats
+                var adminModeAvailable = statistics.ContainsKey("AdminModeAvailable") && 
+                                       statistics["AdminModeAvailable"] is bool available && available;
+
+                if (adminModeAvailable)
+                {
+                    _logger.LogInformation("Cache Management Statistics: {Statistics}",
+                        System.Text.Json.JsonSerializer.Serialize(enhancedStats, new System.Text.Json.JsonSerializerOptions
+                        {
+                            WriteIndented = true
+                        }));
+                }
+                else
+                {
+                    _logger.LogInformation("Cache Management Statistics (Limited - Redis admin mode not available): Service Uptime: {Uptime}, Cleanup Operations: {Operations}, Keys Removed: {KeysRemoved}, Active Semaphores: {Semaphores}",
+                        uptime.ToString(@"dd\.hh\:mm\:ss"), _totalCleanupOperations, _totalKeysRemoved, 
+                        statistics.GetValueOrDefault("ActiveSemaphores", "N/A"));
+                }
             }
             catch (Exception ex)
             {
@@ -380,6 +415,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
+                // Test basic cache operations
                 await cacheService.SetAsync(testKey, testValue, TimeSpan.FromMinutes(1));
                 var setTime = stopwatch.ElapsedMilliseconds;
 
@@ -398,6 +434,7 @@ namespace Backend.CMS.Infrastructure.Services
                         setTime, getTime, stopwatch.ElapsedMilliseconds);
                 }
 
+                // Clean up test key
                 await cacheService.RemoveAsync(testKey);
             }
             catch (Exception ex)

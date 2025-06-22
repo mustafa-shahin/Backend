@@ -169,9 +169,11 @@ static void ConfigureDatabases(WebApplicationBuilder builder)
 
 static void ConfigureRedis(WebApplicationBuilder builder)
 {
+    var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+
     builder.Services.AddStackExchangeRedisCache(options =>
     {
-        options.Configuration = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+        options.Configuration = redisConnectionString;
         options.InstanceName = "BackendCMS";
     });
 
@@ -179,7 +181,15 @@ static void ConfigureRedis(WebApplicationBuilder builder)
     {
         var configuration = provider.GetService<IConfiguration>();
         var connectionString = configuration?.GetConnectionString("Redis") ?? "localhost:6379";
-        return ConnectionMultiplexer.Connect(connectionString);
+
+        var configurationOptions = ConfigurationOptions.Parse(connectionString);
+        configurationOptions.AbortOnConnectFail = false;
+        configurationOptions.ConnectRetry = 3;
+        configurationOptions.ConnectTimeout = 5000;
+        configurationOptions.SyncTimeout = 5000;
+        //configurationOptions.AllowAdmin = true; 
+
+        return ConnectionMultiplexer.Connect(configurationOptions);
     });
 }
 
@@ -532,7 +542,9 @@ static void RegisterBusinessServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<ICompanyService, CompanyService>();
     builder.Services.AddScoped<ILocationService, LocationService>();
     builder.Services.AddScoped<IPageService, PageService>();
+
     builder.Services.AddScoped<IUserService, UserService>();
+
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IPermissionService, PermissionService>();
     builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
