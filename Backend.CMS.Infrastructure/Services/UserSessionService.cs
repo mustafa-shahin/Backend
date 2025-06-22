@@ -9,11 +9,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 using System.Security.Claims;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class UserSessionService : IUserSessionService
+    public class UserSessionService : IUserSessionService, IDisposable
     {
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IUserRepository _userRepository;
@@ -22,11 +23,14 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly ICacheService _cacheService;
         private readonly TimeSpan _sessionTimeout;
-        private readonly TimeSpan _cacheTimeout;
+        private readonly TimeSpan _memoryCacheTimeout;
+        private readonly int _maxConcurrentSessions;
 
-        // Memory cache for performance (with fallback to distributed cache)
-        private UserSessionContext? _memoryCachedSession;
-        private DateTime _lastCacheCheck = DateTime.MinValue;
+        // Thread-safe memory cache with expiration
+        private readonly ConcurrentDictionary<string, (UserSessionContext Session, DateTime ExpiresAt)> _memorySessionCache;
+        private readonly Timer _cleanupTimer;
+        private readonly SemaphoreSlim _sessionLoadSemaphore;
+        private bool _disposed = false;
 
         public UserSessionService(
             IHttpContextAccessor httpContextAccessor,
@@ -36,78 +40,75 @@ namespace Backend.CMS.Infrastructure.Services
             IServiceProvider serviceProvider,
             ICacheService cacheService)
         {
-            _httpContextAccessor = httpContextAccessor;
-            _userRepository = userRepository;
-            _configuration = configuration;
-            _logger = logger;
-            _serviceProvider = serviceProvider;
-            _cacheService = cacheService;
+            _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
+            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+            _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
 
-            var timeoutMinutes = 30;
-            var timeoutConfig = _configuration["SessionSettings:TimeoutMinutes"];
-            if (!string.IsNullOrEmpty(timeoutConfig) && int.TryParse(timeoutConfig, out var parsedTimeout))
-            {
-                timeoutMinutes = parsedTimeout;
-            }
-
+            var timeoutMinutes = _configuration.GetValue("SessionSettings:TimeoutMinutes", 30);
             _sessionTimeout = TimeSpan.FromMinutes(timeoutMinutes);
-            _cacheTimeout = TimeSpan.FromMinutes(5); // Cache user data for 5 minutes
+            _memoryCacheTimeout = TimeSpan.FromMinutes(5);
+            _maxConcurrentSessions = _configuration.GetValue("SessionSettings:MaxConcurrentSessions", 1000);
+
+            _memorySessionCache = new ConcurrentDictionary<string, (UserSessionContext, DateTime)>();
+            _sessionLoadSemaphore = new SemaphoreSlim(1, 1);
+
+            // Cleanup expired sessions every 5 minutes
+            _cleanupTimer = new Timer(CleanupExpiredMemorySessions, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
         }
 
         public UserSessionContext? GetCurrentSession()
         {
             try
             {
-                // Check if we have a valid memory cached session
-                if (_memoryCachedSession != null &&
-                    !_memoryCachedSession.IsSessionExpired(_sessionTimeout) &&
-                    DateTime.UtcNow - _lastCacheCheck < _cacheTimeout)
-                {
-                    _memoryCachedSession.UpdateLastActivity();
-                    return _memoryCachedSession;
-                }
-
                 var httpContext = _httpContextAccessor.HttpContext;
                 if (httpContext?.User?.Identity?.IsAuthenticated != true)
                 {
-                    // Create anonymous session
                     return CreateAnonymousSession();
                 }
 
-                // Try to get session from distributed cache first
                 var sessionId = GetSessionId();
-                var cachedSession = GetSessionFromCacheSync(sessionId);
-                if (cachedSession != null && !cachedSession.IsSessionExpired(_sessionTimeout))
+                if (string.IsNullOrEmpty(sessionId))
                 {
-                    _memoryCachedSession = cachedSession;
-                    _lastCacheCheck = DateTime.UtcNow;
-                    cachedSession.UpdateLastActivity();
-                    return cachedSession;
+                    return CreateAnonymousSession();
                 }
 
-                // Load user synchronously (this is the key fix)
+                // Check memory cache first
+                if (_memorySessionCache.TryGetValue(sessionId, out var cachedEntry))
+                {
+                    if (DateTime.UtcNow <= cachedEntry.ExpiresAt && !cachedEntry.Session.IsSessionExpired(_sessionTimeout))
+                    {
+                        cachedEntry.Session.UpdateLastActivity();
+                        return cachedEntry.Session;
+                    }
+                    else
+                    {
+                        // Remove expired entry
+                        _memorySessionCache.TryRemove(sessionId, out _);
+                    }
+                }
+
+                // For synchronous call, return basic session with cached user data
                 var userIdClaim = httpContext.User.FindFirst("sub") ??
                                  httpContext.User.FindFirst("userId") ??
                                  httpContext.User.FindFirst(ClaimTypes.NameIdentifier);
 
                 if (userIdClaim != null && int.TryParse(userIdClaim.Value, out var userId))
                 {
-                    // Load user synchronously using a separate method
-                    var user = GetUserSynchronously(userId);
-                    if (user != null && user.IsActive && !user.IsLocked)
-                    {
-                        var session = CreateSessionFromUser(user);
+                    var session = CreateBasicSessionFromClaims(httpContext.User, sessionId);
 
-                        // Cache the session
-                        _memoryCachedSession = session;
-                        _lastCacheCheck = DateTime.UtcNow;
-                        _ = Task.Run(() => CacheSessionAsync(session)); // Fire and forget
+                    // Cache the session
+                    CacheSessionInMemory(sessionId, session);
 
-                        return session;
-                    }
+                    // Load full user data asynchronously without blocking
+                    _ = Task.Run(async () => await LoadAndCacheFullSessionAsync(userId, sessionId));
+
+                    return session;
                 }
 
-                _logger.LogWarning("Failed to create session - user not found or invalid");
+                _logger.LogWarning("Failed to create session - no valid user ID in claims");
                 return CreateAnonymousSession();
             }
             catch (Exception ex)
@@ -121,60 +122,58 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                // Check memory cache first
-                if (_memoryCachedSession != null &&
-                    !_memoryCachedSession.IsSessionExpired(_sessionTimeout) &&
-                    DateTime.UtcNow - _lastCacheCheck < _cacheTimeout)
-                {
-                    _memoryCachedSession.UpdateLastActivity();
-                    return _memoryCachedSession;
-                }
-
                 var httpContext = _httpContextAccessor.HttpContext;
                 if (httpContext?.User?.Identity?.IsAuthenticated != true)
                 {
                     return CreateAnonymousSession();
                 }
 
-                // Try to get from distributed cache
                 var sessionId = GetSessionId();
-                var cachedSession = await GetSessionFromCacheAsync(sessionId);
+                if (string.IsNullOrEmpty(sessionId))
+                {
+                    return CreateAnonymousSession();
+                }
+
+                // Check memory cache first
+                if (_memorySessionCache.TryGetValue(sessionId, out var cachedEntry))
+                {
+                    if (DateTime.UtcNow <= cachedEntry.ExpiresAt && !cachedEntry.Session.IsSessionExpired(_sessionTimeout))
+                    {
+                        cachedEntry.Session.UpdateLastActivity();
+                        return cachedEntry.Session;
+                    }
+                    else
+                    {
+                        _memorySessionCache.TryRemove(sessionId, out _);
+                    }
+                }
+
+                // Try to get from distributed cache
+                var cachedSession = await GetSessionFromDistributedCacheAsync(sessionId);
                 if (cachedSession != null && !cachedSession.IsSessionExpired(_sessionTimeout))
                 {
-                    _memoryCachedSession = cachedSession;
-                    _lastCacheCheck = DateTime.UtcNow;
+                    CacheSessionInMemory(sessionId, cachedSession);
                     cachedSession.UpdateLastActivity();
                     return cachedSession;
                 }
 
-                // Load user from database
+                // Load from database
                 var userIdClaim = httpContext.User.FindFirst("sub") ??
                                  httpContext.User.FindFirst("userId") ??
                                  httpContext.User.FindFirst(ClaimTypes.NameIdentifier);
 
                 if (userIdClaim != null && int.TryParse(userIdClaim.Value, out var userId))
                 {
-                    var user = await _userRepository.GetByIdAsync(userId);
-                    if (user != null && user.IsActive && !user.IsLocked)
+                    var session = await LoadFullSessionAsync(userId, sessionId);
+                    if (session != null)
                     {
-                        var session = await CreateSessionFromUserAsync(user);
-
-                        // Cache the session
-                        _memoryCachedSession = session;
-                        _lastCacheCheck = DateTime.UtcNow;
-                        await CacheSessionAsync(session);
-
+                        CacheSessionInMemory(sessionId, session);
+                        await CacheSessionInDistributedCacheAsync(sessionId, session);
                         return session;
-                    }
-                    else
-                    {
-                        _logger.LogWarning("User {UserId} not found, deactivated, or locked - clearing session", userId);
-                        await ClearSessionAsync();
-                        return null;
                     }
                 }
 
-                _logger.LogWarning("No valid user ID found in claims");
+                _logger.LogWarning("Failed to create session - user not found or invalid");
                 return CreateAnonymousSession();
             }
             catch (Exception ex)
@@ -188,20 +187,21 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var fullUser = await _userRepository.GetByIdAsync(user.Id);
-                if (fullUser == null)
+                if (user == null) throw new ArgumentNullException(nameof(user));
+
+                var sessionId = GetSessionId();
+                if (string.IsNullOrEmpty(sessionId))
                 {
-                    throw new ArgumentException("User not found");
+                    throw new InvalidOperationException("Cannot set session without valid session ID");
                 }
 
-                var session = await CreateSessionFromUserAsync(fullUser, ipAddress, userAgent);
+                var session = await CreateSessionFromUserAsync(user, ipAddress, userAgent);
+                session.SessionId = sessionId;
 
-                // Cache both in memory and distributed cache
-                _memoryCachedSession = session;
-                _lastCacheCheck = DateTime.UtcNow;
-                await CacheSessionAsync(session);
+                CacheSessionInMemory(sessionId, session);
+                await CacheSessionInDistributedCacheAsync(sessionId, session);
 
-                _logger.LogInformation("User session created for user {UserId} ({Email})", fullUser.Id, fullUser.Email);
+                _logger.LogInformation("User session set for user {UserId} ({Email})", user.Id, user.Email);
             }
             catch (Exception ex)
             {
@@ -214,15 +214,16 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
+                var sessionId = GetSessionId();
+                if (string.IsNullOrEmpty(sessionId)) return;
+
                 var session = await GetCurrentSessionAsync();
-                if (session?.CurrentUser != null)
+                if (session?.UserId != null)
                 {
-                    var user = await _userRepository.GetByIdAsync(session.CurrentUser.Id);
+                    var user = await _userRepository.GetByIdAsync(session.UserId.Value);
                     if (user != null)
                     {
-                        session.CurrentUser = user;
-                        session.UpdateLastActivity();
-                        await CacheSessionAsync(session);
+                        await RefreshSessionWithUser(session, user);
                     }
                 }
             }
@@ -237,16 +238,15 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var sessionId = GetSessionId();
+                if (string.IsNullOrEmpty(sessionId)) return;
 
-                // Clear memory cache
-                _memoryCachedSession = null;
-                _lastCacheCheck = DateTime.MinValue;
+                // Remove from memory cache
+                _memorySessionCache.TryRemove(sessionId, out _);
 
-                // Clear distributed cache
-                if (!string.IsNullOrEmpty(sessionId))
-                {
-                    await _cacheService.RemoveAsync(CacheKeys.SessionById(sessionId));
-                }
+                // Remove from distributed cache
+                await _cacheService.RemoveAsync(CacheKeys.SessionById(sessionId));
+
+                _logger.LogDebug("Session {SessionId} cleared", sessionId);
             }
             catch (Exception ex)
             {
@@ -258,33 +258,33 @@ namespace Backend.CMS.Infrastructure.Services
 
         public int? GetCurrentUserId()
         {
-            return GetCurrentSession()?.CurrentUser?.Id;
+            return GetCurrentSession()?.UserId;
         }
 
         public string? GetCurrentUserEmail()
         {
-            return GetCurrentSession()?.CurrentUser?.Email;
+            return GetCurrentSession()?.Email;
         }
 
         public string? GetCurrentUserFullName()
         {
-            return GetCurrentSession()?.CurrentUser?.FullName;
+            return GetCurrentSession()?.FullName;
         }
 
         public UserRole? GetCurrentUserRole()
         {
-            return GetCurrentSession()?.CurrentUser?.Role;
+            return GetCurrentSession()?.Role;
         }
 
         public bool IsAuthenticated()
         {
-            return GetCurrentSession()?.CurrentUser != null;
+            return GetCurrentSession()?.IsAuthenticated ?? false;
         }
 
         public bool IsInRole(params UserRole[] roles)
         {
             var session = GetCurrentSession();
-            return session?.CurrentUser != null && roles.Contains(session.CurrentUser.Role);
+            return session?.Role != null && roles.Contains(session.Role.Value);
         }
 
         #endregion
@@ -325,14 +325,13 @@ namespace Backend.CMS.Infrastructure.Services
             return IsInRole(UserRole.Dev);
         }
 
-
         #endregion
 
         #region Audit Information
 
         public string GetAuditUserName()
         {
-            return GetCurrentSession()?.CurrentUser?.FullName ?? "System";
+            return GetCurrentSession()?.FullName ?? "System";
         }
 
         public string GetAuditUserId()
@@ -382,39 +381,87 @@ namespace Backend.CMS.Infrastructure.Services
             };
         }
 
-        private User? GetUserSynchronously(int userId)
+        private UserSessionContext CreateBasicSessionFromClaims(ClaimsPrincipal user, string sessionId)
+        {
+            var userId = int.Parse(user.FindFirst("sub")?.Value ?? user.FindFirst("userId")?.Value ?? "0");
+            var email = user.FindFirst(ClaimTypes.Email)?.Value ?? user.FindFirst("email")?.Value ?? "";
+            var firstName = user.FindFirst("firstName")?.Value ?? "";
+            var lastName = user.FindFirst("lastName")?.Value ?? "";
+            var roleStr = user.FindFirst(ClaimTypes.Role)?.Value ?? user.FindFirst("role")?.Value ?? "Customer";
+
+            Enum.TryParse<UserRole>(roleStr, out var role);
+
+            var session = new UserSessionContext
+            {
+                UserId = userId,
+                Email = email,
+                FirstName = firstName,
+                LastName = lastName,
+                Role = role,
+                IsActive = true,
+                SessionId = sessionId,
+                IpAddress = GetClientIpAddress(),
+                UserAgent = GetUserAgent(),
+                RequestId = _httpContextAccessor.HttpContext?.TraceIdentifier,
+                CorrelationId = _httpContextAccessor.HttpContext?.Request.Headers["X-Correlation-ID"].FirstOrDefault() ?? Guid.NewGuid().ToString(),
+                SessionStartTime = DateTime.UtcNow,
+                LastActivity = DateTime.UtcNow,
+                Permissions = GetBasicPermissionsForRole(role),
+                Claims = user.Claims.ToDictionary(c => c.Type, c => (object)c.Value)
+            };
+
+            return session;
+        }
+
+        private async Task<UserSessionContext?> LoadFullSessionAsync(int userId, string sessionId)
         {
             try
             {
-                // Use a separate DbContext to avoid threading issues
-                using var scope = _serviceProvider.CreateScope();
-                var userRepo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                var user = await _userRepository.GetByIdAsync(userId);
+                if (user == null || !user.IsActive || user.IsLocked)
+                {
+                    _logger.LogWarning("User {UserId} not found, deactivated, or locked", userId);
+                    return null;
+                }
 
-                // This will be a synchronous database call
-                return userRepo.GetByIdAsync(userId).GetAwaiter().GetResult();
+                return await CreateSessionFromUserAsync(user);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error loading user {UserId} synchronously", userId);
+                _logger.LogError(ex, "Error loading full session for user {UserId}", userId);
                 return null;
             }
         }
 
-        private UserSessionContext CreateSessionFromUser(User user, string? ipAddress = null, string? userAgent = null)
+        private async Task LoadAndCacheFullSessionAsync(int userId, string sessionId)
         {
-            var session = UserSessionContext.CreateFromUser(
-                user,
-                ipAddress ?? GetClientIpAddress(),
-                userAgent ?? GetUserAgent());
+            try
+            {
+                await _sessionLoadSemaphore.WaitAsync();
 
-            session.RequestId = _httpContextAccessor.HttpContext?.TraceIdentifier;
-            session.CorrelationId = _httpContextAccessor.HttpContext?.Request.Headers["X-Correlation-ID"].FirstOrDefault() ?? Guid.NewGuid().ToString();
-            session.SessionId = GetSessionId();
+                // Check if session was already loaded by another thread
+                if (_memorySessionCache.TryGetValue(sessionId, out var existingEntry) &&
+                    existingEntry.Session.CurrentUser != null)
+                {
+                    return;
+                }
 
-            // Load basic permissions synchronously
-            session.Permissions = GetBasicPermissionsForRole(user.Role);
-
-            return session;
+                var fullSession = await LoadFullSessionAsync(userId, sessionId);
+                if (fullSession != null)
+                {
+                    fullSession.SessionId = sessionId;
+                    CacheSessionInMemory(sessionId, fullSession);
+                    await CacheSessionInDistributedCacheAsync(sessionId, fullSession);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading and caching full session for user {UserId}", userId);
+            }
+            finally
+            {
+                _sessionLoadSemaphore.Release();
+            }
         }
 
         private async Task<UserSessionContext> CreateSessionFromUserAsync(User user, string? ipAddress = null, string? userAgent = null)
@@ -426,9 +473,8 @@ namespace Backend.CMS.Infrastructure.Services
 
             session.RequestId = _httpContextAccessor.HttpContext?.TraceIdentifier;
             session.CorrelationId = _httpContextAccessor.HttpContext?.Request.Headers["X-Correlation-ID"].FirstOrDefault() ?? Guid.NewGuid().ToString();
-            session.SessionId = GetSessionId();
 
-            // Load permissions asynchronously
+            // Load permissions
             try
             {
                 var permissionResolver = _serviceProvider.GetService<IPermissionResolver>();
@@ -452,39 +498,73 @@ namespace Backend.CMS.Infrastructure.Services
             return session;
         }
 
-        private async Task CacheSessionAsync(UserSessionContext session)
+        private async Task RefreshSessionWithUser(UserSessionContext session, User user)
+        {
+            session.CurrentUser = user;
+            session.SyncFromCurrentUser();
+            session.UpdateLastActivity();
+
+            var sessionId = session.SessionId;
+            if (!string.IsNullOrEmpty(sessionId))
+            {
+                CacheSessionInMemory(sessionId, session);
+                await CacheSessionInDistributedCacheAsync(sessionId, session);
+            }
+        }
+
+        private void CacheSessionInMemory(string sessionId, UserSessionContext session)
+        {
+            if (string.IsNullOrEmpty(sessionId)) return;
+
+            try
+            {
+                // Enforce cache size limit
+                if (_memorySessionCache.Count >= _maxConcurrentSessions)
+                {
+                    CleanupExpiredMemorySessions(null);
+
+                    // If still at limit, remove oldest entries
+                    if (_memorySessionCache.Count >= _maxConcurrentSessions)
+                    {
+                        var oldestEntries = _memorySessionCache
+                            .OrderBy(kv => kv.Value.Session.LastActivity)
+                            .Take(_maxConcurrentSessions / 10) // Remove 10% of entries
+                            .Select(kv => kv.Key)
+                            .ToList();
+
+                        foreach (var key in oldestEntries)
+                        {
+                            _memorySessionCache.TryRemove(key, out _);
+                        }
+                    }
+                }
+
+                var expiresAt = DateTime.UtcNow.Add(_memoryCacheTimeout);
+                _memorySessionCache.AddOrUpdate(sessionId, (session, expiresAt), (key, oldValue) => (session, expiresAt));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error caching session in memory");
+            }
+        }
+
+        private async Task CacheSessionInDistributedCacheAsync(string sessionId, UserSessionContext session)
         {
             try
             {
-                if (!string.IsNullOrEmpty(session.SessionId))
+                if (!string.IsNullOrEmpty(sessionId))
                 {
-                    var cacheKey = CacheKeys.SessionById(session.SessionId);
+                    var cacheKey = CacheKeys.SessionById(sessionId);
                     await _cacheService.SetAsync(cacheKey, session, _sessionTimeout);
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error caching session {SessionId}", session.SessionId);
+                _logger.LogError(ex, "Error caching session in distributed cache");
             }
         }
 
-        private UserSessionContext? GetSessionFromCacheSync(string sessionId)
-        {
-            try
-            {
-                if (string.IsNullOrEmpty(sessionId)) return null;
-
-                var cacheKey = CacheKeys.SessionById(sessionId);
-                return _cacheService.GetAsync<UserSessionContext>(cacheKey).GetAwaiter().GetResult();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting session from cache synchronously");
-                return null;
-            }
-        }
-
-        private async Task<UserSessionContext?> GetSessionFromCacheAsync(string sessionId)
+        private async Task<UserSessionContext?> GetSessionFromDistributedCacheAsync(string sessionId)
         {
             try
             {
@@ -495,8 +575,34 @@ namespace Backend.CMS.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting session from cache");
+                _logger.LogError(ex, "Error getting session from distributed cache");
                 return null;
+            }
+        }
+
+        private void CleanupExpiredMemorySessions(object? state)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                var expiredKeys = _memorySessionCache
+                    .Where(kv => now > kv.Value.ExpiresAt || kv.Value.Session.IsSessionExpired(_sessionTimeout))
+                    .Select(kv => kv.Key)
+                    .ToList();
+
+                foreach (var key in expiredKeys)
+                {
+                    _memorySessionCache.TryRemove(key, out _);
+                }
+
+                if (expiredKeys.Count > 0)
+                {
+                    _logger.LogDebug("Cleaned up {Count} expired memory sessions", expiredKeys.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during memory session cleanup");
             }
         }
 
@@ -515,7 +621,7 @@ namespace Backend.CMS.Infrastructure.Services
                 return jtiClaim.Value;
             }
 
-            // Generate new session ID
+            // Generate new session ID as last resort
             return Guid.NewGuid().ToString();
         }
 
@@ -548,6 +654,27 @@ namespace Backend.CMS.Infrastructure.Services
                 UserRole.Customer => new List<string> { "pages.view", "profile.manage" },
                 _ => new List<string>()
             };
+        }
+
+        #endregion
+
+        #region IDisposable
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed && disposing)
+            {
+                _cleanupTimer?.Dispose();
+                _sessionLoadSemaphore?.Dispose();
+                _memorySessionCache?.Clear();
+                _disposed = true;
+            }
         }
 
         #endregion

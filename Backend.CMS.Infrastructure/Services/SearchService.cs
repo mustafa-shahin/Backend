@@ -215,7 +215,7 @@ namespace Backend.CMS.Infrastructure.Services
                     LastFullIndex = lastFullIndex,
                     LastIncrementalIndex = lastIncrementalIndex,
                     TotalIndexedEntities = totalIndexedEntities,
-                    NextScheduledIndex = null, // This would depend on your scheduling implementation
+                    NextScheduledIndex = null, // This would depend on scheduling implementation
                     RecentJobs = _mapper.Map<List<IndexingJobDto>>(recentJobs)
                 };
             }

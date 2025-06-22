@@ -3,12 +3,14 @@ using Backend.CMS.Application.DTOs;
 using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Application.Interfaces.Services;
 using Backend.CMS.Domain.Entities;
+using Backend.CMS.Infrastructure.Caching;
 using Backend.CMS.Infrastructure.IRepositories;
 using BCrypt.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
-using OtpNet;
+using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -16,7 +18,13 @@ using System.Text;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class AuthService : IAuthService
+    // Wrapper class for caching boolean values
+    public class TokenValidationResult
+    {
+        public bool IsValid { get; set; }
+    }
+
+    public class AuthService : IAuthService, IDisposable
     {
         private readonly IUserRepository _userRepository;
         private readonly IRepository<UserSession> _sessionRepository;
@@ -25,6 +33,23 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IMapper _mapper;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IEmailService _emailService;
+        private readonly ICacheService _cacheService;
+        private readonly ILogger<AuthService> _logger;
+
+        // Security settings
+        private readonly int _maxFailedAttempts;
+        private readonly TimeSpan _lockoutDuration;
+        private readonly TimeSpan _passwordResetTokenExpiry;
+        private readonly int _maxConcurrentSessions;
+        private readonly bool _enableBruteForceProtection;
+
+        // Rate limiting for login attempts per IP
+        private readonly ConcurrentDictionary<string, (int Attempts, DateTime LastAttempt)> _ipAttempts;
+        private readonly Timer _cleanupTimer;
+        private bool _disposed = false;
+
+        // Cache settings
+        private readonly TimeSpan _tokenValidationCacheExpiry = TimeSpan.FromMinutes(5);
 
         public AuthService(
             IUserRepository userRepository,
@@ -33,132 +58,192 @@ namespace Backend.CMS.Infrastructure.Services
             IConfiguration configuration,
             IMapper mapper,
             IHttpContextAccessor httpContextAccessor,
-            IEmailService emailService)
+            IEmailService emailService,
+            ICacheService cacheService,
+            ILogger<AuthService> logger)
         {
-            _userRepository = userRepository;
-            _sessionRepository = sessionRepository;
-            _passwordResetRepository = passwordResetRepository;
-            _configuration = configuration;
-            _mapper = mapper;
-            _httpContextAccessor = httpContextAccessor;
-            _emailService = emailService;
+            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+            _sessionRepository = sessionRepository ?? throw new ArgumentNullException(nameof(sessionRepository));
+            _passwordResetRepository = passwordResetRepository ?? throw new ArgumentNullException(nameof(passwordResetRepository));
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
+            _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
+            _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+            // Load security settings
+            _maxFailedAttempts = _configuration.GetValue("Security:MaxFailedLoginAttempts", 5);
+            _lockoutDuration = TimeSpan.FromMinutes(_configuration.GetValue("Security:LockoutDurationMinutes", 30));
+            _passwordResetTokenExpiry = TimeSpan.FromHours(_configuration.GetValue("Security:PasswordResetTokenExpiryHours", 24));
+            _maxConcurrentSessions = _configuration.GetValue("Security:MaxConcurrentSessions", 5);
+            _enableBruteForceProtection = _configuration.GetValue("Security:EnableBruteForceProtection", true);
+
+            _ipAttempts = new ConcurrentDictionary<string, (int, DateTime)>();
+
+            // Cleanup expired IP attempts every 10 minutes
+            _cleanupTimer = new Timer(CleanupExpiredAttempts, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
         }
 
         public async Task<LoginResponseDto> LoginAsync(LoginDto loginDto)
         {
-            // Input validation
+            if (loginDto == null)
+                throw new ArgumentNullException(nameof(loginDto));
+
             if (string.IsNullOrWhiteSpace(loginDto.Email) || string.IsNullOrWhiteSpace(loginDto.Password))
                 throw new ArgumentException("Email and password are required");
 
-            var user = await _userRepository.GetByEmailAsync(loginDto.Email.Trim().ToLowerInvariant());
+            var clientIp = GetClientIpAddress();
+            var normalizedEmail = loginDto.Email.Trim().ToLowerInvariant();
 
-            if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+            try
             {
-                // Increment failed attempts for existing user
-                if (user != null)
+                // Check for IP-based rate limiting
+                if (_enableBruteForceProtection && IsIpBlocked(clientIp))
                 {
-                    await HandleFailedLoginAttemptAsync(user);
+                    _logger.LogWarning("Login attempt blocked due to too many failed attempts from IP {ClientIP}", clientIp);
+                    throw new UnauthorizedAccessException("Too many failed login attempts. Please try again later.");
                 }
 
-                throw new UnauthorizedAccessException("Invalid email or password");
+                var user = await _userRepository.GetByEmailAsync(normalizedEmail);
+
+                if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+                {
+                    await HandleFailedLoginAttemptAsync(user, clientIp);
+
+                    // Add delay to prevent timing attacks
+                    await Task.Delay(new Random().Next(100, 500));
+
+                    throw new UnauthorizedAccessException("Invalid email or password");
+                }
+
+                // Validate user account status
+                await ValidateUserAccountStatusAsync(user);
+
+                // Check concurrent session limit
+                await EnforceConcurrentSessionLimitAsync(user.Id);
+
+                // Reset failed attempts and update last login
+                await UpdateSuccessfulLoginAsync(user, clientIp);
+
+                // Generate tokens
+                var accessToken = GenerateAccessToken(user);
+                var refreshToken = GenerateRefreshToken();
+
+                // Save session
+                var session = await CreateUserSessionAsync(user, refreshToken, clientIp);
+
+                var userDto = _mapper.Map<UserDto>(user);
+
+                var response = new LoginResponseDto
+                {
+                    AccessToken = accessToken,
+                    RefreshToken = refreshToken,
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
+                    User = userDto,
+                };
+
+                _logger.LogInformation("User {UserId} ({Email}) logged in successfully from IP {ClientIP}",
+                    user.Id, user.Email, clientIp);
+
+                return response;
             }
-
-            // Check account status before proceeding
-            await ValidateUserAccountStatusAsync(user);
-
-
-            // Reset failed login attempts and update last login
-            await UpdateSuccessfulLoginAsync(user);
-
-            // Generate tokens
-            var accessToken = GenerateAccessToken(user);
-            var refreshToken = GenerateRefreshToken();
-
-            // Save session
-            var session = new UserSession
+            catch (UnauthorizedAccessException)
             {
-                UserId = user.Id,
-                RefreshToken = refreshToken,
-                IpAddress = GetClientIpAddress(),
-                UserAgent = GetUserAgent(),
-                ExpiresAt = DateTime.UtcNow.AddDays(GetRefreshTokenExpiryDays()),
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = user.Id,
-                UpdatedByUserId = user.Id
-            };
-
-            await _sessionRepository.AddAsync(session);
-            await _sessionRepository.SaveChangesAsync();
-
-            var userDto = _mapper.Map<UserDto>(user);
-
-            return new LoginResponseDto
+                _logger.LogWarning("Failed login attempt for email {Email} from IP {ClientIP}", normalizedEmail, clientIp);
+                throw;
+            }
+            catch (Exception ex)
             {
-                AccessToken = accessToken,
-                RefreshToken = refreshToken,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
-                User = userDto,
-            };
+                _logger.LogError(ex, "Error during login for email {Email} from IP {ClientIP}", normalizedEmail, clientIp);
+                throw;
+            }
         }
 
         public async Task<LoginResponseDto> RefreshTokenAsync(RefreshTokenDto refreshTokenDto)
         {
-            //Input validation
+            if (refreshTokenDto == null)
+                throw new ArgumentNullException(nameof(refreshTokenDto));
+
             if (string.IsNullOrWhiteSpace(refreshTokenDto.RefreshToken))
                 throw new ArgumentException("Refresh token is required");
 
-            var session = await _sessionRepository.FirstOrDefaultAsync(s =>
-                s.RefreshToken == refreshTokenDto.RefreshToken &&
-                !s.IsRevoked &&
-                s.ExpiresAt > DateTime.UtcNow);
+            var clientIp = GetClientIpAddress();
 
-            if (session == null)
-                throw new UnauthorizedAccessException("Invalid or expired refresh token");
-
-            var user = await _userRepository.GetByIdAsync(session.UserId);
-            if (user == null || !user.IsActive)
+            try
             {
-                // Revoke invalid session
-                session.IsRevoked = true;
+                var session = await _sessionRepository.FirstOrDefaultAsync(s =>
+                    s.RefreshToken == refreshTokenDto.RefreshToken &&
+                    !s.IsRevoked &&
+                    s.ExpiresAt > DateTime.UtcNow);
+
+                if (session == null)
+                {
+                    _logger.LogWarning("Refresh token not found or expired from IP {ClientIP}", clientIp);
+                    throw new UnauthorizedAccessException("Invalid or expired refresh token");
+                }
+
+                var user = await _userRepository.GetByIdAsync(session.UserId);
+                if (user == null || !user.IsActive)
+                {
+                    // Revoke invalid session
+                    session.IsRevoked = true;
+                    session.UpdatedAt = DateTime.UtcNow;
+                    _sessionRepository.Update(session);
+                    await _sessionRepository.SaveChangesAsync();
+
+                    _logger.LogWarning("Refresh token used for invalid/inactive user {UserId} from IP {ClientIP}",
+                        session.UserId, clientIp);
+                    throw new UnauthorizedAccessException("User not found or inactive");
+                }
+
+                // Check if user is locked
+                if (user.IsLocked)
+                {
+                    await CheckAndUnlockUserAsync(user);
+                    if (user.IsLocked)
+                    {
+                        throw new UnauthorizedAccessException("Account is locked");
+                    }
+                }
+
+                // Generate new tokens
+                var accessToken = GenerateAccessToken(user);
+                var newRefreshToken = GenerateRefreshToken();
+
+                // Update session
+                session.RefreshToken = newRefreshToken;
+                session.ExpiresAt = DateTime.UtcNow.AddDays(GetRefreshTokenExpiryDays());
+                session.UpdatedAt = DateTime.UtcNow;
+                session.UpdatedByUserId = user.Id;
+                session.IpAddress = clientIp; // Update IP in case it changed
+
                 _sessionRepository.Update(session);
                 await _sessionRepository.SaveChangesAsync();
 
-                throw new UnauthorizedAccessException("User not found or inactive");
-            }
+                var userDto = _mapper.Map<UserDto>(user);
 
-            //  Check if user is locked
-            if (user.IsLocked)
-            {
-                await CheckAndUnlockUserAsync(user);
-                if (user.IsLocked)
+                var response = new LoginResponseDto
                 {
-                    throw new UnauthorizedAccessException("Account is locked");
-                }
+                    AccessToken = accessToken,
+                    RefreshToken = newRefreshToken,
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
+                    User = userDto
+                };
+
+                _logger.LogDebug("Tokens refreshed for user {UserId} from IP {ClientIP}", user.Id, clientIp);
+
+                return response;
             }
-
-            // Generate new tokens
-            var accessToken = GenerateAccessToken(user);
-            var newRefreshToken = GenerateRefreshToken();
-
-            // Update session
-            session.RefreshToken = newRefreshToken;
-            session.ExpiresAt = DateTime.UtcNow.AddDays(GetRefreshTokenExpiryDays());
-            session.UpdatedAt = DateTime.UtcNow;
-            session.UpdatedByUserId = user.Id;
-
-            _sessionRepository.Update(session);
-            await _sessionRepository.SaveChangesAsync();
-
-            var userDto = _mapper.Map<UserDto>(user);
-
-            return new LoginResponseDto
+            catch (UnauthorizedAccessException)
             {
-                AccessToken = accessToken,
-                RefreshToken = newRefreshToken,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
-                User = userDto
-            };
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing token from IP {ClientIP}", clientIp);
+                throw;
+            }
         }
 
         public async Task<bool> LogoutAsync(string refreshToken)
@@ -166,32 +251,55 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(refreshToken))
                 return false;
 
-            var session = await _sessionRepository.FirstOrDefaultAsync(s => s.RefreshToken == refreshToken);
-            if (session != null)
+            try
             {
-                session.IsRevoked = true;
-                session.UpdatedAt = DateTime.UtcNow;
-                session.UpdatedByUserId = session.UserId;
+                var session = await _sessionRepository.FirstOrDefaultAsync(s => s.RefreshToken == refreshToken);
+                if (session != null)
+                {
+                    session.IsRevoked = true;
+                    session.UpdatedAt = DateTime.UtcNow;
+                    session.UpdatedByUserId = session.UserId;
 
-                _sessionRepository.Update(session);
-                await _sessionRepository.SaveChangesAsync();
-                return true;
+                    _sessionRepository.Update(session);
+                    await _sessionRepository.SaveChangesAsync();
+
+                    _logger.LogInformation("User {UserId} logged out successfully", session.UserId);
+                    return true;
+                }
+                return false;
             }
-            return false;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during logout");
+                return false;
+            }
         }
 
         public async Task<bool> RevokeAllSessionsAsync(int userId)
         {
-            var sessions = await _sessionRepository.FindAsync(s => s.UserId == userId && !s.IsRevoked);
-            foreach (var session in sessions)
+            if (userId <= 0)
+                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
+
+            try
             {
-                session.IsRevoked = true;
-                session.UpdatedAt = DateTime.UtcNow;
-                session.UpdatedByUserId = userId;
-                _sessionRepository.Update(session);
+                var sessions = await _sessionRepository.FindAsync(s => s.UserId == userId && !s.IsRevoked);
+                foreach (var session in sessions)
+                {
+                    session.IsRevoked = true;
+                    session.UpdatedAt = DateTime.UtcNow;
+                    session.UpdatedByUserId = userId;
+                    _sessionRepository.Update(session);
+                }
+                await _sessionRepository.SaveChangesAsync();
+
+                _logger.LogInformation("All sessions revoked for user {UserId}", userId);
+                return true;
             }
-            await _sessionRepository.SaveChangesAsync();
-            return true;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error revoking all sessions for user {UserId}", userId);
+                throw;
+            }
         }
 
         public async Task<bool> ValidateTokenAsync(string token)
@@ -201,6 +309,14 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
+                // Check cache first
+                var cacheKey = $"token_validation:{ComputeHash(token)}";
+                var cachedResult = await _cacheService.GetAsync<TokenValidationResult>(cacheKey);
+                if (cachedResult != null)
+                {
+                    return cachedResult.IsValid;
+                }
+
                 var tokenHandler = new JwtSecurityTokenHandler();
                 var key = Encoding.UTF8.GetBytes(GetJwtSecretKey());
 
@@ -216,10 +332,17 @@ namespace Backend.CMS.Infrastructure.Services
                     ClockSkew = TimeSpan.Zero
                 });
 
-                return validationResult.IsValid;
+                var isValid = validationResult.IsValid;
+
+                // Cache the result
+                var resultWrapper = new TokenValidationResult { IsValid = isValid };
+                await _cacheService.SetAsync(cacheKey, resultWrapper, _tokenValidationCacheExpiry);
+
+                return isValid;
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogDebug(ex, "Token validation failed");
                 return false;
             }
         }
@@ -252,9 +375,13 @@ namespace Backend.CMS.Infrastructure.Services
 
                 return _mapper.Map<UserDto>(user);
             }
+            catch (UnauthorizedAccessException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
-                // Log the specific error for debugging
+                _logger.LogError(ex, "Failed to get current user");
                 throw new UnauthorizedAccessException($"Failed to get current user: {ex.Message}");
             }
         }
@@ -264,51 +391,64 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(email))
                 return false;
 
-            var user = await _userRepository.GetByEmailAsync(email.Trim().ToLowerInvariant());
-            if (user == null)
+            var normalizedEmail = email.Trim().ToLowerInvariant();
+            var clientIp = GetClientIpAddress();
+
+            try
             {
-                return true; // Don't reveal if email exists
+                var user = await _userRepository.GetByEmailAsync(normalizedEmail);
+                if (user == null)
+                {
+                    _logger.LogInformation("Password reset requested for non-existent email {Email} from IP {ClientIP}",
+                        normalizedEmail, clientIp);
+                    return true; // Don't reveal if email exists
+                }
+
+                // Check if user account is active
+                if (!user.IsActive)
+                {
+                    _logger.LogWarning("Password reset requested for inactive user {UserId} from IP {ClientIP}",
+                        user.Id, clientIp);
+                    return true; // Don't reveal account status
+                }
+
+                // Invalidate any existing password reset tokens for this user
+                await InvalidateExistingPasswordResetTokensAsync(user.Id);
+
+                // Generate new reset token
+                var resetToken = GenerateSecureToken();
+                var passwordResetToken = new PasswordResetToken
+                {
+                    UserId = user.Id,
+                    Token = resetToken,
+                    ExpiresAt = DateTime.UtcNow.Add(_passwordResetTokenExpiry),
+                    IsUsed = false,
+                    IpAddress = clientIp,
+                    UserAgent = GetUserAgent(),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    CreatedByUserId = user.Id,
+                    UpdatedByUserId = user.Id
+                };
+
+                await _passwordResetRepository.AddAsync(passwordResetToken);
+                await _passwordResetRepository.SaveChangesAsync();
+
+                // Send password reset email
+                var resetUrl = _configuration["AppSettings:FrontendUrl"] + "/reset-password";
+                await _emailService.SendPasswordResetEmailAsync(user.Email, resetToken, resetUrl);
+
+                _logger.LogInformation("Password reset token generated for user {UserId} from IP {ClientIP}",
+                    user.Id, clientIp);
+
+                return true;
             }
-
-            // Check if user account is active
-            if (!user.IsActive)
-                return true; // Don't reveal account status
-
-            // Invalidate any existing password reset tokens for this user
-            var existingTokens = await _passwordResetRepository.FindAsync(t => t.UserId == user.Id && !t.IsUsed);
-            foreach (var existingToken in existingTokens)
+            catch (Exception ex)
             {
-                existingToken.IsUsed = true;
-                existingToken.UsedAt = DateTime.UtcNow;
-                existingToken.UpdatedAt = DateTime.UtcNow;
-                existingToken.UpdatedByUserId = user.Id;
-                _passwordResetRepository.Update(existingToken);
+                _logger.LogError(ex, "Error processing forgot password request for email {Email} from IP {ClientIP}",
+                    normalizedEmail, clientIp);
+                throw;
             }
-
-            // Generate new reset token
-            var resetToken = GenerateSecureToken();
-            var passwordResetToken = new PasswordResetToken
-            {
-                UserId = user.Id,
-                Token = resetToken,
-                ExpiresAt = DateTime.UtcNow.AddHours(24),
-                IsUsed = false,
-                IpAddress = GetClientIpAddress(),
-                UserAgent = GetUserAgent(),
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = user.Id,
-                UpdatedByUserId = user.Id
-            };
-
-            await _passwordResetRepository.AddAsync(passwordResetToken);
-            await _passwordResetRepository.SaveChangesAsync();
-
-            // Send password reset email
-            var resetUrl = _configuration["AppSettings:FrontendUrl"] + "/reset-password";
-            await _emailService.SendPasswordResetEmailAsync(user.Email, resetToken, resetUrl);
-
-            return true;
         }
 
         public async Task<bool> ResetPasswordAsync(string token, string newPassword)
@@ -316,110 +456,202 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(newPassword))
                 return false;
 
-            var passwordResetToken = await _passwordResetRepository.FirstOrDefaultAsync(t =>
-                t.Token == token &&
-                !t.IsUsed &&
-                t.ExpiresAt > DateTime.UtcNow);
+            var clientIp = GetClientIpAddress();
 
-            if (passwordResetToken == null)
+            try
             {
-                return false;
-            }
+                var passwordResetToken = await _passwordResetRepository.FirstOrDefaultAsync(t =>
+                    t.Token == token &&
+                    !t.IsUsed &&
+                    t.ExpiresAt > DateTime.UtcNow);
 
-            var user = await _userRepository.GetByIdAsync(passwordResetToken.UserId);
-            if (user == null)
+                if (passwordResetToken == null)
+                {
+                    _logger.LogWarning("Invalid or expired password reset token used from IP {ClientIP}", clientIp);
+                    return false;
+                }
+
+                var user = await _userRepository.GetByIdAsync(passwordResetToken.UserId);
+                if (user == null)
+                {
+                    _logger.LogWarning("Password reset attempted for non-existent user {UserId} from IP {ClientIP}",
+                        passwordResetToken.UserId, clientIp);
+                    return false;
+                }
+
+                // Validate password strength
+                ValidatePasswordStrength(newPassword);
+
+                // Update password
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword, 12); // Use higher work factor
+                user.PasswordChangedAt = DateTime.UtcNow;
+                user.FailedLoginAttempts = 0;
+                user.IsLocked = false;
+                user.LockoutEnd = null;
+                user.UpdatedAt = DateTime.UtcNow;
+                user.UpdatedByUserId = user.Id;
+
+                // Mark token as used
+                passwordResetToken.IsUsed = true;
+                passwordResetToken.UsedAt = DateTime.UtcNow;
+                passwordResetToken.UpdatedAt = DateTime.UtcNow;
+                passwordResetToken.UpdatedByUserId = user.Id;
+
+                _userRepository.Update(user);
+                _passwordResetRepository.Update(passwordResetToken);
+                await _passwordResetRepository.SaveChangesAsync();
+
+                // Revoke all existing sessions for security
+                await RevokeAllSessionsAsync(user.Id);
+
+                // Send confirmation email
+                await _emailService.SendPasswordChangedEmailAsync(user.Email, user.FirstName);
+
+                _logger.LogInformation("Password reset completed for user {UserId} from IP {ClientIP}",
+                    user.Id, clientIp);
+
+                return true;
+            }
+            catch (Exception ex)
             {
-                return false;
+                _logger.LogError(ex, "Error resetting password from IP {ClientIP}", clientIp);
+                throw;
             }
-
-            // Validate password strength
-            if (!IsValidPassword(newPassword))
-                throw new ArgumentException("Password does not meet security requirements");
-
-            // Update password
-            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
-            user.PasswordChangedAt = DateTime.UtcNow;
-            user.FailedLoginAttempts = 0;
-            user.IsLocked = false;
-            user.LockoutEnd = null;
-            user.UpdatedAt = DateTime.UtcNow;
-            user.UpdatedByUserId = user.Id;
-
-            // Mark token as used
-            passwordResetToken.IsUsed = true;
-            passwordResetToken.UsedAt = DateTime.UtcNow;
-            passwordResetToken.UpdatedAt = DateTime.UtcNow;
-            passwordResetToken.UpdatedByUserId = user.Id;
-
-            _userRepository.Update(user);
-            _passwordResetRepository.Update(passwordResetToken);
-            await _passwordResetRepository.SaveChangesAsync();
-
-            // Revoke all existing sessions
-            await RevokeAllSessionsAsync(user.Id);
-
-            // Send confirmation email
-            await _emailService.SendPasswordChangedEmailAsync(user.Email, user.FirstName);
-
-            return true;
         }
-
 
         public async Task<List<string>> GenerateRecoveryCodesAsync(int userId)
         {
-            var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null) throw new ArgumentException("User not found");
+            if (userId <= 0)
+                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
 
-            var recoveryCodes = new List<string>();
-            for (int i = 0; i < 10; i++)
+            try
             {
-                recoveryCodes.Add(GenerateRecoveryCode());
+                var user = await _userRepository.GetByIdAsync(userId);
+                if (user == null)
+                    throw new KeyNotFoundException("User not found");
+
+                var recoveryCodes = new List<string>();
+                for (int i = 0; i < 10; i++)
+                {
+                    recoveryCodes.Add(GenerateRecoveryCode());
+                }
+
+                user.RecoveryCodes = recoveryCodes;
+                user.UpdatedAt = DateTime.UtcNow;
+                user.UpdatedByUserId = userId;
+
+                _userRepository.Update(user);
+                await _userRepository.SaveChangesAsync();
+
+                _logger.LogInformation("Recovery codes generated for user {UserId}", userId);
+
+                return recoveryCodes;
             }
-
-            user.RecoveryCodes = recoveryCodes;
-            user.UpdatedAt = DateTime.UtcNow;
-            user.UpdatedByUserId = userId;
-
-            _userRepository.Update(user);
-            await _userRepository.SaveChangesAsync();
-
-            return recoveryCodes;
+            catch (Exception ex) when (!(ex is KeyNotFoundException))
+            {
+                _logger.LogError(ex, "Error generating recovery codes for user {UserId}", userId);
+                throw;
+            }
         }
 
         public async Task<bool> UseRecoveryCodeAsync(int userId, string code)
         {
+            if (userId <= 0)
+                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
+
             if (string.IsNullOrWhiteSpace(code))
                 return false;
 
-            var user = await _userRepository.GetByIdAsync(userId);
-            if (user == null || !user.RecoveryCodes.Contains(code))
-                return false;
+            try
+            {
+                var user = await _userRepository.GetByIdAsync(userId);
+                if (user == null || !user.RecoveryCodes.Contains(code))
+                {
+                    _logger.LogWarning("Invalid recovery code used for user {UserId}", userId);
+                    return false;
+                }
 
-            user.RecoveryCodes.Remove(code);
-            user.UpdatedAt = DateTime.UtcNow;
-            user.UpdatedByUserId = userId;
+                user.RecoveryCodes.Remove(code);
+                user.UpdatedAt = DateTime.UtcNow;
+                user.UpdatedByUserId = userId;
 
-            _userRepository.Update(user);
-            await _userRepository.SaveChangesAsync();
+                _userRepository.Update(user);
+                await _userRepository.SaveChangesAsync();
 
-            return true;
+                _logger.LogInformation("Recovery code used for user {UserId}", userId);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error using recovery code for user {UserId}", userId);
+                throw;
+            }
         }
 
-        //Private helper methods
-        private async Task HandleFailedLoginAttemptAsync(User user)
+        public async Task<LoginResponseDto> CreateTokenForUserAsync(User user)
         {
-            user.FailedLoginAttempts++;
-            if (user.FailedLoginAttempts >= 5)
-            {
-                user.IsLocked = true;
-                user.LockoutEnd = DateTime.UtcNow.AddMinutes(30);
-                await _emailService.SendAccountLockedEmailAsync(user.Email, user.FirstName);
-            }
-            user.UpdatedAt = DateTime.UtcNow;
-            user.UpdatedByUserId = user.Id;
+            if (user == null)
+                throw new ArgumentNullException(nameof(user));
 
-            _userRepository.Update(user);
-            await _userRepository.SaveChangesAsync();
+            try
+            {
+                await ValidateUserAccountStatusAsync(user);
+                await UpdateSuccessfulLoginAsync(user, GetClientIpAddress());
+
+                var accessToken = GenerateAccessToken(user);
+                var refreshToken = GenerateRefreshToken();
+
+                var session = await CreateUserSessionAsync(user, refreshToken, GetClientIpAddress());
+
+                var userDto = _mapper.Map<UserDto>(user);
+
+                return new LoginResponseDto
+                {
+                    AccessToken = accessToken,
+                    RefreshToken = refreshToken,
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
+                    User = userDto,
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating token for user {UserId}", user.Id);
+                throw;
+            }
+        }
+
+        #region Private Helper Methods
+
+        private async Task HandleFailedLoginAttemptAsync(User? user, string clientIp)
+        {
+            // Record IP-based attempt
+            if (_enableBruteForceProtection)
+            {
+                var attempts = _ipAttempts.AddOrUpdate(clientIp,
+                    (1, DateTime.UtcNow),
+                    (key, value) => (value.Attempts + 1, DateTime.UtcNow));
+            }
+
+            // Update user-specific failed attempts
+            if (user != null)
+            {
+                user.FailedLoginAttempts++;
+                if (user.FailedLoginAttempts >= _maxFailedAttempts)
+                {
+                    user.IsLocked = true;
+                    user.LockoutEnd = DateTime.UtcNow.Add(_lockoutDuration);
+                    await _emailService.SendAccountLockedEmailAsync(user.Email, user.FirstName);
+
+                    _logger.LogWarning("User {UserId} account locked due to {FailedAttempts} failed login attempts",
+                        user.Id, user.FailedLoginAttempts);
+                }
+                user.UpdatedAt = DateTime.UtcNow;
+                user.UpdatedByUserId = user.Id;
+
+                _userRepository.Update(user);
+                await _userRepository.SaveChangesAsync();
+            }
         }
 
         private async Task ValidateUserAccountStatusAsync(User user)
@@ -456,10 +688,12 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
+
+                _logger.LogInformation("User {UserId} automatically unlocked after lockout period expired", user.Id);
             }
         }
 
-        private async Task UpdateSuccessfulLoginAsync(User user)
+        private async Task UpdateSuccessfulLoginAsync(User user, string clientIp)
         {
             user.FailedLoginAttempts = 0;
             user.LastLoginAt = DateTime.UtcNow;
@@ -468,6 +702,116 @@ namespace Backend.CMS.Infrastructure.Services
 
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
+
+            // Clear IP-based attempts on successful login
+            if (_enableBruteForceProtection)
+            {
+                _ipAttempts.TryRemove(clientIp, out _);
+            }
+        }
+
+        private async Task<UserSession> CreateUserSessionAsync(User user, string refreshToken, string clientIp)
+        {
+            var session = new UserSession
+            {
+                UserId = user.Id,
+                RefreshToken = refreshToken,
+                IpAddress = clientIp,
+                UserAgent = GetUserAgent(),
+                ExpiresAt = DateTime.UtcNow.AddDays(GetRefreshTokenExpiryDays()),
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                CreatedByUserId = user.Id,
+                UpdatedByUserId = user.Id
+            };
+
+            await _sessionRepository.AddAsync(session);
+            await _sessionRepository.SaveChangesAsync();
+
+            return session;
+        }
+
+        private async Task EnforceConcurrentSessionLimitAsync(int userId)
+        {
+            var activeSessions = await _sessionRepository.FindAsync(s =>
+                s.UserId == userId &&
+                !s.IsRevoked &&
+                s.ExpiresAt > DateTime.UtcNow);
+
+            var sessionsList = activeSessions.ToList();
+
+            if (sessionsList.Count >= _maxConcurrentSessions)
+            {
+                // Revoke oldest sessions
+                var sessionsToRevoke = sessionsList
+                    .OrderBy(s => s.CreatedAt)
+                    .Take(sessionsList.Count - _maxConcurrentSessions + 1);
+
+                foreach (var session in sessionsToRevoke)
+                {
+                    session.IsRevoked = true;
+                    session.UpdatedAt = DateTime.UtcNow;
+                    _sessionRepository.Update(session);
+                }
+
+                await _sessionRepository.SaveChangesAsync();
+
+                _logger.LogInformation("Revoked {Count} oldest sessions for user {UserId} due to concurrent session limit",
+                    sessionsToRevoke.Count(), userId);
+            }
+        }
+
+        private async Task InvalidateExistingPasswordResetTokensAsync(int userId)
+        {
+            var existingTokens = await _passwordResetRepository.FindAsync(t => t.UserId == userId && !t.IsUsed);
+            foreach (var existingToken in existingTokens)
+            {
+                existingToken.IsUsed = true;
+                existingToken.UsedAt = DateTime.UtcNow;
+                existingToken.UpdatedAt = DateTime.UtcNow;
+                existingToken.UpdatedByUserId = userId;
+                _passwordResetRepository.Update(existingToken);
+            }
+
+            if (existingTokens.Any())
+            {
+                await _passwordResetRepository.SaveChangesAsync();
+            }
+        }
+
+        private bool IsIpBlocked(string clientIp)
+        {
+            if (!_ipAttempts.TryGetValue(clientIp, out var attempts))
+                return false;
+
+            // Block if more than 10 attempts in last 15 minutes
+            return attempts.Attempts > 10 && DateTime.UtcNow - attempts.LastAttempt < TimeSpan.FromMinutes(15);
+        }
+
+        private void CleanupExpiredAttempts(object? state)
+        {
+            try
+            {
+                var cutoffTime = DateTime.UtcNow.AddMinutes(-15);
+                var expiredKeys = _ipAttempts
+                    .Where(kv => kv.Value.LastAttempt < cutoffTime)
+                    .Select(kv => kv.Key)
+                    .ToList();
+
+                foreach (var key in expiredKeys)
+                {
+                    _ipAttempts.TryRemove(key, out _);
+                }
+
+                if (expiredKeys.Count > 0)
+                {
+                    _logger.LogDebug("Cleaned up {Count} expired IP attempt records", expiredKeys.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during IP attempts cleanup");
+            }
         }
 
         private string GenerateAccessToken(User user)
@@ -484,10 +828,8 @@ namespace Backend.CMS.Infrastructure.Services
                     new DateTimeOffset(DateTime.UtcNow).ToUnixTimeSeconds().ToString(),
                     ClaimValueTypes.Integer64),
                 new("userId", user.Id.ToString()),
-                new("firstName", user.FirstName),
-                new("lastName", user.LastName),
-                
-                //  Consistent role claims
+                new("firstName", user.FirstName ?? string.Empty),
+                new("lastName", user.LastName ?? string.Empty),
                 new(ClaimTypes.Role, user.Role.ToString()),
                 new("role", user.Role.ToString())
             };
@@ -535,17 +877,11 @@ namespace Backend.CMS.Infrastructure.Services
                 return null;
             }
 
-            // Try different claim types
             var userIdClaim = httpContext.User.FindFirst("sub") ??
                              httpContext.User.FindFirst("userId") ??
                              httpContext.User.FindFirst(ClaimTypes.NameIdentifier);
 
-            if (userIdClaim == null)
-            {
-                return null;
-            }
-
-            if (!int.TryParse(userIdClaim.Value, out var userId))
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var userId))
             {
                 return null;
             }
@@ -559,8 +895,6 @@ namespace Backend.CMS.Infrastructure.Services
             if (httpContext == null) return "Unknown";
 
             var ipAddress = httpContext.Connection.RemoteIpAddress?.ToString();
-
-            // Check for forwarded IP (load balancer, proxy)
             var forwardedFor = httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault();
             if (!string.IsNullOrEmpty(forwardedFor))
             {
@@ -574,53 +908,26 @@ namespace Backend.CMS.Infrastructure.Services
         {
             return _httpContextAccessor.HttpContext?.Request.Headers["User-Agent"].ToString() ?? "Unknown";
         }
-        public async Task<LoginResponseDto> CreateTokenForUserAsync(User user)
-        {
-            // Similar to LoginAsync but without password verification
-            await ValidateUserAccountStatusAsync(user);
-            await UpdateSuccessfulLoginAsync(user);
 
-            var accessToken = GenerateAccessToken(user);
-            var refreshToken = GenerateRefreshToken();
-
-            var session = new UserSession
-            {
-                UserId = user.Id,
-                RefreshToken = refreshToken,
-                IpAddress = GetClientIpAddress(),
-                UserAgent = GetUserAgent(),
-                ExpiresAt = DateTime.UtcNow.AddDays(GetRefreshTokenExpiryDays()),
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = user.Id,
-                UpdatedByUserId = user.Id
-            };
-
-            await _sessionRepository.AddAsync(session);
-            await _sessionRepository.SaveChangesAsync();
-
-            var userDto = _mapper.Map<UserDto>(user);
-
-            return new LoginResponseDto
-            {
-                AccessToken = accessToken,
-                RefreshToken = refreshToken,
-                ExpiresAt = DateTime.UtcNow.AddMinutes(GetAccessTokenExpiryMinutes()),
-                User = userDto,
-            };
-        }
-        private static bool IsValidPassword(string password)
+        private static void ValidatePasswordStrength(string password)
         {
             if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
-                return false;
+                throw new ArgumentException("Password must be at least 8 characters long");
 
-            // Check for at least one uppercase, lowercase, digit, and special character
             var hasUppercase = password.Any(char.IsUpper);
             var hasLowercase = password.Any(char.IsLower);
             var hasDigit = password.Any(char.IsDigit);
             var hasSpecialChar = password.Any(c => "!@#$%^&*()_+-=[]{}|;:,.<>?".Contains(c));
 
-            return hasUppercase && hasLowercase && hasDigit && hasSpecialChar;
+            if (!(hasUppercase && hasLowercase && hasDigit && hasSpecialChar))
+                throw new ArgumentException("Password must contain at least one uppercase letter, one lowercase letter, one digit, and one special character");
+        }
+
+        private static string ComputeHash(string input)
+        {
+            using var sha256 = SHA256.Create();
+            var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(input));
+            return Convert.ToBase64String(hash);
         }
 
         private string GetJwtSecretKey() => _configuration["JwtSettings:SecretKey"]!;
@@ -629,5 +936,26 @@ namespace Backend.CMS.Infrastructure.Services
         private int GetAccessTokenExpiryMinutes() => int.Parse(_configuration["JwtSettings:ExpiryInMinutes"]!);
         private int GetRefreshTokenExpiryDays() => int.Parse(_configuration["JwtSettings:RefreshTokenExpiryInDays"]!);
 
+        #endregion
+
+        #region IDisposable
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed && disposing)
+            {
+                _cleanupTimer?.Dispose();
+                _ipAttempts?.Clear();
+                _disposed = true;
+            }
+        }
+
+        #endregion
     }
 }

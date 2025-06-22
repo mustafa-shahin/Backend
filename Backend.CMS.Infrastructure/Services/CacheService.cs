@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace Backend.CMS.Infrastructure.Services
@@ -20,8 +21,13 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly TimeSpan _longExpiration;
         private readonly JsonSerializerOptions _jsonOptions;
         private readonly SemaphoreSlim _invalidationSemaphore;
-        private readonly Dictionary<string, SemaphoreSlim> _keySemaphores;
-        private readonly object _semaphoreLock = new object();
+
+        // Thread-safe semaphore management with automatic cleanup
+        private readonly ConcurrentDictionary<string, (SemaphoreSlim Semaphore, DateTime LastUsed)> _keySemaphores;
+        private readonly Timer _semaphoreCleanupTimer;
+        private readonly TimeSpan _semaphoreTimeout = TimeSpan.FromMinutes(5);
+        private readonly int _maxSemaphores;
+
         private bool _disposed = false;
 
         public CacheService(
@@ -37,8 +43,9 @@ namespace Backend.CMS.Infrastructure.Services
 
             _defaultExpiration = TimeSpan.FromMinutes(GetConfigValue("CacheSettings:DefaultExpirationMinutes", 30));
             _longExpiration = TimeSpan.FromHours(GetConfigValue("CacheSettings:LongExpirationHours", 24));
+            _maxSemaphores = GetConfigValue("CacheSettings:MaxSemaphores", 1000);
             _invalidationSemaphore = new SemaphoreSlim(1, 1);
-            _keySemaphores = new Dictionary<string, SemaphoreSlim>();
+            _keySemaphores = new ConcurrentDictionary<string, (SemaphoreSlim, DateTime)>();
 
             _jsonOptions = new JsonSerializerOptions
             {
@@ -47,6 +54,9 @@ namespace Backend.CMS.Infrastructure.Services
                 DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
                 PropertyNameCaseInsensitive = true
             };
+
+            // Cleanup semaphores every 2 minutes
+            _semaphoreCleanupTimer = new Timer(CleanupExpiredSemaphores, null, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(2));
         }
 
         #region Basic Cache Operations
@@ -72,7 +82,7 @@ namespace Backend.CMS.Infrastructure.Services
             catch (JsonException ex)
             {
                 _logger.LogWarning(ex, "Failed to deserialize cached item with key: {Key}", key);
-                await RemoveAsync(key); 
+                await RemoveAsync(key);
                 return null;
             }
             catch (Exception ex)
@@ -90,9 +100,10 @@ namespace Backend.CMS.Infrastructure.Services
 
             // Use semaphore to prevent cache stampede
             var semaphore = GetKeySemaphore(key);
-            await semaphore.WaitAsync();
             try
             {
+                await semaphore.WaitAsync();
+
                 // Double-check pattern
                 cachedItem = await GetAsync<T>(key);
                 if (cachedItem != null)
@@ -119,7 +130,6 @@ namespace Backend.CMS.Infrastructure.Services
             finally
             {
                 semaphore.Release();
-                ReleaseKeySemaphore(key);
             }
         }
 
@@ -282,7 +292,6 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 if (userId <= 0)
                 {
-                    // Invalidate all user caches
                     await RemoveByPatternAsync(CacheKeys.UsersPattern);
                     await RemoveByPatternAsync(CacheKeys.Pattern(CacheKeys.USER_PREFIX));
                 }
@@ -313,7 +322,6 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 if (pageId <= 0)
                 {
-                    // Invalidate all page caches
                     await RemoveByPatternAsync(CacheKeys.PagesPattern);
                     await RemoveByPatternAsync(CacheKeys.DesignerPattern);
                     await RemoveByPatternAsync("preview:*");
@@ -333,7 +341,6 @@ namespace Backend.CMS.Infrastructure.Services
                     await RemoveByPatternAsync($"designer:*:{pageId}");
                 }
 
-                // Always invalidate these when any page changes
                 var globalKeysToRemove = new List<string>
                 {
                     CacheKeys.PublishedPages,
@@ -462,16 +469,6 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var database = _connectionMultiplexer.GetDatabase();
-                var endpoints = _connectionMultiplexer.GetEndPoints();
-
-                if (!endpoints.Any())
-                {
-                    _logger.LogWarning("No Redis endpoints available for cache invalidation");
-                    return;
-                }
-
-                var server = _connectionMultiplexer.GetServer(endpoints.First());
-
                 await database.ExecuteAsync("FLUSHDB");
 
                 _logger.LogInformation("Invalidated all cache entries");
@@ -552,6 +549,7 @@ namespace Backend.CMS.Infrastructure.Services
                 statistics["ComponentCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.ComponentsPattern);
                 statistics["FileCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.FilesPattern);
                 statistics["SessionCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.SessionsPattern);
+                statistics["ActiveSemaphores"] = _keySemaphores.Count;
 
                 return statistics;
             }
@@ -598,9 +596,9 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                // This would typically fetch company data and cache it
                 _logger.LogDebug("Warming up company data cache");
                 // Implementation would depend on your specific services
+                await Task.CompletedTask;
             }
             catch (Exception ex)
             {
@@ -613,7 +611,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 _logger.LogDebug("Warming up published pages cache");
-                // Implementation would depend on your specific services
+                await Task.CompletedTask;
             }
             catch (Exception ex)
             {
@@ -626,7 +624,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 _logger.LogDebug("Warming up component library cache");
-                // Implementation would depend on your specific services
+                await Task.CompletedTask;
             }
             catch (Exception ex)
             {
@@ -639,7 +637,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 _logger.LogDebug("Warming up main location cache");
-                // Implementation would depend on your specific services
+                await Task.CompletedTask;
             }
             catch (Exception ex)
             {
@@ -652,7 +650,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 _logger.LogDebug("Warming up permissions cache");
-                // Implementation would depend on your specific services
+                await Task.CompletedTask;
             }
             catch (Exception ex)
             {
@@ -697,26 +695,46 @@ namespace Backend.CMS.Infrastructure.Services
 
         private SemaphoreSlim GetKeySemaphore(string key)
         {
-            lock (_semaphoreLock)
+            // Clean up if we have too many semaphores
+            if (_keySemaphores.Count >= _maxSemaphores)
             {
-                if (!_keySemaphores.TryGetValue(key, out var semaphore))
-                {
-                    semaphore = new SemaphoreSlim(1, 1);
-                    _keySemaphores[key] = semaphore;
-                }
-                return semaphore;
+                CleanupExpiredSemaphores(null);
             }
+
+            var now = DateTime.UtcNow;
+            return _keySemaphores.AddOrUpdate(
+                key,
+                _ => (new SemaphoreSlim(1, 1), now),
+                (_, existing) => (existing.Semaphore, now)
+            ).Semaphore;
         }
 
-        private void ReleaseKeySemaphore(string key)
+        private void CleanupExpiredSemaphores(object? state)
         {
-            lock (_semaphoreLock)
+            try
             {
-                if (_keySemaphores.TryGetValue(key, out var semaphore) && semaphore.CurrentCount > 0)
+                var cutoffTime = DateTime.UtcNow.Subtract(_semaphoreTimeout);
+                var expiredKeys = _keySemaphores
+                    .Where(kv => kv.Value.LastUsed < cutoffTime)
+                    .Select(kv => kv.Key)
+                    .ToList();
+
+                foreach (var key in expiredKeys)
                 {
-                    _keySemaphores.Remove(key);
-                    semaphore.Dispose();
+                    if (_keySemaphores.TryRemove(key, out var entry))
+                    {
+                        entry.Semaphore.Dispose();
+                    }
                 }
+
+                if (expiredKeys.Count > 0)
+                {
+                    _logger.LogDebug("Cleaned up {Count} expired semaphores", expiredKeys.Count);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during semaphore cleanup");
             }
         }
 
@@ -739,16 +757,15 @@ namespace Backend.CMS.Infrastructure.Services
         {
             if (!_disposed && disposing)
             {
+                _semaphoreCleanupTimer?.Dispose();
                 _invalidationSemaphore?.Dispose();
 
-                lock (_semaphoreLock)
+                // Cleanup all semaphores
+                foreach (var entry in _keySemaphores.Values)
                 {
-                    foreach (var semaphore in _keySemaphores.Values)
-                    {
-                        semaphore.Dispose();
-                    }
-                    _keySemaphores.Clear();
+                    entry.Semaphore.Dispose();
                 }
+                _keySemaphores.Clear();
 
                 _disposed = true;
             }

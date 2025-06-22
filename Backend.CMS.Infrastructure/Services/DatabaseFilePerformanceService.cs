@@ -23,7 +23,6 @@ namespace Backend.CMS.Infrastructure.Services
 
         /// <summary>
         /// Configure Entity Framework for optimal file storage performance
-        /// Call this in your DbContext OnConfiguring method
         /// </summary>
         public static void ConfigureForFileStorage(DbContextOptionsBuilder optionsBuilder)
         {

@@ -6,6 +6,12 @@ namespace Backend.CMS.Application.Common
 {
     public class UserSessionContext
     {
+        private const int MAX_PERMISSIONS_COUNT = 1000;
+        private const int MAX_CLAIMS_COUNT = 100;
+        private const int MAX_PREFERENCES_COUNT = 500;
+
+        // User data (may not be available in cached sessions)
+        [JsonIgnore]
         public User? CurrentUser { get; set; }
 
         // Serializable user data for caching
@@ -31,8 +37,13 @@ namespace Backend.CMS.Application.Common
         [JsonIgnore]
         public bool IsAuthenticated => CurrentUser != null || UserId.HasValue;
 
-        // User preferences and settings (serializable)
-        public Dictionary<string, object> Preferences { get; set; } = new();
+        // User preferences and settings 
+        private Dictionary<string, object> _preferences = new();
+        public Dictionary<string, object> Preferences
+        {
+            get => _preferences;
+            set => _preferences = ValidateAndLimitDictionary(value, MAX_PREFERENCES_COUNT, nameof(Preferences));
+        }
 
         // Role checks
         [JsonIgnore]
@@ -47,7 +58,7 @@ namespace Backend.CMS.Application.Common
         [JsonIgnore]
         public bool IsAdminOrDev => IsAdmin || IsDev;
 
-        // Related entities (only loaded when CurrentUser is available)
+        // Related entities 
         [JsonIgnore]
         public List<Address> Addresses => CurrentUser?.Addresses?.Where(a => !a.IsDeleted).ToList() ?? new List<Address>();
 
@@ -61,7 +72,7 @@ namespace Backend.CMS.Application.Common
         [JsonIgnore]
         public ContactDetails? PrimaryContactDetails => ContactDetails.FirstOrDefault(c => c.IsDefault) ?? ContactDetails.FirstOrDefault();
 
-        // Session metadata (always available and serializable)
+        // Session metadata 
         public DateTime SessionStartTime { get; set; } = DateTime.UtcNow;
         public string? IpAddress { get; set; }
         public string? UserAgent { get; set; }
@@ -70,9 +81,20 @@ namespace Backend.CMS.Application.Common
         public string? RequestId { get; set; }
         public string? CorrelationId { get; set; }
 
-        // Authorization context (serializable)
-        public List<string> Permissions { get; set; } = new();
-        public Dictionary<string, object> Claims { get; set; } = new();
+        // Authorization context 
+        private List<string> _permissions = new();
+        public List<string> Permissions
+        {
+            get => _permissions;
+            set => _permissions = ValidateAndLimitList(value, MAX_PERMISSIONS_COUNT, nameof(Permissions));
+        }
+
+        private Dictionary<string, object> _claims = new();
+        public Dictionary<string, object> Claims
+        {
+            get => _claims;
+            set => _claims = ValidateAndLimitDictionary(value, MAX_CLAIMS_COUNT, nameof(Claims));
+        }
 
         // Audit information
         [JsonIgnore]
@@ -84,6 +106,9 @@ namespace Backend.CMS.Application.Common
         // Helper methods
         public bool HasPermission(string permission)
         {
+            if (string.IsNullOrWhiteSpace(permission))
+                return false;
+
             return Permissions.Contains(permission) || IsAdminOrDev;
         }
 
@@ -95,6 +120,9 @@ namespace Backend.CMS.Application.Common
 
         public bool HasClaim(string claimType, string? claimValue = null)
         {
+            if (string.IsNullOrWhiteSpace(claimType))
+                return false;
+
             if (!Claims.ContainsKey(claimType))
                 return false;
 
@@ -104,7 +132,6 @@ namespace Backend.CMS.Application.Common
             return Claims[claimType]?.ToString() == claimValue;
         }
 
-
         public void UpdateLastActivity()
         {
             LastActivity = DateTime.UtcNow;
@@ -113,6 +140,16 @@ namespace Backend.CMS.Application.Common
         public bool IsSessionExpired(TimeSpan sessionTimeout)
         {
             return DateTime.UtcNow - LastActivity > sessionTimeout;
+        }
+
+        public TimeSpan GetSessionAge()
+        {
+            return DateTime.UtcNow - SessionStartTime;
+        }
+
+        public TimeSpan GetIdleTime()
+        {
+            return DateTime.UtcNow - LastActivity;
         }
 
         // Sync user data from CurrentUser to serializable properties
@@ -132,9 +169,145 @@ namespace Backend.CMS.Application.Common
             }
         }
 
+        // Preference management with validation
+        public T? GetPreference<T>(string key, T? defaultValue = default)
+        {
+            if (string.IsNullOrWhiteSpace(key) || !Preferences.ContainsKey(key))
+                return defaultValue;
+
+            try
+            {
+                var value = Preferences[key];
+                if (value is T directValue)
+                    return directValue;
+
+                if (value == null)
+                    return defaultValue;
+
+                var targetType = typeof(T);
+                var underlyingType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+                var convertedValue = Convert.ChangeType(value, underlyingType);
+                return (T)convertedValue;
+            }
+            catch
+            {
+                return defaultValue;
+            }
+        }
+
+        public void SetPreference<T>(string key, T value)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("Preference key cannot be null or empty", nameof(key));
+
+            if (Preferences.Count >= MAX_PREFERENCES_COUNT && !Preferences.ContainsKey(key))
+                throw new InvalidOperationException($"Maximum number of preferences ({MAX_PREFERENCES_COUNT}) exceeded");
+
+            if (value != null)
+            {
+                Preferences[key] = value;
+            }
+            else
+            {
+                Preferences.Remove(key);
+            }
+        }
+
+        public void RemovePreference(string key)
+        {
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                Preferences.Remove(key);
+            }
+        }
+
+        public void ClearPreferences()
+        {
+            Preferences.Clear();
+        }
+
+        // Permission management
+        public void AddPermission(string permission)
+        {
+            if (string.IsNullOrWhiteSpace(permission))
+                return;
+
+            if (!Permissions.Contains(permission))
+            {
+                if (Permissions.Count >= MAX_PERMISSIONS_COUNT)
+                    throw new InvalidOperationException($"Maximum number of permissions ({MAX_PERMISSIONS_COUNT}) exceeded");
+
+                Permissions.Add(permission);
+            }
+        }
+
+        public void RemovePermission(string permission)
+        {
+            if (!string.IsNullOrWhiteSpace(permission))
+            {
+                Permissions.Remove(permission);
+            }
+        }
+
+        public void SetPermissions(IEnumerable<string> permissions)
+        {
+            var validPermissions = permissions?.Where(p => !string.IsNullOrWhiteSpace(p)).Distinct().ToList() ?? new List<string>();
+            Permissions = ValidateAndLimitList(validPermissions, MAX_PERMISSIONS_COUNT, nameof(Permissions));
+        }
+
+        // Validation and consistency checks
+        public bool IsValid()
+        {
+            // Basic validation
+            if (IsAuthenticated && !UserId.HasValue)
+                return false;
+
+            if (IsAuthenticated && string.IsNullOrWhiteSpace(Email))
+                return false;
+
+            if (SessionStartTime > DateTime.UtcNow)
+                return false;
+
+            if (LastActivity < SessionStartTime)
+                return false;
+
+            return true;
+        }
+
+        public List<string> GetValidationErrors()
+        {
+            var errors = new List<string>();
+
+            if (IsAuthenticated && !UserId.HasValue)
+                errors.Add("Authenticated session must have a valid user ID");
+
+            if (IsAuthenticated && string.IsNullOrWhiteSpace(Email))
+                errors.Add("Authenticated session must have a valid email");
+
+            if (SessionStartTime > DateTime.UtcNow)
+                errors.Add("Session start time cannot be in the future");
+
+            if (LastActivity < SessionStartTime)
+                errors.Add("Last activity cannot be before session start time");
+
+            if (Permissions.Count > MAX_PERMISSIONS_COUNT)
+                errors.Add($"Too many permissions ({Permissions.Count} > {MAX_PERMISSIONS_COUNT})");
+
+            if (Claims.Count > MAX_CLAIMS_COUNT)
+                errors.Add($"Too many claims ({Claims.Count} > {MAX_CLAIMS_COUNT})");
+
+            if (Preferences.Count > MAX_PREFERENCES_COUNT)
+                errors.Add($"Too many preferences ({Preferences.Count} > {MAX_PREFERENCES_COUNT})");
+
+            return errors;
+        }
+
         // Create session from authenticated user
         public static UserSessionContext CreateFromUser(User user, string? ipAddress = null, string? userAgent = null)
         {
+            if (user == null)
+                throw new ArgumentNullException(nameof(user));
+
             var session = new UserSessionContext
             {
                 CurrentUser = user,
@@ -146,8 +319,8 @@ namespace Backend.CMS.Application.Common
                     ["sub"] = user.Id.ToString(),
                     ["email"] = user.Email,
                     ["role"] = user.Role.ToString(),
-                    ["firstName"] = user.FirstName,
-                    ["lastName"] = user.LastName
+                    ["firstName"] = user.FirstName ?? string.Empty,
+                    ["lastName"] = user.LastName ?? string.Empty
                 }
             };
 
@@ -157,7 +330,7 @@ namespace Backend.CMS.Application.Common
             return session;
         }
 
-        // Create session from cached data (without CurrentUser)
+        // Create session from cached data 
         public static UserSessionContext CreateFromCachedData(
             int userId,
             string email,
@@ -165,9 +338,9 @@ namespace Backend.CMS.Application.Common
             string firstName,
             string lastName,
             UserRole role,
-            Dictionary<string, object> preferences,
-            List<string> permissions,
-            string sessionId)
+            Dictionary<string, object>? preferences = null,
+            List<string>? permissions = null,
+            string? sessionId = null)
         {
             return new UserSessionContext
             {
@@ -180,30 +353,50 @@ namespace Backend.CMS.Application.Common
                 Role = role,
                 Preferences = preferences ?? new Dictionary<string, object>(),
                 Permissions = permissions ?? new List<string>(),
-                SessionId = sessionId,
+                SessionId = sessionId ?? Guid.NewGuid().ToString(),
                 Claims = new Dictionary<string, object>
                 {
                     ["sub"] = userId.ToString(),
                     ["email"] = email,
                     ["role"] = role.ToString(),
-                    ["firstName"] = firstName,
-                    ["lastName"] = lastName
+                    ["firstName"] = firstName ?? string.Empty,
+                    ["lastName"] = lastName ?? string.Empty
                 }
             };
         }
 
-        private T ConvertPreferenceValue<T>(object value, T defaultValue)
+        // Helper methods for validation
+        private static List<T> ValidateAndLimitList<T>(IEnumerable<T>? items, int maxCount, string propertyName)
         {
-            if (value is T directValue)
-                return directValue;
+            if (items == null)
+                return new List<T>();
 
-            if (value == null)
-                return defaultValue;
+            var list = items.ToList();
+            if (list.Count > maxCount)
+                throw new ArgumentException($"{propertyName} cannot contain more than {maxCount} items", propertyName);
 
-            var targetType = typeof(T);
-            var underlyingType = Nullable.GetUnderlyingType(targetType) ?? targetType;
-            var convertedValue = Convert.ChangeType(value, underlyingType);
-            return (T)convertedValue;
+            return list;
+        }
+
+        private static Dictionary<string, object> ValidateAndLimitDictionary(Dictionary<string, object>? dictionary, int maxCount, string propertyName)
+        {
+            if (dictionary == null)
+                return new Dictionary<string, object>();
+
+            if (dictionary.Count > maxCount)
+                throw new ArgumentException($"{propertyName} cannot contain more than {maxCount} items", propertyName);
+
+            return new Dictionary<string, object>(dictionary);
+        }
+
+        // Override ToString for debugging
+        public override string ToString()
+        {
+            var status = IsAuthenticated ? $"Authenticated as {Email}" : "Anonymous";
+            var sessionAge = GetSessionAge();
+            var idleTime = GetIdleTime();
+
+            return $"UserSession: {status}, Age: {sessionAge:hh\\:mm\\:ss}, Idle: {idleTime:hh\\:mm\\:ss}, SessionId: {SessionId}";
         }
     }
 
@@ -213,6 +406,11 @@ namespace Backend.CMS.Application.Common
         public static bool IsNullOrEmpty(this string? value)
         {
             return string.IsNullOrEmpty(value);
+        }
+
+        public static bool IsNullOrWhiteSpace(this string? value)
+        {
+            return string.IsNullOrWhiteSpace(value);
         }
     }
 }

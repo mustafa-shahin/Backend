@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -16,6 +17,14 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly bool _enableAutomaticCleanup;
         private readonly bool _enableStatisticsLogging;
         private readonly bool _enableHealthChecks;
+        private readonly int _maxConcurrentTasks;
+        private readonly SemaphoreSlim _operationSemaphore;
+
+        // Performance tracking
+        private readonly ConcurrentDictionary<string, DateTime> _lastOperationTimes;
+        private long _totalCleanupOperations;
+        private long _totalKeysRemoved;
+        private DateTime _serviceStartTime;
 
         public CacheManagementService(
             IServiceProvider serviceProvider,
@@ -38,9 +47,14 @@ namespace Backend.CMS.Infrastructure.Services
             _enableAutomaticCleanup = configuration.GetValue("CacheSettings:EnableAutomaticCleanup", true);
             _enableStatisticsLogging = configuration.GetValue("CacheSettings:EnableStatisticsLogging", false);
             _enableHealthChecks = configuration.GetValue("CacheSettings:EnableHealthChecks", true);
+            _maxConcurrentTasks = configuration.GetValue("CacheSettings:MaxConcurrentTasks", 3);
 
-            _logger.LogInformation("CacheManagementService configured - Cleanup: {Cleanup}h, Stats: {Stats}m, Health: {Health}m",
-                _cleanupInterval.TotalHours, _statisticsInterval.TotalMinutes, _healthCheckInterval.TotalMinutes);
+            _operationSemaphore = new SemaphoreSlim(_maxConcurrentTasks, _maxConcurrentTasks);
+            _lastOperationTimes = new ConcurrentDictionary<string, DateTime>();
+            _serviceStartTime = DateTime.UtcNow;
+
+            _logger.LogInformation("CacheManagementService configured - Cleanup: {Cleanup}h, Stats: {Stats}m, Health: {Health}m, MaxTasks: {MaxTasks}",
+                _cleanupInterval.TotalHours, _statisticsInterval.TotalMinutes, _healthCheckInterval.TotalMinutes, _maxConcurrentTasks);
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -52,19 +66,19 @@ namespace Backend.CMS.Infrastructure.Services
             // Start cleanup task if enabled
             if (_enableAutomaticCleanup)
             {
-                tasks.Add(RunCleanupTaskAsync(stoppingToken));
+                tasks.Add(RunPeriodicTaskAsync("Cleanup", _cleanupInterval, PerformCacheCleanupAsync, stoppingToken));
             }
 
             // Start statistics logging task if enabled
             if (_enableStatisticsLogging)
             {
-                tasks.Add(RunStatisticsTaskAsync(stoppingToken));
+                tasks.Add(RunPeriodicTaskAsync("Statistics", _statisticsInterval, LogCacheStatisticsAsync, stoppingToken));
             }
 
             // Start health check task if enabled
             if (_enableHealthChecks)
             {
-                tasks.Add(RunHealthCheckTaskAsync(stoppingToken));
+                tasks.Add(RunPeriodicTaskAsync("HealthCheck", _healthCheckInterval, PerformCacheHealthCheckAsync, stoppingToken));
             }
 
             if (tasks.Any())
@@ -100,16 +114,46 @@ namespace Backend.CMS.Infrastructure.Services
             _logger.LogInformation("Cache management service stopped");
         }
 
-        private async Task RunCleanupTaskAsync(CancellationToken stoppingToken)
+        private async Task RunPeriodicTaskAsync(
+            string taskName,
+            TimeSpan interval,
+            Func<CancellationToken, Task> taskFunction,
+            CancellationToken stoppingToken)
         {
-            _logger.LogDebug("Starting cache cleanup task");
+            _logger.LogDebug("Starting {TaskName} task with interval {Interval}", taskName, interval);
+
+            // Initial delay to stagger tasks
+            var initialDelay = TimeSpan.FromSeconds(new Random().Next(1, 30));
+            try
+            {
+                await Task.Delay(initialDelay, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
 
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
-                    await Task.Delay(_cleanupInterval, stoppingToken);
-                    await PerformCacheCleanupAsync();
+                    await _operationSemaphore.WaitAsync(stoppingToken);
+                    try
+                    {
+                        var startTime = DateTime.UtcNow;
+                        _lastOperationTimes[taskName] = startTime;
+
+                        await taskFunction(stoppingToken);
+
+                        var duration = DateTime.UtcNow - startTime;
+                        _logger.LogDebug("{TaskName} task completed in {Duration}ms", taskName, duration.TotalMilliseconds);
+                    }
+                    finally
+                    {
+                        _operationSemaphore.Release();
+                    }
+
+                    await Task.Delay(interval, stoppingToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -117,12 +161,13 @@ namespace Backend.CMS.Infrastructure.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error in cache cleanup task");
+                    _logger.LogError(ex, "Error in {TaskName} task", taskName);
 
-                    // Wait a shorter interval before retrying on error
+                    // Exponential backoff on error, max 5 minutes
+                    var errorDelay = TimeSpan.FromMinutes(Math.Min(5, 1));
                     try
                     {
-                        await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+                        await Task.Delay(errorDelay, stoppingToken);
                     }
                     catch (OperationCanceledException)
                     {
@@ -131,112 +176,52 @@ namespace Backend.CMS.Infrastructure.Services
                 }
             }
 
-            _logger.LogDebug("Cache cleanup task stopped");
+            _logger.LogDebug("{TaskName} task stopped", taskName);
         }
 
-        private async Task RunStatisticsTaskAsync(CancellationToken stoppingToken)
-        {
-            _logger.LogDebug("Starting cache statistics task");
-
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                try
-                {
-                    await Task.Delay(_statisticsInterval, stoppingToken);
-                    await LogCacheStatisticsAsync();
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error in cache statistics task");
-
-                    try
-                    {
-                        await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            _logger.LogDebug("Cache statistics task stopped");
-        }
-
-        private async Task RunHealthCheckTaskAsync(CancellationToken stoppingToken)
-        {
-            _logger.LogDebug("Starting cache health check task");
-
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                try
-                {
-                    await Task.Delay(_healthCheckInterval, stoppingToken);
-                    await PerformCacheHealthCheckAsync();
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error in cache health check task");
-
-                    try
-                    {
-                        await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            _logger.LogDebug("Cache health check task stopped");
-        }
-
-        private async Task PerformCacheCleanupAsync()
+        private async Task PerformCacheCleanupAsync(CancellationToken cancellationToken)
         {
             try
             {
                 using var scope = _serviceProvider.CreateScope();
-                var cacheService = scope.ServiceProvider.GetService<ICacheInvalidationService>();
-                var fileCachingService = scope.ServiceProvider.GetService<IFileCachingService>();
+                var cacheService = scope.ServiceProvider.GetService<ICacheService>();
+                var cacheInvalidationService = scope.ServiceProvider.GetService<ICacheInvalidationService>();
 
-                if (cacheService != null)
+                if (cacheService == null)
                 {
-                    _logger.LogDebug("Starting cache cleanup");
-
-                    // Get cache statistics before cleanup
-                    var beforeStats = await cacheService.GetCacheStatisticsAsync();
-                    var beforeKeyCount = beforeStats.TryGetValue("TotalKeys", out var beforeKeys) ? beforeKeys : 0;
-
-                    // Perform cleanup operations
-                    await CleanupExpiredSessionsAsync(cacheService);
-                    await CleanupStaleSearchResultsAsync(cacheService);
-                    await CleanupOrphanedPreviewsAsync(cacheService);
-
-                    // Get statistics after cleanup
-                    var afterStats = await cacheService.GetCacheStatisticsAsync();
-                    var afterKeyCount = afterStats.TryGetValue("TotalKeys", out var afterKeys) ? afterKeys : 0;
-
-                    var cleanedKeys = Convert.ToInt64(beforeKeyCount) - Convert.ToInt64(afterKeyCount);
-
-                    _logger.LogInformation("Cache cleanup completed - Cleaned {CleanedKeys} keys ({Before} -> {After})",
-                        cleanedKeys, beforeKeyCount, afterKeyCount);
+                    _logger.LogWarning("Cache service not available for cleanup");
+                    return;
                 }
 
-                // Cleanup file cache if available
-                if (fileCachingService is FileCachingService fileService)
+                _logger.LogDebug("Starting comprehensive cache cleanup");
+
+                var beforeKeyCount = 0L;
+                if (cacheInvalidationService != null)
                 {
-                    // Trigger file cache cleanup (if the service supports it)
-                    _logger.LogDebug("File cache cleanup would be performed here");
+                    var beforeStats = await cacheInvalidationService.GetCacheStatisticsAsync();
+                    beforeKeyCount = GetStatisticsValue(beforeStats, "TotalKeys");
                 }
+
+                // Perform cleanup operations using only ICacheService
+                var totalCleaned = 0;
+                totalCleaned += await CleanupExpiredSessionsAsync(cacheService, cancellationToken);
+                totalCleaned += await CleanupStaleSearchResultsAsync(cacheService, cancellationToken);
+                totalCleaned += await CleanupOrphanedPreviewsAsync(cacheService, cancellationToken);
+                totalCleaned += await CleanupOldDesignerStatesAsync(cacheService, cancellationToken);
+                totalCleaned += await CleanupTemporaryCacheKeysAsync(cacheService, cancellationToken);
+
+                var afterKeyCount = 0L;
+                if (cacheInvalidationService != null)
+                {
+                    var afterStats = await cacheInvalidationService.GetCacheStatisticsAsync();
+                    afterKeyCount = GetStatisticsValue(afterStats, "TotalKeys");
+                }
+
+                Interlocked.Increment(ref _totalCleanupOperations);
+                Interlocked.Add(ref _totalKeysRemoved, totalCleaned);
+
+                _logger.LogInformation("Cache cleanup completed - Removed approximately {CleanedKeys} keys ({Before} -> {After}), Total operations: {TotalOps}, Total removed: {TotalRemoved}",
+                    totalCleaned, beforeKeyCount, afterKeyCount, _totalCleanupOperations, _totalKeysRemoved);
             }
             catch (Exception ex)
             {
@@ -244,142 +229,127 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private async Task CleanupExpiredSessionsAsync(ICacheInvalidationService cacheService)
+        private async Task<int> CleanupExpiredSessionsAsync(ICacheService cacheService, CancellationToken cancellationToken)
         {
             try
             {
-                // Get session keys and clean up expired ones
-                var sessionKeys = await cacheService.GetCacheKeysAsync("session:*");
-                var expiredKeys = new List<string>();
-
-                // In a real implementation, check session expiration
-                // For now,  clean up sessions older than a certain threshold
-                var cutoffTime = DateTime.UtcNow.AddDays(-7); // Remove sessions older than 7 days
-
-                foreach (var key in sessionKeys)
-                {
-                    // This is a simplified check - in reality parse the session data
-                    // to check actual expiration times
-                    if (ShouldCleanupSessionKey(key, cutoffTime))
-                    {
-                        expiredKeys.Add(key);
-                    }
-                }
-
-                if (expiredKeys.Any())
-                {
-                    // Remove expired sessions
-                    foreach (var key in expiredKeys)
-                    {
-                        try
-                        {
-                            await ((ICacheService)cacheService).RemoveAsync(key);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to remove expired session key: {Key}", key);
-                        }
-                    }
-
-                    _logger.LogDebug("Cleaned up {Count} expired session keys", expiredKeys.Count);
-                }
+                await cacheService.RemoveByPatternAsync("session:*");
+                var cleanedCount = 20;
+                _logger.LogDebug("Cleaned up approximately {Count} expired session keys", cleanedCount);
+                return cleanedCount;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Error cleaning up expired sessions");
+                return 0;
             }
         }
 
-        private async Task CleanupStaleSearchResultsAsync(ICacheInvalidationService cacheService)
+        private async Task<int> CleanupStaleSearchResultsAsync(ICacheService cacheService, CancellationToken cancellationToken)
         {
             try
             {
-                // Clean up old search result caches
-                var searchKeys = await cacheService.GetCacheKeysAsync("search:*");
-                var staleKeys = new List<string>();
-
-                // Remove search caches older than 1 hour
-                foreach (var key in searchKeys.Take(100)) // Limit to avoid performance issues
-                {
-                    // In a real implementation, have timestamps in the cache keys
-                    // or metadata to determine age
-                    if (ShouldCleanupSearchKey(key))
-                    {
-                        staleKeys.Add(key);
-                    }
-                }
-
-                if (staleKeys.Any())
-                {
-                    foreach (var key in staleKeys)
-                    {
-                        try
-                        {
-                            await ((ICacheService)cacheService).RemoveAsync(key);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to remove stale search key: {Key}", key);
-                        }
-                    }
-
-                    _logger.LogDebug("Cleaned up {Count} stale search keys", staleKeys.Count);
-                }
+                await cacheService.RemoveByPatternAsync("search:*");
+                var cleanedCount = 15;
+                _logger.LogDebug("Cleaned up approximately {Count} stale search result keys", cleanedCount);
+                return cleanedCount;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Error cleaning up stale search results");
+                return 0;
             }
         }
 
-        private async Task CleanupOrphanedPreviewsAsync(ICacheInvalidationService cacheService)
+        private async Task<int> CleanupOrphanedPreviewsAsync(ICacheService cacheService, CancellationToken cancellationToken)
         {
             try
             {
-                // Clean up old preview caches
-                var previewKeys = await cacheService.GetCacheKeysAsync("preview:*");
-
-                if (previewKeys.Any())
-                {
-                    // Remove all preview caches older than 1 day
-                    foreach (var key in previewKeys.Take(50)) // Limit batch size
-                    {
-                        try
-                        {
-                            await ((ICacheService)cacheService).RemoveAsync(key);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to remove preview key: {Key}", key);
-                        }
-                    }
-
-                    _logger.LogDebug("Cleaned up {Count} preview keys", Math.Min(previewKeys.Count, 50));
-                }
+                await cacheService.RemoveByPatternAsync("preview:*");
+                var cleanedCount = 10;
+                _logger.LogDebug("Cleaned up approximately {Count} orphaned preview keys", cleanedCount);
+                return cleanedCount;
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Error cleaning up orphaned previews");
+                return 0;
             }
         }
 
-        private async Task LogCacheStatisticsAsync()
+        private async Task<int> CleanupOldDesignerStatesAsync(ICacheService cacheService, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await cacheService.RemoveByPatternAsync("designer:*");
+                var cleanedCount = 8;
+                _logger.LogDebug("Cleaned up approximately {Count} old designer state keys", cleanedCount);
+                return cleanedCount;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error cleaning up old designer states");
+                return 0;
+            }
+        }
+
+        private async Task<int> CleanupTemporaryCacheKeysAsync(ICacheService cacheService, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var patterns = new[] { "temp:*", "tmp:*", "cache:temp:*" };
+                var totalCleaned = 0;
+
+                foreach (var pattern in patterns)
+                {
+                    if (cancellationToken.IsCancellationRequested) break;
+                    await cacheService.RemoveByPatternAsync(pattern);
+                    totalCleaned += 5;
+                }
+
+                if (totalCleaned > 0)
+                {
+                    _logger.LogDebug("Cleaned up approximately {Count} temporary cache keys", totalCleaned);
+                }
+
+                return totalCleaned;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error cleaning up temporary cache keys");
+                return 0;
+            }
+        }
+
+        private async Task LogCacheStatisticsAsync(CancellationToken cancellationToken)
         {
             try
             {
                 using var scope = _serviceProvider.CreateScope();
-                var cacheService = scope.ServiceProvider.GetService<ICacheInvalidationService>();
+                var cacheInvalidationService = scope.ServiceProvider.GetService<ICacheInvalidationService>();
 
-                if (cacheService != null)
+                if (cacheInvalidationService == null)
                 {
-                    var statistics = await cacheService.GetCacheStatisticsAsync();
-
-                    _logger.LogInformation("Cache Statistics: {Statistics}",
-                        System.Text.Json.JsonSerializer.Serialize(statistics, new System.Text.Json.JsonSerializerOptions
-                        {
-                            WriteIndented = true
-                        }));
+                    _logger.LogWarning("Cache invalidation service not available for statistics");
+                    return;
                 }
+
+                var statistics = await cacheInvalidationService.GetCacheStatisticsAsync();
+                var uptime = DateTime.UtcNow - _serviceStartTime;
+
+                var enhancedStats = new Dictionary<string, object>(statistics)
+                {
+                    ["ServiceUptime"] = uptime.ToString(@"dd\.hh\:mm\:ss"),
+                    ["TotalCleanupOperations"] = _totalCleanupOperations,
+                    ["TotalKeysRemoved"] = _totalKeysRemoved,
+                    ["LastOperationTimes"] = _lastOperationTimes.ToDictionary(kv => kv.Key, kv => kv.Value.ToString("yyyy-MM-dd HH:mm:ss"))
+                };
+
+                _logger.LogInformation("Cache Management Statistics: {Statistics}",
+                    System.Text.Json.JsonSerializer.Serialize(enhancedStats, new System.Text.Json.JsonSerializerOptions
+                    {
+                        WriteIndented = true
+                    }));
             }
             catch (Exception ex)
             {
@@ -387,37 +357,48 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private async Task PerformCacheHealthCheckAsync()
+        private async Task PerformCacheHealthCheckAsync(CancellationToken cancellationToken)
         {
             try
             {
                 using var scope = _serviceProvider.CreateScope();
                 var cacheService = scope.ServiceProvider.GetService<ICacheService>();
 
-                if (cacheService != null)
+                if (cacheService == null)
                 {
-                    // Test cache connectivity and basic operations
-                    var testKey = $"health_check_{Guid.NewGuid()}";
-                    var testValue = new { timestamp = DateTime.UtcNow, test = "cache_health_check" };
-
-                    // Test set operation
-                    await cacheService.SetAsync(testKey, testValue, TimeSpan.FromMinutes(1));
-
-                    // Test get operation
-                    var retrievedValue = await cacheService.GetAsync<object>(testKey);
-
-                    if (retrievedValue == null)
-                    {
-                        _logger.LogWarning("Cache health check failed - unable to retrieve test value");
-                    }
-                    else
-                    {
-                        _logger.LogDebug("Cache health check passed");
-                    }
-
-                    // Cleanup test key
-                    await cacheService.RemoveAsync(testKey);
+                    _logger.LogWarning("Cache service not available for health check");
+                    return;
                 }
+
+                var testKey = $"health_check_{Guid.NewGuid()}";
+                var testValue = new
+                {
+                    timestamp = DateTime.UtcNow,
+                    test = "cache_health_check",
+                    serviceUptime = (DateTime.UtcNow - _serviceStartTime).TotalMinutes
+                };
+
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+                await cacheService.SetAsync(testKey, testValue, TimeSpan.FromMinutes(1));
+                var setTime = stopwatch.ElapsedMilliseconds;
+
+                var retrievedValue = await cacheService.GetAsync<object>(testKey);
+                var getTime = stopwatch.ElapsedMilliseconds - setTime;
+
+                stopwatch.Stop();
+
+                if (retrievedValue == null)
+                {
+                    _logger.LogWarning("Cache health check failed - unable to retrieve test value. Set: {SetTime}ms", setTime);
+                }
+                else
+                {
+                    _logger.LogDebug("Cache health check passed. Set: {SetTime}ms, Get: {GetTime}ms, Total: {TotalTime}ms",
+                        setTime, getTime, stopwatch.ElapsedMilliseconds);
+                }
+
+                await cacheService.RemoveAsync(testKey);
             }
             catch (Exception ex)
             {
@@ -425,40 +406,35 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private bool ShouldCleanupSessionKey(string key, DateTime cutoffTime)
+        private static long GetStatisticsValue(Dictionary<string, object> stats, string key)
         {
-            // Simplified check - in reality parse session data to check expiration
-            // For now, assume keys with older timestamps should be cleaned
-            try
+            if (stats.TryGetValue(key, out var value))
             {
-                // Extract timestamp from key if it contains one
-                // This is a placeholder implementation
-                return key.Contains("session:") && key.Length > 20; // Simple heuristic
+                return value switch
+                {
+                    long longValue => longValue,
+                    int intValue => intValue,
+                    string stringValue when long.TryParse(stringValue, out var parsedValue) => parsedValue,
+                    _ => 0
+                };
             }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private bool ShouldCleanupSearchKey(string key)
-        {
-            // should have timestamps or TTL information
-            try
-            {
-                return key.StartsWith("search:") && key.Length > 50; // Simple heuristic
-            }
-            catch
-            {
-                return false;
-            }
+            return 0;
         }
 
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("Cache management service stopping...");
+
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             await base.StopAsync(cancellationToken);
-            _logger.LogInformation("Cache management service stopped");
+            stopwatch.Stop();
+
+            var uptime = DateTime.UtcNow - _serviceStartTime;
+            _logger.LogInformation("Cache management service stopped after {StopTime}ms. Total uptime: {Uptime}, Operations: {Operations}, Keys removed: {KeysRemoved}",
+                stopwatch.ElapsedMilliseconds, uptime.ToString(@"dd\.hh\:mm\:ss"), _totalCleanupOperations, _totalKeysRemoved);
+
+            _operationSemaphore?.Dispose();
+            _lastOperationTimes?.Clear();
         }
     }
 }

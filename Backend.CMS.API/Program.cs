@@ -146,7 +146,7 @@ static void ConfigureBasicServices(WebApplicationBuilder builder)
         options.ExpirationScanFrequency = TimeSpan.FromMinutes(5);
     });
 
-    // Session configuration
+    // session configuration
     ConfigureSession(builder);
 
     builder.Services.AddEndpointsApiExplorer();
@@ -160,7 +160,7 @@ static void ConfigureDatabases(WebApplicationBuilder builder)
         options.UseNpgsql(connectionString);
     });
 
-    // Register the base ApplicationDbContext to use the enhanced version
+    // Register the base ApplicationDbContext
     builder.Services.AddScoped<ApplicationDbContext>(provider =>
         provider.GetRequiredService<ApplicationDbContextWithCacheInvalidation>());
 
@@ -435,7 +435,10 @@ static void ConfigureSession(WebApplicationBuilder builder)
     // Configure session with Redis backing store
     builder.Services.AddSession(options =>
     {
-        options.IdleTimeout = TimeSpan.FromMinutes(int.Parse(builder.Configuration["SessionSettings:TimeoutMinutes"] ?? "30"));
+        var timeoutMinutes = builder.Configuration.GetValue("SessionSettings:TimeoutMinutes", 30);
+        var cookieMaxAgeDays = builder.Configuration.GetValue("SessionSettings:CookieMaxAgeDays", 7);
+
+        options.IdleTimeout = TimeSpan.FromMinutes(timeoutMinutes);
         options.Cookie.HttpOnly = true;
         options.Cookie.IsEssential = true;
         options.Cookie.Name = "BackendCMS.SessionId";
@@ -443,10 +446,9 @@ static void ConfigureSession(WebApplicationBuilder builder)
         options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest; // Use Secure in production
 
         // Set a longer cookie timeout than session timeout to allow session refresh
-        options.Cookie.MaxAge = TimeSpan.FromDays(7);
+        options.Cookie.MaxAge = TimeSpan.FromDays(cookieMaxAgeDays);
     });
 
-    // Add background service for session cleanup
     builder.Services.AddHostedService<SessionCleanupService>();
 }
 
@@ -1022,81 +1024,3 @@ public class HangfireAuthorizationFilter : IDashboardAuthorizationFilter
 }
 
 #endregion
-
-public class SessionCleanupService : BackgroundService
-{
-    private readonly IServiceProvider _serviceProvider;
-    private readonly ILogger<SessionCleanupService> _logger;
-    private readonly TimeSpan _cleanupInterval = TimeSpan.FromHours(1); // Run cleanup every hour
-
-    public SessionCleanupService(IServiceProvider serviceProvider, ILogger<SessionCleanupService> logger)
-    {
-        _serviceProvider = serviceProvider;
-        _logger = logger;
-    }
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        while (!stoppingToken.IsCancellationRequested)
-        {
-            try
-            {
-                await CleanupExpiredSessions();
-                await Task.Delay(_cleanupInterval, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected when cancellation is requested
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error occurred during session cleanup");
-                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken); // Wait 5 minutes before retrying
-            }
-        }
-    }
-
-    private async Task CleanupExpiredSessions()
-    {
-        try
-        {
-            using var scope = _serviceProvider.CreateScope();
-            var cacheService = scope.ServiceProvider.GetService<ICacheInvalidationService>();
-
-            if (cacheService != null)
-            {
-                // Get all session keys
-                var sessionKeys = await cacheService.GetCacheKeysAsync("session:*");
-                var expiredKeys = new List<string>();
-
-                foreach (var key in sessionKeys)
-                {
-                    try
-                    {
-                        var session = await ((ICacheService)cacheService).GetAsync<UserSessionContext>(key);
-                        if (session != null && session.IsSessionExpired(TimeSpan.FromMinutes(30)))
-                        {
-                            expiredKeys.Add(key);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Error checking session {Key} for expiration", key);
-                        expiredKeys.Add(key); // Remove invalid sessions
-                    }
-                }
-
-                if (expiredKeys.Count > 0)
-                {
-                    await ((ICacheService)cacheService).RemoveAsync(expiredKeys);
-                    _logger.LogInformation("Cleaned up {Count} expired sessions", expiredKeys.Count);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error during session cleanup");
-        }
-    }
-}

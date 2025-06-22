@@ -112,5 +112,6 @@ namespace Backend.CMS.Application.Interfaces
         /// Get all cache keys matching a pattern
         /// </summary>
         Task<List<string>> GetCacheKeysAsync(string pattern = "*");
+
     }
 }
