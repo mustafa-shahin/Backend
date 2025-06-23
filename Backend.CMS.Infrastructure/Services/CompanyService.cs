@@ -6,6 +6,7 @@ using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -15,126 +16,241 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ApplicationDbContext _context;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
+        private readonly ILogger<CompanyService> _logger;
 
         public CompanyService(
-            IRepository<Company> companyRepository,
+            ICompanyRepository companyRepository,
             ApplicationDbContext context,
             IUserSessionService userSessionService,
             IMapper mapper,
-            ICompanyRepository companyService)
+            ILogger<CompanyService> logger)
         {
-            _companyRepository = companyService;
-            _context = context;
-            _mapper = mapper;
-            _userSessionService = userSessionService;
+            _companyRepository = companyRepository ?? throw new ArgumentNullException(nameof(companyRepository));
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         public async Task<CompanyDto> GetCompanyAsync()
         {
-            var company = await _companyRepository.GetCompanyWithDetailsAsync();
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            if (company == null)
+            try
             {
-                company = new Company
+                var company = await _companyRepository.GetCompanyWithDetailsAsync();
+
+                if (company == null)
                 {
-                    Name = "Default Company",
-                    Description = "Default company description",
-                    IsActive = true,
-                    Currency = "USD",
-                    Language = "en",
-                    Timezone = "UTC",
-                    CreatedByUserId = currentUserId,
-                    UpdatedByUserId = currentUserId
-                };
+                    _logger.LogInformation("No company found, creating default company");
+                    company = await CreateDefaultCompanyAsync();
+                }
 
-                await _companyRepository.AddAsync(company);
-                await _companyRepository.SaveChangesAsync();
+                return _mapper.Map<CompanyDto>(company);
             }
-
-            return _mapper.Map<CompanyDto>(company);
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving company information");
+                throw;
+            }
         }
+
         public async Task<CompanyDto> UpdateCompanyAsync(UpdateCompanyDto updateCompanyDto)
         {
-            var companies = await _companyRepository.GetAllAsync();
-            var company = companies.FirstOrDefault();
+            if (updateCompanyDto == null)
+                throw new ArgumentNullException(nameof(updateCompanyDto));
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var companies = await _companyRepository.GetAllAsync();
+                var company = companies.FirstOrDefault();
+
+                if (company == null)
+                {
+                    _logger.LogWarning("No company found for update");
+                    throw new ArgumentException("Company not found");
+                }
+
+                var currentUserId = _userSessionService.GetCurrentUserId();
+
+                // Update company basic properties
+                _mapper.Map(updateCompanyDto, company);
+                company.UpdatedAt = DateTime.UtcNow;
+                company.UpdatedByUserId = currentUserId;
+
+                _companyRepository.Update(company);
+                await _companyRepository.SaveChangesAsync();
+
+                // Handle related data updates in parallel
+                var tasks = new List<Task>();
+
+                if (updateCompanyDto.Addresses?.Any() == true)
+                {
+                    tasks.Add(UpdateCompanyAddressesAsync(company.Id, updateCompanyDto.Addresses, currentUserId));
+                }
+
+                if (updateCompanyDto.ContactDetails?.Any() == true)
+                {
+                    tasks.Add(UpdateCompanyContactDetailsAsync(company.Id, updateCompanyDto.ContactDetails, currentUserId));
+                }
+
+                if (tasks.Any())
+                {
+                    await Task.WhenAll(tasks);
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _logger.LogInformation("Company {CompanyId} updated by user {UserId}", company.Id, currentUserId);
+
+                // Return updated company with details
+                var updatedCompany = await _companyRepository.GetCompanyWithDetailsAsync(company.Id);
+                return _mapper.Map<CompanyDto>(updatedCompany);
+            }
+            catch (Exception ex) when (!(ex is ArgumentException))
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error updating company");
+                throw;
+            }
+        }
+
+        #region Private Helper Methods
+
+        private async Task<Company> CreateDefaultCompanyAsync()
+        {
             var currentUserId = _userSessionService.GetCurrentUserId();
 
-            if (company == null)
-                throw new ArgumentException("Company not found");
+            var company = new Company
+            {
+                Name = "Default Company",
+                Description = "Default company description",
+                IsActive = true,
+                Currency = "USD",
+                Language = "en",
+                Timezone = "UTC",
+                CreatedByUserId = currentUserId,
+                UpdatedByUserId = currentUserId,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-            // Update company basic properties
-            _mapper.Map(updateCompanyDto, company);
-            company.UpdatedAt = DateTime.UtcNow;
-            company.UpdatedByUserId = currentUserId;
-
-            _companyRepository.Update(company);
+            await _companyRepository.AddAsync(company);
             await _companyRepository.SaveChangesAsync();
 
-            // Handle addresses
-            if (updateCompanyDto.Addresses?.Any() == true)
-            {
-                // Get existing addresses
-                var existingAddresses = await _context.Addresses
-                    .Where(a => EF.Property<int?>(a, "CompanyId") == company.Id && !a.IsDeleted)
-                    .ToListAsync();
+            _logger.LogInformation("Default company created by user {UserId}", currentUserId);
 
-                // Soft delete existing addresses
+            return company;
+        }
+
+        private async Task UpdateCompanyAddressesAsync(int companyId, IEnumerable<UpdateAddressDto> addressDtos, int? currentUserId)
+        {
+            // Get existing addresses - avoid optional parameters in LINQ
+            var existingAddresses = await _context.Addresses
+                .Where(a => EF.Property<int?>(a, "CompanyId") == companyId)
+                .Where(a => a.IsDeleted == false)
+                .ToListAsync();
+
+            // Soft delete existing addresses in batch
+            if (existingAddresses.Any())
+            {
+                var deleteTime = DateTime.UtcNow;
                 foreach (var existingAddress in existingAddresses)
                 {
                     existingAddress.IsDeleted = true;
-                    existingAddress.DeletedAt = DateTime.UtcNow;
+                    existingAddress.DeletedAt = deleteTime;
                     existingAddress.DeletedByUserId = currentUserId;
-                    _context.Addresses.Update(existingAddress);
+                    existingAddress.UpdatedAt = deleteTime;
+                    existingAddress.UpdatedByUserId = currentUserId;
                 }
 
-                // Add new addresses
-                foreach (var addressDto in updateCompanyDto.Addresses)
-                {
-                    var address = _mapper.Map<Address>(addressDto);
-                    address.CreatedByUserId = currentUserId;
-                    address.UpdatedByUserId = currentUserId;
-                    address.CreatedAt = DateTime.UtcNow;
-                    address.UpdatedAt = DateTime.UtcNow;
+                _context.Addresses.UpdateRange(existingAddresses);
+            }
 
-                    _context.Addresses.Add(address);
-                    _context.Entry(address).Property("CompanyId").CurrentValue = company.Id;
+            // Add new addresses in batch
+            var newAddresses = new List<Address>();
+            var createTime = DateTime.UtcNow;
+
+            foreach (var addressDto in addressDtos)
+            {
+                var address = _mapper.Map<Address>(addressDto);
+                address.CreatedByUserId = currentUserId;
+                address.UpdatedByUserId = currentUserId;
+                address.CreatedAt = createTime;
+                address.UpdatedAt = createTime;
+
+                newAddresses.Add(address);
+            }
+
+            if (newAddresses.Any())
+            {
+                _context.Addresses.AddRange(newAddresses);
+
+                // Set foreign keys after adding to context
+                foreach (var address in newAddresses)
+                {
+                    _context.Entry(address).Property("CompanyId").CurrentValue = companyId;
                 }
             }
 
-            // Handle contact details
-            if (updateCompanyDto.ContactDetails?.Any() == true)
-            {
-                // Get existing contact details
-                var existingContacts = await _context.ContactDetails
-                    .Where(c => EF.Property<int?>(c, "CompanyId") == company.Id && !c.IsDeleted)
-                    .ToListAsync();
+            _logger.LogDebug("Updated {DeletedCount} addresses and created {CreatedCount} addresses for company {CompanyId}",
+                existingAddresses.Count, newAddresses.Count, companyId);
+        }
 
-                // Soft delete existing contact details
+        private async Task UpdateCompanyContactDetailsAsync(int companyId, IEnumerable<UpdateContactDetailsDto> contactDtos, int? currentUserId)
+        {
+            // Get existing contact details - avoid optional parameters in LINQ
+            var existingContacts = await _context.ContactDetails
+                .Where(c => EF.Property<int?>(c, "CompanyId") == companyId)
+                .Where(c => c.IsDeleted == false)
+                .ToListAsync();
+
+            // Soft delete existing contact details in batch
+            if (existingContacts.Any())
+            {
+                var deleteTime = DateTime.UtcNow;
                 foreach (var existingContact in existingContacts)
                 {
                     existingContact.IsDeleted = true;
-                    existingContact.DeletedAt = DateTime.UtcNow;
+                    existingContact.DeletedAt = deleteTime;
                     existingContact.DeletedByUserId = currentUserId;
-                    _context.ContactDetails.Update(existingContact);
+                    existingContact.UpdatedAt = deleteTime;
+                    existingContact.UpdatedByUserId = currentUserId;
                 }
 
-                // Add new contact details
-                foreach (var contactDto in updateCompanyDto.ContactDetails)
-                {
-                    var contact = _mapper.Map<ContactDetails>(contactDto);
-                    contact.CreatedByUserId = currentUserId;
-                    contact.UpdatedByUserId = currentUserId;
-                    contact.CreatedAt = DateTime.UtcNow;
-                    contact.UpdatedAt = DateTime.UtcNow;
+                _context.ContactDetails.UpdateRange(existingContacts);
+            }
 
-                    _context.ContactDetails.Add(contact);
-                    _context.Entry(contact).Property("CompanyId").CurrentValue = company.Id;
+            // Add new contact details in batch
+            var newContacts = new List<ContactDetails>();
+            var createTime = DateTime.UtcNow;
+
+            foreach (var contactDto in contactDtos)
+            {
+                var contact = _mapper.Map<ContactDetails>(contactDto);
+                contact.CreatedByUserId = currentUserId;
+                contact.UpdatedByUserId = currentUserId;
+                contact.CreatedAt = createTime;
+                contact.UpdatedAt = createTime;
+
+                newContacts.Add(contact);
+            }
+
+            if (newContacts.Any())
+            {
+                _context.ContactDetails.AddRange(newContacts);
+
+                // Set foreign keys after adding to context
+                foreach (var contact in newContacts)
+                {
+                    _context.Entry(contact).Property("CompanyId").CurrentValue = companyId;
                 }
             }
 
-            await _context.SaveChangesAsync();
-            return _mapper.Map<CompanyDto>(company);
+            _logger.LogDebug("Updated {DeletedCount} contacts and created {CreatedCount} contacts for company {CompanyId}",
+                existingContacts.Count, newContacts.Count, companyId);
         }
+
+        #endregion
     }
 }

@@ -7,14 +7,21 @@ using Backend.CMS.Infrastructure.Mapping;
 using Backend.CMS.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace Tests
 {
+    /// <summary>
+    /// Tests for AddressService.
+    /// Note: In-memory database is used for testing. Transaction rollback scenarios 
+    /// are tested through error handling validation rather than actual rollbacks.
+    /// </summary>
     public class AddressServiceTests : IDisposable
     {
         private readonly Mock<IRepository<Address>> _mockAddressRepository;
         private readonly Mock<IUserSessionService> _mockUserSessionService;
+        private readonly Mock<ILogger<AddressService>> _mockLogger;
         private readonly IMapper _mapper;
         private readonly ApplicationDbContext _context;
         private readonly AddressService _addressService;
@@ -23,6 +30,7 @@ namespace Tests
         {
             _mockAddressRepository = new Mock<IRepository<Address>>();
             _mockUserSessionService = new Mock<IUserSessionService>();
+            _mockLogger = new Mock<ILogger<AddressService>>();
 
             // Setup AutoMapper
             var config = new MapperConfiguration(cfg => cfg.AddProfile<MappingProfile>());
@@ -35,7 +43,8 @@ namespace Tests
                 _mockAddressRepository.Object,
                 _context,
                 _mockUserSessionService.Object,
-                _mapper);
+                _mapper,
+                _mockLogger.Object);
 
             // Setup default user session
             _mockUserSessionService.Setup(x => x.GetCurrentUserId()).Returns(1);
@@ -62,10 +71,18 @@ namespace Tests
         public async Task GetAddressByIdAsync_InvalidId_ThrowsArgumentException()
         {
             // Arrange
-            _mockAddressRepository.Setup(x => x.GetByIdAsync(999)).ReturnsAsync((Address)null);
+            _mockAddressRepository.Setup(x => x.GetByIdAsync(999)).ReturnsAsync((Address?)null);
 
             // Act & Assert
             await Assert.ThrowsAsync<ArgumentException>(() => _addressService.GetAddressByIdAsync(999));
+        }
+
+        [Fact]
+        public async Task GetAddressByIdAsync_ZeroOrNegativeId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(() => _addressService.GetAddressByIdAsync(0));
+            await Assert.ThrowsAsync<ArgumentException>(() => _addressService.GetAddressByIdAsync(-1));
         }
 
         [Fact]
@@ -111,11 +128,48 @@ namespace Tests
         }
 
         [Fact]
-        public async Task GetAddressesByEntityAsync_InvalidEntityType_ThrowsArgumentException()
+        public async Task GetAddressesByEntityAsync_ValidLocationEntity_ReturnsAddresses()
+        {
+            // Arrange
+            var company = TestDataHelpers.CreateTestCompany();
+            var location = TestDataHelpers.CreateTestLocation(1, company.Id);
+            var address = TestDataHelpers.CreateTestAddress();
+
+            _context.Companies.Add(company);
+            _context.Locations.Add(location);
+            _context.Addresses.Add(address);
+            _context.Entry(address).Property("LocationId").CurrentValue = location.Id;
+            await _context.SaveChangesAsync();
+
+            // Act
+            var result = await _addressService.GetAddressesByEntityAsync("location", location.Id);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Should().HaveCount(1);
+            result.First().Street.Should().Be("123 Test Street");
+        }
+
+        [Theory]
+        [InlineData("invalid")]
+        [InlineData("")]
+        [InlineData(null)]
+        [InlineData("store")] // Old entity type should not work
+        public async Task GetAddressesByEntityAsync_InvalidEntityType_ThrowsArgumentException(string entityType)
         {
             // Act & Assert
             await Assert.ThrowsAsync<ArgumentException>(() =>
-                _addressService.GetAddressesByEntityAsync("invalid", 1));
+                _addressService.GetAddressesByEntityAsync(entityType, 1));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public async Task GetAddressesByEntityAsync_InvalidEntityId_ThrowsArgumentException(int entityId)
+        {
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                _addressService.GetAddressesByEntityAsync("user", entityId));
         }
 
         [Fact]
@@ -139,7 +193,15 @@ namespace Tests
             // Verify address was added to database
             var savedAddress = await _context.Addresses.FirstOrDefaultAsync();
             savedAddress.Should().NotBeNull();
-            savedAddress.Street.Should().Be("456 New Street");
+            savedAddress!.Street.Should().Be("456 New Street");
+        }
+
+        [Fact]
+        public async Task CreateAddressAsync_NullDto_ThrowsArgumentNullException()
+        {
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentNullException>(() =>
+                _addressService.CreateAddressAsync(null!, "user", 1));
         }
 
         [Fact]
@@ -192,11 +254,32 @@ namespace Tests
         {
             // Arrange
             var updateDto = TestDataHelpers.CreateTestUpdateAddressDto();
-            _mockAddressRepository.Setup(x => x.GetByIdAsync(999)).ReturnsAsync((Address)null);
+            _mockAddressRepository.Setup(x => x.GetByIdAsync(999)).ReturnsAsync((Address?)null);
 
             // Act & Assert
             await Assert.ThrowsAsync<ArgumentException>(() =>
                 _addressService.UpdateAddressAsync(999, updateDto));
+        }
+
+        [Fact]
+        public async Task UpdateAddressAsync_NullDto_ThrowsArgumentNullException()
+        {
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentNullException>(() =>
+                _addressService.UpdateAddressAsync(1, null!));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public async Task UpdateAddressAsync_ZeroOrNegativeId_ThrowsArgumentException(int addressId)
+        {
+            // Arrange
+            var updateDto = TestDataHelpers.CreateTestUpdateAddressDto();
+
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                _addressService.UpdateAddressAsync(addressId, updateDto));
         }
 
         [Fact]
@@ -224,6 +307,15 @@ namespace Tests
 
             // Assert
             result.Should().BeFalse();
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public async Task DeleteAddressAsync_ZeroOrNegativeId_ThrowsArgumentException(int addressId)
+        {
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(() => _addressService.DeleteAddressAsync(addressId));
         }
 
         [Fact]
@@ -293,13 +385,79 @@ namespace Tests
         public async Task SetDefaultAddressAsync_NonExistentAddress_ReturnsFalse()
         {
             // Arrange
-            _mockAddressRepository.Setup(x => x.GetByIdAsync(999)).ReturnsAsync((Address)null);
+            _mockAddressRepository.Setup(x => x.GetByIdAsync(999)).ReturnsAsync((Address?)null);
 
             // Act
             var result = await _addressService.SetDefaultAddressAsync(999, "user", 1);
 
             // Assert
             result.Should().BeFalse();
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public async Task SetDefaultAddressAsync_ZeroOrNegativeAddressId_ThrowsArgumentException(int addressId)
+        {
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                _addressService.SetDefaultAddressAsync(addressId, "user", 1));
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData(null)]
+        public async Task SetDefaultAddressAsync_NullOrEmptyEntityType_ThrowsArgumentException(string? entityType)
+        {
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                _addressService.SetDefaultAddressAsync(1, entityType!, 1));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(-1)]
+        public async Task SetDefaultAddressAsync_ZeroOrNegativeEntityId_ThrowsArgumentException(int entityId)
+        {
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(() =>
+                _addressService.SetDefaultAddressAsync(1, "user", entityId));
+        }
+
+        [Fact]
+        public async Task CreateAddressAsync_SetsAuditFields()
+        {
+            // Arrange
+            var currentUserId = 42;
+
+            // Create a context that will properly handle audit fields
+            using var contextWithUser = TestDataHelpers.CreateInMemoryDbContextWithUser(currentUserId);
+
+            var user = TestDataHelpers.CreateTestUser();
+            contextWithUser.Users.Add(user);
+            await contextWithUser.SaveChangesAsync();
+
+            var createDto = TestDataHelpers.CreateTestCreateAddressDto();
+            _mockUserSessionService.Setup(x => x.GetCurrentUserId()).Returns(currentUserId);
+
+            // Create service with the context that has proper user context
+            var addressService = new AddressService(
+                _mockAddressRepository.Object,
+                contextWithUser,
+                _mockUserSessionService.Object,
+                _mapper,
+                _mockLogger.Object);
+
+            // Act
+            await addressService.CreateAddressAsync(createDto, "user", user.Id);
+
+            // Assert
+            var savedAddress = await contextWithUser.Addresses.FirstOrDefaultAsync();
+            savedAddress.Should().NotBeNull();
+            savedAddress!.CreatedByUserId.Should().Be(currentUserId);
+            savedAddress.UpdatedByUserId.Should().Be(currentUserId);
+            savedAddress.CreatedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(10));
+            savedAddress.UpdatedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(10));
         }
 
         public void Dispose()
