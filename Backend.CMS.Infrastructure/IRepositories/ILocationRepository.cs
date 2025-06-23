@@ -9,6 +9,7 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<bool> LocationCodeExistsAsync(string locationCode, int? excludeLocationId = null);
         Task<IEnumerable<Location>> SearchLocationsAsync(string searchTerm, int page, int pageSize);
         Task<IEnumerable<Location>> GetPagedWithRelatedAsync(int page, int pageSize);
+        Task<Location?> GetWithAddressesAndContactsAsync(int locationId);
 
     }
 }
