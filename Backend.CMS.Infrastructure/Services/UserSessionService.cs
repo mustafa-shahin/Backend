@@ -25,7 +25,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly TimeSpan _memoryCacheTimeout;
         private readonly int _maxConcurrentSessions;
 
-        // Thread-safe memory cache with expiration
+        // Thread-safe memory cache with expiration. Multiple requests can access cache simultaneously
         private readonly ConcurrentDictionary<string, (UserSessionContext Session, DateTime ExpiresAt)> _memorySessionCache;
         private readonly Timer _cleanupTimer;
         private bool _disposed = false;

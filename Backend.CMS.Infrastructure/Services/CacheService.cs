@@ -142,8 +142,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(key))
                 throw new ArgumentException("Cache key cannot be null or empty", nameof(key));
 
-            if (value == null)
-                throw new ArgumentNullException(nameof(value));
+            ArgumentNullException.ThrowIfNull(value);
 
             try
             {

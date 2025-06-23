@@ -213,9 +213,9 @@ namespace Backend.CMS.Infrastructure.Validation
                 .NotEmpty().WithMessage("Street is required")
                 .MaximumLength(500).WithMessage("Street cannot exceed 500 characters");
 
-            RuleFor(x => x.Street2)
+            RuleFor(x => x.HouseNr)
                 .MaximumLength(500).WithMessage("Street2 cannot exceed 500 characters")
-                .When(x => !string.IsNullOrEmpty(x.Street2));
+                .When(x => !string.IsNullOrEmpty(x.HouseNr));
 
             RuleFor(x => x.City)
                 .NotEmpty().WithMessage("City is required")
@@ -259,9 +259,9 @@ namespace Backend.CMS.Infrastructure.Validation
                 .NotEmpty().WithMessage("Street is required")
                 .MaximumLength(500).WithMessage("Street cannot exceed 500 characters");
 
-            RuleFor(x => x.Street2)
+            RuleFor(x => x.HouseNr)
                 .MaximumLength(500).WithMessage("Street2 cannot exceed 500 characters")
-                .When(x => !string.IsNullOrEmpty(x.Street2));
+                .When(x => !string.IsNullOrEmpty(x.HouseNr ));
 
             RuleFor(x => x.City)
                 .NotEmpty().WithMessage("City is required")
