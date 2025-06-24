@@ -839,6 +839,64 @@ namespace Backend.CMS.Infrastructure.Services
             return copiedFiles;
         }
 
+        public async Task<bool> VerifyFileIntegrityAsync(int fileId)
+        {
+            try
+            {
+                var file = await _fileRepository.GetByIdAsync(fileId);
+                if (file == null)
+                {
+                    _logger.LogWarning("File verification failed - file not found: {FileId}", fileId);
+                    return false;
+                }
+
+                // Check if file content exists
+                if (file.FileContent == null || file.FileContent.Length == 0)
+                {
+                    _logger.LogWarning("File verification failed - no content: {FileId}", fileId);
+                    return false;
+                }
+
+                // Verify file size matches
+                if (file.FileContent.Length != file.FileSize)
+                {
+                    _logger.LogWarning("File verification failed - size mismatch: {FileId}, expected: {ExpectedSize}, actual: {ActualSize}",
+                        fileId, file.FileSize, file.FileContent.Length);
+                    return false;
+                }
+
+                // Verify hash if available
+                if (!string.IsNullOrEmpty(file.Hash))
+                {
+                    var calculatedHash = await CalculateFileHashAsync(file.FileContent);
+                    if (calculatedHash != file.Hash)
+                    {
+                        _logger.LogWarning("File verification failed - hash mismatch: {FileId}, expected: {ExpectedHash}, actual: {ActualHash}",
+                            fileId, file.Hash[..16], calculatedHash[..16]);
+                        return false;
+                    }
+                }
+
+                // For image files, verify image integrity
+                if (file.FileType == FileType.Image)
+                {
+                    if (!await ValidateImageContentAsync(file.FileContent))
+                    {
+                        _logger.LogWarning("File verification failed - invalid image content: {FileId}", fileId);
+                        return false;
+                    }
+                }
+
+                _logger.LogInformation("File integrity verification passed: {FileId}", fileId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during file integrity verification: {FileId}", fileId);
+                return false;
+            }
+        }
+
         // Private helper methods
         private async Task<bool> ValidateImageContentAsync(byte[] content)
         {

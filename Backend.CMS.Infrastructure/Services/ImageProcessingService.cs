@@ -31,16 +31,6 @@ namespace Backend.CMS.Infrastructure.Services
             ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tga"
         };
 
-        // Configuration for ImageSharp with performance optimizations
-        private static readonly Configuration ImageSharpConfig = Configuration.Default.Clone();
-
-        static ImageProcessingService()
-        {
-            // Configure ImageSharp for better performance and memory usage
-            ImageSharpConfig.PreferContiguousImageBuffers = true;
-            Image.SetDefaultConfiguration(ImageSharpConfig);
-        }
-
         public ImageProcessingService(
             IConfiguration configuration,
             ILogger<ImageProcessingService> logger)
@@ -278,7 +268,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 // Set a reasonable timeout for image loading
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                return await Image.LoadAsync(ImageSharpConfig, stream, cts.Token);
+                return await Image.LoadAsync(stream, cts.Token);
             }
             catch (OperationCanceledException)
             {

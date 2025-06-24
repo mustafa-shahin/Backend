@@ -44,11 +44,12 @@ namespace Backend.CMS.Application.Interfaces
         Task<bool> FileExistsAsync(int fileId);
         Task<long> GetTotalFileSizeAsync(int? folderId = null);
 
+        // File integrity verification
+        Task<bool> VerifyFileIntegrityAsync(int fileId);
+
         // Batch operations
         Task<bool> BulkUpdateFilesAsync(List<int> fileIds, UpdateFileDto updateDto);
         Task<bool> BulkMoveFilesAsync(List<int> fileIds, int? destinationFolderId);
         Task<List<FileDto>> BulkCopyFilesAsync(List<int> fileIds, int? destinationFolderId);
-
-    }   
-
+    }
 }

@@ -18,6 +18,14 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly object _semaphoreLock = new();
         private bool _disposed = false;
 
+        // Internal class to hold file integrity verification results
+        private class FileIntegrityResult
+        {
+            public int FileId { get; set; }
+            public bool IsValid { get; set; }
+            public DateTime VerifiedAt { get; set; }
+        }
+
         public CachedFileService(
             IFileService baseFileService,
             IFileCachingService cachingService,
@@ -178,6 +186,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (result)
             {
                 await InvalidateCacheAsync(fileId);
+                await InvalidateVerificationCacheAsync(fileId);
             }
             return result;
         }
@@ -191,6 +200,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (result)
             {
                 await InvalidateCacheAsync(fileIds);
+                await InvalidateVerificationCacheAsync(fileIds);
             }
             return result;
         }
@@ -199,6 +209,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             var result = await _baseFileService.UpdateFileAsync(fileId, updateDto);
             await InvalidateCacheAsync(fileId);
+            await InvalidateVerificationCacheAsync(fileId);
             return result;
         }
 
@@ -206,6 +217,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             var result = await _baseFileService.MoveFileAsync(moveDto);
             await InvalidateCacheAsync(result.Id);
+            await InvalidateVerificationCacheAsync(result.Id);
             return result;
         }
 
@@ -218,6 +230,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (result)
             {
                 await InvalidateCacheAsync(fileIds);
+                await InvalidateVerificationCacheAsync(fileIds);
             }
             return result;
         }
@@ -231,6 +244,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (result)
             {
                 await InvalidateCacheAsync(fileIds);
+                await InvalidateVerificationCacheAsync(fileIds);
             }
             return result;
         }
@@ -241,6 +255,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (result)
             {
                 await InvalidateCacheAsync(fileId);
+                await InvalidateVerificationCacheAsync(fileId);
             }
             return result;
         }
@@ -251,6 +266,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (result)
             {
                 await InvalidateCacheAsync(fileId);
+                await InvalidateVerificationCacheAsync(fileId);
             }
             return result;
         }
@@ -261,6 +277,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (result)
             {
                 await InvalidateCacheAsync(fileId);
+                await InvalidateVerificationCacheAsync(fileId);
             }
             return result;
         }
@@ -325,6 +342,33 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
+        private async Task InvalidateVerificationCacheAsync(int fileId)
+        {
+            try
+            {
+                var verificationCacheKey = $"file_integrity_{fileId}";
+                await _cachingService.InvalidateFileMetadataAsync(verificationCacheKey);
+                _logger.LogDebug("Verification cache invalidated for file {FileId}", fileId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to invalidate verification cache for file {FileId}", fileId);
+            }
+        }
+
+        private async Task InvalidateVerificationCacheAsync(List<int> fileIds)
+        {
+            try
+            {
+                var tasks = fileIds.Select(InvalidateVerificationCacheAsync);
+                await Task.WhenAll(tasks);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to invalidate verification cache for some files");
+            }
+        }
+
         private void CleanupUnusedSemaphores(object? state)
         {
             lock (_semaphoreLock)
@@ -382,6 +426,70 @@ namespace Backend.CMS.Infrastructure.Services
         public Task<string> GetFileHashAsync(Stream stream) => _baseFileService.GetFileHashAsync(stream);
         public Task<bool> FileExistsAsync(int fileId) => _baseFileService.FileExistsAsync(fileId);
         public Task<long> GetTotalFileSizeAsync(int? folderId = null) => _baseFileService.GetTotalFileSizeAsync(folderId);
+        public async Task<bool> VerifyFileIntegrityAsync(int fileId)
+        {
+            if (fileId <= 0)
+                throw new ArgumentException("File ID must be greater than 0", nameof(fileId));
+
+            var fileSemaphore = GetOrCreateFileSemaphore(fileId);
+            await fileSemaphore.WaitAsync();
+
+            try
+            {
+                // Create cache key for verification result
+                var cacheKey = $"file_integrity_{fileId}";
+
+                // Try to get cached verification result
+                var cachedResult = await _cachingService.GetFileMetadataAsync<FileIntegrityResult>(cacheKey);
+
+                if (cachedResult != null)
+                {
+                    // Get file info to check if it was modified after verification
+                    var fileInfo = await _baseFileService.GetFileByIdAsync(fileId);
+
+                    // If file hasn't been modified since verification, return cached result
+                    if (fileInfo.UpdatedAt <= cachedResult.VerifiedAt)
+                    {
+                        _logger.LogDebug("File integrity verification served from cache for file {FileId}: {IsValid}",
+                            fileId, cachedResult.IsValid);
+                        return cachedResult.IsValid;
+                    }
+
+                    _logger.LogDebug("File {FileId} was modified after verification, re-verifying", fileId);
+                }
+
+                // Perform actual verification
+                _logger.LogDebug("Performing file integrity verification for file {FileId}", fileId);
+                var isValid = await _baseFileService.VerifyFileIntegrityAsync(fileId);
+
+                // Cache the result with timestamp
+                var verificationResult = new FileIntegrityResult
+                {
+                    FileId = fileId,
+                    IsValid = isValid,
+                    VerifiedAt = DateTime.UtcNow
+                };
+
+                // Cache for 1 hour - verification is expensive but files don't change often
+                await _cachingService.SetFileMetadataAsync(cacheKey, verificationResult, TimeSpan.FromHours(1));
+
+                _logger.LogDebug("File integrity verification completed for file {FileId}: {IsValid} (cached)",
+                    fileId, isValid);
+
+                return isValid;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during cached file integrity verification for file {FileId}", fileId);
+
+                // Fall back to base service on error
+                return await _baseFileService.VerifyFileIntegrityAsync(fileId);
+            }
+            finally
+            {
+                fileSemaphore.Release();
+            }
+        }
         public Task<List<FileDto>> BulkCopyFilesAsync(List<int> fileIds, int? destinationFolderId) => _baseFileService.BulkCopyFilesAsync(fileIds, destinationFolderId);
 
         public void Dispose()
