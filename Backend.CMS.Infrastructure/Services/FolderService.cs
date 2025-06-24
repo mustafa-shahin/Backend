@@ -5,17 +5,25 @@ using Backend.CMS.Application.Interfaces.Services;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.IRepositories;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class FolderService : IFolderService
+    public class FolderService : IFolderService, IDisposable
     {
         private readonly IRepository<Folder> _folderRepository;
         private readonly IRepository<FileEntity> _fileRepository;
         private readonly IUserSessionService _userSessionService;
         private readonly IMapper _mapper;
         private readonly ILogger<FolderService> _logger;
+        private readonly SemaphoreSlim _operationSemaphore;
+        private readonly ConcurrentDictionary<string, SemaphoreSlim> _pathSemaphores;
+        private readonly Timer _semaphoreCleanupTimer;
+        private readonly object _semaphoreLock = new();
+        private bool _disposed = false;
 
         public FolderService(
             IRepository<Folder> folderRepository,
@@ -24,11 +32,18 @@ namespace Backend.CMS.Infrastructure.Services
             IMapper mapper,
             ILogger<FolderService> logger)
         {
-            _folderRepository = folderRepository;
-            _fileRepository = fileRepository;
-            _userSessionService = userSessionService;
-            _mapper = mapper;
-            _logger = logger;
+            _folderRepository = folderRepository ?? throw new ArgumentNullException(nameof(folderRepository));
+            _fileRepository = fileRepository ?? throw new ArgumentNullException(nameof(fileRepository));
+            _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+            _operationSemaphore = new SemaphoreSlim(Environment.ProcessorCount * 2, Environment.ProcessorCount * 2);
+            _pathSemaphores = new ConcurrentDictionary<string, SemaphoreSlim>();
+
+            // Cleanup unused semaphores every 15 minutes
+            _semaphoreCleanupTimer = new Timer(CleanupUnusedSemaphores, null,
+                TimeSpan.FromMinutes(15), TimeSpan.FromMinutes(15));
         }
 
         public async Task<FolderDto> CreateFolderAsync(CreateFolderDto createDto)
@@ -36,43 +51,62 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(createDto.Name))
                 throw new ArgumentException("Folder name is required");
 
-            // Validate parent folder exists if specified
-            if (createDto.ParentFolderId.HasValue)
+            var sanitizedName = createDto.Name.Trim();
+            var pathSemaphore = GetPathSemaphore(sanitizedName);
+
+            await _operationSemaphore.WaitAsync();
+            try
             {
-                var parentFolder = await _folderRepository.GetByIdAsync(createDto.ParentFolderId.Value);
-                if (parentFolder == null)
-                    throw new ArgumentException("Parent folder not found");
+                await pathSemaphore.WaitAsync();
+                try
+                {
+                    // Validate parent folder exists if specified
+                    if (createDto.ParentFolderId.HasValue)
+                    {
+                        var parentFolder = await _folderRepository.GetByIdAsync(createDto.ParentFolderId.Value);
+                        if (parentFolder == null)
+                            throw new ArgumentException("Parent folder not found");
+                    }
+
+                    // Check for duplicate names in the same parent
+                    if (!await ValidateFolderNameAsync(sanitizedName, createDto.ParentFolderId))
+                        throw new ArgumentException("A folder with this name already exists in the specified location");
+
+                    var currentUserId = _userSessionService.GetCurrentUserId();
+                    var path = await GenerateFolderPathAsync(sanitizedName, createDto.ParentFolderId);
+
+                    var folder = new Folder
+                    {
+                        Name = sanitizedName,
+                        Description = createDto.Description?.Trim(),
+                        Path = path,
+                        ParentFolderId = createDto.ParentFolderId,
+                        IsPublic = createDto.IsPublic,
+                        FolderType = createDto.FolderType,
+                        Metadata = createDto.Metadata ?? new Dictionary<string, object>(),
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow,
+                        CreatedByUserId = currentUserId,
+                        UpdatedByUserId = currentUserId
+                    };
+
+                    await _folderRepository.AddAsync(folder);
+                    await _folderRepository.SaveChangesAsync();
+
+                    _logger.LogInformation("Folder created: {FolderName} (ID: {FolderId}) by user {UserId}",
+                        folder.Name, folder.Id, currentUserId);
+
+                    return await MapFolderToDto(folder);
+                }
+                finally
+                {
+                    pathSemaphore.Release();
+                }
             }
-
-            // Check for duplicate names in the same parent
-            if (!await ValidateFolderNameAsync(createDto.Name, createDto.ParentFolderId))
-                throw new ArgumentException("A folder with this name already exists in the specified location");
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-            var path = await GenerateFolderPathAsync(createDto.Name, createDto.ParentFolderId);
-
-            var folder = new Folder
+            finally
             {
-                Name = createDto.Name.Trim(),
-                Description = createDto.Description?.Trim(),
-                Path = path,
-                ParentFolderId = createDto.ParentFolderId,
-                IsPublic = createDto.IsPublic,
-                FolderType = createDto.FolderType,
-                Metadata = createDto.Metadata ?? new Dictionary<string, object>(),
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = currentUserId,
-                UpdatedByUserId = currentUserId
-            };
-
-            await _folderRepository.AddAsync(folder);
-            await _folderRepository.SaveChangesAsync();
-
-            _logger.LogInformation("Folder created: {FolderName} (ID: {FolderId}) by user {UserId}",
-                folder.Name, folder.Id, currentUserId);
-
-            return await MapFolderToDto(folder);
+                _operationSemaphore.Release();
+            }
         }
 
         public async Task<FolderDto> GetFolderByIdAsync(int folderId)
@@ -89,169 +123,229 @@ namespace Backend.CMS.Infrastructure.Services
             var folders = await _folderRepository.FindAsync(f => f.ParentFolderId == parentFolderId);
             var sortedFolders = folders.OrderBy(f => f.Name).ToList();
 
-            var folderDtos = new List<FolderDto>();
-            foreach (var folder in sortedFolders)
+            // Use parallel processing for better performance
+            var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
+            var tasks = sortedFolders.Select(async folder =>
             {
-                folderDtos.Add(await MapFolderToDto(folder));
-            }
+                await semaphore.WaitAsync();
+                try
+                {
+                    return await MapFolderToDto(folder);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
 
-            return folderDtos;
+            var folderDtos = await Task.WhenAll(tasks);
+            semaphore.Dispose();
+
+            return folderDtos.ToList();
         }
 
         public async Task<FolderTreeDto> GetFolderTreeAsync(int? rootFolderId = null)
         {
-            var allFolders = await _folderRepository.GetAllAsync();
-            var rootFolders = allFolders.Where(f => f.ParentFolderId == rootFolderId).OrderBy(f => f.Name);
-
-            var treeDtos = new List<FolderTreeDto>();
-            foreach (var folder in rootFolders)
+            await _operationSemaphore.WaitAsync();
+            try
             {
-                var treeDto = await BuildFolderTree(folder, allFolders.ToList());
-                treeDtos.Add(treeDto);
-            }
+                // Load all folders at once to prevent N+1 queries
+                var allFolders = (await _folderRepository.GetAllAsync()).ToList();
+                var allFiles = (await _fileRepository.GetAllAsync()).ToList();
 
-            // If no root folder specified, return a virtual root
-            if (rootFolderId == null && treeDtos.Any())
-            {
-                return new FolderTreeDto
+                // Create lookup dictionaries for performance
+                var folderLookup = allFolders.ToLookup(f => f.ParentFolderId);
+                var fileLookup = allFiles.ToLookup(f => f.FolderId);
+
+                var rootFolders = folderLookup[rootFolderId].OrderBy(f => f.Name).ToList();
+
+                var treeDtos = new List<FolderTreeDto>();
+                foreach (var folder in rootFolders)
                 {
-                    Id = 0,
-                    Name = "Root",
-                    Path = "/",
-                    ParentFolderId = null,
-                    Children = treeDtos,
-                    FolderType = FolderType.General,
-                    IsPublic = false,
-                    FileCount = 0,
-                    HasSubFolders = treeDtos.Any()
-                };
-            }
+                    var treeDto = BuildFolderTree(folder, folderLookup, fileLookup);
+                    treeDtos.Add(treeDto);
+                }
 
-            return treeDtos.FirstOrDefault() ?? new FolderTreeDto();
+                // Return virtual root if no specific root folder
+                if (rootFolderId == null && treeDtos.Any())
+                {
+                    return new FolderTreeDto
+                    {
+                        Id = 0,
+                        Name = "Root",
+                        Path = "/",
+                        ParentFolderId = null,
+                        Children = treeDtos,
+                        FolderType = FolderType.General,
+                        IsPublic = false,
+                        FileCount = 0,
+                        HasSubFolders = treeDtos.Any()
+                    };
+                }
+
+                return treeDtos.FirstOrDefault() ?? new FolderTreeDto();
+            }
+            finally
+            {
+                _operationSemaphore.Release();
+            }
         }
 
         public async Task<FolderDto> UpdateFolderAsync(int folderId, UpdateFolderDto updateDto)
         {
-            var folder = await _folderRepository.GetByIdAsync(folderId);
-            if (folder == null)
-                throw new ArgumentException("Folder not found");
-
             if (string.IsNullOrWhiteSpace(updateDto.Name))
                 throw new ArgumentException("Folder name is required");
 
-            // Check for duplicate names if name is changing
-            if (folder.Name != updateDto.Name.Trim())
+            var sanitizedName = updateDto.Name.Trim();
+            var pathSemaphore = GetPathSemaphore(sanitizedName);
+
+            await _operationSemaphore.WaitAsync();
+            try
             {
-                if (!await ValidateFolderNameAsync(updateDto.Name, folder.ParentFolderId, folderId))
-                    throw new ArgumentException("A folder with this name already exists in the specified location");
+                await pathSemaphore.WaitAsync();
+                try
+                {
+                    var folder = await _folderRepository.GetByIdAsync(folderId);
+                    if (folder == null)
+                        throw new ArgumentException("Folder not found");
+
+                    // Check for duplicate names if name is changing
+                    if (folder.Name != sanitizedName)
+                    {
+                        if (!await ValidateFolderNameAsync(sanitizedName, folder.ParentFolderId, folderId))
+                            throw new ArgumentException("A folder with this name already exists in the specified location");
+                    }
+
+                    var currentUserId = _userSessionService.GetCurrentUserId();
+                    var oldPath = folder.Path;
+                    var nameChanged = folder.Name != sanitizedName;
+
+                    folder.Name = sanitizedName;
+                    folder.Description = updateDto.Description?.Trim();
+                    folder.IsPublic = updateDto.IsPublic;
+                    folder.Metadata = updateDto.Metadata ?? new Dictionary<string, object>();
+                    folder.UpdatedAt = DateTime.UtcNow;
+                    folder.UpdatedByUserId = currentUserId;
+
+                    // Update path if name changed
+                    if (nameChanged)
+                    {
+                        folder.Path = await GenerateFolderPathAsync(folder.Name, folder.ParentFolderId);
+
+                        // Update paths of all subfolders in batch
+                        await UpdateSubfolderPathsAsync(folder, oldPath);
+                    }
+
+                    _folderRepository.Update(folder);
+                    await _folderRepository.SaveChangesAsync();
+
+                    _logger.LogInformation("Folder updated: {FolderName} (ID: {FolderId}) by user {UserId}",
+                        folder.Name, folder.Id, currentUserId);
+
+                    return await MapFolderToDto(folder);
+                }
+                finally
+                {
+                    pathSemaphore.Release();
+                }
             }
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-            var oldPath = folder.Path;
-
-            folder.Name = updateDto.Name.Trim();
-            folder.Description = updateDto.Description?.Trim();
-            folder.IsPublic = updateDto.IsPublic;
-            folder.Metadata = updateDto.Metadata ?? new Dictionary<string, object>();
-            folder.UpdatedAt = DateTime.UtcNow;
-            folder.UpdatedByUserId = currentUserId;
-
-            // Update path if name changed
-            if (folder.Name != updateDto.Name.Trim())
+            finally
             {
-                folder.Path = await GenerateFolderPathAsync(folder.Name, folder.ParentFolderId);
-
-                // Update paths of all subfolders
-                await UpdateSubfolderPathsAsync(folder, oldPath);
+                _operationSemaphore.Release();
             }
-
-            _folderRepository.Update(folder);
-            await _folderRepository.SaveChangesAsync();
-
-            _logger.LogInformation("Folder updated: {FolderName} (ID: {FolderId}) by user {UserId}",
-                folder.Name, folder.Id, currentUserId);
-
-            return await MapFolderToDto(folder);
         }
 
         public async Task<bool> DeleteFolderAsync(int folderId, bool deleteFiles = false)
         {
-            var folder = await _folderRepository.GetByIdAsync(folderId);
-            if (folder == null)
-                return false;
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            // Check if folder has subfolders
-            var subfolders = await _folderRepository.FindAsync(f => f.ParentFolderId == folderId);
-            if (subfolders.Any())
-                throw new InvalidOperationException("Cannot delete folder that contains subfolders. Delete or move subfolders first.");
-
-            // Handle files in the folder
-            var files = await _fileRepository.FindAsync(f => f.FolderId == folderId);
-            if (files.Any())
+            await _operationSemaphore.WaitAsync();
+            try
             {
-                if (!deleteFiles)
-                    throw new InvalidOperationException("Cannot delete folder that contains files. Set deleteFiles=true to delete files or move them first.");
+                var folder = await _folderRepository.GetByIdAsync(folderId);
+                if (folder == null)
+                    return false;
 
-                // Delete all files in the folder
-                foreach (var file in files)
+                var currentUserId = _userSessionService.GetCurrentUserId();
+
+                // Check if folder has subfolders
+                var subfolders = await _folderRepository.FindAsync(f => f.ParentFolderId == folderId);
+                if (subfolders.Any())
+                    throw new InvalidOperationException("Cannot delete folder that contains subfolders. Delete or move subfolders first.");
+
+                // Handle files in the folder
+                var files = await _fileRepository.FindAsync(f => f.FolderId == folderId);
+                if (files.Any())
                 {
-                    await _fileRepository.SoftDeleteAsync(file, currentUserId);
+                    if (!deleteFiles)
+                        throw new InvalidOperationException("Cannot delete folder that contains files. Set deleteFiles=true to delete files or move them first.");
+
+                    // Delete all files in parallel batches
+                    await DeleteFilesInBatchesAsync(files, currentUserId);
                 }
+
+                var success = await _folderRepository.SoftDeleteAsync(folderId, currentUserId);
+
+                if (success)
+                {
+                    _logger.LogInformation("Folder deleted: {FolderName} (ID: {FolderId}) by user {UserId}",
+                        folder.Name, folder.Id, currentUserId);
+                }
+
+                return success;
             }
-
-            var success = await _folderRepository.SoftDeleteAsync(folderId, currentUserId);
-
-            if (success)
+            finally
             {
-                _logger.LogInformation("Folder deleted: {FolderName} (ID: {FolderId}) by user {UserId}",
-                    folder.Name, folder.Id, currentUserId);
+                _operationSemaphore.Release();
             }
-
-            return success;
         }
 
         public async Task<FolderDto> MoveFolderAsync(MoveFolderDto moveDto)
         {
-            var folder = await _folderRepository.GetByIdAsync(moveDto.FolderId);
-            if (folder == null)
-                throw new ArgumentException("Folder not found");
-
-            // Validate destination folder exists if specified
-            if (moveDto.NewParentFolderId.HasValue)
+            await _operationSemaphore.WaitAsync();
+            try
             {
-                var destinationFolder = await _folderRepository.GetByIdAsync(moveDto.NewParentFolderId.Value);
-                if (destinationFolder == null)
-                    throw new ArgumentException("Destination folder not found");
+                var folder = await _folderRepository.GetByIdAsync(moveDto.FolderId);
+                if (folder == null)
+                    throw new ArgumentException("Folder not found");
 
-                // Check for circular reference
-                if (await WouldCreateCircularReferenceAsync(moveDto.FolderId, moveDto.NewParentFolderId.Value))
-                    throw new ArgumentException("Moving folder would create a circular reference");
+                // Validate destination folder exists if specified
+                if (moveDto.NewParentFolderId.HasValue)
+                {
+                    var destinationFolder = await _folderRepository.GetByIdAsync(moveDto.NewParentFolderId.Value);
+                    if (destinationFolder == null)
+                        throw new ArgumentException("Destination folder not found");
+
+                    // Check for circular reference
+                    if (await WouldCreateCircularReferenceAsync(moveDto.FolderId, moveDto.NewParentFolderId.Value))
+                        throw new ArgumentException("Moving folder would create a circular reference");
+                }
+
+                // Check for duplicate names in destination
+                if (!await ValidateFolderNameAsync(folder.Name, moveDto.NewParentFolderId, moveDto.FolderId))
+                    throw new ArgumentException("A folder with this name already exists in the destination location");
+
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var oldPath = folder.Path;
+
+                folder.ParentFolderId = moveDto.NewParentFolderId;
+                folder.Path = await GenerateFolderPathAsync(folder.Name, moveDto.NewParentFolderId);
+                folder.UpdatedAt = DateTime.UtcNow;
+                folder.UpdatedByUserId = currentUserId;
+
+                // Update paths of all subfolders
+                await UpdateSubfolderPathsAsync(folder, oldPath);
+
+                _folderRepository.Update(folder);
+                await _folderRepository.SaveChangesAsync();
+
+                _logger.LogInformation("Folder moved: {FolderName} (ID: {FolderId}) to parent {ParentId} by user {UserId}",
+                    folder.Name, folder.Id, moveDto.NewParentFolderId, currentUserId);
+
+                return await MapFolderToDto(folder);
             }
-
-            // Check for duplicate names in destination
-            if (!await ValidateFolderNameAsync(folder.Name, moveDto.NewParentFolderId, moveDto.FolderId))
-                throw new ArgumentException("A folder with this name already exists in the destination location");
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-            var oldPath = folder.Path;
-
-            folder.ParentFolderId = moveDto.NewParentFolderId;
-            folder.Path = await GenerateFolderPathAsync(folder.Name, moveDto.NewParentFolderId);
-            folder.UpdatedAt = DateTime.UtcNow;
-            folder.UpdatedByUserId = currentUserId;
-
-            // Update paths of all subfolders
-            await UpdateSubfolderPathsAsync(folder, oldPath);
-
-            _folderRepository.Update(folder);
-            await _folderRepository.SaveChangesAsync();
-
-            _logger.LogInformation("Folder moved: {FolderName} (ID: {FolderId}) to parent {ParentId} by user {UserId}",
-                folder.Name, folder.Id, moveDto.NewParentFolderId, currentUserId);
-
-            return await MapFolderToDto(folder);
+            finally
+            {
+                _operationSemaphore.Release();
+            }
         }
 
         public async Task<bool> RenameFolderAsync(int folderId, string newName)
@@ -285,43 +379,26 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FolderDto> CopyFolderAsync(int folderId, int? destinationFolderId, string? newName = null)
         {
-            var sourceFolder = await _folderRepository.GetByIdAsync(folderId);
-            if (sourceFolder == null)
-                throw new ArgumentException("Source folder not found");
-
-            var folderName = newName ?? $"Copy of {sourceFolder.Name}";
-
-            if (!await ValidateFolderNameAsync(folderName, destinationFolderId))
-                throw new ArgumentException("A folder with this name already exists in the destination location");
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            var copyFolder = new Folder
+            await _operationSemaphore.WaitAsync();
+            try
             {
-                Name = folderName,
-                Description = sourceFolder.Description,
-                Path = await GenerateFolderPathAsync(folderName, destinationFolderId),
-                ParentFolderId = destinationFolderId,
-                IsPublic = sourceFolder.IsPublic,
-                FolderType = sourceFolder.FolderType,
-                Metadata = new Dictionary<string, object>(sourceFolder.Metadata),
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = currentUserId,
-                UpdatedByUserId = currentUserId
-            };
+                var sourceFolder = await _folderRepository.GetByIdAsync(folderId);
+                if (sourceFolder == null)
+                    throw new ArgumentException("Source folder not found");
 
-            await _folderRepository.AddAsync(copyFolder);
-            await _folderRepository.SaveChangesAsync();
+                var folderName = newName ?? $"Copy of {sourceFolder.Name}";
 
-            // Copy subfolders recursively
-            var subfolders = await _folderRepository.FindAsync(f => f.ParentFolderId == folderId);
-            foreach (var subfolder in subfolders)
-            {
-                await CopyFolderAsync(subfolder.Id, copyFolder.Id);
+                if (!await ValidateFolderNameAsync(folderName, destinationFolderId))
+                    throw new ArgumentException("A folder with this name already exists in the destination location");
+
+                var copiedFolder = await CopyFolderRecursivelyAsync(sourceFolder, destinationFolderId, folderName);
+
+                return await MapFolderToDto(copiedFolder);
             }
-
-            return await MapFolderToDto(copyFolder);
+            finally
+            {
+                _operationSemaphore.Release();
+            }
         }
 
         public async Task<string> GetFolderPathAsync(int folderId)
@@ -386,8 +463,9 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(name))
                 return false;
 
+            var trimmedName = name.Trim();
             var query = await _folderRepository.FindAsync(f =>
-                f.Name == name.Trim() &&
+                f.Name == trimmedName &&
                 f.ParentFolderId == parentFolderId);
 
             if (excludeFolderId.HasValue)
@@ -512,6 +590,14 @@ namespace Backend.CMS.Infrastructure.Services
         }
 
         // Private helper methods
+        private SemaphoreSlim GetPathSemaphore(string path)
+        {
+            lock (_semaphoreLock)
+            {
+                return _pathSemaphores.GetOrAdd(path, _ => new SemaphoreSlim(1, 1));
+            }
+        }
+
         private async Task<string> GenerateFolderPathAsync(string folderName, int? parentFolderId)
         {
             if (!parentFolderId.HasValue)
@@ -531,18 +617,31 @@ namespace Backend.CMS.Infrastructure.Services
         private async Task UpdateSubfolderPathsAsync(Folder parentFolder, string oldPath)
         {
             var subfolders = await _folderRepository.FindAsync(f => f.ParentFolderId == parentFolder.Id);
+            var subfoldersList = subfolders.ToList();
 
-            foreach (var subfolder in subfolders)
+            if (!subfoldersList.Any())
+                return;
+
+            const int batchSize = 50;
+            var batches = subfoldersList.Chunk(batchSize);
+
+            foreach (var batch in batches)
             {
-                var oldSubfolderPath = subfolder.Path;
-                subfolder.Path = subfolder.Path.Replace(oldPath, parentFolder.Path);
-                subfolder.UpdatedAt = DateTime.UtcNow;
-                subfolder.UpdatedByUserId = _userSessionService.GetCurrentUserId();
+                var tasks = batch.Select(async subfolder =>
+                {
+                    var oldSubfolderPath = subfolder.Path;
+                    subfolder.Path = subfolder.Path.Replace(oldPath, parentFolder.Path);
+                    subfolder.UpdatedAt = DateTime.UtcNow;
+                    subfolder.UpdatedByUserId = _userSessionService.GetCurrentUserId();
 
-                _folderRepository.Update(subfolder);
+                    _folderRepository.Update(subfolder);
 
-                // Recursively update nested subfolders
-                await UpdateSubfolderPathsAsync(subfolder, oldSubfolderPath);
+                    // Recursively update nested subfolders
+                    await UpdateSubfolderPathsAsync(subfolder, oldSubfolderPath);
+                });
+
+                await Task.WhenAll(tasks);
+                await _folderRepository.SaveChangesAsync();
             }
         }
 
@@ -550,30 +649,27 @@ namespace Backend.CMS.Infrastructure.Services
         {
             var currentParentId = newParentId;
 
-            while (currentParentId != null)
+            while (currentParentId != 0)
             {
                 if (currentParentId == folderId)
                     return true;
 
                 var parentFolder = await _folderRepository.GetByIdAsync(currentParentId);
-                if (parentFolder != null)
-                    currentParentId = parentFolder.Id;
+                if (parentFolder?.ParentFolderId.HasValue == true)
+                    currentParentId = parentFolder.ParentFolderId.Value;
+                else
+                    break;
             }
 
             return false;
         }
 
-        private async Task<FolderTreeDto> BuildFolderTree(Folder folder, List<Folder> allFolders)
+        private FolderTreeDto BuildFolderTree(Folder folder, ILookup<int?, Folder> folderLookup, ILookup<int?, FileEntity> fileLookup)
         {
-            var files = await _fileRepository.FindAsync(f => f.FolderId == folder.Id);
-            var children = allFolders.Where(f => f.ParentFolderId == folder.Id).OrderBy(f => f.Name);
+            var children = folderLookup[folder.Id].OrderBy(f => f.Name).ToList();
+            var files = fileLookup[folder.Id];
 
-            var childrenDtos = new List<FolderTreeDto>();
-            foreach (var child in children)
-            {
-                var childDto = await BuildFolderTree(child, allFolders);
-                childrenDtos.Add(childDto);
-            }
+            var childrenDtos = children.Select(child => BuildFolderTree(child, folderLookup, fileLookup)).ToList();
 
             return new FolderTreeDto
             {
@@ -591,9 +687,14 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task<FolderDto> MapFolderToDto(Folder folder)
         {
-            var files = await _fileRepository.FindAsync(f => f.FolderId == folder.Id);
-            var subfolders = await _folderRepository.FindAsync(f => f.ParentFolderId == folder.Id);
+            // Use parallel queries for better performance
+            var filesTask = _fileRepository.FindAsync(f => f.FolderId == folder.Id);
+            var subfoldersTask = _folderRepository.FindAsync(f => f.ParentFolderId == folder.Id);
 
+            await Task.WhenAll(filesTask, subfoldersTask);
+
+            var files = await filesTask;
+            var subfolders = await subfoldersTask;
             var totalSize = files.Sum(f => f.FileSize);
 
             return new FolderDto
@@ -613,6 +714,52 @@ namespace Backend.CMS.Infrastructure.Services
                 TotalSize = totalSize,
                 TotalSizeFormatted = FormatFileSize(totalSize)
             };
+        }
+
+        private async Task DeleteFilesInBatchesAsync(IEnumerable<FileEntity> files, int? currentUserId)
+        {
+            const int batchSize = 50;
+            var filesList = files.ToList();
+            var batches = filesList.Chunk(batchSize);
+
+            foreach (var batch in batches)
+            {
+                var tasks = batch.Select(file => _fileRepository.SoftDeleteAsync(file, currentUserId));
+                await Task.WhenAll(tasks);
+            }
+        }
+
+        private async Task<Folder> CopyFolderRecursivelyAsync(Folder sourceFolder, int? destinationFolderId, string? newName = null)
+        {
+            var currentUserId = _userSessionService.GetCurrentUserId();
+            var folderName = newName ?? sourceFolder.Name;
+
+            var copyFolder = new Folder
+            {
+                Name = folderName,
+                Description = sourceFolder.Description,
+                Path = await GenerateFolderPathAsync(folderName, destinationFolderId),
+                ParentFolderId = destinationFolderId,
+                IsPublic = sourceFolder.IsPublic,
+                FolderType = sourceFolder.FolderType,
+                Metadata = new Dictionary<string, object>(sourceFolder.Metadata),
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                CreatedByUserId = currentUserId,
+                UpdatedByUserId = currentUserId
+            };
+
+            await _folderRepository.AddAsync(copyFolder);
+            await _folderRepository.SaveChangesAsync();
+
+            // Copy subfolders recursively in parallel
+            var subfolders = await _folderRepository.FindAsync(f => f.ParentFolderId == sourceFolder.Id);
+            var copyTasks = subfolders.Select(subfolder =>
+                CopyFolderRecursivelyAsync(subfolder, copyFolder.Id));
+
+            await Task.WhenAll(copyTasks);
+
+            return copyFolder;
         }
 
         private static string GetSystemFolderName(FolderType folderType)
@@ -641,6 +788,67 @@ namespace Backend.CMS.Infrastructure.Services
                 len /= 1024;
             }
             return $"{len:0.##} {sizes[order]}";
+        }
+
+        private void CleanupUnusedSemaphores(object? state)
+        {
+            lock (_semaphoreLock)
+            {
+                try
+                {
+                    var keysToRemove = new List<string>();
+
+                    foreach (var kvp in _pathSemaphores)
+                    {
+                        if (kvp.Value.CurrentCount == 1) // Not in use
+                        {
+                            keysToRemove.Add(kvp.Key);
+                        }
+                    }
+
+                    foreach (var key in keysToRemove.Take(100)) // Limit cleanup
+                    {
+                        if (_pathSemaphores.TryRemove(key, out var semaphore))
+                        {
+                            semaphore.Dispose();
+                        }
+                    }
+
+                    if (keysToRemove.Count > 0)
+                    {
+                        _logger.LogDebug("Cleaned up {Count} unused path semaphores",
+                            Math.Min(keysToRemove.Count, 100));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error during semaphore cleanup");
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!_disposed && disposing)
+            {
+                _semaphoreCleanupTimer?.Dispose();
+                _operationSemaphore?.Dispose();
+
+                // Dispose all path semaphores
+                foreach (var semaphore in _pathSemaphores.Values)
+                {
+                    semaphore.Dispose();
+                }
+                _pathSemaphores.Clear();
+
+                _disposed = true;
+            }
         }
     }
 }
