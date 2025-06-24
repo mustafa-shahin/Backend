@@ -391,7 +391,7 @@ namespace Backend.CMS.Infrastructure.Data
             {
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.Street).HasMaxLength(500);
-                entity.Property(e => e.Street2).HasMaxLength(500);
+                entity.Property(e => e.HouseNr).HasMaxLength(500);
                 entity.Property(e => e.City).HasMaxLength(100);
                 entity.Property(e => e.State).HasMaxLength(100);
                 entity.Property(e => e.Country).HasMaxLength(100);
@@ -693,7 +693,6 @@ namespace Backend.CMS.Infrastructure.Data
                 entity.Property(e => e.SKU).HasMaxLength(100).IsRequired();
                 entity.Property(e => e.Description).HasColumnType("text");
                 entity.Property(e => e.ShortDescription).HasMaxLength(500);
-                entity.Property(e => e.Price).HasColumnType("decimal(18,2)");
                 entity.Property(e => e.CompareAtPrice).HasColumnType("decimal(18,2)");
                 entity.Property(e => e.CostPerItem).HasColumnType("decimal(18,2)");
                 entity.Property(e => e.Weight).HasColumnType("decimal(18,3)");
@@ -713,7 +712,6 @@ namespace Backend.CMS.Infrastructure.Data
 
                 entity.HasIndex(e => e.Status);
                 entity.HasIndex(e => e.Type);
-                entity.HasIndex(e => e.Price);
                 entity.HasIndex(e => e.Vendor);
                 entity.HasIndex(e => e.PublishedAt);
             });

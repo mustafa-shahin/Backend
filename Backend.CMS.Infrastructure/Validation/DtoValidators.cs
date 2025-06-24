@@ -214,7 +214,7 @@ namespace Backend.CMS.Infrastructure.Validation
                 .MaximumLength(500).WithMessage("Street cannot exceed 500 characters");
 
             RuleFor(x => x.HouseNr)
-                .MaximumLength(500).WithMessage("Street2 cannot exceed 500 characters")
+                .MaximumLength(500).WithMessage("House number cannot exceed 500 characters")
                 .When(x => !string.IsNullOrEmpty(x.HouseNr));
 
             RuleFor(x => x.City)
@@ -260,7 +260,7 @@ namespace Backend.CMS.Infrastructure.Validation
                 .MaximumLength(500).WithMessage("Street cannot exceed 500 characters");
 
             RuleFor(x => x.HouseNr)
-                .MaximumLength(500).WithMessage("Street2 cannot exceed 500 characters")
+                .MaximumLength(500).WithMessage("House number cannot exceed 500 characters")
                 .When(x => !string.IsNullOrEmpty(x.HouseNr ));
 
             RuleFor(x => x.City)
