@@ -9,9 +9,9 @@ namespace Backend.CMS.Domain.Entities
         [Required]
         [StringLength(255)]
         public string Street { get; set; } = string.Empty;
-
+        [Required]
         [StringLength(255)]
-        public string? Street2 { get; set; }
+        public string? HouseNr { get; set; }
 
         [Required]
         [StringLength(100)]

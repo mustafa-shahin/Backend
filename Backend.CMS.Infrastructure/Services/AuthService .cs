@@ -906,7 +906,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         private string GetUserAgent()
         {
-            return _httpContextAccessor.HttpContext?.Request.Headers["User-Agent"].ToString() ?? "Unknown";
+            return _httpContextAccessor.HttpContext?.Request.Headers.UserAgent.ToString() ?? "Unknown";
         }
 
         private static void ValidatePasswordStrength(string password)
