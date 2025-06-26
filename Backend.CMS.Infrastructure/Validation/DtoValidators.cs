@@ -58,46 +58,6 @@ namespace Backend.CMS.Infrastructure.Validation
         }
     }
 
-    public class SavePageStructureDtoValidator : AbstractValidator<SavePageStructureDto>
-    {
-        public SavePageStructureDtoValidator()
-        {
-            RuleFor(x => x.PageId)
-                .NotEmpty().WithMessage("Page ID is required");
-
-            RuleFor(x => x.Components)
-                .NotNull().WithMessage("Components list cannot be null");
-
-            RuleForEach(x => x.Components)
-                .SetValidator(new PageComponentDtoValidator());
-        }
-    }
-
-    public class PageComponentDtoValidator : AbstractValidator<PageComponentDto>
-    {
-        public PageComponentDtoValidator()
-        {
-            RuleFor(x => x.Type)
-                .IsInEnum().WithMessage("Invalid component type");
-
-            RuleFor(x => x.Name)
-                .NotEmpty().WithMessage("Component name is required")
-                .MaximumLength(200).WithMessage("Component name cannot exceed 200 characters");
-
-            RuleFor(x => x.ComponentKey)
-                .NotEmpty().WithMessage("Component key is required")
-                .MaximumLength(255).WithMessage("Component key cannot exceed 255 characters");
-
-            RuleFor(x => x.Order)
-                .GreaterThanOrEqualTo(0).WithMessage("Order must be greater than or equal to 0");
-
-            RuleFor(x => x.Config)
-                .NotNull().WithMessage("Config cannot be null");
-
-            RuleForEach(x => x.ChildComponents)
-                .SetValidator(new PageComponentDtoValidator());
-        }
-    }
     #endregion
 
     #region User Validators
@@ -489,75 +449,6 @@ namespace Backend.CMS.Infrastructure.Validation
 
 
 
-    #region Component Template Validators
-    public class CreateComponentTemplateDtoValidator : AbstractValidator<Application.DTOs.Components.CreateComponentTemplateDto>
-    {
-        public CreateComponentTemplateDtoValidator()
-        {
-            RuleFor(x => x.Name)
-                .NotEmpty().WithMessage("Component template name is required")
-                .MaximumLength(200).WithMessage("Name cannot exceed 200 characters")
-                .Matches(@"^[a-z0-9-]+$").WithMessage("Name must be lowercase letters, numbers, and hyphens only");
-
-            RuleFor(x => x.DisplayName)
-                .NotEmpty().WithMessage("Display name is required")
-                .MaximumLength(200).WithMessage("Display name cannot exceed 200 characters");
-
-            RuleFor(x => x.Type)
-                .IsInEnum().WithMessage("Invalid component type");
-
-            RuleFor(x => x.Category)
-                .MaximumLength(100).WithMessage("Category cannot exceed 100 characters")
-                .When(x => !string.IsNullOrEmpty(x.Category));
-
-            RuleFor(x => x.Icon)
-                .MaximumLength(100).WithMessage("Icon cannot exceed 100 characters")
-                .When(x => !string.IsNullOrEmpty(x.Icon));
-
-            RuleFor(x => x.Description)
-                .MaximumLength(1000).WithMessage("Description cannot exceed 1000 characters")
-                .When(x => !string.IsNullOrEmpty(x.Description));
-
-            RuleFor(x => x.Tags)
-                .MaximumLength(500).WithMessage("Tags cannot exceed 500 characters")
-                .When(x => !string.IsNullOrEmpty(x.Tags));
-        }
-    }
-
-    public class UpdateComponentTemplateDtoValidator : AbstractValidator<Application.DTOs.Components.UpdateComponentTemplateDto>
-    {
-        public UpdateComponentTemplateDtoValidator()
-        {
-            RuleFor(x => x.Name)
-                .NotEmpty().WithMessage("Component template name is required")
-                .MaximumLength(200).WithMessage("Name cannot exceed 200 characters")
-                .Matches(@"^[a-z0-9-]+$").WithMessage("Name must be lowercase letters, numbers, and hyphens only");
-
-            RuleFor(x => x.DisplayName)
-                .NotEmpty().WithMessage("Display name is required")
-                .MaximumLength(200).WithMessage("Display name cannot exceed 200 characters");
-
-            RuleFor(x => x.Type)
-                .IsInEnum().WithMessage("Invalid component type");
-
-            RuleFor(x => x.Category)
-                .MaximumLength(100).WithMessage("Category cannot exceed 100 characters")
-                .When(x => !string.IsNullOrEmpty(x.Category));
-
-            RuleFor(x => x.Icon)
-                .MaximumLength(100).WithMessage("Icon cannot exceed 100 characters")
-                .When(x => !string.IsNullOrEmpty(x.Icon));
-
-            RuleFor(x => x.Description)
-                .MaximumLength(1000).WithMessage("Description cannot exceed 1000 characters")
-                .When(x => !string.IsNullOrEmpty(x.Description));
-
-            RuleFor(x => x.Tags)
-                .MaximumLength(500).WithMessage("Tags cannot exceed 500 characters")
-                .When(x => !string.IsNullOrEmpty(x.Tags));
-        }
-    }
-    #endregion
 
     #region Auth DTOs Validators
     public class RegisterDtoValidator : AbstractValidator<RegisterDto>

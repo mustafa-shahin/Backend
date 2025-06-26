@@ -44,7 +44,7 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get page by slug (public endpoint for frontend)
+        /// Get page by slug (public endpoint for frontend) - returns only published pages
         /// </summary>
         [HttpGet("by-slug/{slug}")]
         [AllowAnonymous]
@@ -79,13 +79,16 @@ namespace Backend.CMS.API.Controllers
             try
             {
                 var pages = await _pageService.GetPagesAsync(page, pageSize, search);
-                // You would typically return a paged result with total count
+
+                // Calculate total count (this should ideally come from the service)
+                var totalCount = pages.Count; // This is a simplified approach
+
                 return Ok(new PagedResult<PageListDto>
                 {
                     Items = pages,
                     Page = page,
                     PageSize = pageSize,
-                    TotalCount = pages.Count // This should come from the service
+                    TotalCount = totalCount
                 });
             }
             catch (Exception ex)
@@ -184,6 +187,30 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
+        /// Save page structure (components and layout) - Used by the page designer
+        /// </summary>
+        [HttpPost("{id:int}/structure")]
+        public async Task<ActionResult<PageDto>> SavePageStructure(int id, [FromBody] SavePageStructureDto savePageStructureDto)
+        {
+            try
+            {
+                savePageStructureDto.PageId = id; // Ensure consistency
+                var page = await _pageService.SavePageStructureAsync(savePageStructureDto);
+                return Ok(page);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Page structure save failed for {PageId}: {Message}", id, ex.Message);
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error saving page structure for {PageId}", id);
+                return StatusCode(500, new { Message = "An error occurred while saving page structure" });
+            }
+        }
+
+        /// <summary>
         /// Delete a page
         /// </summary>
         [HttpDelete("{id:int}")]
@@ -203,30 +230,6 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error deleting page {PageId}", id);
                 return StatusCode(500, new { Message = "An error occurred while deleting the page" });
-            }
-        }
-
-        /// <summary>
-        /// Save page structure (components and layout)
-        /// </summary>
-        [HttpPost("{id:int}/structure")]
-        public async Task<ActionResult<PageDto>> SavePageStructure(int id, [FromBody] SavePageStructureDto savePageStructureDto)
-        {
-            try
-            {
-                savePageStructureDto.PageId = id; // Ensure consistency
-                var page = await _pageService.SavePageStructureAsync(savePageStructureDto);
-                return Ok(page);
-            }
-            catch (ArgumentException ex)
-            {
-                _logger.LogWarning("Page structure save failed for {PageId}: {Message}", id, ex.Message);
-                return BadRequest(new { ex.Message });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error saving page structure for {PageId}", id);
-                return StatusCode(500, new { Message = "An error occurred while saving page structure" });
             }
         }
 
@@ -325,7 +328,8 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
-                var page = await _pageService.CreatePageVersionAsync(id, createVersionDto.ChangeNotes);
+                await _pageService.CreatePageVersionAsync(id, createVersionDto.ChangeNotes);
+                var page = await _pageService.GetPageByIdAsync(id);
                 return Ok(page);
             }
             catch (ArgumentException ex)
@@ -380,6 +384,7 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { Message = "An error occurred while restoring page version" });
             }
         }
+
         private bool IsAdmin()
         {
             return User.IsInRole("Admin") || User.HasClaim("role", "Admin");

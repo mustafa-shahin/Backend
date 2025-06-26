@@ -75,7 +75,6 @@ namespace Backend.CMS.Infrastructure.Jobs
                     "page" => await _indexingService.IndexPagesAsync(new[] { entityId }),
                     "file" => await _indexingService.IndexFilesAsync(new[] { entityId }),
                     "user" => await _indexingService.IndexUsersAsync(new[] { entityId }),
-                    "componenttemplate" => await _indexingService.IndexComponentTemplatesAsync(new[] { entityId }),
                     _ => false
                 };
 

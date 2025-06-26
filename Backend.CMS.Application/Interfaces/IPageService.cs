@@ -11,6 +11,7 @@ namespace Backend.CMS.Application.Interfaces
         Task<List<PageDto>> GetPageHierarchyAsync();
         Task<PageDto> CreatePageAsync(CreatePageDto createPageDto);
         Task<PageDto> UpdatePageAsync(int pageId, UpdatePageDto updatePageDto);
+        Task<PageDto> SavePageStructureAsync(SavePageStructureDto savePageStructureDto);
         Task<bool> DeletePageAsync(int pageId);
         Task<PageDto> PublishPageAsync(int pageId);
         Task<PageDto> UnpublishPageAsync(int pageId);
