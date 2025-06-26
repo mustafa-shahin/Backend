@@ -67,12 +67,6 @@ namespace Backend.CMS.Application.Interfaces
         /// Invalidate all cache entries related to a specific page
         /// </summary>
         Task InvalidatePageCacheAsync(int pageId);
-
-        /// <summary>
-        /// Invalidate all component-related cache entries
-        /// </summary>
-        Task InvalidateComponentCacheAsync();
-
         /// <summary>
         /// Invalidate all company-related cache entries
         /// </summary>

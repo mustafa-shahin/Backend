@@ -162,10 +162,6 @@ namespace Backend.CMS.Infrastructure.Events
                         await ProcessPageInvalidationsAsync(invalidations);
                         break;
 
-                    case "componenttemplate":
-                        await _cacheInvalidationService.InvalidateComponentCacheAsync();
-                        break;
-
                     case "company":
                         await _cacheInvalidationService.InvalidateCompanyCacheAsync();
                         break;

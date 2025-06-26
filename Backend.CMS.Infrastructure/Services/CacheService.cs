@@ -359,20 +359,6 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task InvalidateComponentCacheAsync()
-        {
-            try
-            {
-                await RemoveByPatternAsync(CacheKeys.ComponentsPattern);
-                await RemoveAsync(CacheKeys.ComponentLibrary);
-
-                _logger.LogInformation("Invalidated all component cache");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error invalidating component cache");
-            }
-        }
 
         public async Task InvalidateCompanyCacheAsync()
         {
@@ -485,7 +471,6 @@ namespace Backend.CMS.Infrastructure.Services
                     {
                         CacheKeys.UsersPattern,
                         CacheKeys.PagesPattern,
-                        CacheKeys.ComponentsPattern,
                         CacheKeys.CompanyPattern,
                         CacheKeys.LocationsPattern,
                         CacheKeys.FilesPattern,
@@ -589,7 +574,6 @@ namespace Backend.CMS.Infrastructure.Services
                 statistics["TotalKeys"] = await GetKeyCountAsync(server, "*");
                 statistics["UserCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.UsersPattern);
                 statistics["PageCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.PagesPattern);
-                statistics["ComponentCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.ComponentsPattern);
                 statistics["FileCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.FilesPattern);
                 statistics["SessionCacheKeys"] = await GetKeyCountAsync(server, CacheKeys.SessionsPattern);
                 statistics["ActiveSemaphores"] = _keySemaphores.Count;

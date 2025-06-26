@@ -152,25 +152,6 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Clear component cache
-        /// </summary>
-        [HttpDelete("components")]
-        public async Task<ActionResult> ClearComponentCache()
-        {
-            try
-            {
-                await _cacheService.InvalidateComponentCacheAsync();
-                _logger.LogInformation("Component cache cleared by user {UserId}", GetCurrentUserId());
-                return Ok(new { Message = "Component cache cleared successfully" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error clearing component cache");
-                return StatusCode(500, new { Message = "An error occurred while clearing component cache" });
-            }
-        }
-
-        /// <summary>
         /// Clear company cache
         /// </summary>
         [HttpDelete("company")]

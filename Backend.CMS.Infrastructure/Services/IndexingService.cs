@@ -736,38 +736,6 @@ namespace Backend.CMS.Infrastructure.Services
             return CleanText(contentBuilder.ToString());
         }
 
-        private void ExtractComponentContent(PageComponent component, StringBuilder contentBuilder)
-        {
-            contentBuilder.AppendLine(component.Name);
-
-            // Extract text from unified config
-            if (component.Config?.Any() == true)
-            {
-                foreach (var kvp in component.Config)
-                {
-                    if (kvp.Value is string stringValue && !string.IsNullOrWhiteSpace(stringValue))
-                    {
-                        // Extract text content from common properties
-                        var key = kvp.Key.ToLowerInvariant();
-                        if (key.Contains("text") || key.Contains("content") ||
-                            key.Contains("title") || key.Contains("alt") ||
-                            key.Contains("description") || key.Contains("label"))
-                        {
-                            contentBuilder.AppendLine(stringValue);
-                        }
-                    }
-                }
-            }
-
-            if (component.ChildComponents?.Any() == true)
-            {
-                foreach (var child in component.ChildComponents.Where(c => !c.IsDeleted))
-                {
-                    ExtractComponentContent(child, contentBuilder);
-                }
-            }
-        }
-
         private string GenerateSearchVector(params string?[] texts)
         {
             var cleanedTexts = texts

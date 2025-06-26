@@ -36,9 +36,8 @@ namespace Backend.CMS.Infrastructure.Data
         public DbSet<UserSession> UserSessions { get; set; }
         public DbSet<PasswordResetToken> PasswordResetTokens { get; set; }
 
-        // Pages and Components
+        // Pages
         public DbSet<Page> Pages { get; set; }
-        public DbSet<PageComponent> PageComponents { get; set; }
         public DbSet<PageVersion> PageVersions { get; set; }
 
         // Company 
@@ -489,21 +488,6 @@ namespace Backend.CMS.Infrastructure.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // PageComponent configuration
-            modelBuilder.Entity<PageComponent>(entity =>
-            {
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.Name).HasMaxLength(200);
-                entity.Property(e => e.ComponentKey).HasMaxLength(255);
-
-                // Single unified config property instead of multiple dictionaries
-                entity.Property(e => e.Config).HasConversion(dictionaryConverter);
-
-                entity.HasOne(e => e.ParentComponent)
-                    .WithMany(e => e.ChildComponents)
-                    .HasForeignKey(e => e.ParentComponentId)
-                    .OnDelete(DeleteBehavior.Restrict);
-            });
             // PageVersion configuration
             modelBuilder.Entity<PageVersion>(entity =>
             {
@@ -933,7 +917,6 @@ namespace Backend.CMS.Infrastructure.Data
             ApplyComparersToEntity<Company>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<Location>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<ContactDetails>(modelBuilder, dictionaryComparer, listComparer);
-            ApplyComparersToEntity<PageComponent>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<FileEntity>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<Folder>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<SearchIndex>(modelBuilder, dictionaryComparer, listComparer);

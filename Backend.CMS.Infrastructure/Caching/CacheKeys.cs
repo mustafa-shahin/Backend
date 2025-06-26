@@ -49,16 +49,6 @@
 
         #endregion
 
-        #region Component Cache Keys
-        public static string ComponentTemplate(int templateId) => $"{COMPONENT_PREFIX}:template:{templateId}";
-        public static string ComponentTemplates => $"{COMPONENT_PREFIX}:templates";
-        public static string ComponentLibrary => $"{COMPONENT_PREFIX}:library";
-        public static string ComponentsByType(string type) => $"{COMPONENT_PREFIX}:type:{type}";
-        public static string ComponentsByCategory(string category) => $"{COMPONENT_PREFIX}:category:{category}";
-        public static string ComponentsPattern => $"{COMPONENT_PREFIX}:*";
-
-        #endregion
-
         #region Company Cache Keys
         public static string Company => $"{COMPANY_PREFIX}:main";
         public static string CompanyPattern => $"{COMPANY_PREFIX}:*";
