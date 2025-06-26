@@ -1,5 +1,4 @@
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Application.DTOs.Designer;
 using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;

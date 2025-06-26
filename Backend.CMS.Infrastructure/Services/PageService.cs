@@ -1,10 +1,11 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Application.DTOs.Designer;
 using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.IRepositories;
+using Backend.CMS.Infrastructure.Caching;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace Backend.CMS.Infrastructure.Services
@@ -12,50 +13,76 @@ namespace Backend.CMS.Infrastructure.Services
     public class PageService : IPageService
     {
         private readonly IPageRepository _pageRepository;
-        private readonly IRepository<PageComponent> _componentRepository;
         private readonly IRepository<PageVersion> _versionRepository;
-        private readonly IComponentConfigValidator _configValidator;
+        private readonly ICacheService _cacheService;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
+        private readonly ILogger<PageService> _logger;
 
         public PageService(
             IPageRepository pageRepository,
-            IRepository<PageComponent> componentRepository,
             IRepository<PageVersion> versionRepository,
-            IComponentConfigValidator configValidator,
+            ICacheService cacheService,
             IUserSessionService userSessionService,
-            IMapper mapper)
+            IMapper mapper,
+            ILogger<PageService> logger)
         {
-            _pageRepository = pageRepository;
-            _componentRepository = componentRepository;
-            _versionRepository = versionRepository;
-            _configValidator = configValidator;
-            _mapper = mapper;
-            _userSessionService = userSessionService;
+            _pageRepository = pageRepository ?? throw new ArgumentNullException(nameof(pageRepository));
+            _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
+            _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         public async Task<PageDto> GetPageByIdAsync(int pageId)
         {
             if (pageId <= 0)
-                throw new ArgumentException("Invalid page ID");
+                throw new ArgumentException("Invalid page ID", nameof(pageId));
 
-            var page = await _pageRepository.GetWithComponentsAsync(pageId);
-            if (page == null)
-                throw new ArgumentException("Page not found");
+            try
+            {
+                var cacheKey = CacheKeys.PageById(pageId);
+                return await _cacheService.GetAsync(cacheKey, async () =>
+                {
+                    var page = await _pageRepository.GetByIdAsync(pageId);
+                    if (page == null)
+                        throw new ArgumentException("Page not found");
 
-            return _mapper.Map<PageDto>(page);
+                    return _mapper.Map<PageDto>(page);
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting page {PageId}", pageId);
+                throw;
+            }
         }
 
         public async Task<PageDto> GetPageBySlugAsync(string slug)
         {
             if (string.IsNullOrWhiteSpace(slug))
-                throw new ArgumentException("Slug cannot be empty");
+                throw new ArgumentException("Slug cannot be empty", nameof(slug));
 
-            var page = await _pageRepository.GetBySlugAsync(slug.Trim().ToLowerInvariant());
-            if (page == null)
-                throw new ArgumentException("Page not found");
+            try
+            {
+                var normalizedSlug = NormalizeSlug(slug);
+                var cacheKey = CacheKeys.PageBySlug(normalizedSlug);
 
-            return _mapper.Map<PageDto>(page);
+                return await _cacheService.GetAsync(cacheKey, async () =>
+                {
+                    var page = await _pageRepository.GetBySlugAsync(normalizedSlug);
+                    if (page == null)
+                        throw new ArgumentException("Page not found");
+
+                    return _mapper.Map<PageDto>(page);
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting page by slug {Slug}", slug);
+                throw;
+            }
         }
 
         public async Task<List<PageListDto>> GetPagesAsync(int page = 1, int pageSize = 10, string? search = null)
@@ -63,17 +90,71 @@ namespace Backend.CMS.Infrastructure.Services
             if (page < 1) page = 1;
             if (pageSize < 1 || pageSize > 100) pageSize = 10;
 
-            var pages = string.IsNullOrWhiteSpace(search)
-                ? await _pageRepository.GetPagedAsync(page, pageSize)
-                : await _pageRepository.SearchPagesAsync(search.Trim(), page, pageSize);
+            try
+            {
+                var cacheKey = CacheKeys.PagesSearch(search ?? "", page, pageSize);
+                return await _cacheService.GetAsync(cacheKey, async () =>
+                {
+                    var pages = string.IsNullOrWhiteSpace(search)
+                        ? await _pageRepository.GetPagedAsync(page, pageSize)
+                        : await _pageRepository.SearchPagesAsync(search.Trim(), page, pageSize);
 
-            return _mapper.Map<List<PageListDto>>(pages);
+                    var pageList = pages.ToList();
+                    var pageDtos = _mapper.Map<List<PageListDto>>(pageList);
+
+                    // Enhance with version information
+                    foreach (var pageDto in pageDtos)
+                    {
+                        var versions = await _versionRepository.FindAsync(v => v.PageId == pageDto.Id);
+                        var versionList = versions.ToList();
+                        pageDto.VersionCount = versionList.Count;
+                        pageDto.CurrentVersion = versionList.Any() ? versionList.Max(v => v.VersionNumber) : 0;
+                    }
+
+                    return pageDtos;
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting pages list");
+                throw;
+            }
         }
 
         public async Task<List<PageDto>> GetPageHierarchyAsync()
         {
-            var pages = await _pageRepository.GetPageHierarchyAsync();
-            return _mapper.Map<List<PageDto>>(pages);
+            try
+            {
+                var cacheKey = CacheKeys.PageHierarchy;
+                return await _cacheService.GetAsync(cacheKey, async () =>
+                {
+                    var pages = await _pageRepository.GetPageHierarchyAsync();
+                    return _mapper.Map<List<PageDto>>(pages);
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting page hierarchy");
+                throw;
+            }
+        }
+
+        public async Task<List<PageDto>> GetPublishedPagesAsync()
+        {
+            try
+            {
+                var cacheKey = CacheKeys.PublishedPages;
+                return await _cacheService.GetAsync(cacheKey, async () =>
+                {
+                    var pages = await _pageRepository.GetPublishedPagesAsync();
+                    return _mapper.Map<List<PageDto>>(pages);
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting published pages");
+                throw;
+            }
         }
 
         public async Task<PageDto> CreatePageAsync(CreatePageDto createPageDto)
@@ -87,31 +168,46 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(createPageDto.Slug))
                 throw new ArgumentException("Page slug is required");
 
-            var normalizedSlug = NormalizeSlug(createPageDto.Slug);
-
-            if (await _pageRepository.SlugExistsAsync(normalizedSlug))
-                throw new ArgumentException("A page with this slug already exists");
-
-            if (createPageDto.ParentPageId.HasValue)
+            try
             {
-                var parentPage = await _pageRepository.GetByIdAsync(createPageDto.ParentPageId.Value);
-                if (parentPage == null)
-                    throw new ArgumentException("Parent page not found");
+                var normalizedSlug = NormalizeSlug(createPageDto.Slug);
+
+                if (await _pageRepository.SlugExistsAsync(normalizedSlug))
+                    throw new ArgumentException("A page with this slug already exists");
+
+                if (createPageDto.ParentPageId.HasValue)
+                {
+                    var parentPage = await _pageRepository.GetByIdAsync(createPageDto.ParentPageId.Value);
+                    if (parentPage == null)
+                        throw new ArgumentException("Parent page not found");
+                }
+
+                var page = _mapper.Map<Page>(createPageDto);
+                var currentUserId = _userSessionService.GetCurrentUserId();
+
+                page.Slug = normalizedSlug;
+                page.CreatedByUserId = currentUserId;
+                page.UpdatedByUserId = currentUserId;
+                page.CreatedAt = DateTime.UtcNow;
+                page.UpdatedAt = DateTime.UtcNow;
+
+                await _pageRepository.AddAsync(page);
+                await _pageRepository.SaveChangesAsync();
+
+                // Create initial version
+                await CreatePageVersionAsync(page.Id, "Initial page creation");
+
+                await InvalidatePageCaches();
+
+                _logger.LogInformation("Created page {PageId} with slug {Slug}", page.Id, page.Slug);
+
+                return _mapper.Map<PageDto>(page);
             }
-
-            var page = _mapper.Map<Page>(createPageDto);
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            page.Slug = normalizedSlug;
-            page.CreatedByUserId = currentUserId;
-            page.UpdatedByUserId = currentUserId;
-            page.CreatedAt = DateTime.UtcNow;
-            page.UpdatedAt = DateTime.UtcNow;
-
-            await _pageRepository.AddAsync(page);
-            await _pageRepository.SaveChangesAsync();
-
-            return _mapper.Map<PageDto>(page);
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating page");
+                throw;
+            }
         }
 
         public async Task<PageDto> UpdatePageAsync(int pageId, UpdatePageDto updatePageDto)
@@ -128,38 +224,54 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(updatePageDto.Slug))
                 throw new ArgumentException("Page slug is required");
 
-            var page = await _pageRepository.GetByIdAsync(pageId);
-            if (page == null)
-                throw new ArgumentException("Page not found");
-
-            var normalizedSlug = NormalizeSlug(updatePageDto.Slug);
-            if (await _pageRepository.SlugExistsAsync(normalizedSlug, pageId))
-                throw new ArgumentException("A page with this slug already exists");
-
-            if (updatePageDto.ParentPageId.HasValue)
+            try
             {
-                if (updatePageDto.ParentPageId == pageId)
-                    throw new ArgumentException("A page cannot be its own parent");
+                var page = await _pageRepository.GetByIdAsync(pageId);
+                if (page == null)
+                    throw new ArgumentException("Page not found");
 
-                var parentPage = await _pageRepository.GetByIdAsync(updatePageDto.ParentPageId.Value);
-                if (parentPage == null)
-                    throw new ArgumentException("Parent page not found");
+                var normalizedSlug = NormalizeSlug(updatePageDto.Slug);
+                if (await _pageRepository.SlugExistsAsync(normalizedSlug, pageId))
+                    throw new ArgumentException("A page with this slug already exists");
 
-                if (await WouldCreateCircularReferenceAsync(pageId, updatePageDto.ParentPageId.Value))
-                    throw new ArgumentException("Setting this parent would create a circular reference");
+                if (updatePageDto.ParentPageId.HasValue)
+                {
+                    if (updatePageDto.ParentPageId == pageId)
+                        throw new ArgumentException("A page cannot be its own parent");
+
+                    var parentPage = await _pageRepository.GetByIdAsync(updatePageDto.ParentPageId.Value);
+                    if (parentPage == null)
+                        throw new ArgumentException("Parent page not found");
+
+                    if (await WouldCreateCircularReferenceAsync(pageId, updatePageDto.ParentPageId.Value))
+                        throw new ArgumentException("Setting this parent would create a circular reference");
+                }
+
+                var currentUserId = _userSessionService.GetCurrentUserId();
+
+                // Create version before updating
+                await CreatePageVersionAsync(pageId, "Page updated");
+
+                // Update page properties
+                _mapper.Map(updatePageDto, page);
+                page.Slug = normalizedSlug;
+                page.UpdatedByUserId = currentUserId;
+                page.UpdatedAt = DateTime.UtcNow;
+
+                _pageRepository.Update(page);
+                await _pageRepository.SaveChangesAsync();
+
+                await InvalidatePageCaches(pageId);
+
+                _logger.LogInformation("Updated page {PageId}", pageId);
+
+                return _mapper.Map<PageDto>(page);
             }
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            _mapper.Map(updatePageDto, page);
-            page.Slug = normalizedSlug;
-            page.UpdatedByUserId = currentUserId;
-            page.UpdatedAt = DateTime.UtcNow;
-
-            _pageRepository.Update(page);
-            await _pageRepository.SaveChangesAsync();
-
-            return _mapper.Map<PageDto>(page);
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating page {PageId}", pageId);
+                throw;
+            }
         }
 
         public async Task<bool> DeletePageAsync(int pageId)
@@ -167,50 +279,28 @@ namespace Backend.CMS.Infrastructure.Services
             if (pageId <= 0)
                 return false;
 
-            var childPages = await _pageRepository.GetChildPagesAsync(pageId);
-            if (childPages.Any())
-                throw new InvalidOperationException("Cannot delete a page that has child pages. Delete or move child pages first.");
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-            return await _pageRepository.SoftDeleteAsync(pageId, currentUserId);
-        }
-
-        public async Task<PageDto> SavePageStructureAsync(SavePageStructureDto savePageStructureDto)
-        {
-            if (savePageStructureDto.PageId <= 0)
-                throw new ArgumentException("Invalid page ID");
-
-            if (savePageStructureDto.Components == null)
-                throw new ArgumentException("Components cannot be null");
-
-            var page = await _pageRepository.GetWithComponentsAsync(savePageStructureDto.PageId);
-            if (page == null)
-                throw new ArgumentException("Page not found");
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            await CreatePageVersionAsync(savePageStructureDto.PageId, "Auto-backup before structure changes");
-
-            foreach (var component in page.Components)
+            try
             {
-                await _componentRepository.SoftDeleteAsync(component, currentUserId);
+                var childPages = await _pageRepository.GetChildPagesAsync(pageId);
+                if (childPages.Any())
+                    throw new InvalidOperationException("Cannot delete a page that has child pages. Delete or move child pages first.");
+
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var success = await _pageRepository.SoftDeleteAsync(pageId, currentUserId);
+
+                if (success)
+                {
+                    await InvalidatePageCaches(pageId);
+                    _logger.LogInformation("Deleted page {PageId}", pageId);
+                }
+
+                return success;
             }
-
-            var validatedComponents = ValidateComponentHierarchy(savePageStructureDto.Components);
-            var components = await CreateComponentsFromDtosAsync(validatedComponents, savePageStructureDto.PageId, currentUserId);
-
-            foreach (var component in components)
+            catch (Exception ex)
             {
-                await _componentRepository.AddAsync(component);
+                _logger.LogError(ex, "Error deleting page {PageId}", pageId);
+                throw;
             }
-
-            page.UpdatedAt = DateTime.UtcNow;
-            page.UpdatedByUserId = currentUserId;
-            _pageRepository.Update(page);
-            await _pageRepository.SaveChangesAsync();
-
-            var updatedPage = await _pageRepository.GetWithComponentsAsync(savePageStructureDto.PageId);
-            return _mapper.Map<PageDto>(updatedPage);
         }
 
         public async Task<PageDto> PublishPageAsync(int pageId)
@@ -218,24 +308,42 @@ namespace Backend.CMS.Infrastructure.Services
             if (pageId <= 0)
                 throw new ArgumentException("Invalid page ID");
 
-            var page = await _pageRepository.GetByIdAsync(pageId);
-            if (page == null)
-                throw new ArgumentException("Page not found");
+            try
+            {
+                var page = await _pageRepository.GetByIdAsync(pageId);
+                if (page == null)
+                    throw new ArgumentException("Page not found");
 
-            var currentUserId = _userSessionService.GetCurrentUserId();
+                var currentUserId = _userSessionService.GetCurrentUserId();
 
-            await ValidatePageForPublishingAsync(page);
+                await ValidatePageForPublishingAsync(page);
 
-            page.Status = PageStatus.Published;
-            page.PublishedOn = DateTime.UtcNow;
-            page.PublishedBy = _userSessionService.GetCurrentUserFullName() ?? "Unknown";
-            page.UpdatedAt = DateTime.UtcNow;
-            page.UpdatedByUserId = currentUserId;
+                // Create published version
+                var version = await CreatePageVersionAsync(pageId, "Page published");
+                version.IsPublished = true;
+                version.PublishedAt = DateTime.UtcNow;
+                _versionRepository.Update(version);
 
-            _pageRepository.Update(page);
-            await _pageRepository.SaveChangesAsync();
+                page.Status = PageStatus.Published;
+                page.PublishedOn = DateTime.UtcNow;
+                page.PublishedBy = _userSessionService.GetCurrentUserFullName() ?? "Unknown";
+                page.UpdatedAt = DateTime.UtcNow;
+                page.UpdatedByUserId = currentUserId;
 
-            return _mapper.Map<PageDto>(page);
+                _pageRepository.Update(page);
+                await _pageRepository.SaveChangesAsync();
+
+                await InvalidatePageCaches(pageId);
+
+                _logger.LogInformation("Published page {PageId}", pageId);
+
+                return _mapper.Map<PageDto>(page);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error publishing page {PageId}", pageId);
+                throw;
+            }
         }
 
         public async Task<PageDto> UnpublishPageAsync(int pageId)
@@ -243,20 +351,35 @@ namespace Backend.CMS.Infrastructure.Services
             if (pageId <= 0)
                 throw new ArgumentException("Invalid page ID");
 
-            var page = await _pageRepository.GetByIdAsync(pageId);
-            if (page == null)
-                throw new ArgumentException("Page not found");
+            try
+            {
+                var page = await _pageRepository.GetByIdAsync(pageId);
+                if (page == null)
+                    throw new ArgumentException("Page not found");
 
-            var currentUserId = _userSessionService.GetCurrentUserId();
+                var currentUserId = _userSessionService.GetCurrentUserId();
 
-            page.Status = PageStatus.Draft;
-            page.UpdatedAt = DateTime.UtcNow;
-            page.UpdatedByUserId = currentUserId;
+                // Create version before unpublishing
+                await CreatePageVersionAsync(pageId, "Page unpublished");
 
-            _pageRepository.Update(page);
-            await _pageRepository.SaveChangesAsync();
+                page.Status = PageStatus.Draft;
+                page.UpdatedAt = DateTime.UtcNow;
+                page.UpdatedByUserId = currentUserId;
 
-            return _mapper.Map<PageDto>(page);
+                _pageRepository.Update(page);
+                await _pageRepository.SaveChangesAsync();
+
+                await InvalidatePageCaches(pageId);
+
+                _logger.LogInformation("Unpublished page {PageId}", pageId);
+
+                return _mapper.Map<PageDto>(page);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error unpublishing page {PageId}", pageId);
+                throw;
+            }
         }
 
         public async Task<PageDto> DuplicatePageAsync(int pageId, string newName)
@@ -267,51 +390,59 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(newName))
                 throw new ArgumentException("New page name is required");
 
-            var originalPage = await _pageRepository.GetWithComponentsAsync(pageId);
-            if (originalPage == null)
-                throw new ArgumentException("Page not found");
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            var baseSlug = NormalizeSlug(newName);
-            var uniqueSlug = await GenerateUniqueSlugAsync(baseSlug);
-
-            var duplicatedPage = new Page
+            try
             {
-                Name = newName.Trim(),
-                Title = originalPage.Title + " (Copy)",
-                Slug = uniqueSlug,
-                Description = originalPage.Description,
-                MetaTitle = originalPage.MetaTitle,
-                MetaDescription = originalPage.MetaDescription,
-                MetaKeywords = originalPage.MetaKeywords,
-                Status = PageStatus.Draft,
-                Template = originalPage.Template,
-                Priority = originalPage.Priority,
-                ParentPageId = originalPage.ParentPageId,
-                RequiresLogin = originalPage.RequiresLogin,
-                AdminOnly = originalPage.AdminOnly,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = currentUserId,
-                UpdatedByUserId = currentUserId
-            };
+                var originalPage = await _pageRepository.GetByIdAsync(pageId);
+                if (originalPage == null)
+                    throw new ArgumentException("Page not found");
 
-            await _pageRepository.AddAsync(duplicatedPage);
-            await _pageRepository.SaveChangesAsync();
+                var currentUserId = _userSessionService.GetCurrentUserId();
 
-            await DuplicateComponentsAsync(originalPage.Components, duplicatedPage.Id, currentUserId);
+                var baseSlug = NormalizeSlug(newName);
+                var uniqueSlug = await GenerateUniqueSlugAsync(baseSlug);
 
-            await _componentRepository.SaveChangesAsync();
+                var duplicatedPage = new Page
+                {
+                    Name = newName.Trim(),
+                    Title = originalPage.Title + " (Copy)",
+                    Slug = uniqueSlug,
+                    Description = originalPage.Description,
+                    MetaTitle = originalPage.MetaTitle,
+                    MetaDescription = originalPage.MetaDescription,
+                    MetaKeywords = originalPage.MetaKeywords,
+                    Status = PageStatus.Draft,
+                    Template = originalPage.Template,
+                    Priority = originalPage.Priority,
+                    ParentPageId = originalPage.ParentPageId,
+                    RequiresLogin = originalPage.RequiresLogin,
+                    AdminOnly = originalPage.AdminOnly,
+                    Content = new Dictionary<string, object>(originalPage.Content),
+                    Layout = new Dictionary<string, object>(originalPage.Layout),
+                    Settings = new Dictionary<string, object>(originalPage.Settings),
+                    Styles = new Dictionary<string, object>(originalPage.Styles),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    CreatedByUserId = currentUserId,
+                    UpdatedByUserId = currentUserId
+                };
 
-            var finalPage = await _pageRepository.GetWithComponentsAsync(duplicatedPage.Id);
-            return _mapper.Map<PageDto>(finalPage);
-        }
+                await _pageRepository.AddAsync(duplicatedPage);
+                await _pageRepository.SaveChangesAsync();
 
-        public async Task<List<PageDto>> GetPublishedPagesAsync()
-        {
-            var pages = await _pageRepository.GetPublishedPagesAsync();
-            return _mapper.Map<List<PageDto>>(pages);
+                // Create initial version for duplicated page
+                await CreatePageVersionAsync(duplicatedPage.Id, $"Duplicated from page {originalPage.Name}");
+
+                await InvalidatePageCaches();
+
+                _logger.LogInformation("Duplicated page {OriginalPageId} to new page {NewPageId}", pageId, duplicatedPage.Id);
+
+                return _mapper.Map<PageDto>(duplicatedPage);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error duplicating page {PageId}", pageId);
+                throw;
+            }
         }
 
         public async Task<List<PageDto>> GetChildPagesAsync(int parentPageId)
@@ -319,8 +450,20 @@ namespace Backend.CMS.Infrastructure.Services
             if (parentPageId <= 0)
                 throw new ArgumentException("Invalid parent page ID");
 
-            var pages = await _pageRepository.GetChildPagesAsync(parentPageId);
-            return _mapper.Map<List<PageDto>>(pages);
+            try
+            {
+                var cacheKey = CacheKeys.PagesByParent(parentPageId);
+                return await _cacheService.GetAsync(cacheKey, async () =>
+                {
+                    var pages = await _pageRepository.GetChildPagesAsync(parentPageId);
+                    return _mapper.Map<List<PageDto>>(pages);
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting child pages for parent {ParentPageId}", parentPageId);
+                throw;
+            }
         }
 
         public async Task<bool> ValidateSlugAsync(string slug, int? excludePageId = null)
@@ -328,62 +471,107 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(slug))
                 return false;
 
-            var normalizedSlug = NormalizeSlug(slug);
-            return !await _pageRepository.SlugExistsAsync(normalizedSlug, excludePageId);
-        }
-
-        public async Task<PageDto> CreatePageVersionAsync(int pageId, string? changeNotes = null)
-        {
-            if (pageId <= 0)
-                throw new ArgumentException("Invalid page ID");
-
-            var page = await _pageRepository.GetWithComponentsAsync(pageId);
-            if (page == null)
-                throw new ArgumentException("Page not found");
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            var existingVersions = await _versionRepository.FindAsync(v => v.PageId == pageId);
-            var nextVersionNumber = existingVersions.Any() ? existingVersions.Max(v => v.VersionNumber) + 1 : 1;
-
-            var pageSnapshot = CreatePageSnapshot(page);
-
-            var version = new PageVersion
+            try
             {
-                PageId = pageId,
-                VersionNumber = nextVersionNumber,
-                Data = JsonSerializer.Serialize(pageSnapshot, new JsonSerializerOptions
-                {
-                    WriteIndented = true,
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                }),
-                ChangeNotes = changeNotes,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = currentUserId,
-                UpdatedByUserId = currentUserId
-            };
-
-            await _versionRepository.AddAsync(version);
-            await _versionRepository.SaveChangesAsync();
-
-            return _mapper.Map<PageDto>(page);
+                var normalizedSlug = NormalizeSlug(slug);
+                return !await _pageRepository.SlugExistsAsync(normalizedSlug, excludePageId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating slug {Slug}", slug);
+                return false;
+            }
         }
 
-        public async Task<List<PageVersionDto>> GetPageVersionsAsync(int pageId)
+        public async Task<PageVersion> CreatePageVersionAsync(int pageId, string? changeNotes = null)
+        {
+            try
+            {
+                var page = await _pageRepository.GetByIdAsync(pageId);
+                if (page == null)
+                    throw new ArgumentException("Page not found");
+
+                var currentUserId = _userSessionService.GetCurrentUserId();
+
+                var existingVersions = await _versionRepository.FindAsync(v => v.PageId == pageId);
+                var nextVersionNumber = existingVersions.Any() ? existingVersions.Max(v => v.VersionNumber) + 1 : 1;
+
+                var pageSnapshot = new Dictionary<string, object>
+                {
+                    { "pageInfo", new {
+                        page.Name,
+                        page.Title,
+                        page.Slug,
+                        page.Description,
+                        page.MetaTitle,
+                        page.MetaDescription,
+                        page.MetaKeywords,
+                        page.Status,
+                        page.Template,
+                        page.Priority,
+                        page.ParentPageId,
+                        page.RequiresLogin,
+                        page.AdminOnly
+                    }},
+                    { "content", page.Content },
+                    { "layout", page.Layout },
+                    { "settings", page.Settings },
+                    { "styles", page.Styles },
+                    { "snapshotDate", DateTime.UtcNow }
+                };
+
+                var version = new PageVersion
+                {
+                    PageId = pageId,
+                    VersionNumber = nextVersionNumber,
+                    ChangeNotes = changeNotes,
+                    PageSnapshot = pageSnapshot,
+                    Metadata = new Dictionary<string, object>
+                    {
+                        { "createdBy", _userSessionService.GetCurrentUserFullName() ?? "Unknown" }
+                    },
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow,
+                    CreatedByUserId = currentUserId,
+                    UpdatedByUserId = currentUserId
+                };
+
+                await _versionRepository.AddAsync(version);
+                await _versionRepository.SaveChangesAsync();
+
+                // Clear version cache
+                await _cacheService.RemoveAsync(CacheKeys.PageVersions(pageId));
+
+                return version;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating version for page {PageId}", pageId);
+                throw;
+            }
+        }
+
+        public async Task<List<Application.DTOs.PageVersionDto>> GetPageVersionsAsync(int pageId)
         {
             if (pageId <= 0)
                 throw new ArgumentException("Invalid page ID");
 
-            var versions = await _versionRepository.FindAsync(v => v.PageId == pageId);
-            return versions.OrderByDescending(v => v.VersionNumber)
-                          .Select(v => new PageVersionDto
-                          {
-                              Id = v.Id,
-                              VersionNumber = v.VersionNumber,
-                              ChangeNotes = v.ChangeNotes,
-                              CreatedAt = v.CreatedAt,
-                          }).ToList();
+            try
+            {
+                var cacheKey = CacheKeys.PageVersions(pageId);
+                return await _cacheService.GetAsync(cacheKey, async () =>
+                {
+                    var versions = await _versionRepository.FindAsync(v => v.PageId == pageId);
+                    return versions.OrderByDescending(v => v.VersionNumber)
+                                  .Select(v => _mapper.Map<Application.DTOs.PageVersionDto>(v))
+                                  .ToList();
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting versions for page {PageId}", pageId);
+                throw;
+            }
         }
 
         public async Task<PageDto> RestorePageVersionAsync(int pageId, int versionId)
@@ -394,39 +582,37 @@ namespace Backend.CMS.Infrastructure.Services
             if (versionId <= 0)
                 throw new ArgumentException("Invalid version ID");
 
-            var page = await _pageRepository.GetWithComponentsAsync(pageId);
-            var version = await _versionRepository.GetByIdAsync(versionId);
-
-            if (page == null || version == null || version.PageId != pageId)
-                throw new ArgumentException("Page or version not found");
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
             try
             {
+                var page = await _pageRepository.GetByIdAsync(pageId);
+                var version = await _versionRepository.GetByIdAsync(versionId);
+
+                if (page == null || version == null || version.PageId != pageId)
+                    throw new ArgumentException("Page or version not found");
+
+                var currentUserId = _userSessionService.GetCurrentUserId();
+
+                // Create backup before restoration
                 await CreatePageVersionAsync(pageId, $"Backup before restoring version {version.VersionNumber}");
 
-                var versionData = JsonSerializer.Deserialize<PageSnapshotDto>(version.Data, new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                });
-
-                if (versionData != null)
-                {
-                    await RestorePageFromSnapshotAsync(page, versionData, currentUserId);
-                }
+                // Restore from version snapshot
+                RestorePageFromSnapshot(page, version.PageSnapshot, currentUserId);
 
                 page.UpdatedAt = DateTime.UtcNow;
                 page.UpdatedByUserId = currentUserId;
                 _pageRepository.Update(page);
                 await _pageRepository.SaveChangesAsync();
 
-                var restoredPage = await _pageRepository.GetWithComponentsAsync(pageId);
-                return _mapper.Map<PageDto>(restoredPage);
+                await InvalidatePageCaches(pageId);
+
+                _logger.LogInformation("Restored page {PageId} to version {VersionNumber}", pageId, version.VersionNumber);
+
+                return _mapper.Map<PageDto>(page);
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"Failed to restore page version: {ex.Message}");
+                _logger.LogError(ex, "Error restoring version {VersionId} for page {PageId}", versionId, pageId);
+                throw;
             }
         }
 
@@ -480,221 +666,87 @@ namespace Backend.CMS.Infrastructure.Services
             await Task.CompletedTask;
         }
 
-        private List<PageComponentDto> ValidateComponentHierarchy(List<PageComponentDto> components)
+        private void RestorePageFromSnapshot(Page page, Dictionary<string, object> snapshot, int? currentUserId)
         {
-            var validatedComponents = new List<PageComponentDto>();
-            var processedIds = new HashSet<int>();
-
-            foreach (var component in components.Where(c => c.ParentComponentId == null).OrderBy(c => c.Order))
+            if (snapshot.TryGetValue("pageInfo", out var pageInfoObj))
             {
-                validatedComponents.Add(component);
-                processedIds.Add(component.Id);
-                AddChildComponents(component, components, validatedComponents, processedIds);
-            }
-
-            return validatedComponents;
-        }
-
-        private void AddChildComponents(PageComponentDto parent, List<PageComponentDto> allComponents,
-            List<PageComponentDto> result, HashSet<int> processedIds)
-        {
-            var children = allComponents
-                .Where(c => c.ParentComponentId == parent.Id && !processedIds.Contains(c.Id))
-                .OrderBy(c => c.Order)
-                .ToList();
-
-            foreach (var child in children)
-            {
-                result.Add(child);
-                processedIds.Add(child.Id);
-                AddChildComponents(child, allComponents, result, processedIds);
-            }
-        }
-
-        private async Task<List<PageComponent>> CreateComponentsFromDtosAsync(List<PageComponentDto> componentDtos, int pageId, int? currentUserId)
-        {
-            var components = new List<PageComponent>();
-            var idMapping = new Dictionary<int, int>();
-
-            foreach (var dto in componentDtos)
-            {
-                // Validate and sanitize config
-                var validationResult = await _configValidator.ValidateAsync(dto.Type, dto.Config);
-                if (!validationResult.IsValid)
+                var pageInfo = JsonSerializer.Deserialize<Dictionary<string, object>>(pageInfoObj.ToString() ?? "{}");
+                if (pageInfo != null)
                 {
-                    throw new ArgumentException($"Invalid configuration for component {dto.Name}: {string.Join(", ", validationResult.Errors)}");
-                }
-
-                var component = new PageComponent
-                {
-                    PageId = pageId,
-                    Type = dto.Type,
-                    Name = dto.Name,
-                    ComponentKey = dto.ComponentKey,
-                    Config = validationResult.SanitizedConfig,
-                    GridColumn = dto.GridColumn,
-                    GridColumnSpan = dto.GridColumnSpan,
-                    GridRow = dto.GridRow,
-                    GridRowSpan = dto.GridRowSpan,
-                    Order = dto.Order,
-                    IsVisible = dto.IsVisible,
-                    CssClasses = dto.CssClasses,
-                    CustomCss = dto.CustomCss,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    CreatedByUserId = currentUserId,
-                    UpdatedByUserId = currentUserId
-                };
-
-                if (dto.ParentComponentId.HasValue && idMapping.ContainsKey(dto.ParentComponentId.Value))
-                {
-                    component.ParentComponentId = idMapping[dto.ParentComponentId.Value];
-                }
-
-                components.Add(component);
-                if (dto.Id > 0)
-                {
-                    idMapping[dto.Id] = component.Id;
+                    if (pageInfo.TryGetValue("name", out var name)) page.Name = name?.ToString() ?? page.Name;
+                    if (pageInfo.TryGetValue("title", out var title)) page.Title = title?.ToString() ?? page.Title;
+                    if (pageInfo.TryGetValue("description", out var desc)) page.Description = desc?.ToString();
+                    if (pageInfo.TryGetValue("metaTitle", out var metaTitle)) page.MetaTitle = metaTitle?.ToString();
+                    if (pageInfo.TryGetValue("metaDescription", out var metaDesc)) page.MetaDescription = metaDesc?.ToString();
+                    if (pageInfo.TryGetValue("metaKeywords", out var metaKeys)) page.MetaKeywords = metaKeys?.ToString();
+                    if (pageInfo.TryGetValue("template", out var template)) page.Template = template?.ToString();
+                    if (pageInfo.TryGetValue("priority", out var priority) && int.TryParse(priority?.ToString(), out var p)) page.Priority = p;
+                    if (pageInfo.TryGetValue("requiresLogin", out var reqLogin) && bool.TryParse(reqLogin?.ToString(), out var rl)) page.RequiresLogin = rl;
+                    if (pageInfo.TryGetValue("adminOnly", out var adminOnly) && bool.TryParse(adminOnly?.ToString(), out var ao)) page.AdminOnly = ao;
                 }
             }
 
-            return components;
+            if (snapshot.TryGetValue("content", out var contentObj))
+                page.Content = ParseDictionary(contentObj) ?? new Dictionary<string, object>();
+
+            if (snapshot.TryGetValue("layout", out var layoutObj))
+                page.Layout = ParseDictionary(layoutObj) ?? new Dictionary<string, object>();
+
+            if (snapshot.TryGetValue("settings", out var settingsObj))
+                page.Settings = ParseDictionary(settingsObj) ?? new Dictionary<string, object>();
+
+            if (snapshot.TryGetValue("styles", out var stylesObj))
+                page.Styles = ParseDictionary(stylesObj) ?? new Dictionary<string, object>();
+
+            page.UpdatedByUserId = currentUserId;
         }
 
-        private async Task DuplicateComponentsAsync(ICollection<PageComponent> originalComponents, int newPageId, int? currentUserId)
+        private Dictionary<string, object>? ParseDictionary(object obj)
         {
-            var idMapping = new Dictionary<int, int>();
-
-            foreach (var originalComponent in originalComponents.Where(c => c.ParentComponentId == null).OrderBy(c => c.Order))
+            try
             {
-                await DuplicateComponentRecursivelyAsync(originalComponent, newPageId, null, currentUserId, idMapping);
-            }
-        }
+                if (obj is Dictionary<string, object> dict)
+                    return dict;
 
-        private async Task DuplicateComponentRecursivelyAsync(PageComponent originalComponent, int newPageId,
-            int? newParentId, int? currentUserId, Dictionary<int, int> idMapping)
-        {
-            var duplicatedComponent = new PageComponent
-            {
-                PageId = newPageId,
-                Type = originalComponent.Type,
-                Name = originalComponent.Name,
-                ComponentKey = originalComponent.ComponentKey,
-                Config = new Dictionary<string, object>(originalComponent.Config),
-                GridColumn = originalComponent.GridColumn,
-                GridColumnSpan = originalComponent.GridColumnSpan,
-                GridRow = originalComponent.GridRow,
-                GridRowSpan = originalComponent.GridRowSpan,
-                Order = originalComponent.Order,
-                ParentComponentId = newParentId,
-                IsVisible = originalComponent.IsVisible,
-                CssClasses = originalComponent.CssClasses,
-                CustomCss = originalComponent.CustomCss,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = currentUserId,
-                UpdatedByUserId = currentUserId
-            };
-
-            await _componentRepository.AddAsync(duplicatedComponent);
-            await _componentRepository.SaveChangesAsync();
-
-            idMapping[originalComponent.Id] = duplicatedComponent.Id;
-
-            var childComponents = originalComponent.ChildComponents.OrderBy(c => c.Order);
-            foreach (var childComponent in childComponents)
-            {
-                await DuplicateComponentRecursivelyAsync(childComponent, newPageId, duplicatedComponent.Id, currentUserId, idMapping);
-            }
-        }
-
-        private PageSnapshotDto CreatePageSnapshot(Page page)
-        {
-            return new PageSnapshotDto
-            {
-                Name = page.Name,
-                Title = page.Title,
-                Slug = page.Slug,
-                Description = page.Description,
-                MetaTitle = page.MetaTitle,
-                MetaDescription = page.MetaDescription,
-                MetaKeywords = page.MetaKeywords,
-                Status = page.Status,
-                Template = page.Template,
-                Priority = page.Priority,
-                ParentPageId = page.ParentPageId,
-                RequiresLogin = page.RequiresLogin,
-                AdminOnly = page.AdminOnly,
-                Components = page.Components.Select(c => new ComponentSnapshotDto
+                if (obj is JsonElement element && element.ValueKind == JsonValueKind.Object)
                 {
-                    Type = c.Type,
-                    Name = c.Name,
-                    ComponentKey = c.ComponentKey,
-                    Config = c.Config,
-                    GridColumn = c.GridColumn,
-                    GridColumnSpan = c.GridColumnSpan,
-                    GridRow = c.GridRow,
-                    GridRowSpan = c.GridRowSpan,
-                    Order = c.Order,
-                    ParentComponentId = c.ParentComponentId,
-                    IsVisible = c.IsVisible,
-                    CssClasses = c.CssClasses,
-                    CustomCss = c.CustomCss
-                }).ToList()
-            };
-        }
+                    return JsonSerializer.Deserialize<Dictionary<string, object>>(element.GetRawText());
+                }
 
-        private async Task RestorePageFromSnapshotAsync(Page page, PageSnapshotDto snapshot, int? currentUserId)
-        {
-            page.Name = snapshot.Name;
-            page.Title = snapshot.Title;
-            page.Description = snapshot.Description;
-            page.MetaTitle = snapshot.MetaTitle;
-            page.MetaDescription = snapshot.MetaDescription;
-            page.MetaKeywords = snapshot.MetaKeywords;
-            page.Template = snapshot.Template;
-            page.Priority = snapshot.Priority;
-            page.RequiresLogin = snapshot.RequiresLogin;
-            page.AdminOnly = snapshot.AdminOnly;
-
-            foreach (var component in page.Components)
+                var jsonString = obj?.ToString();
+                if (!string.IsNullOrEmpty(jsonString))
+                {
+                    return JsonSerializer.Deserialize<Dictionary<string, object>>(jsonString);
+                }
+            }
+            catch (Exception ex)
             {
-                await _componentRepository.SoftDeleteAsync(component, currentUserId);
+                _logger.LogWarning(ex, "Failed to parse dictionary from object");
             }
 
-            foreach (var componentSnapshot in snapshot.Components)
-            {
-                await RestoreComponentFromSnapshotAsync(componentSnapshot, page.Id, currentUserId);
-            }
+            return null;
         }
 
-        private async Task RestoreComponentFromSnapshotAsync(ComponentSnapshotDto snapshot, int pageId, int? currentUserId)
+        private async Task InvalidatePageCaches(int? specificPageId = null)
         {
-            var validationResult = await _configValidator.ValidateAsync(snapshot.Type, snapshot.Config);
-
-            var component = new PageComponent
+            var keysToRemove = new List<string>
             {
-                PageId = pageId,
-                Type = snapshot.Type,
-                Name = snapshot.Name,
-                ComponentKey = snapshot.ComponentKey,
-                Config = validationResult.IsValid ? validationResult.SanitizedConfig : snapshot.Config,
-                GridColumn = snapshot.GridColumn,
-                GridColumnSpan = snapshot.GridColumnSpan,
-                GridRow = snapshot.GridRow,
-                GridRowSpan = snapshot.GridRowSpan,
-                Order = snapshot.Order,
-                ParentComponentId = snapshot.ParentComponentId,
-                IsVisible = snapshot.IsVisible,
-                CssClasses = snapshot.CssClasses,
-                CustomCss = snapshot.CustomCss,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = currentUserId,
-                UpdatedByUserId = currentUserId
+                CacheKeys.PublishedPages,
+                CacheKeys.PageHierarchy
             };
 
-            await _componentRepository.AddAsync(component);
+            if (specificPageId.HasValue)
+            {
+                keysToRemove.AddRange(new[]
+                {
+                    CacheKeys.PageById(specificPageId.Value),
+                    CacheKeys.PageVersions(specificPageId.Value),
+                    CacheKeys.DesignerPage(specificPageId.Value)
+                });
+            }
+
+            await _cacheService.RemoveAsync(keysToRemove);
+            await _cacheService.RemoveByPatternAsync(CacheKeys.PagesPattern);
         }
     }
 }

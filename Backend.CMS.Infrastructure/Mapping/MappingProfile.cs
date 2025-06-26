@@ -1,8 +1,5 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Application.DTOs.Components;
-using Backend.CMS.Application.DTOs.Designer;
-using Backend.CMS.Application.Interfaces.Services;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 
@@ -18,7 +15,6 @@ namespace Backend.CMS.Infrastructure.Mapping
             ConfigureCompanyMappings();
             ConfigureLocationMappings();
             ConfigurePageMappings();
-            ConfigureComponentMappings();
             ConfigureSearchMappings();
             ConfigureCategoryMappings();
             ConfigureProductMappings();
@@ -133,8 +129,6 @@ namespace Backend.CMS.Infrastructure.Mapping
         private void ConfigurePageMappings()
         {
             CreateMap<Page, PageDto>()
-                .ForMember(dest => dest.Components, opt => opt.MapFrom(src =>
-                    src.Components.Where(c => !c.IsDeleted && c.ParentComponentId == null).OrderBy(c => c.Order)))
                 .ForMember(dest => dest.ChildPages, opt => opt.MapFrom(src =>
                     src.ChildPages.Where(cp => !cp.IsDeleted).OrderBy(cp => cp.Priority).ThenBy(cp => cp.Name)));
 
@@ -144,43 +138,21 @@ namespace Backend.CMS.Infrastructure.Mapping
 
             CreateMap<CreatePageDto, Page>()
                 .IgnoreAuditProperties()
-                .ForMember(dest => dest.Components, opt => opt.Ignore())
                 .ForMember(dest => dest.ChildPages, opt => opt.Ignore())
                 .ForMember(dest => dest.ParentPage, opt => opt.Ignore())
                 .ForMember(dest => dest.PublishedOn, opt => opt.Ignore())
-                .ForMember(dest => dest.PublishedBy, opt => opt.Ignore());
+                .ForMember(dest => dest.PublishedBy, opt => opt.Ignore())
+                .ForMember(dest => dest.Versions, opt => opt.Ignore());
 
             CreateMap<UpdatePageDto, Page>()
                 .IgnoreBaseEntityProperties()
-                .ForMember(dest => dest.Components, opt => opt.Ignore())
                 .ForMember(dest => dest.ChildPages, opt => opt.Ignore())
                 .ForMember(dest => dest.ParentPage, opt => opt.Ignore())
                 .ForMember(dest => dest.PublishedOn, opt => opt.Ignore())
-                .ForMember(dest => dest.PublishedBy, opt => opt.Ignore());
-
-            // Page Component mappings
-            CreateMap<PageComponent, PageComponentDto>()
-                .ForMember(dest => dest.ChildComponents, opt => opt.MapFrom(src =>
-                    src.ChildComponents.Where(cc => !cc.IsDeleted).OrderBy(cc => cc.Order)));
-
-            CreateMap<PageComponentDto, PageComponent>()
-                .IgnoreAuditProperties()
-                .ForMember(dest => dest.Page, opt => opt.Ignore())
-                .ForMember(dest => dest.ParentComponent, opt => opt.Ignore());
+                .ForMember(dest => dest.PublishedBy, opt => opt.Ignore())
+                .ForMember(dest => dest.Versions, opt => opt.Ignore());
         }
 
-        private void ConfigureComponentMappings()
-        {
-            CreateMap<ComponentTemplate, ComponentTemplateDto>();
-
-            CreateMap<CreateComponentTemplateDto, ComponentTemplate>()
-                .IgnoreAuditProperties()
-                .ForMember(dest => dest.IsSystemTemplate, opt => opt.MapFrom(src => false));
-
-            CreateMap<UpdateComponentTemplateDto, ComponentTemplate>()
-                .IgnoreBaseEntityProperties()
-                .ForMember(dest => dest.IsSystemTemplate, opt => opt.Ignore());
-        }
 
         private void ConfigureSearchMappings()
         {
@@ -391,48 +363,11 @@ namespace Backend.CMS.Infrastructure.Mapping
 
         private void ConfigureDesignerMapping()
         {
-            // Page mappings
             CreateMap<Page, DesignerPageDto>()
                 .ForMember(dest => dest.PublishedAt, opt => opt.MapFrom(src => src.PublishedOn))
-                .ForMember(dest => dest.Layout, opt => opt.MapFrom(src => new DesignerPageLayoutDto()))
-                .ForMember(dest => dest.Components, opt => opt.Ignore()) // Handled manually for hierarchy
-                .ForMember(dest => dest.Settings, opt => opt.MapFrom(src => new Dictionary<string, object>()))
-                .ForMember(dest => dest.Styles, opt => opt.MapFrom(src => new Dictionary<string, object>()))
                 .ForMember(dest => dest.HasUnsavedChanges, opt => opt.MapFrom(src => false));
 
-            // Component mappings
-            CreateMap<PageComponent, DesignerComponentDto>()
-                .ForMember(dest => dest.ParentComponentKey, opt => opt.MapFrom(src => src.ParentComponent != null ? src.ParentComponent.ComponentKey : null))
-                .ForMember(dest => dest.Children, opt => opt.Ignore()) // Handled manually for hierarchy
-                .ForMember(dest => dest.IsSelected, opt => opt.MapFrom(src => false));
-
-            CreateMap<CreateComponentDto, PageComponent>()
-                .ForMember(dest => dest.Id, opt => opt.Ignore())
-                .ForMember(dest => dest.Page, opt => opt.Ignore())
-                .ForMember(dest => dest.ParentComponent, opt => opt.Ignore())
-                .ForMember(dest => dest.ChildComponents, opt => opt.Ignore())
-                .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => DateTime.UtcNow))
-                .ForMember(dest => dest.UpdatedAt, opt => opt.MapFrom(src => DateTime.UtcNow))
-                .ForMember(dest => dest.IsVisible, opt => opt.MapFrom(src => true))
-                .ForMember(dest => dest.IsLocked, opt => opt.MapFrom(src => false))
-                .ForMember(dest => dest.IsDeleted, opt => opt.MapFrom(src => false));
-
-            // Version mappings
             CreateMap<PageVersion, PageVersionDto>();
-
-            // Reverse mappings for updates
-            CreateMap<DesignerComponentDto, PageComponent>()
-                .ForMember(dest => dest.Id, opt => opt.Ignore())
-                .ForMember(dest => dest.Page, opt => opt.Ignore())
-                .ForMember(dest => dest.ParentComponent, opt => opt.Ignore())
-                .ForMember(dest => dest.ChildComponents, opt => opt.Ignore())
-                .ForMember(dest => dest.CreatedAt, opt => opt.Ignore())
-                .ForMember(dest => dest.UpdatedAt, opt => opt.MapFrom(src => DateTime.UtcNow))
-                .ForMember(dest => dest.CreatedByUserId, opt => opt.Ignore())
-                .ForMember(dest => dest.UpdatedByUserId, opt => opt.Ignore())
-                .ForMember(dest => dest.IsDeleted, opt => opt.Ignore())
-                .ForMember(dest => dest.DeletedAt, opt => opt.Ignore())
-                .ForMember(dest => dest.DeletedByUserId, opt => opt.Ignore());
         }
     }
 

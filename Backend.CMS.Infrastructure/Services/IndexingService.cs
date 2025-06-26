@@ -16,7 +16,6 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IPageRepository _pageRepository;
         private readonly IRepository<FileEntity> _fileRepository;
         private readonly IUserRepository _userRepository;
-        private readonly IRepository<ComponentTemplate> _componentTemplateRepository;
         private readonly IUserSessionService _userSessionService;
         private readonly ILogger<IndexingService> _logger;
         private readonly SemaphoreSlim _indexingSemaphore;
@@ -32,7 +31,6 @@ namespace Backend.CMS.Infrastructure.Services
             IPageRepository pageRepository,
             IRepository<FileEntity> fileRepository,
             IUserRepository userRepository,
-            IRepository<ComponentTemplate> componentTemplateRepository,
             IUserSessionService userSessionService,
             IConfiguration configuration,
             ILogger<IndexingService> logger)
@@ -42,7 +40,6 @@ namespace Backend.CMS.Infrastructure.Services
             _pageRepository = pageRepository ?? throw new ArgumentNullException(nameof(pageRepository));
             _fileRepository = fileRepository ?? throw new ArgumentNullException(nameof(fileRepository));
             _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
-            _componentTemplateRepository = componentTemplateRepository ?? throw new ArgumentNullException(nameof(componentTemplateRepository));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -270,65 +267,6 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<bool> IndexComponentTemplatesAsync(IEnumerable<int>? templateIds = null)
-        {
-            using var cancellationTokenSource = new CancellationTokenSource(_indexingTimeout);
-            var cancellationToken = cancellationTokenSource.Token;
-
-            try
-            {
-                var templates = templateIds?.Any() == true
-                    ? await _componentTemplateRepository.FindAsync(t => templateIds.Contains(t.Id))
-                    : await _componentTemplateRepository.GetAllAsync();
-
-                var templatesList = templates.ToList();
-                if (!templatesList.Any())
-                {
-                    _logger.LogInformation("No component templates found to index");
-                    return true;
-                }
-
-                _logger.LogInformation("Starting to index {Count} component templates", templatesList.Count);
-
-                var successCount = 0;
-                var errorCount = 0;
-
-                foreach (var batch in templatesList.Chunk(_batchSize))
-                {
-                    foreach (var template in batch)
-                    {
-                        try
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            await IndexComponentTemplateAsync(template, cancellationToken);
-                            successCount++;
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Error indexing component template {TemplateId}", template.Id);
-                            errorCount++;
-                        }
-                    }
-
-                    await _searchIndexRepository.SaveChangesAsync();
-                }
-
-                _logger.LogInformation("Component template indexing completed - Success: {SuccessCount}, Errors: {ErrorCount}",
-                    successCount, errorCount);
-
-                return errorCount == 0;
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning("Component template indexing was cancelled due to timeout");
-                return false;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during component template indexing");
-                return false;
-            }
-        }
 
         public async Task<bool> RemoveFromIndexAsync(string entityType, int entityId)
         {
@@ -399,8 +337,7 @@ namespace Backend.CMS.Infrastructure.Services
                     var pageCount = await _pageRepository.CountAsync();
                     var fileCount = await _fileRepository.CountAsync();
                     var userCount = await _userRepository.CountAsync();
-                    var templateCount = await _componentTemplateRepository.CountAsync();
-                    totalEntities = pageCount + fileCount + userCount + templateCount;
+                    totalEntities = pageCount + fileCount + userCount;
 
                     await UpdateIndexingJobAsync(job.Id, "Running", totalEntities: totalEntities);
 
@@ -437,15 +374,6 @@ namespace Backend.CMS.Infrastructure.Services
                     }
                     await UpdateIndexingJobAsync(job.Id, "Running", processedEntities, failedEntities);
 
-                    // Index component templates
-                    if (await IndexComponentTemplatesAsync())
-                    {
-                        processedEntities += templateCount;
-                    }
-                    else
-                    {
-                        failedEntities += templateCount;
-                    }
                     await UpdateIndexingJobAsync(job.Id, "Running", processedEntities, failedEntities);
 
                     // Clean up old deleted indexes
@@ -492,7 +420,6 @@ namespace Backend.CMS.Infrastructure.Services
                     IndexUpdatedPagesAsync(sinceDate),
                     IndexUpdatedFilesAsync(sinceDate),
                     IndexUpdatedUsersAsync(sinceDate),
-                    IndexUpdatedTemplatesAsync(sinceDate)
                 };
 
                 var results = await Task.WhenAll(tasks);
@@ -676,28 +603,6 @@ namespace Backend.CMS.Infrastructure.Services
             return (processed, failed);
         }
 
-        private async Task<(int processed, int failed)> IndexUpdatedTemplatesAsync(DateTime since)
-        {
-            var updatedTemplates = await _componentTemplateRepository.FindAsync(t => t.UpdatedAt >= since);
-            var processed = 0;
-            var failed = 0;
-
-            foreach (var template in updatedTemplates)
-            {
-                try
-                {
-                    await IndexComponentTemplateAsync(template);
-                    processed++;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error indexing updated template {TemplateId}", template.Id);
-                    failed++;
-                }
-            }
-
-            return (processed, failed);
-        }
 
         private async Task IndexPageAsync(Page page, CancellationToken cancellationToken = default)
         {
@@ -800,39 +705,6 @@ namespace Backend.CMS.Infrastructure.Services
             _lastIndexedTimes[$"User_{user.Id}"] = DateTime.UtcNow;
         }
 
-        private async Task IndexComponentTemplateAsync(ComponentTemplate template, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var content = $"{template.DisplayName} {template.Description} {template.Category} {template.Tags}".Trim();
-            var searchVector = GenerateSearchVector(template.DisplayName, content);
-
-            var searchIndex = await GetOrCreateSearchIndexAsync("ComponentTemplate", template.Id);
-            searchIndex.Title = TruncateString(template.DisplayName, 500);
-            searchIndex.Content = TruncateString(content, 10000);
-            searchIndex.SearchVector = TruncateString(searchVector, 5000);
-            searchIndex.IsPublic = true;
-            searchIndex.LastIndexedAt = DateTime.UtcNow;
-            searchIndex.Metadata = new Dictionary<string, object>
-            {
-                { "type", template.Type.ToString() },
-                { "category", template.Category ?? "" },
-                { "isSystemTemplate", template.IsSystemTemplate },
-                { "isActive", template.IsActive },
-                { "tags", template.Tags ?? "" }
-            };
-
-            if (searchIndex.Id == 0)
-            {
-                await _searchIndexRepository.AddAsync(searchIndex);
-            }
-            else
-            {
-                _searchIndexRepository.Update(searchIndex);
-            }
-
-            _lastIndexedTimes[$"ComponentTemplate_{template.Id}"] = DateTime.UtcNow;
-        }
 
         private async Task<SearchIndex> GetOrCreateSearchIndexAsync(string entityType, int entityId)
         {
@@ -860,14 +732,6 @@ namespace Backend.CMS.Infrastructure.Services
             contentBuilder.AppendLine(page.Name);
             contentBuilder.AppendLine(page.Title);
             contentBuilder.AppendLine(page.Description);
-
-            if (page.Components?.Any() == true)
-            {
-                foreach (var component in page.Components.Where(c => !c.IsDeleted))
-                {
-                    ExtractComponentContent(component, contentBuilder);
-                }
-            }
 
             return CleanText(contentBuilder.ToString());
         }

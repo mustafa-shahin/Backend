@@ -1,6 +1,7 @@
 using Backend.CMS.API.Authorization;
-using Backend.CMS.Application.DTOs.Designer;
+using Backend.CMS.Application.DTOs;
 using Backend.CMS.Application.Interfaces;
+using Backend.CMS.Domain.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,14 +17,14 @@ namespace Backend.CMS.API.Controllers
 
         public DesignerController(IDesignerService designerService, ILogger<DesignerController> logger)
         {
-            _designerService = designerService;
-            _logger = logger;
+            _designerService = designerService ?? throw new ArgumentNullException(nameof(designerService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         #region Page Designer Operations
 
         /// <summary>
-        /// Get page data for the designer with grid layout
+        /// Get page data for the designer
         /// </summary>
         [HttpGet("pages/{pageId:int}")]
         public async Task<ActionResult<DesignerPageDto>> GetDesignerPage(int pageId)
@@ -35,6 +36,7 @@ namespace Backend.CMS.API.Controllers
             }
             catch (ArgumentException ex)
             {
+                _logger.LogWarning("Designer page not found: {PageId}", pageId);
                 return NotFound(new { Message = ex.Message });
             }
             catch (Exception ex)
@@ -45,7 +47,7 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Save page structure and components with grid positioning
+        /// Save page content and structure
         /// </summary>
         [HttpPost("pages/{pageId:int}/save")]
         public async Task<ActionResult<DesignerPageDto>> SaveDesignerPage(int pageId, [FromBody] SaveDesignerPageDto saveDto)
@@ -58,12 +60,40 @@ namespace Backend.CMS.API.Controllers
             }
             catch (ArgumentException ex)
             {
+                _logger.LogWarning("Invalid save request for page {PageId}: {Message}", pageId, ex.Message);
                 return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error saving designer page {PageId}", pageId);
                 return StatusCode(500, new { Message = "An error occurred while saving the page" });
+            }
+        }
+
+        /// <summary>
+        /// Auto-save page content (for draft versions)
+        /// </summary>
+        [HttpPost("pages/{pageId:int}/autosave")]
+        public async Task<ActionResult<DesignerPageDto>> AutoSaveDesignerPage(int pageId, [FromBody] SaveDesignerPageDto saveDto)
+        {
+            try
+            {
+                saveDto.PageId = pageId;
+                saveDto.AutoSave = true;
+                saveDto.CreateVersion = false; // Don't create versions for auto-saves
+
+                var page = await _designerService.SaveDesignerPageAsync(saveDto);
+                return Ok(page);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Invalid auto-save request for page {PageId}: {Message}", pageId, ex.Message);
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error auto-saving designer page {PageId}", pageId);
+                return StatusCode(500, new { Message = "An error occurred while auto-saving the page" });
             }
         }
 
@@ -91,163 +121,6 @@ namespace Backend.CMS.API.Controllers
 
         #endregion
 
-        #region Component Management
-
-        /// <summary>
-        /// Create a new component on the page
-        /// </summary>
-        [HttpPost("pages/{pageId:int}/components")]
-        public async Task<ActionResult<DesignerComponentDto>> CreateComponent(int pageId, [FromBody] CreateComponentDto createDto)
-        {
-            try
-            {
-                createDto.PageId = pageId;
-                var component = await _designerService.CreateComponentAsync(createDto);
-                return CreatedAtAction(nameof(GetDesignerPage), new { pageId }, component);
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { Message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creating component on page {PageId}", pageId);
-                return StatusCode(500, new { Message = "An error occurred while creating the component" });
-            }
-        }
-
-        /// <summary>
-        /// Update component properties, styles, and grid position
-        /// </summary>
-        [HttpPut("components/{componentId:int}")]
-        public async Task<ActionResult<DesignerComponentDto>> UpdateComponent(int componentId, [FromBody] UpdateComponentDto updateDto)
-        {
-            try
-            {
-                updateDto.ComponentId = componentId;
-                var component = await _designerService.UpdateComponentAsync(updateDto);
-                return Ok(component);
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { Message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating component {ComponentId}", componentId);
-                return StatusCode(500, new { Message = "An error occurred while updating the component" });
-            }
-        }
-
-        /// <summary>
-        /// Duplicate component with new grid position
-        /// </summary>
-        [HttpPost("components/{componentId:int}/duplicate")]
-        public async Task<ActionResult<DesignerComponentDto>> DuplicateComponent(int componentId, [FromBody] DuplicateComponentDto duplicateDto)
-        {
-            try
-            {
-                duplicateDto.ComponentId = componentId;
-                var component = await _designerService.DuplicateComponentAsync(duplicateDto);
-                return CreatedAtAction(nameof(UpdateComponent), new { componentId = component.Id }, component);
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { Message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error duplicating component {ComponentId}", componentId);
-                return StatusCode(500, new { Message = "An error occurred while duplicating the component" });
-            }
-        }
-
-        /// <summary>
-        /// Delete component from the page
-        /// </summary>
-        [HttpDelete("components/{componentId:int}")]
-        public async Task<ActionResult> DeleteComponent(int componentId, [FromQuery] string componentKey)
-        {
-            try
-            {
-                var success = await _designerService.DeleteComponentAsync(componentId, componentKey);
-                if (!success)
-                    return NotFound(new { Message = "Component not found" });
-
-                return Ok(new { Message = "Component deleted successfully" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error deleting component {ComponentId}", componentId);
-                return StatusCode(500, new { Message = "An error occurred while deleting the component" });
-            }
-        }
-
-        /// <summary>
-        /// Move component to new grid position
-        /// </summary>
-        [HttpPut("components/{componentId:int}/move")]
-        public async Task<ActionResult<DesignerComponentDto>> MoveComponent(int componentId, [FromBody] MoveComponentDto moveDto)
-        {
-            try
-            {
-                moveDto.ComponentId = componentId;
-                var component = await _designerService.MoveComponentAsync(moveDto);
-                return Ok(component);
-            }
-            catch (ArgumentException ex)
-            {
-                return BadRequest(new { Message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error moving component {ComponentId}", componentId);
-                return StatusCode(500, new { Message = "An error occurred while moving the component" });
-            }
-        }
-
-        /// <summary>
-        /// Reorder multiple components on the grid
-        /// </summary>
-        [HttpPut("pages/{pageId:int}/components/reorder")]
-        public async Task<ActionResult<List<DesignerComponentDto>>> ReorderComponents(int pageId, [FromBody] ReorderComponentsDto reorderDto)
-        {
-            try
-            {
-                var components = await _designerService.ReorderComponentsAsync(pageId, reorderDto.ComponentOrders);
-                return Ok(components);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error reordering components on page {PageId}", pageId);
-                return StatusCode(500, new { Message = "An error occurred while reordering components" });
-            }
-        }
-
-        #endregion
-
-        #region Component Library
-
-        /// <summary>
-        /// Get available component types for the designer
-        /// </summary>
-        [HttpGet("component-library")]
-        public async Task<ActionResult<ComponentLibraryDto>> GetComponentLibrary()
-        {
-            try
-            {
-                var library = await _designerService.GetComponentLibraryAsync();
-                return Ok(library);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting component library");
-                return StatusCode(500, new { Message = "An error occurred while retrieving the component library" });
-            }
-        }
-
-        #endregion
-
         #region Preview and Publishing
 
         /// <summary>
@@ -263,6 +136,7 @@ namespace Backend.CMS.API.Controllers
             }
             catch (ArgumentException ex)
             {
+                _logger.LogWarning("Invalid preview request for page {PageId}: {Message}", pageId, ex.Message);
                 return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
@@ -286,6 +160,7 @@ namespace Backend.CMS.API.Controllers
             }
             catch (ArgumentException ex)
             {
+                _logger.LogWarning("Preview not found: {PreviewToken}", previewToken);
                 return NotFound(new { Message = ex.Message });
             }
             catch (Exception ex)
@@ -309,6 +184,7 @@ namespace Backend.CMS.API.Controllers
             }
             catch (ArgumentException ex)
             {
+                _logger.LogWarning("Invalid publish request for page {PageId}: {Message}", pageId, ex.Message);
                 return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
@@ -331,6 +207,7 @@ namespace Backend.CMS.API.Controllers
             }
             catch (ArgumentException ex)
             {
+                _logger.LogWarning("Invalid unpublish request for page {PageId}: {Message}", pageId, ex.Message);
                 return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
@@ -348,15 +225,16 @@ namespace Backend.CMS.API.Controllers
         /// Create a version snapshot of the current page
         /// </summary>
         [HttpPost("pages/{pageId:int}/versions")]
-        public async Task<ActionResult<DesignerPageDto>> CreateVersion(int pageId, [FromBody] CreateVersionDto createDto)
+        public async Task<ActionResult<PageVersion>> CreateVersion(int pageId, [FromBody] CreateVersionDto createDto)
         {
             try
             {
-                var page = await _designerService.CreateVersionAsync(pageId, createDto.ChangeNotes);
-                return Ok(page);
+                var version = await _designerService.CreateVersionAsync(pageId, createDto.ChangeNotes);
+                return Ok(version);
             }
             catch (ArgumentException ex)
             {
+                _logger.LogWarning("Invalid version creation request for page {PageId}: {Message}", pageId, ex.Message);
                 return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
@@ -397,6 +275,7 @@ namespace Backend.CMS.API.Controllers
             }
             catch (ArgumentException ex)
             {
+                _logger.LogWarning("Invalid version restore request for page {PageId}, version {VersionId}: {Message}", pageId, versionId, ex.Message);
                 return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
@@ -463,15 +342,6 @@ namespace Backend.CMS.API.Controllers
                 _logger.LogError(ex, "Error clearing designer state for page {PageId}", pageId);
                 return StatusCode(500, new { Message = "An error occurred while clearing designer state" });
             }
-        }
-
-        #endregion
-
-        #region Helper DTOs
-
-        public class ReorderComponentsDto
-        {
-            public List<ComponentOrderDto> ComponentOrders { get; set; } = new();
         }
 
         #endregion

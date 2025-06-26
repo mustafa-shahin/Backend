@@ -50,8 +50,6 @@ namespace Backend.CMS.Infrastructure.Data
         public DbSet<Address> Addresses { get; set; }
         public DbSet<ContactDetails> ContactDetails { get; set; }
 
-        // Component Templates
-        public DbSet<ComponentTemplate> ComponentTemplates { get; set; }
 
         // Permissions
         public DbSet<Permission> Permissions { get; set; }
@@ -474,12 +472,18 @@ namespace Backend.CMS.Infrastructure.Data
                 entity.Property(e => e.MetaTitle).HasMaxLength(200);
                 entity.Property(e => e.MetaDescription).HasMaxLength(500);
 
+                // JSON properties for content storage
+                entity.Property(e => e.Content).HasConversion(dictionaryConverter).HasColumnType("jsonb");
+                entity.Property(e => e.Layout).HasConversion(dictionaryConverter).HasColumnType("jsonb");
+                entity.Property(e => e.Settings).HasConversion(dictionaryConverter).HasColumnType("jsonb");
+                entity.Property(e => e.Styles).HasConversion(dictionaryConverter).HasColumnType("jsonb");
+
                 entity.HasOne(e => e.ParentPage)
                     .WithMany(e => e.ChildPages)
                     .HasForeignKey(e => e.ParentPageId)
                     .OnDelete(DeleteBehavior.Restrict);
 
-                entity.HasMany(e => e.Components)
+                entity.HasMany(e => e.Versions)
                     .WithOne(e => e.Page)
                     .HasForeignKey(e => e.PageId)
                     .OnDelete(DeleteBehavior.Cascade);
@@ -506,24 +510,15 @@ namespace Backend.CMS.Infrastructure.Data
                 entity.HasKey(e => e.Id);
                 entity.HasIndex(e => new { e.PageId, e.VersionNumber }).IsUnique();
 
+                entity.Property(e => e.PageSnapshot).HasConversion(dictionaryConverter).HasColumnType("jsonb");
+                entity.Property(e => e.Metadata).HasConversion(dictionaryConverter).HasColumnType("jsonb");
+
                 entity.HasOne(e => e.Page)
-                    .WithMany()
+                    .WithMany(e => e.Versions)
                     .HasForeignKey(e => e.PageId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
-            // ComponentTemplate configuration
-            modelBuilder.Entity<ComponentTemplate>(entity =>
-            {
-                entity.HasKey(e => e.Id);
-                entity.HasIndex(e => e.Name).IsUnique();
-                entity.Property(e => e.Name).HasMaxLength(200);
-                entity.Property(e => e.DisplayName).HasMaxLength(200);
-                entity.Property(e => e.Category).HasMaxLength(100);
-                entity.Property(e => e.Icon).HasMaxLength(100);
-                entity.Property(e => e.DefaultConfig).HasConversion(dictionaryConverter);
-                entity.Property(e => e.ConfigSchema).HasConversion(dictionaryConverter);
-            });
 
             // Permission configuration
             modelBuilder.Entity<Permission>(entity =>
@@ -939,7 +934,6 @@ namespace Backend.CMS.Infrastructure.Data
             ApplyComparersToEntity<Location>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<ContactDetails>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<PageComponent>(modelBuilder, dictionaryComparer, listComparer);
-            ApplyComparersToEntity<ComponentTemplate>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<FileEntity>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<Folder>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<SearchIndex>(modelBuilder, dictionaryComparer, listComparer);

@@ -495,7 +495,6 @@ static void RegisterRepositories(WebApplicationBuilder builder)
     builder.Services.AddScoped<IRepository<LocationOpeningHour>, Repository<LocationOpeningHour>>();
     builder.Services.AddScoped<IRepository<Address>, Repository<Address>>();
     builder.Services.AddScoped<IRepository<ContactDetails>, Repository<ContactDetails>>();
-    builder.Services.AddScoped<IRepository<ComponentTemplate>, Repository<ComponentTemplate>>();
     builder.Services.AddScoped<IRepository<PageComponent>, Repository<PageComponent>>();
     builder.Services.AddScoped<IRepository<PageVersion>, Repository<PageVersion>>();
     builder.Services.AddScoped<IRepository<FileEntity>, Repository<FileEntity>>();
@@ -538,7 +537,6 @@ static void RegisterCachingServices(WebApplicationBuilder builder)
 static void RegisterBusinessServices(WebApplicationBuilder builder)
 {
     // Business services
-    builder.Services.AddScoped<IComponentService, ComponentService>();
     builder.Services.AddScoped<ICompanyService, CompanyService>();
     builder.Services.AddScoped<ILocationService, LocationService>();
     builder.Services.AddScoped<IPageService, PageService>();
@@ -548,7 +546,6 @@ static void RegisterBusinessServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IPermissionService, PermissionService>();
     builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
-    builder.Services.AddScoped<IComponentConfigValidator, ComponentConfigValidator>();
     builder.Services.AddScoped<IDesignerService, DesignerService>();
 }
 

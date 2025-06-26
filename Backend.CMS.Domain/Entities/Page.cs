@@ -2,8 +2,6 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using Backend.CMS.Domain.Common;
 using Backend.CMS.Domain.Enums;
-using System;
-using System.Collections.Generic;
 
 namespace Backend.CMS.Domain.Entities
 {
@@ -52,11 +50,35 @@ namespace Backend.CMS.Domain.Entities
 
         public ICollection<Page> ChildPages { get; set; } = new List<Page>();
 
-        public ICollection<PageComponent> Components { get; set; } = new List<PageComponent>();
+        /// <summary>
+        /// JSON content containing all page components and layout
+        /// </summary>
+        [Column(TypeName = "jsonb")]
+        public Dictionary<string, object> Content { get; set; } = new();
+
+        /// <summary>
+        /// Designer layout configuration
+        /// </summary>
+        [Column(TypeName = "jsonb")]
+        public Dictionary<string, object> Layout { get; set; } = new();
+
+        /// <summary>
+        /// Page-level settings
+        /// </summary>
+        [Column(TypeName = "jsonb")]
+        public Dictionary<string, object> Settings { get; set; } = new();
+
+        /// <summary>
+        /// Custom CSS styles for the page
+        /// </summary>
+        [Column(TypeName = "jsonb")]
+        public Dictionary<string, object> Styles { get; set; } = new();
 
         public DateTime? PublishedOn { get; set; }
 
         [StringLength(255)]
         public string? PublishedBy { get; set; }
+
+        public ICollection<PageVersion> Versions { get; set; } = new List<PageVersion>();
     }
 }

@@ -7,7 +7,6 @@ namespace Backend.CMS.Application.Interfaces
         Task<bool> IndexPagesAsync(IEnumerable<int>? pageIds = null);
         Task<bool> IndexFilesAsync(IEnumerable<int>? fileIds = null);
         Task<bool> IndexUsersAsync(IEnumerable<int>? userIds = null);
-        Task<bool> IndexComponentTemplatesAsync(IEnumerable<int>? templateIds = null);
         Task<bool> RemoveFromIndexAsync(string entityType, int entityId);
         Task<bool> FullReindexAsync();
         Task<bool> IncrementalIndexAsync(DateTime? since = null);

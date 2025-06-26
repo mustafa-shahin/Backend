@@ -5,18 +5,17 @@ using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.IRepositories;
+using Backend.CMS.Infrastructure.Caching;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using PageVersionDto = Backend.CMS.Application.DTOs.PageVersionDto; // Explicitly use the main namespace version
 
 namespace Backend.CMS.Infrastructure.Services
 {
     public class DesignerService : IDesignerService
     {
         private readonly IPageRepository _pageRepository;
-        private readonly IRepository<PageComponent> _componentRepository;
         private readonly IRepository<PageVersion> _versionRepository;
-        private readonly IRepository<ComponentTemplate> _templateRepository;
-        private readonly IComponentConfigValidator _configValidator;
         private readonly ICacheService _cacheService;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
@@ -24,39 +23,36 @@ namespace Backend.CMS.Infrastructure.Services
 
         public DesignerService(
             IPageRepository pageRepository,
-            IRepository<PageComponent> componentRepository,
             IRepository<PageVersion> versionRepository,
-            IRepository<ComponentTemplate> templateRepository,
-            IComponentConfigValidator configValidator,
             ICacheService cacheService,
             IMapper mapper,
             IUserSessionService userSessionService,
             ILogger<DesignerService> logger)
         {
-            _pageRepository = pageRepository;
-            _componentRepository = componentRepository;
-            _versionRepository = versionRepository;
-            _templateRepository = templateRepository;
-            _configValidator = configValidator;
-            _cacheService = cacheService;
-            _mapper = mapper;
-            _userSessionService = userSessionService;
-            _logger = logger;
+            _pageRepository = pageRepository ?? throw new ArgumentNullException(nameof(pageRepository));
+            _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
+            _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         public async Task<DesignerPageDto> GetDesignerPageAsync(int pageId)
         {
             try
             {
-                var cacheKey = $"designer:page:{pageId}";
+                var cacheKey = CacheKeys.DesignerPage(pageId);
                 return await _cacheService.GetAsync(cacheKey, async () =>
                 {
-                    var page = await _pageRepository.GetWithComponentsAsync(pageId);
+                    var page = await _pageRepository.GetByIdAsync(pageId);
                     if (page == null)
                         throw new ArgumentException("Page not found");
 
                     var designerPage = _mapper.Map<DesignerPageDto>(page);
-                    designerPage.Components = await BuildComponentHierarchyAsync(page.Components.Where(c => !c.IsDeleted).ToList());
+
+                    // Get current version number
+                    var versions = await _versionRepository.FindAsync(v => v.PageId == pageId);
+                    designerPage.CurrentVersion = versions.Any() ? versions.Max(v => v.VersionNumber) : 0;
 
                     return designerPage;
                 });
@@ -72,38 +68,33 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var page = await _pageRepository.GetWithComponentsAsync(saveDto.PageId);
+                var page = await _pageRepository.GetByIdAsync(saveDto.PageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
 
-                // Create version if requested
-                if (saveDto.CreateVersion)
+                // Always create version when saving (unless it's an auto-save)
+                if (saveDto.CreateVersion && !saveDto.AutoSave)
                 {
-                    await CreateVersionAsync(saveDto.PageId, saveDto.ChangeDescription);
+                    await CreateVersionAsync(saveDto.PageId, saveDto.ChangeDescription ?? "Designer changes");
                 }
 
-                // Delete existing components
-                foreach (var component in page.Components)
-                {
-                    await _componentRepository.SoftDeleteAsync(component, currentUserId);
-                }
-
-                // Create new components
-                var components = await CreateComponentsFromDesignerDtosAsync(saveDto.Components, saveDto.PageId, currentUserId);
-                foreach (var component in components)
-                {
-                    await _componentRepository.AddAsync(component);
-                }
-
+                // Update page content
+                page.Content = saveDto.Content ?? new Dictionary<string, object>();
+                page.Layout = saveDto.Layout ?? new Dictionary<string, object>();
+                page.Settings = saveDto.Settings ?? new Dictionary<string, object>();
+                page.Styles = saveDto.Styles ?? new Dictionary<string, object>();
                 page.UpdatedAt = DateTime.UtcNow;
                 page.UpdatedByUserId = currentUserId;
+
                 _pageRepository.Update(page);
                 await _pageRepository.SaveChangesAsync();
 
                 // Clear cache
-                await _cacheService.RemoveAsync($"designer:page:{saveDto.PageId}");
+                await InvalidatePageCacheAsync(saveDto.PageId);
+
+                _logger.LogInformation("Saved designer page {PageId} by user {UserId}", saveDto.PageId, currentUserId);
 
                 return await GetDesignerPageAsync(saveDto.PageId);
             }
@@ -123,7 +114,8 @@ namespace Backend.CMS.Infrastructure.Services
 
                 if (success)
                 {
-                    await _cacheService.RemoveAsync($"designer:page:{pageId}");
+                    await InvalidatePageCacheAsync(pageId);
+                    _logger.LogInformation("Deleted designer page {PageId} by user {UserId}", pageId, currentUserId);
                 }
 
                 return success;
@@ -135,327 +127,42 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<DesignerComponentDto> CreateComponentAsync(CreateComponentDto createDto)
-        {
-            try
-            {
-                // Validate config
-                var validationResult = await _configValidator.ValidateAsync(createDto.Type, createDto.Config);
-                if (!validationResult.IsValid)
-                {
-                    throw new ArgumentException($"Invalid configuration: {string.Join(", ", validationResult.Errors)}");
-                }
-
-                var currentUserId = _userSessionService.GetCurrentUserId();
-                var component = new PageComponent
-                {
-                    PageId = createDto.PageId,
-                    Type = createDto.Type,
-                    Name = createDto.Name,
-                    ComponentKey = createDto.ComponentKey,
-                    Config = validationResult.SanitizedConfig,
-                    GridColumn = createDto.GridColumn,
-                    GridColumnSpan = createDto.GridColumnSpan,
-                    GridRow = createDto.GridRow,
-                    GridRowSpan = createDto.GridRowSpan,
-                    Order = createDto.Order,
-                    ParentComponentId = createDto.ParentComponentId,
-                    IsVisible = true,
-                    IsLocked = false,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    CreatedByUserId = currentUserId,
-                    UpdatedByUserId = currentUserId
-                };
-
-                await _componentRepository.AddAsync(component);
-                await _componentRepository.SaveChangesAsync();
-
-                // Clear cache
-                await _cacheService.RemoveAsync($"designer:page:{createDto.PageId}");
-
-                return _mapper.Map<DesignerComponentDto>(component);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error creating component for page {PageId}", createDto.PageId);
-                throw;
-            }
-        }
-
-        public async Task<DesignerComponentDto> UpdateComponentAsync(UpdateComponentDto updateDto)
-        {
-            try
-            {
-                var component = await _componentRepository.GetByIdAsync(updateDto.ComponentId);
-                if (component == null)
-                    throw new ArgumentException("Component not found");
-
-                // Validate config if provided
-                if (updateDto.Config != null)
-                {
-                    var validationResult = await _configValidator.ValidateAsync(component.Type, updateDto.Config);
-                    if (!validationResult.IsValid)
-                    {
-                        throw new ArgumentException($"Invalid configuration: {string.Join(", ", validationResult.Errors)}");
-                    }
-                    component.Config = validationResult.SanitizedConfig;
-                }
-
-                var currentUserId = _userSessionService.GetCurrentUserId();
-
-                // Update properties
-                if (!string.IsNullOrEmpty(updateDto.Name))
-                    component.Name = updateDto.Name;
-
-                if (updateDto.GridColumn.HasValue)
-                    component.GridColumn = updateDto.GridColumn.Value;
-
-                if (updateDto.GridColumnSpan.HasValue)
-                    component.GridColumnSpan = updateDto.GridColumnSpan.Value;
-
-                if (updateDto.GridRow.HasValue)
-                    component.GridRow = updateDto.GridRow.Value;
-
-                if (updateDto.GridRowSpan.HasValue)
-                    component.GridRowSpan = updateDto.GridRowSpan.Value;
-
-                if (updateDto.IsVisible.HasValue)
-                    component.IsVisible = updateDto.IsVisible.Value;
-
-                if (updateDto.IsLocked.HasValue)
-                    component.IsLocked = updateDto.IsLocked.Value;
-
-                if (updateDto.CssClasses != null)
-                    component.CssClasses = updateDto.CssClasses;
-
-                if (updateDto.CustomCss != null)
-                    component.CustomCss = updateDto.CustomCss;
-
-                component.UpdatedAt = DateTime.UtcNow;
-                component.UpdatedByUserId = currentUserId;
-
-                _componentRepository.Update(component);
-                await _componentRepository.SaveChangesAsync();
-
-                // Clear cache
-                await _cacheService.RemoveAsync($"designer:page:{component.PageId}");
-
-                return _mapper.Map<DesignerComponentDto>(component);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating component {ComponentId}", updateDto.ComponentId);
-                throw;
-            }
-        }
-
-        public async Task<DesignerComponentDto> DuplicateComponentAsync(DuplicateComponentDto duplicateDto)
-        {
-            try
-            {
-                var originalComponent = await _componentRepository.GetByIdAsync(duplicateDto.ComponentId);
-                if (originalComponent == null)
-                    throw new ArgumentException("Component not found");
-
-                var currentUserId = _userSessionService.GetCurrentUserId();
-                var duplicatedComponent = new PageComponent
-                {
-                    PageId = originalComponent.PageId,
-                    Type = originalComponent.Type,
-                    Name = duplicateDto.NewName ?? $"{originalComponent.Name} (Copy)",
-                    ComponentKey = Guid.NewGuid().ToString(),
-                    Config = new Dictionary<string, object>(originalComponent.Config),
-                    GridColumn = duplicateDto.GridColumn,
-                    GridRow = duplicateDto.GridRow,
-                    GridColumnSpan = originalComponent.GridColumnSpan,
-                    GridRowSpan = originalComponent.GridRowSpan,
-                    Order = duplicateDto.Order,
-                    ParentComponentId = duplicateDto.ParentComponentId,
-                    IsVisible = originalComponent.IsVisible,
-                    IsLocked = false,
-                    CssClasses = originalComponent.CssClasses,
-                    CustomCss = originalComponent.CustomCss,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    CreatedByUserId = currentUserId,
-                    UpdatedByUserId = currentUserId
-                };
-
-                await _componentRepository.AddAsync(duplicatedComponent);
-                await _componentRepository.SaveChangesAsync();
-
-                // Clear cache
-                await _cacheService.RemoveAsync($"designer:page:{originalComponent.PageId}");
-
-                return _mapper.Map<DesignerComponentDto>(duplicatedComponent);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error duplicating component {ComponentId}", duplicateDto.ComponentId);
-                throw;
-            }
-        }
-
-        public async Task<bool> DeleteComponentAsync(int componentId, string componentKey)
-        {
-            try
-            {
-                var component = await _componentRepository.GetByIdAsync(componentId);
-                if (component == null || component.ComponentKey != componentKey)
-                    return false;
-
-                var currentUserId = _userSessionService.GetCurrentUserId();
-                var pageId = component.PageId;
-
-                // Recursively delete child components
-                await DeleteComponentRecursivelyAsync(component, currentUserId);
-
-                // Clear cache
-                await _cacheService.RemoveAsync($"designer:page:{pageId}");
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error deleting component {ComponentId}", componentId);
-                return false;
-            }
-        }
-
-        public async Task<DesignerComponentDto> MoveComponentAsync(MoveComponentDto moveDto)
-        {
-            try
-            {
-                var component = await _componentRepository.GetByIdAsync(moveDto.ComponentId);
-                if (component == null || component.ComponentKey != moveDto.ComponentKey)
-                    throw new ArgumentException("Component not found");
-
-                var currentUserId = _userSessionService.GetCurrentUserId();
-
-                component.ParentComponentId = moveDto.NewParentComponentId;
-                component.GridColumn = moveDto.NewGridColumn;
-                component.GridRow = moveDto.NewGridRow;
-                component.Order = moveDto.NewOrder;
-                component.UpdatedAt = DateTime.UtcNow;
-                component.UpdatedByUserId = currentUserId;
-
-                _componentRepository.Update(component);
-                await _componentRepository.SaveChangesAsync();
-
-                // Clear cache
-                await _cacheService.RemoveAsync($"designer:page:{component.PageId}");
-
-                return _mapper.Map<DesignerComponentDto>(component);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error moving component {ComponentId}", moveDto.ComponentId);
-                throw;
-            }
-        }
-
-        public async Task<List<DesignerComponentDto>> ReorderComponentsAsync(int pageId, List<ComponentOrderDto> componentOrders)
-        {
-            try
-            {
-                var currentUserId = _userSessionService.GetCurrentUserId();
-                var components = new List<DesignerComponentDto>();
-
-                foreach (var order in componentOrders)
-                {
-                    var component = await _componentRepository.FirstOrDefaultAsync(c =>
-                        c.ComponentKey == order.ComponentKey && c.PageId == pageId);
-
-                    if (component != null)
-                    {
-                        component.Order = order.Order;
-                        component.GridColumn = order.GridColumn;
-                        component.GridRow = order.GridRow;
-                        component.UpdatedAt = DateTime.UtcNow;
-                        component.UpdatedByUserId = currentUserId;
-
-                        _componentRepository.Update(component);
-                        components.Add(_mapper.Map<DesignerComponentDto>(component));
-                    }
-                }
-
-                await _componentRepository.SaveChangesAsync();
-
-                // Clear cache
-                await _cacheService.RemoveAsync($"designer:page:{pageId}");
-
-                return components;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error reordering components for page {PageId}", pageId);
-                throw;
-            }
-        }
-
-        public async Task<ComponentLibraryDto> GetComponentLibraryAsync()
-        {
-            try
-            {
-                return await _cacheService.GetAsync("designer:component-library", async () =>
-                {
-                    var templates = await _templateRepository.FindAsync(t => t.IsActive);
-                    var groupedTemplates = templates.GroupBy(t => t.Category ?? "Other");
-
-                    var library = new ComponentLibraryDto
-                    {
-                        Categories = groupedTemplates.Select(g => new ComponentCategoryDto
-                        {
-                            Name = g.Key,
-                            DisplayName = g.Key,
-                            Components = g.OrderBy(t => t.SortOrder).Select(t => new AvailableComponentDto
-                            {
-                                Type = t.Type,
-                                Name = t.Name,
-                                DisplayName = t.DisplayName,
-                                Description = t.Description,
-                                Icon = t.Icon,
-                                Category = t.Category ?? "Other",
-                                DefaultConfig = t.DefaultConfig,
-                                AllowChildren = IsContainerType(t.Type),
-                                DefaultColumnSpan = GetDefaultColumnSpan(t.Type)
-                            }).ToList()
-                        }).ToList()
-                    };
-
-                    return library;
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting component library");
-                throw;
-            }
-        }
-
         public async Task<DesignerPreviewDto> GeneratePreviewAsync(int pageId, Dictionary<string, object>? settings = null)
         {
             try
             {
-                var previewToken = Guid.NewGuid().ToString();
-                var expiresAt = DateTime.UtcNow.AddHours(1);
+                var page = await _pageRepository.GetByIdAsync(pageId);
+                if (page == null)
+                    throw new ArgumentException("Page not found");
 
-                // Store preview data in cache
+                var previewToken = GeneratePreviewToken();
+                var expiresAt = DateTime.UtcNow.AddHours(2); // Longer expiry for better UX
+
                 var previewData = new
                 {
                     PageId = pageId,
-                    Settings = settings ?? new Dictionary<string, object>(),
+                    Content = page.Content,
+                    Layout = page.Layout,
+                    Settings = settings ?? page.Settings,
+                    Styles = page.Styles,
+                    PageInfo = new
+                    {
+                        page.Name,
+                        page.Title,
+                        page.Slug,
+                        page.Description
+                    },
                     CreatedAt = DateTime.UtcNow,
                     ExpiresAt = expiresAt
                 };
 
-                await _cacheService.SetAsync($"preview:{previewToken}", previewData, TimeSpan.FromHours(1));
+                var cacheKey = CacheKeys.PreviewToken(previewToken);
+                await _cacheService.SetAsync(cacheKey, previewData, TimeSpan.FromHours(2));
 
                 return new DesignerPreviewDto
                 {
                     PageId = pageId,
-                    PreviewUrl = $"/preview/{previewToken}",
+                    PreviewUrl = $"/api/designer/preview/{previewToken}",
                     PreviewToken = previewToken,
                     ExpiresAt = expiresAt,
                     Settings = settings ?? new Dictionary<string, object>()
@@ -472,13 +179,16 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var previewData = await _cacheService.GetAsync<dynamic>($"preview:{previewToken}");
+                if (string.IsNullOrWhiteSpace(previewToken))
+                    throw new ArgumentException("Preview token is required");
+
+                var cacheKey = CacheKeys.PreviewToken(previewToken);
+                var previewData = await _cacheService.GetAsync<object>(cacheKey);
+
                 if (previewData == null)
                     throw new ArgumentException("Preview not found or expired");
 
-                // Get page data and return as JSON
-                var page = await GetDesignerPageAsync((int)previewData.PageId);
-                return JsonSerializer.Serialize(page, new JsonSerializerOptions
+                return JsonSerializer.Serialize(previewData, new JsonSerializerOptions
                 {
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                     WriteIndented = true
@@ -503,7 +213,13 @@ namespace Backend.CMS.Infrastructure.Services
 
                 if (publishDto.CreateVersion)
                 {
-                    await CreateVersionAsync(publishDto.PageId, publishDto.PublishMessage);
+                    var version = await CreateVersionAsync(publishDto.PageId,
+                        publishDto.PublishMessage ?? "Published version");
+
+                    // Mark version as published
+                    version.IsPublished = true;
+                    version.PublishedAt = publishDto.ScheduledAt ?? DateTime.UtcNow;
+                    _versionRepository.Update(version);
                 }
 
                 page.Status = PageStatus.Published;
@@ -515,8 +231,9 @@ namespace Backend.CMS.Infrastructure.Services
                 _pageRepository.Update(page);
                 await _pageRepository.SaveChangesAsync();
 
-                // Clear cache
-                await _cacheService.RemoveAsync($"designer:page:{publishDto.PageId}");
+                await InvalidatePageCacheAsync(publishDto.PageId);
+
+                _logger.LogInformation("Published page {PageId} by user {UserId}", publishDto.PageId, currentUserId);
 
                 return await GetDesignerPageAsync(publishDto.PageId);
             }
@@ -544,8 +261,9 @@ namespace Backend.CMS.Infrastructure.Services
                 _pageRepository.Update(page);
                 await _pageRepository.SaveChangesAsync();
 
-                // Clear cache
-                await _cacheService.RemoveAsync($"designer:page:{pageId}");
+                await InvalidatePageCacheAsync(pageId);
+
+                _logger.LogInformation("Unpublished page {PageId} by user {UserId}", pageId, currentUserId);
 
                 return await GetDesignerPageAsync(pageId);
             }
@@ -556,11 +274,11 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<DesignerPageDto> CreateVersionAsync(int pageId, string? changeNotes = null)
+        public async Task<PageVersion> CreateVersionAsync(int pageId, string? changeNotes = null)
         {
             try
             {
-                var page = await _pageRepository.GetWithComponentsAsync(pageId);
+                var page = await _pageRepository.GetByIdAsync(pageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
@@ -573,12 +291,14 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     PageId = pageId,
                     VersionNumber = nextVersionNumber,
-                    Data = JsonSerializer.Serialize(pageSnapshot, new JsonSerializerOptions
-                    {
-                        WriteIndented = true,
-                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                    }),
                     ChangeNotes = changeNotes,
+                    PageSnapshot = pageSnapshot,
+                    Metadata = new Dictionary<string, object>
+                    {
+                        { "createdBy", _userSessionService.GetCurrentUserFullName() ?? "Unknown" },
+                        { "userAgent", GetUserAgent() },
+                        { "ipAddress", GetClientIpAddress() }
+                    },
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     CreatedByUserId = currentUserId,
@@ -588,7 +308,9 @@ namespace Backend.CMS.Infrastructure.Services
                 await _versionRepository.AddAsync(version);
                 await _versionRepository.SaveChangesAsync();
 
-                return await GetDesignerPageAsync(pageId);
+                _logger.LogInformation("Created version {VersionNumber} for page {PageId}", nextVersionNumber, pageId);
+
+                return version;
             }
             catch (Exception ex)
             {
@@ -603,14 +325,8 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var versions = await _versionRepository.FindAsync(v => v.PageId == pageId);
                 return versions.OrderByDescending(v => v.VersionNumber)
-                              .Select(v => new PageVersionDto
-                              {
-                                  Id = v.Id,
-                                  VersionNumber = v.VersionNumber,
-                                  ChangeNotes = v.ChangeNotes,
-                                  CreatedAt = v.CreatedAt,
-                                  CreatedByUserId = v.CreatedByUserId
-                              }).ToList();
+                              .Select(v => _mapper.Map<PageVersionDto>(v))
+                              .ToList();
             }
             catch (Exception ex)
             {
@@ -623,7 +339,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var page = await _pageRepository.GetWithComponentsAsync(pageId);
+                var page = await _pageRepository.GetByIdAsync(pageId);
                 var version = await _versionRepository.GetByIdAsync(versionId);
 
                 if (page == null || version == null || version.PageId != pageId)
@@ -634,24 +350,17 @@ namespace Backend.CMS.Infrastructure.Services
                 // Create backup before restoration
                 await CreateVersionAsync(pageId, $"Backup before restoring version {version.VersionNumber}");
 
-                // Restore from version data
-                var versionData = JsonSerializer.Deserialize<PageSnapshotDto>(version.Data, new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                });
-
-                if (versionData != null)
-                {
-                    await RestorePageFromSnapshotAsync(page, versionData, currentUserId);
-                }
+                // Restore from version snapshot
+                RestorePageFromSnapshot(page, version.PageSnapshot, currentUserId);
 
                 page.UpdatedAt = DateTime.UtcNow;
                 page.UpdatedByUserId = currentUserId;
                 _pageRepository.Update(page);
                 await _pageRepository.SaveChangesAsync();
 
-                // Clear cache
-                await _cacheService.RemoveAsync($"designer:page:{pageId}");
+                await InvalidatePageCacheAsync(pageId);
+
+                _logger.LogInformation("Restored page {PageId} to version {VersionNumber}", pageId, version.VersionNumber);
 
                 return await GetDesignerPageAsync(pageId);
             }
@@ -667,9 +376,12 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var userId = _userSessionService.GetCurrentUserId();
-                var cacheKey = $"designer:state:{pageId}:{userId}";
+                if (!userId.HasValue)
+                    return new DesignerStateDto { PageId = pageId };
 
+                var cacheKey = CacheKeys.DesignerState(pageId, userId.Value);
                 var state = await _cacheService.GetAsync<DesignerStateDto>(cacheKey);
+
                 return state ?? new DesignerStateDto { PageId = pageId };
             }
             catch (Exception ex)
@@ -684,9 +396,13 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var userId = _userSessionService.GetCurrentUserId();
-                var cacheKey = $"designer:state:{stateDto.PageId}:{userId}";
+                if (!userId.HasValue)
+                    return stateDto;
 
-                await _cacheService.SetAsync(cacheKey, stateDto, TimeSpan.FromHours(24));
+                stateDto.LastModified = DateTime.UtcNow;
+                var cacheKey = CacheKeys.DesignerState(stateDto.PageId, userId.Value);
+
+                await _cacheService.SetAsync(cacheKey, stateDto, TimeSpan.FromDays(7)); // Keep state for a week
                 return stateDto;
             }
             catch (Exception ex)
@@ -701,8 +417,9 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var userId = _userSessionService.GetCurrentUserId();
-                var cacheKey = $"designer:state:{pageId}:{userId}";
+                if (!userId.HasValue) return;
 
+                var cacheKey = CacheKeys.DesignerState(pageId, userId.Value);
                 await _cacheService.RemoveAsync(cacheKey);
             }
             catch (Exception ex)
@@ -712,200 +429,106 @@ namespace Backend.CMS.Infrastructure.Services
         }
 
         // Private helper methods
-        private async Task<List<DesignerComponentDto>> BuildComponentHierarchyAsync(List<PageComponent> components)
+        private Dictionary<string, object> CreatePageSnapshot(Page page)
         {
-            var componentDtos = components.Select(c => _mapper.Map<DesignerComponentDto>(c)).ToList();
-            var rootComponents = new List<DesignerComponentDto>();
-
-            // Build hierarchy
-            foreach (var component in componentDtos.Where(c => c.ParentComponentId == null).OrderBy(c => c.Order))
+            return new Dictionary<string, object>
             {
-                component.Children = BuildChildComponents(component, componentDtos);
-                rootComponents.Add(component);
-            }
-
-            return rootComponents;
-        }
-
-        private List<DesignerComponentDto> BuildChildComponents(DesignerComponentDto parent, List<DesignerComponentDto> allComponents)
-        {
-            var children = allComponents
-                .Where(c => c.ParentComponentId == parent.Id)
-                .OrderBy(c => c.Order)
-                .ToList();
-
-            foreach (var child in children)
-            {
-                child.Children = BuildChildComponents(child, allComponents);
-            }
-
-            return children;
-        }
-
-        private async Task<List<PageComponent>> CreateComponentsFromDesignerDtosAsync(List<DesignerComponentDto> componentDtos, int pageId, int? currentUserId)
-        {
-            var components = new List<PageComponent>();
-
-            foreach (var dto in componentDtos)
-            {
-                var component = await CreateComponentFromDesignerDtoAsync(dto, pageId, currentUserId);
-                components.Add(component);
-
-                // Recursively create child components
-                foreach (var childDto in dto.Children)
-                {
-                    var childComponent = await CreateComponentFromDesignerDtoAsync(childDto, pageId, currentUserId);
-                    childComponent.ParentComponentId = component.Id;
-                    components.Add(childComponent);
-                }
-            }
-
-            return components;
-        }
-
-        private async Task<PageComponent> CreateComponentFromDesignerDtoAsync(DesignerComponentDto dto, int pageId, int? currentUserId)
-        {
-            var validationResult = await _configValidator.ValidateAsync(dto.Type, dto.Config);
-
-            return new PageComponent
-            {
-                PageId = pageId,
-                Type = dto.Type,
-                Name = dto.Name,
-                ComponentKey = dto.ComponentKey,
-                Config = validationResult.IsValid ? validationResult.SanitizedConfig : dto.Config,
-                GridColumn = dto.GridColumn,
-                GridColumnSpan = dto.GridColumnSpan,
-                GridRow = dto.GridRow,
-                GridRowSpan = dto.GridRowSpan,
-                Order = dto.Order,
-                ParentComponentId = dto.ParentComponentId,
-                IsVisible = dto.IsVisible,
-                IsLocked = dto.IsLocked,
-                CssClasses = dto.CssClasses,
-                CustomCss = dto.CustomCss,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = currentUserId,
-                UpdatedByUserId = currentUserId
+                { "pageInfo", new {
+                    page.Name,
+                    page.Title,
+                    page.Slug,
+                    page.Description,
+                    page.MetaTitle,
+                    page.MetaDescription,
+                    page.MetaKeywords,
+                    page.Status,
+                    page.Template,
+                    page.Priority,
+                    page.ParentPageId,
+                    page.RequiresLogin,
+                    page.AdminOnly
+                }},
+                { "content", page.Content },
+                { "layout", page.Layout },
+                { "settings", page.Settings },
+                { "styles", page.Styles },
+                { "snapshotDate", DateTime.UtcNow }
             };
         }
 
-        private async Task DeleteComponentRecursivelyAsync(PageComponent component, int? currentUserId)
+        private void RestorePageFromSnapshot(Page page, Dictionary<string, object> snapshot, int? currentUserId)
         {
-            // Delete child components first
-            var childComponents = await _componentRepository.FindAsync(c => c.ParentComponentId == component.Id);
-            foreach (var child in childComponents)
+            if (snapshot.TryGetValue("pageInfo", out var pageInfoObj) && pageInfoObj is JsonElement pageInfo)
             {
-                await DeleteComponentRecursivelyAsync(child, currentUserId);
+                if (pageInfo.TryGetProperty("name", out var name)) page.Name = name.GetString() ?? page.Name;
+                if (pageInfo.TryGetProperty("title", out var title)) page.Title = title.GetString() ?? page.Title;
+                if (pageInfo.TryGetProperty("description", out var desc)) page.Description = desc.GetString();
+                if (pageInfo.TryGetProperty("metaTitle", out var metaTitle)) page.MetaTitle = metaTitle.GetString();
+                if (pageInfo.TryGetProperty("metaDescription", out var metaDesc)) page.MetaDescription = metaDesc.GetString();
+                if (pageInfo.TryGetProperty("metaKeywords", out var metaKeys)) page.MetaKeywords = metaKeys.GetString();
+                if (pageInfo.TryGetProperty("template", out var template)) page.Template = template.GetString();
+                if (pageInfo.TryGetProperty("priority", out var priority)) page.Priority = priority.GetInt32();
+                if (pageInfo.TryGetProperty("requiresLogin", out var reqLogin)) page.RequiresLogin = reqLogin.GetBoolean();
+                if (pageInfo.TryGetProperty("adminOnly", out var adminOnly)) page.AdminOnly = adminOnly.GetBoolean();
             }
 
-            // Delete the component itself
-            await _componentRepository.SoftDeleteAsync(component, currentUserId);
+            if (snapshot.TryGetValue("content", out var contentObj))
+                page.Content = ParseDictionary(contentObj) ?? new Dictionary<string, object>();
+
+            if (snapshot.TryGetValue("layout", out var layoutObj))
+                page.Layout = ParseDictionary(layoutObj) ?? new Dictionary<string, object>();
+
+            if (snapshot.TryGetValue("settings", out var settingsObj))
+                page.Settings = ParseDictionary(settingsObj) ?? new Dictionary<string, object>();
+
+            if (snapshot.TryGetValue("styles", out var stylesObj))
+                page.Styles = ParseDictionary(stylesObj) ?? new Dictionary<string, object>();
+
+            page.UpdatedByUserId = currentUserId;
         }
 
-        private PageSnapshotDto CreatePageSnapshot(Page page)
+        private Dictionary<string, object>? ParseDictionary(object obj)
         {
-            return new PageSnapshotDto
+            if (obj is Dictionary<string, object> dict)
+                return dict;
+
+            if (obj is JsonElement element && element.ValueKind == JsonValueKind.Object)
             {
-                Name = page.Name,
-                Title = page.Title,
-                Slug = page.Slug,
-                Description = page.Description,
-                MetaTitle = page.MetaTitle,
-                MetaDescription = page.MetaDescription,
-                MetaKeywords = page.MetaKeywords,
-                Status = page.Status,
-                Template = page.Template,
-                Priority = page.Priority,
-                ParentPageId = page.ParentPageId,
-                RequiresLogin = page.RequiresLogin,
-                AdminOnly = page.AdminOnly,
-                Components = page.Components.Select(c => new ComponentSnapshotDto
-                {
-                    Type = c.Type,
-                    Name = c.Name,
-                    ComponentKey = c.ComponentKey,
-                    Config = c.Config,
-                    GridColumn = c.GridColumn,
-                    GridColumnSpan = c.GridColumnSpan,
-                    GridRow = c.GridRow,
-                    GridRowSpan = c.GridRowSpan,
-                    Order = c.Order,
-                    ParentComponentId = c.ParentComponentId,
-                    IsVisible = c.IsVisible,
-                    CssClasses = c.CssClasses,
-                    CustomCss = c.CustomCss
-                }).ToList()
+                return JsonSerializer.Deserialize<Dictionary<string, object>>(element.GetRawText());
+            }
+
+            return null;
+        }
+
+        private async Task InvalidatePageCacheAsync(int pageId)
+        {
+            var keysToRemove = new[]
+            {
+                CacheKeys.DesignerPage(pageId),
+                CacheKeys.PageById(pageId),
+                CacheKeys.PublishedPages,
+                CacheKeys.PageHierarchy
             };
+
+            await _cacheService.RemoveAsync(keysToRemove);
+            await _cacheService.RemoveByPatternAsync($"preview:*");
         }
 
-        private async Task RestorePageFromSnapshotAsync(Page page, PageSnapshotDto snapshot, int? currentUserId)
+        private static string GeneratePreviewToken()
         {
-            page.Name = snapshot.Name;
-            page.Title = snapshot.Title;
-            page.Description = snapshot.Description;
-            page.MetaTitle = snapshot.MetaTitle;
-            page.MetaDescription = snapshot.MetaDescription;
-            page.MetaKeywords = snapshot.MetaKeywords;
-            page.Template = snapshot.Template;
-            page.Priority = snapshot.Priority;
-            page.RequiresLogin = snapshot.RequiresLogin;
-            page.AdminOnly = snapshot.AdminOnly;
-
-            // Delete existing components
-            foreach (var component in page.Components)
-            {
-                await _componentRepository.SoftDeleteAsync(component, currentUserId);
-            }
-
-            // Restore components
-            foreach (var componentSnapshot in snapshot.Components)
-            {
-                var validationResult = await _configValidator.ValidateAsync(componentSnapshot.Type, componentSnapshot.Config);
-
-                var component = new PageComponent
-                {
-                    PageId = page.Id,
-                    Type = componentSnapshot.Type,
-                    Name = componentSnapshot.Name,
-                    ComponentKey = componentSnapshot.ComponentKey,
-                    Config = validationResult.IsValid ? validationResult.SanitizedConfig : componentSnapshot.Config,
-                    GridColumn = componentSnapshot.GridColumn,
-                    GridColumnSpan = componentSnapshot.GridColumnSpan,
-                    GridRow = componentSnapshot.GridRow,
-                    GridRowSpan = componentSnapshot.GridRowSpan,
-                    Order = componentSnapshot.Order,
-                    ParentComponentId = componentSnapshot.ParentComponentId,
-                    IsVisible = componentSnapshot.IsVisible,
-                    CssClasses = componentSnapshot.CssClasses,
-                    CustomCss = componentSnapshot.CustomCss,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow,
-                    CreatedByUserId = currentUserId,
-                    UpdatedByUserId = currentUserId
-                };
-
-                await _componentRepository.AddAsync(component);
-            }
+            return $"{DateTime.UtcNow:yyyyMMddHHmmss}_{Guid.NewGuid():N}";
         }
 
-        private static bool IsContainerType(ComponentType type)
+        private string GetUserAgent()
         {
-            return type == ComponentType.Container || type == ComponentType.Grid;
+            // Implementation depends on how you access HTTP context
+            return "Designer";
         }
 
-        private static int GetDefaultColumnSpan(ComponentType type)
+        private string GetClientIpAddress()
         {
-            return type switch
-            {
-                ComponentType.Container => 12,
-                ComponentType.Grid => 12,
-                ComponentType.Header => 12,
-                ComponentType.Footer => 12,
-                ComponentType.Navigation => 12,
-                _ => 6
-            };
+            // Implementation depends on how you access HTTP context
+            return "127.0.0.1";
         }
     }
 }
