@@ -909,6 +909,7 @@ static async Task SeedCompanyData(ApplicationDbContext context, int adminUserId)
         var companyAddress = new Address
         {
             Street = "123 Business Street",
+            HouseNr = "1A",
             City = "Business City",
             State = "Business State",
             Country = "Business Country",
