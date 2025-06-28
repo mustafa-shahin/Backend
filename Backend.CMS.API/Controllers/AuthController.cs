@@ -1,5 +1,4 @@
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Application.Interfaces.Services;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Services;
