@@ -10,25 +10,13 @@ using Backend.CMS.Infrastructure.Services;
 using Backend.CMS.Web.Components;
 using Backend.CMS.Web.Services;
 using Blazored.LocalStorage;
-using FluentValidation;
-using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Serilog;
-using System.Reflection;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
-
-// Configure Serilog
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .WriteTo.File("logs/blazor-log-.txt", rollingInterval: RollingInterval.Day)
-    .CreateLogger();
-
-builder.Host.UseSerilog();
 
 // Add Blazor components
 builder.Services.AddRazorComponents()
@@ -38,17 +26,8 @@ builder.Services.AddRazorComponents()
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Configure AutoMapper - using the assembly that contains MappingProfile
-builder.Services.AddAutoMapper(typeof(MappingProfile).Assembly);
-
-// Configure FluentValidation
-builder.Services.AddValidatorsFromAssembly(typeof(MappingProfile).Assembly);
-
-// Configure MediatR
-builder.Services.AddMediatR(cfg => {
-    cfg.RegisterServicesFromAssembly(typeof(MappingProfile).Assembly);
-    cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
-});
+// Configure AutoMapper
+builder.Services.AddAutoMapper(typeof(MappingProfile));
 
 // Add authentication services
 ConfigureAuthentication(builder);
@@ -75,9 +54,7 @@ RegisterBlazorServices(builder.Services);
 // Add HTTP client for API calls
 builder.Services.AddHttpClient("API", client =>
 {
-    var baseUrl = builder.Configuration["ApiSettings:BaseUrl"] ?? "https://localhost:7001";
-    client.BaseAddress = new Uri(baseUrl);
-    client.DefaultRequestHeaders.Add("Accept", "application/json");
+    client.BaseAddress = new Uri(builder.Configuration["ApiSettings:BaseUrl"] ?? "https://localhost:7001");
 });
 
 var app = builder.Build();
@@ -121,32 +98,15 @@ app.MapPost("/api/auth/login", async (LoginRequest request, IAuthService authSer
     }
     catch (Exception ex)
     {
-        Log.Error(ex, "Login error for {Email}", request.Email);
-        return Results.BadRequest(new { Message = "Authentication failed" });
+        return Results.BadRequest(new { Message = ex.Message });
     }
 });
 
-app.MapPost("/api/auth/logout", async (IAuthService authService, HttpContext context) =>
+app.MapPost("/api/auth/logout", async (IAuthService authService) =>
 {
-    try
-    {
-        // Get user ID from claims if available
-        var userIdClaim = context.User?.FindFirst("sub")?.Value;
-        if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out var userId))
-        {
-            await authService.LogoutAsync(userId);
-        }
-        return Results.Ok(new { Message = "Logged out successfully" });
-    }
-    catch (Exception ex)
-    {
-        Log.Error(ex, "Logout error");
-        return Results.BadRequest(new { Message = "Logout failed" });
-    }
+    // Implementation for logout
+    return Results.Ok();
 });
-
-// Initialize database
-await InitializeDatabase(app);
 
 app.Run();
 
@@ -186,58 +146,16 @@ static void RegisterRepositories(IServiceCollection services)
     services.AddScoped<IUserRepository, UserRepository>();
     services.AddScoped<ILocationRepository, LocationRepository>();
     services.AddScoped<ICompanyRepository, CompanyRepository>();
-    services.AddScoped<ICategoryRepository, CategoryRepository>();
-    services.AddScoped<IProductRepository, ProductRepository>();
-    services.AddScoped<IProductVariantRepository, ProductVariantRepository>();
-
-    // Additional entity repositories
-    services.AddScoped<IRepository<UserSession>, Repository<UserSession>>();
-    services.AddScoped<IRepository<PasswordResetToken>, Repository<PasswordResetToken>>();
-    services.AddScoped<IRepository<Company>, Repository<Company>>();
-    services.AddScoped<IRepository<Location>, Repository<Location>>();
-    services.AddScoped<IRepository<Address>, Repository<Address>>();
-    services.AddScoped<IRepository<ContactDetails>, Repository<ContactDetails>>();
-    services.AddScoped<IRepository<FileEntity>, Repository<FileEntity>>();
-    services.AddScoped<IRepository<Permission>, Repository<Permission>>();
-    services.AddScoped<IRepository<RolePermission>, Repository<RolePermission>>();
-    services.AddScoped<IRepository<UserPermission>, Repository<UserPermission>>();
 }
 
 static void RegisterApplicationServices(IServiceCollection services)
 {
-    // Core services
     services.AddScoped<IAuthService, AuthService>();
     services.AddScoped<IUserService, UserService>();
     services.AddScoped<IPageService, PageService>();
     services.AddScoped<IUserSessionService, UserSessionService>();
-    services.AddScoped<IEmailService, EmailService>();
-    services.AddScoped<IAddressService, AddressService>();
-    services.AddScoped<IContactDetailsService, ContactDetailsService>();
-    services.AddScoped<ICompanyService, CompanyService>();
-    services.AddScoped<ILocationService, LocationService>();
-    services.AddScoped<IPermissionService, PermissionService>();
-    services.AddScoped<IPermissionResolver, PermissionResolver>();
-
-    // Product services
-    services.AddScoped<ICategoryService, CategoryService>();
-    services.AddScoped<IProductService, ProductService>();
-    services.AddScoped<IProductVariantService, ProductVariantService>();
-
-    // Cache services
-    services.AddScoped<CacheService>();
-    services.AddScoped<ICacheService>(provider => provider.GetRequiredService<CacheService>());
-    services.AddScoped<ICacheInvalidationService>(provider => provider.GetRequiredService<CacheService>());
-
-    // File services
-    services.AddScoped<FileService>();
-    services.AddScoped<IImageProcessingService, ImageProcessingService>();
-    services.AddScoped<IFileValidationService, FileValidationService>();
-    services.AddScoped<IDownloadTokenService, DownloadTokenService>();
-    services.AddScoped<IFileService>(provider => provider.GetRequiredService<FileService>());
-
-    // Search services
-    services.AddScoped<IIndexingService, IndexingService>();
-    services.AddScoped<ISearchService, SearchService>();
+    services.AddScoped<ICacheService, CacheService>();
+    services.AddScoped<ICacheInvalidationService, CacheService>();
 }
 
 static void RegisterBlazorServices(IServiceCollection services)
@@ -246,31 +164,6 @@ static void RegisterBlazorServices(IServiceCollection services)
     services.AddScoped<IThemeService, ThemeService>();
     services.AddScoped<INotificationService, NotificationService>();
     services.AddScoped<IDialogService, DialogService>();
-
-    // Add memory cache
-    services.AddMemoryCache();
-
-    // Add distributed cache (in-memory for now)
-    services.AddDistributedMemoryCache();
-}
-
-static async Task InitializeDatabase(WebApplication app)
-{
-    using var scope = app.Services.CreateScope();
-    try
-    {
-        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
-        // Ensure database is created
-        await context.Database.EnsureCreatedAsync();
-
-        Log.Information("Database initialized successfully");
-    }
-    catch (Exception ex)
-    {
-        Log.Fatal(ex, "An error occurred while initializing the database");
-        throw;
-    }
 }
 
 public record LoginRequest(string Email, string Password, bool RememberMe);
