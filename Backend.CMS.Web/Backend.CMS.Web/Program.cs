@@ -1,4 +1,4 @@
-using Backend.CMS.Application.Interfaces;
+﻿using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Application.Interfaces.Services;
 using Backend.CMS.Blazor.Services;
 using Backend.CMS.Domain.Entities;
@@ -126,22 +126,40 @@ app.MapPost("/api/auth/login", async (LoginRequest request, IAuthService authSer
     }
 });
 
-app.MapPost("/api/auth/logout", async (IAuthService authService, HttpContext context) =>
+app.MapPost("/api/auth/logout", async (LogoutRequest request, IAuthService authService) =>
 {
     try
     {
-        // Get user ID from claims if available
-        var userIdClaim = context.User?.FindFirst("sub")?.Value;
-        if (!string.IsNullOrEmpty(userIdClaim) && int.TryParse(userIdClaim, out var userId))
-        {
-            await authService.LogoutAsync(userId);
-        }
-        return Results.Ok(new { Message = "Logged out successfully" });
+        var success = await authService.LogoutAsync(request.RefreshToken ?? string.Empty);
+        return Results.Ok(new { Message = "Logged out successfully", Success = success });
     }
     catch (Exception ex)
     {
         Log.Error(ex, "Logout error");
         return Results.BadRequest(new { Message = "Logout failed" });
+    }
+});
+
+app.MapPost("/api/auth/refresh", async (RefreshTokenRequest request, IAuthService authService) =>
+{
+    try
+    {
+        var refreshDto = new Backend.CMS.Application.DTOs.RefreshTokenDto
+        {
+            RefreshToken = request.RefreshToken
+        };
+
+        var result = await authService.RefreshTokenAsync(refreshDto);
+        return Results.Ok(result);
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Unauthorized();
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Token refresh error");
+        return Results.BadRequest(new { Message = "Token refresh failed" });
     }
 });
 
@@ -173,6 +191,30 @@ static void ConfigureAuthentication(WebApplicationBuilder builder)
                 ValidAudience = jwtSettings["Audience"],
                 IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
                 ClockSkew = TimeSpan.Zero
+            };
+
+            // Handle token from cookies as well
+            options.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    // Try to get token from Authorization header first
+                    var token = context.Request.Headers.Authorization
+                        .FirstOrDefault()?.Replace("Bearer ", "");
+
+                    // If not found, try cookies
+                    if (string.IsNullOrEmpty(token))
+                    {
+                        token = context.Request.Cookies["authToken"];
+                    }
+
+                    if (!string.IsNullOrEmpty(token))
+                    {
+                        context.Token = token;
+                    }
+
+                    return Task.CompletedTask;
+                }
             };
         });
 
@@ -260,11 +302,10 @@ static async Task InitializeDatabase(WebApplication app)
     try
     {
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
-        // Ensure database is created
-        await context.Database.EnsureCreatedAsync();
 
-        Log.Information("Database initialized successfully");
+        Log.Information("Database initialized and seeded successfully");
     }
     catch (Exception ex)
     {
@@ -274,3 +315,5 @@ static async Task InitializeDatabase(WebApplication app)
 }
 
 public record LoginRequest(string Email, string Password, bool RememberMe);
+public record LogoutRequest(string? RefreshToken);
+public record RefreshTokenRequest(string RefreshToken);
