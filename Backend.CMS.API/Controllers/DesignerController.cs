@@ -2,6 +2,7 @@ using Backend.CMS.API.Authorization;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -13,11 +14,16 @@ namespace Backend.CMS.API.Controllers
     public class DesignerController : ControllerBase
     {
         private readonly IDesignerService _designerService;
+        private readonly IPageContentValidationService _contentValidationService;
         private readonly ILogger<DesignerController> _logger;
 
-        public DesignerController(IDesignerService designerService, ILogger<DesignerController> logger)
+        public DesignerController(
+            IDesignerService designerService,
+            IPageContentValidationService contentValidationService,
+            ILogger<DesignerController> logger)
         {
             _designerService = designerService ?? throw new ArgumentNullException(nameof(designerService));
+            _contentValidationService = contentValidationService ?? throw new ArgumentNullException(nameof(contentValidationService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -47,7 +53,7 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Save page content and structure
+        /// Save complete page content and structure (created by frontend)
         /// </summary>
         [HttpPost("pages/{pageId:int}/save")]
         public async Task<ActionResult<DesignerPageDto>> SaveDesignerPage(int pageId, [FromBody] SaveDesignerPageDto saveDto)
@@ -94,6 +100,53 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error auto-saving designer page {PageId}", pageId);
                 return StatusCode(500, new { Message = "An error occurred while auto-saving the page" });
+            }
+        }
+
+        /// <summary>
+        /// Validate page structure before saving
+        /// </summary>
+        [HttpPost("pages/{pageId:int}/validate")]
+        public async Task<ActionResult> ValidatePageStructure(int pageId, [FromBody] SaveDesignerPageDto saveDto)
+        {
+            try
+            {
+                var errors = new List<string>();
+
+                // Validate layout structure
+                if (saveDto.Layout.Any())
+                {
+                    var layoutErrors = _contentValidationService.GetValidationErrors(saveDto.Layout, "layout");
+                    errors.AddRange(layoutErrors);
+                }
+
+                // Validate content structure
+                if (saveDto.Content.Any())
+                {
+                    var contentErrors = _contentValidationService.GetValidationErrors(saveDto.Content, "content");
+                    errors.AddRange(contentErrors);
+                }
+
+                // Validate settings and styles
+                if (saveDto.Settings.Any())
+                {
+                    var settingsErrors = _contentValidationService.GetValidationErrors(saveDto.Settings, "settings");
+                    errors.AddRange(settingsErrors);
+                }
+
+                if (saveDto.Styles.Any())
+                {
+                    var stylesErrors = _contentValidationService.GetValidationErrors(saveDto.Styles, "styles");
+                    errors.AddRange(stylesErrors);
+                }
+
+                var isValid = !errors.Any();
+                return Ok(new { IsValid = isValid, Errors = errors });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating page structure for page {PageId}", pageId);
+                return StatusCode(500, new { Message = "An error occurred while validating the page structure" });
             }
         }
 
@@ -345,5 +398,6 @@ namespace Backend.CMS.API.Controllers
         }
 
         #endregion
+
     }
 }

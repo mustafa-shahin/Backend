@@ -7,7 +7,6 @@ using Backend.CMS.Infrastructure.IRepositories;
 using Backend.CMS.Infrastructure.Caching;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using PageVersionDto = Backend.CMS.Application.DTOs.PageVersionDto; // Explicitly use the main namespace version
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -16,14 +15,17 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IPageRepository _pageRepository;
         private readonly IRepository<PageVersion> _versionRepository;
         private readonly ICacheService _cacheService;
+        private readonly IPageContentValidationService _contentValidationService;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
         private readonly ILogger<DesignerService> _logger;
+        private readonly JsonSerializerOptions _jsonOptions;
 
         public DesignerService(
             IPageRepository pageRepository,
             IRepository<PageVersion> versionRepository,
             ICacheService cacheService,
+            IPageContentValidationService contentValidationService,
             IMapper mapper,
             IUserSessionService userSessionService,
             ILogger<DesignerService> logger)
@@ -31,9 +33,17 @@ namespace Backend.CMS.Infrastructure.Services
             _pageRepository = pageRepository ?? throw new ArgumentNullException(nameof(pageRepository));
             _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+            _contentValidationService = contentValidationService ?? throw new ArgumentNullException(nameof(contentValidationService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+            _jsonOptions = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = false,
+                PropertyNameCaseInsensitive = true
+            };
         }
 
         public async Task<DesignerPageDto> GetDesignerPageAsync(int pageId)
@@ -73,13 +83,16 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
 
+                // Validate the content and layout before saving
+                await ValidatePageDataAsync(saveDto);
+
                 // Always create version when saving (unless it's an auto-save)
                 if (saveDto.CreateVersion && !saveDto.AutoSave)
                 {
                     await CreateVersionAsync(saveDto.PageId, saveDto.ChangeDescription ?? "Designer changes");
                 }
 
-                // Update page content
+                // Update page content - the frontend sends the complete structure
                 page.Content = saveDto.Content ?? new Dictionary<string, object>();
                 page.Layout = saveDto.Layout ?? new Dictionary<string, object>();
                 page.Settings = saveDto.Settings ?? new Dictionary<string, object>();
@@ -135,7 +148,7 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new ArgumentException("Page not found");
 
                 var previewToken = GeneratePreviewToken();
-                var expiresAt = DateTime.UtcNow.AddHours(2); // Longer expiry for better UX
+                var expiresAt = DateTime.UtcNow.AddHours(2);
 
                 var previewData = new
                 {
@@ -187,11 +200,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (previewData == null)
                     throw new ArgumentException("Preview not found or expired");
 
-                return JsonSerializer.Serialize(previewData, new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                    WriteIndented = true
-                });
+                return JsonSerializer.Serialize(previewData, _jsonOptions);
             }
             catch (Exception ex)
             {
@@ -401,7 +410,7 @@ namespace Backend.CMS.Infrastructure.Services
                 stateDto.LastModified = DateTime.UtcNow;
                 var cacheKey = CacheKeys.DesignerState(stateDto.PageId, userId.Value);
 
-                await _cacheService.SetAsync(cacheKey, stateDto, TimeSpan.FromDays(7)); // Keep state for a week
+                await _cacheService.SetAsync(cacheKey, stateDto, TimeSpan.FromDays(7));
                 return stateDto;
             }
             catch (Exception ex)
@@ -428,6 +437,46 @@ namespace Backend.CMS.Infrastructure.Services
         }
 
         // Private helper methods
+        private async Task ValidatePageDataAsync(SaveDesignerPageDto saveDto)
+        {
+            var errors = new List<string>();
+
+            // Validate content
+            if (saveDto.Content.Any())
+            {
+                var contentErrors = _contentValidationService.GetValidationErrors(saveDto.Content, "content");
+                errors.AddRange(contentErrors);
+            }
+
+            // Validate layout
+            if (saveDto.Layout.Any())
+            {
+                var layoutErrors = _contentValidationService.GetValidationErrors(saveDto.Layout, "layout");
+                errors.AddRange(layoutErrors);
+            }
+
+            // Validate settings
+            if (saveDto.Settings.Any())
+            {
+                var settingsErrors = _contentValidationService.GetValidationErrors(saveDto.Settings, "settings");
+                errors.AddRange(settingsErrors);
+            }
+
+            // Validate styles
+            if (saveDto.Styles.Any())
+            {
+                var stylesErrors = _contentValidationService.GetValidationErrors(saveDto.Styles, "styles");
+                errors.AddRange(stylesErrors);
+            }
+
+            if (errors.Any())
+            {
+                var errorMessage = $"Page validation failed: {string.Join("; ", errors)}";
+                _logger.LogWarning("Page validation failed for page {PageId}: {Errors}", saveDto.PageId, errorMessage);
+                throw new ArgumentException(errorMessage);
+            }
+        }
+
         private Dictionary<string, object> CreatePageSnapshot(Page page)
         {
             return new Dictionary<string, object>
@@ -520,13 +569,11 @@ namespace Backend.CMS.Infrastructure.Services
 
         private string GetUserAgent()
         {
-            // Implementation depends on how you access HTTP context
             return "Designer";
         }
 
         private string GetClientIpAddress()
         {
-            // Implementation depends on how you access HTTP context
             return "127.0.0.1";
         }
     }
