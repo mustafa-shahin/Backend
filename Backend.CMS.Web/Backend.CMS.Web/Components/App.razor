@@ -1,0 +1,106 @@
+﻿@using Backend.CMS.Blazor.Services
+<!DOCTYPE html>
+<html lang="en" class="@(isDark ? "dark" : "")">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CMS Dashboard</title>
+    <base href="/" />
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    
+    <!-- Tailwind Dark Mode Configuration -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <HeadOutlet />
+</head>
+
+<body class="@GetBodyClasses()">
+    <div id="app" class="min-h-screen">
+        <Router>
+            <Found>
+                <RouteView RouteData="context" DefaultLayout="typeof(Layout.MainLayout)" />
+                <FocusOnNavigate RouteData="context" Selector="h1" />
+            </Found>
+        </Router>
+    </div>
+
+    <div id="blazor-error-ui" class="@GetErrorUIClasses()">
+        <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md mx-4">
+                <div class="flex items-center text-red-600 dark:text-red-400 mb-4">
+                    <i class="fas fa-exclamation-triangle mr-2"></i>
+                    <span class="font-semibold">An error has occurred</span>
+                </div>
+                <p class="text-gray-600 dark:text-gray-300 mb-4">
+                    This application is no longer responsive to user interaction.
+                </p>
+                <button class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md transition-colors"
+                        onclick="location.reload()">
+                    <i class="fas fa-refresh mr-2"></i>
+                    Reload
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="_framework/blazor.web.js"></script>
+</body>
+
+</html>
+
+@code {
+    [Inject] private IThemeService ThemeService { get; set; } = default!;
+    
+    private bool isDark = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        isDark = await ThemeService.GetThemeAsync() == "dark";
+        ThemeService.ThemeChanged += OnThemeChanged;
+    }
+
+    private void OnThemeChanged(string theme)
+    {
+        isDark = theme == "dark";
+        InvokeAsync(StateHasChanged);
+    }
+
+    private string GetBodyClasses()
+    {
+        return $"bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200 {(isDark ? "dark" : "")}";
+    }
+
+    private string GetErrorUIClasses()
+    {
+        return "hidden";
+    }
+
+    public void Dispose()
+    {
+        ThemeService.ThemeChanged -= OnThemeChanged;
+    }
+}

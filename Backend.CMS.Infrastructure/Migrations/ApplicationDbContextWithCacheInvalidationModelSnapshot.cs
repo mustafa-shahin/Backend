@@ -63,6 +63,11 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("HouseNr")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<bool>("IsDefault")
                         .HasColumnType("boolean");
 
@@ -92,10 +97,6 @@ namespace Backend.CMS.Infrastructure.Migrations
 
                     b.Property<string>("Street")
                         .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("Street2")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
@@ -360,111 +361,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.HasIndex("UpdatedByUserId");
 
                     b.ToTable("Companies");
-                });
-
-            modelBuilder.Entity("Backend.CMS.Domain.Entities.ComponentTemplate", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("Category")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<string>("ConfigSchema")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("CreatedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("DefaultProperties")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("DefaultStyles")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("DeletedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)");
-
-                    b.Property<string>("DisplayName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("Icon")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsSystemTemplate")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<string>("PreviewHtml")
-                        .HasMaxLength(2147483647)
-                        .HasColumnType("text");
-
-                    b.Property<string>("PreviewImage")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("Schema")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Tags")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("UpdatedByUserId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("DeletedByUserId");
-
-                    b.HasIndex("Name")
-                        .IsUnique();
-
-                    b.HasIndex("UpdatedByUserId");
-
-                    b.ToTable("ComponentTemplates");
                 });
 
             modelBuilder.Entity("Backend.CMS.Domain.Entities.ContactDetails", b =>
@@ -1132,6 +1028,10 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.Property<bool>("AdminOnly")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1150,6 +1050,10 @@ namespace Backend.CMS.Infrastructure.Migrations
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("Layout")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
 
                     b.Property<string>("MetaDescription")
                         .HasMaxLength(500)
@@ -1184,6 +1088,10 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.Property<bool>("RequiresLogin")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("Settings")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -1191,6 +1099,10 @@ namespace Backend.CMS.Infrastructure.Migrations
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Styles")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
 
                     b.Property<string>("Template")
                         .HasMaxLength(255)
@@ -1227,126 +1139,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.ToTable("Pages");
                 });
 
-            modelBuilder.Entity("Backend.CMS.Domain.Entities.PageComponent", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("AnimationSettings")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("ComponentKey")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("CreatedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("CssClasses")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("CustomCss")
-                        .HasMaxLength(2147483647)
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("DeletedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("DeletedByUserId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("GridColumn")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("GridColumnSpan")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("GridRow")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("GridRowSpan")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("InteractionSettings")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsLocked")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsVisible")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)");
-
-                    b.Property<int>("Order")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("PageId")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("ParentComponentId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Properties")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("ResponsiveSettings")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("Settings")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<string>("Styles")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("UpdatedByUserId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("DeletedByUserId");
-
-                    b.HasIndex("PageId");
-
-                    b.HasIndex("ParentComponentId");
-
-                    b.HasIndex("UpdatedByUserId");
-
-                    b.ToTable("PageComponents");
-                });
-
             modelBuilder.Entity("Backend.CMS.Domain.Entities.PageVersion", b =>
                 {
                     b.Property<int>("Id")
@@ -1365,10 +1157,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.Property<int?>("CreatedByUserId")
                         .HasColumnType("integer");
 
-                    b.Property<string>("Data")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
-
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1378,8 +1166,22 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsPublished")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Metadata")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
                     b.Property<int>("PageId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("PageSnapshot")
+                        .IsRequired()
+                        .HasColumnType("jsonb");
+
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1616,7 +1418,7 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .HasColumnType("character varying(200)");
 
                     b.Property<decimal>("Price")
-                        .HasColumnType("decimal(18,2)");
+                        .HasColumnType("numeric");
 
                     b.Property<DateTime?>("PublishedAt")
                         .HasColumnType("timestamp with time zone");
@@ -1690,8 +1492,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.HasIndex("CreatedByUserId");
 
                     b.HasIndex("DeletedByUserId");
-
-                    b.HasIndex("Price");
 
                     b.HasIndex("PublishedAt");
 
@@ -2288,9 +2088,6 @@ namespace Backend.CMS.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<int?>("AvatarFileId")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -2346,10 +2143,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.Property<bool>("IsLocked")
                         .HasColumnType("boolean");
 
-                    b.Property<string>("Language")
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
-
                     b.Property<DateTime?>("LastExternalSync")
                         .HasColumnType("timestamp with time zone");
 
@@ -2372,9 +2165,8 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<string>("Preferences")
-                        .IsRequired()
-                        .HasColumnType("jsonb");
+                    b.Property<int?>("PictureFileId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("RecoveryCodes")
                         .IsRequired()
@@ -2384,17 +2176,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
-
-                    b.Property<string>("Timezone")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)");
-
-                    b.Property<bool>("TwoFactorEnabled")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("TwoFactorSecret")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -2409,14 +2190,14 @@ namespace Backend.CMS.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AvatarFileId");
-
                     b.HasIndex("CreatedByUserId");
 
                     b.HasIndex("DeletedByUserId");
 
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("PictureFileId");
 
                     b.HasIndex("UpdatedByUserId");
 
@@ -2755,24 +2536,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
                 });
 
-            modelBuilder.Entity("Backend.CMS.Domain.Entities.ComponentTemplate", b =>
-                {
-                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("DeletedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UpdatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-                });
-
             modelBuilder.Entity("Backend.CMS.Domain.Entities.ContactDetails", b =>
                 {
                     b.HasOne("Backend.CMS.Domain.Entities.Company", null)
@@ -2984,39 +2747,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                     b.Navigation("ParentPage");
                 });
 
-            modelBuilder.Entity("Backend.CMS.Domain.Entities.PageComponent", b =>
-                {
-                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("DeletedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Backend.CMS.Domain.Entities.Page", "Page")
-                        .WithMany("Components")
-                        .HasForeignKey("PageId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Backend.CMS.Domain.Entities.PageComponent", "ParentComponent")
-                        .WithMany("ChildComponents")
-                        .HasForeignKey("ParentComponentId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Backend.CMS.Domain.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UpdatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Page");
-
-                    b.Navigation("ParentComponent");
-                });
-
             modelBuilder.Entity("Backend.CMS.Domain.Entities.PageVersion", b =>
                 {
                     b.HasOne("Backend.CMS.Domain.Entities.User", null)
@@ -3030,7 +2760,7 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("Backend.CMS.Domain.Entities.Page", "Page")
-                        .WithMany()
+                        .WithMany("Versions")
                         .HasForeignKey("PageId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -3331,12 +3061,12 @@ namespace Backend.CMS.Infrastructure.Migrations
 
             modelBuilder.Entity("Backend.CMS.Domain.Entities.User", b =>
                 {
-                    b.HasOne("Backend.CMS.Domain.Entities.FileEntity", "AvatarFile")
+                    b.HasOne("Backend.CMS.Domain.Entities.FileEntity", "Picture")
                         .WithMany()
-                        .HasForeignKey("AvatarFileId")
+                        .HasForeignKey("PictureFileId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.Navigation("AvatarFile");
+                    b.Navigation("Picture");
                 });
 
             modelBuilder.Entity("Backend.CMS.Domain.Entities.UserExternalLogin", b =>
@@ -3463,12 +3193,7 @@ namespace Backend.CMS.Infrastructure.Migrations
                 {
                     b.Navigation("ChildPages");
 
-                    b.Navigation("Components");
-                });
-
-            modelBuilder.Entity("Backend.CMS.Domain.Entities.PageComponent", b =>
-                {
-                    b.Navigation("ChildComponents");
+                    b.Navigation("Versions");
                 });
 
             modelBuilder.Entity("Backend.CMS.Domain.Entities.Permission", b =>

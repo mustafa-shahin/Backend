@@ -1,0 +1,197 @@
+﻿@* Products Page *@
+@page "/products"
+@attribute [Authorize(Roles = "Admin,Dev")]
+
+<PageTitle>Products - CMS Dashboard</PageTitle>
+
+<div class="space-y-6">
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                <i class="fas fa-box mr-3"></i>
+                Product Management
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Manage your product catalog and inventory
+            </p>
+        </div>
+        <div class="mt-4 flex md:mt-0 md:ml-4">
+            <button type="button" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                <i class="fas fa-plus mr-2"></i>
+                Add Product
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm rounded-lg border border-gray-200 dark:border-gray-700">
+        <div class="px-6 py-12 text-center">
+            <i class="fas fa-box text-6xl text-gray-300 dark:text-gray-600 mb-4"></i>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Product Catalog</h3>
+            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                Product management interface coming soon. Create and manage your product catalog with variants, pricing, and inventory.
+            </p>
+        </div>
+    </div>
+</div>
+
+@* Categories Page *@
+@page "/categories"
+@attribute [Authorize(Roles = "Admin,Dev")]
+
+<PageTitle>Categories - CMS Dashboard</PageTitle>
+
+<div class="space-y-6">
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                <i class="fas fa-tags mr-3"></i>
+                Category Management
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Organize your content with categories and tags
+            </p>
+        </div>
+        <div class="mt-4 flex md:mt-0 md:ml-4">
+            <button type="button" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                <i class="fas fa-plus mr-2"></i>
+                Add Category
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm rounded-lg border border-gray-200 dark:border-gray-700">
+        <div class="px-6 py-12 text-center">
+            <i class="fas fa-tags text-6xl text-gray-300 dark:text-gray-600 mb-4"></i>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Content Categories</h3>
+            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                Category management system coming soon. Create hierarchical categories to organize your content and products.
+            </p>
+        </div>
+    </div>
+</div>
+
+@* Files Page *@
+@page "/files"
+@attribute [Authorize(Roles = "Admin,Dev")]
+
+<PageTitle>Files - CMS Dashboard</PageTitle>
+
+<div class="space-y-6">
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                <i class="fas fa-folder mr-3"></i>
+                File Management
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Upload and manage your media files and documents
+            </p>
+        </div>
+        <div class="mt-4 flex md:mt-0 md:ml-4">
+            <button type="button" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                <i class="fas fa-upload mr-2"></i>
+                Upload Files
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm rounded-lg border border-gray-200 dark:border-gray-700">
+        <div class="px-6 py-12 text-center">
+            <i class="fas fa-folder text-6xl text-gray-300 dark:text-gray-600 mb-4"></i>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Media Library</h3>
+            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                File management system coming soon. Upload, organize, and manage all your media files and documents.
+            </p>
+        </div>
+    </div>
+</div>
+
+@* Analytics Page *@
+@page "/analytics"
+@attribute [Authorize(Roles = "Admin,Dev")]
+
+<PageTitle>Analytics - CMS Dashboard</PageTitle>
+
+<div class="space-y-6">
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                <i class="fas fa-chart-bar mr-3"></i>
+                Analytics & Reports
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Track performance and analyze your website data
+            </p>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm rounded-lg border border-gray-200 dark:border-gray-700">
+        <div class="px-6 py-12 text-center">
+            <i class="fas fa-chart-bar text-6xl text-gray-300 dark:text-gray-600 mb-4"></i>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Analytics Dashboard</h3>
+            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                Analytics and reporting features coming soon. Track page views, user engagement, and performance metrics.
+            </p>
+        </div>
+    </div>
+</div>
+
+@* Company Page *@
+@page "/company"
+@attribute [Authorize(Roles = "Admin,Dev")]
+
+<PageTitle>Company - CMS Dashboard</PageTitle>
+
+<div class="space-y-6">
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                <i class="fas fa-building mr-3"></i>
+                Company Settings
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Manage your company information and settings
+            </p>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm rounded-lg border border-gray-200 dark:border-gray-700">
+        <div class="px-6 py-12 text-center">
+            <i class="fas fa-building text-6xl text-gray-300 dark:text-gray-600 mb-4"></i>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Company Configuration</h3>
+            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                Company settings interface coming soon. Configure your company details, locations, and organizational settings.
+            </p>
+        </div>
+    </div>
+</div>
+
+@* System Page *@
+@page "/system"
+@attribute [Authorize(Roles = "Dev")]
+
+<PageTitle>System - CMS Dashboard</PageTitle>
+
+<div class="space-y-6">
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                <i class="fas fa-cogs mr-3"></i>
+                System Settings
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Advanced system configuration and maintenance tools
+            </p>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 overflow-hidden shadow-sm rounded-lg border border-gray-200 dark:border-gray-700">
+        <div class="px-6 py-12 text-center">
+            <i class="fas fa-cogs text-6xl text-gray-300 dark:text-gray-600 mb-4"></i>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">System Administration</h3>
+            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                System administration tools coming soon. Manage system configurations, cache, logs, and maintenance tasks.
+            </p>
+        </div>
+    </div>
+</div>

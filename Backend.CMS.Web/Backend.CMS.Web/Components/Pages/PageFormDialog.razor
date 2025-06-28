@@ -1,0 +1,403 @@
+﻿@page "/pages"
+@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Application.Interfaces
+@using Backend.CMS.Domain.Enums
+@using Backend.CMS.Web.Components.Shared
+@using Backend.CMS.Web.Services
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Admin,Dev")]
+@inject IPageService PageService
+@inject IDialogService DialogService
+@inject INotificationService NotificationService
+
+<PageTitle>Pages - CMS Dashboard</PageTitle>
+
+<DataTable TItem="PageListDto"
+           Items="@pages"
+           Title="Pages"
+           Description="Manage your website pages and content"
+           IsLoading="@isLoading"
+           ShowSelectAll="true"
+           CurrentPage="@currentPage"
+           PageSize="@pageSize"
+           TotalItems="@totalItems"
+           OnAdd="@HandleAddPage"
+           OnEdit="@HandleEditPage"
+           OnDelete="@HandleDeletePage"
+           OnSearch="@HandleSearch"
+           OnPageChanged="@HandlePageChanged"
+           KeySelector="@(item => item.Id)"
+           EmptyTitle="No pages found"
+           EmptyDescription="Get started by creating your first page."
+           EmptyIcon="fas fa-file-alt"
+           AddButtonText="Create Page">
+    
+    <HeaderActions>
+        <div class="flex items-center space-x-3">
+            <!-- Status Filter -->
+            <select @bind="selectedStatus"
+                    class="block w-40 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <option value="">All Status</option>
+                <option value="Draft">Draft</option>
+                <option value="Published">Published</option>
+                <option value="Archived">Archived</option>
+            </select>
+
+            <!-- Refresh -->
+            <button @onclick="RefreshData"
+                    disabled="@isLoading"
+                    class="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50"
+                    title="Refresh">
+                <i class="fas fa-refresh @(isLoading ? "fa-spin" : "")"></i>
+            </button>
+        </div>
+    </HeaderActions>
+
+    <Columns>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Name
+        </th>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Status
+        </th>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Slug
+        </th>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Modified
+        </th>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            Versions
+        </th>
+    </Columns>
+
+    <RowTemplate>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <div class="flex items-center">
+                <div class="flex-shrink-0 h-10 w-10">
+                    <div class="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                        <i class="fas fa-file-alt text-white text-sm"></i>
+                    </div>
+                </div>
+                <div class="ml-4">
+                    <div class="text-sm font-medium text-gray-900 dark:text-white">
+                        @context.Name
+                    </div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">
+                        @context.Title
+                    </div>
+                </div>
+            </div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <span class="@GetStatusBadgeClasses(context.Status)">
+                @context.Status
+            </span>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+            <code class="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs">
+                /@context.Slug
+            </code>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+            <div class="flex flex-col">
+                <span>@context.UpdatedAt.ToString("MMM dd, yyyy")</span>
+                <span class="text-xs text-gray-400">@context.UpdatedAt.ToString("HH:mm")</span>
+            </div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+            <div class="flex items-center space-x-2">
+                <span class="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs font-medium">
+                    v@context.CurrentVersion
+                </span>
+                <span class="text-xs">(@context.VersionCount total)</span>
+            </div>
+        </td>
+    </RowTemplate>
+
+    <ItemActions>
+        <div class="flex items-center space-x-2">
+            @if (context.Status == PageStatus.Published)
+            {
+                <button @onclick="() => HandleViewPage(context)"
+                        class="text-green-600 hover:text-green-500 dark:text-green-400 dark:hover:text-green-300 p-1 transition-colors"
+                        title="View Page">
+                    <i class="fas fa-eye"></i>
+                </button>
+            }
+            
+            <button @onclick="() => HandleDuplicatePage(context)"
+                    class="text-indigo-600 hover:text-indigo-500 dark:text-indigo-400 dark:hover:text-indigo-300 p-1 transition-colors"
+                    title="Duplicate">
+                <i class="fas fa-copy"></i>
+            </button>
+            
+            @if (context.Status == PageStatus.Draft)
+            {
+                <button @onclick="() => HandlePublishPage(context)"
+                        class="text-green-600 hover:text-green-500 dark:text-green-400 dark:hover:text-green-300 p-1 transition-colors"
+                        title="Publish">
+                    <i class="fas fa-upload"></i>
+                </button>
+            }
+            else if (context.Status == PageStatus.Published)
+            {
+                <button @onclick="() => HandleUnpublishPage(context)"
+                        class="text-yellow-600 hover:text-yellow-500 dark:text-yellow-400 dark:hover:text-yellow-300 p-1 transition-colors"
+                        title="Unpublish">
+                    <i class="fas fa-download"></i>
+                </button>
+            }
+        </div>
+    </ItemActions>
+
+    <BulkActions>
+        <div class="flex items-center space-x-3">
+            <button @onclick="() => HandleBulkDelete(context)"
+                    class="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors">
+                <i class="fas fa-trash mr-1"></i>
+                Delete Selected
+            </button>
+            
+            <button @onclick="() => HandleBulkPublish(context)"
+                    class="inline-flex items-center px-3 py-1 border border-transparent text-xs font-medium rounded text-green-700 bg-green-100 hover:bg-green-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors">
+                <i class="fas fa-upload mr-1"></i>
+                Publish Selected
+            </button>
+        </div>
+    </BulkActions>
+</DataTable>
+
+@code {
+    private List<PageListDto> pages = new();
+    private bool isLoading = true;
+    private string searchQuery = string.Empty;
+    private string selectedStatus = string.Empty;
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalItems = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPages();
+    }
+
+    private async Task LoadPages()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            var pagesResult = await PageService.GetPagesAsync(currentPage, pageSize, searchQuery);
+            pages = pagesResult;
+            
+            // For now, we'll simulate pagination. In a real app, the service would return paged results
+            totalItems = pages.Count;
+            
+            await NotificationService.ShowSuccessAsync($"Loaded {pages.Count} pages");
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.ShowErrorAsync("Failed to load pages", ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleAddPage()
+    {
+        var options = new DialogOptions
+        {
+            Title = "Create New Page",
+            Size = DialogSize.Large
+        };
+
+        var result = await DialogService.ShowAsync<PageDto>(typeof(PageFormDialog), options);
+        
+        if (result != null)
+        {
+            await LoadPages();
+            await NotificationService.ShowSuccessAsync("Page created successfully");
+        }
+    }
+
+    private async Task HandleEditPage(PageListDto page)
+    {
+        var options = new DialogOptions
+        {
+            Title = $"Edit Page: {page.Name}",
+            Size = DialogSize.Large,
+            Parameters = new Dictionary<string, object>
+            {
+                ["PageId"] = page.Id
+            }
+        };
+
+        var result = await DialogService.ShowAsync<PageDto>(typeof(PageFormDialog), options);
+        
+        if (result != null)
+        {
+            await LoadPages();
+            await NotificationService.ShowSuccessAsync("Page updated successfully");
+        }
+    }
+
+    private async Task HandleDeletePage(PageListDto page)
+    {
+        var confirmed = await DialogService.ShowConfirmAsync(
+            "Delete Page",
+            $"Are you sure you want to delete the page '{page.Name}'? This action cannot be undone.",
+            "Delete",
+            "Cancel"
+        );
+
+        if (confirmed)
+        {
+            try
+            {
+                await PageService.DeletePageAsync(page.Id);
+                await LoadPages();
+                await NotificationService.ShowSuccessAsync($"Page '{page.Name}' deleted successfully");
+            }
+            catch (Exception ex)
+            {
+                await NotificationService.ShowErrorAsync("Failed to delete page", ex.Message);
+            }
+        }
+    }
+
+    private async Task HandleDuplicatePage(PageListDto page)
+    {
+        try
+        {
+            var duplicatedPage = await PageService.DuplicatePageAsync(page.Id, $"{page.Name} (Copy)");
+            await LoadPages();
+            await NotificationService.ShowSuccessAsync($"Page duplicated as '{duplicatedPage.Name}'");
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.ShowErrorAsync("Failed to duplicate page", ex.Message);
+        }
+    }
+
+    private async Task HandlePublishPage(PageListDto page)
+    {
+        try
+        {
+            await PageService.PublishPageAsync(page.Id);
+            await LoadPages();
+            await NotificationService.ShowSuccessAsync($"Page '{page.Name}' published successfully");
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.ShowErrorAsync("Failed to publish page", ex.Message);
+        }
+    }
+
+    private async Task HandleUnpublishPage(PageListDto page)
+    {
+        try
+        {
+            await PageService.UnpublishPageAsync(page.Id);
+            await LoadPages();
+            await NotificationService.ShowSuccessAsync($"Page '{page.Name}' unpublished successfully");
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.ShowErrorAsync("Failed to unpublish page", ex.Message);
+        }
+    }
+
+    private async Task HandleViewPage(PageListDto page)
+    {
+        // Open page in new tab
+        await NotificationService.ShowInfoAsync($"Opening page '{page.Name}' in new tab");
+        // In a real implementation, you would use JSRuntime to open the page
+    }
+
+    private async Task HandleSearch(string query)
+    {
+        searchQuery = query;
+        currentPage = 1;
+        await LoadPages();
+    }
+
+    private async Task HandleStatusFilter(ChangeEventArgs e)
+    {
+        selectedStatus = e.Value?.ToString() ?? string.Empty;
+        currentPage = 1;
+        await LoadPages();
+    }
+
+    private async Task HandlePageChanged(int page)
+    {
+        currentPage = page;
+        await LoadPages();
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadPages();
+    }
+
+    private async Task HandleBulkDelete(List<PageListDto> selectedPages)
+    {
+        var confirmed = await DialogService.ShowConfirmAsync(
+            "Delete Pages",
+            $"Are you sure you want to delete {selectedPages.Count} selected page(s)? This action cannot be undone.",
+            "Delete All",
+            "Cancel"
+        );
+
+        if (confirmed)
+        {
+            try
+            {
+                foreach (var page in selectedPages)
+                {
+                    await PageService.DeletePageAsync(page.Id);
+                }
+                await LoadPages();
+                await NotificationService.ShowSuccessAsync($"{selectedPages.Count} page(s) deleted successfully");
+            }
+            catch (Exception ex)
+            {
+                await NotificationService.ShowErrorAsync("Failed to delete pages", ex.Message);
+            }
+        }
+    }
+
+    private async Task HandleBulkPublish(List<PageListDto> selectedPages)
+    {
+        try
+        {
+            foreach (var page in selectedPages.Where(p => p.Status == PageStatus.Draft))
+            {
+                await PageService.PublishPageAsync(page.Id);
+            }
+            await LoadPages();
+            await NotificationService.ShowSuccessAsync($"{selectedPages.Count(p => p.Status == PageStatus.Draft)} page(s) published successfully");
+        }
+        catch (Exception ex)
+        {
+            await NotificationService.ShowErrorAsync("Failed to publish pages", ex.Message);
+        }
+    }
+
+    private string GetStatusBadgeClasses(PageStatus status)
+    {
+        var baseClasses = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
+        
+        return status switch
+        {
+            PageStatus.Published => $"{baseClasses} bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+            PageStatus.Draft => $"{baseClasses} bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+            PageStatus.Archived => $"{baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
+            _ => $"{baseClasses} bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+        };
+    }
+}

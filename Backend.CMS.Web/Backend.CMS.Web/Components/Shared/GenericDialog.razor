@@ -1,0 +1,231 @@
+﻿@using Backend.CMS.Web.Services
+@inject IJSRuntime JSRuntime
+
+<div class="@GetOverlayClasses()" @onclick="HandleBackdropClick" @onclick:stopPropagation="false">
+    <div class="@GetDialogClasses()" @onclick:stopPropagation="true">
+        <!-- Header -->
+        @if (ShowHeader)
+        {
+            <div class="@GetHeaderClasses()">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                        @Title
+                    </h3>
+                    @if (ShowCloseButton)
+                    {
+                        <button @onclick="HandleClose"
+                                type="button"
+                                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Content -->
+        <div class="@GetContentClasses()">
+            @ChildContent
+        </div>
+
+        <!-- Footer -->
+        @if (ShowFooter && (FooterContent != null || ShowDefaultButtons))
+        {
+            <div class="@GetFooterClasses()">
+                @if (FooterContent != null)
+                {
+                    @FooterContent
+                }
+                else if (ShowDefaultButtons)
+                {
+                    <div class="flex justify-end space-x-3">
+                        @if (ShowCancelButton)
+                        {
+                            <button @onclick="HandleCancel"
+                                    type="button"
+                                    disabled="@IsLoading"
+                                    class="@GetCancelButtonClasses()">
+                                <i class="fas fa-times mr-2"></i>
+                                @CancelText
+                            </button>
+                        }
+
+                        @if (ShowConfirmButton)
+                        {
+                            <button @onclick="HandleConfirm"
+                                    type="button"
+                                    disabled="@(IsLoading || IsConfirmDisabled)"
+                                    class="@GetConfirmButtonClasses()">
+                                <i class="@GetConfirmIcon() mr-2"></i>
+                                @GetConfirmText()
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public RenderFragment ChildContent { get; set; } = default!;
+    [Parameter] public RenderFragment? FooterContent { get; set; }
+
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public DialogSize Size { get; set; } = DialogSize.Medium;
+    [Parameter] public bool CloseOnBackdropClick { get; set; } = true;
+    [Parameter] public bool ShowCloseButton { get; set; } = true;
+    [Parameter] public bool ShowHeader { get; set; } = true;
+    [Parameter] public bool ShowFooter { get; set; } = true;
+    [Parameter] public bool ShowDefaultButtons { get; set; } = false;
+    [Parameter] public bool ShowCancelButton { get; set; } = true;
+    [Parameter] public bool ShowConfirmButton { get; set; } = true;
+
+    [Parameter] public string ConfirmText { get; set; } = "Confirm";
+    [Parameter] public string CancelText { get; set; } = "Cancel";
+    [Parameter] public string LoadingText { get; set; } = "Processing...";
+    [Parameter] public bool IsLoading { get; set; } = false;
+    [Parameter] public bool IsConfirmDisabled { get; set; } = false;
+
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public string? CssClass { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Prevent body scroll when dialog is open
+            await JSRuntime.InvokeVoidAsync("document.body.style.overflow = 'hidden'");
+        }
+    }
+
+    private async Task HandleClose()
+    {
+        await JSRuntime.InvokeVoidAsync("document.body.style.overflow = ''");
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task HandleConfirm()
+    {
+        if (IsLoading) return;
+        await OnConfirm.InvokeAsync();
+    }
+
+    private async Task HandleCancel()
+    {
+        if (IsLoading) return;
+        await OnCancel.InvokeAsync();
+    }
+
+    private async Task HandleBackdropClick()
+    {
+        if (CloseOnBackdropClick && !IsLoading)
+        {
+            await HandleClose();
+        }
+    }
+
+    private string GetOverlayClasses()
+    {
+        return "fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm animate-fade-in";
+    }
+
+    private string GetDialogClasses()
+    {
+        var baseClasses = "relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 max-h-[90vh] flex flex-col animate-scale-in";
+        var sizeClasses = GetSizeClasses();
+        var customClasses = CssClass ?? "";
+
+        return $"{baseClasses} {sizeClasses} {customClasses}".Trim();
+    }
+
+    private string GetSizeClasses()
+    {
+        return Size switch
+        {
+            DialogSize.Small => "w-full max-w-md",
+            DialogSize.Medium => "w-full max-w-lg",
+            DialogSize.Large => "w-full max-w-2xl",
+            DialogSize.ExtraLarge => "w-full max-w-4xl",
+            DialogSize.FullScreen => "w-full h-full max-w-none max-h-none m-0 rounded-none",
+            _ => "w-full max-w-lg"
+        };
+    }
+
+    private string GetHeaderClasses()
+    {
+        return "px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0";
+    }
+
+    private string GetContentClasses()
+    {
+        return "px-6 py-4 flex-1 overflow-y-auto";
+    }
+
+    private string GetFooterClasses()
+    {
+        return "px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex-shrink-0";
+    }
+
+    private string GetConfirmButtonClasses()
+    {
+        return "inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+    }
+
+    private string GetCancelButtonClasses()
+    {
+        return "inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+    }
+
+    private string GetConfirmIcon()
+    {
+        return IsLoading ? "fas fa-spinner fa-spin" : "fas fa-check";
+    }
+
+    private string GetConfirmText()
+    {
+        return IsLoading ? LoadingText : ConfirmText;
+    }
+
+    public void Dispose()
+    {
+        // Restore body scroll when component is disposed
+        _ = JSRuntime.InvokeVoidAsync("document.body.style.overflow = ''");
+    }
+}
+
+<style>
+    @@keyframes fade-in {
+    from{
+        opacity: 0;
+    }
+
+    to{
+        opacity: 1;
+    }
+
+    }
+
+    @@keyframes scale-in {
+        from{
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    }
+
+    .animate-fade-in {
+        animation: fade-in 0.2s ease-out;
+    }
+
+    .animate-scale-in {
+        animation: scale-in 0.2s ease-out;
+    }
+</style>
