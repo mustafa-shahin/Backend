@@ -1,0 +1,63 @@
+﻿<div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+    <div class="flex items-center space-x-3">
+        <div class="@GetStatusIndicatorClasses()">
+            <div class="w-2 h-2 @GetStatusDotClasses() rounded-full"></div>
+        </div>
+        <div>
+            <p class="text-sm font-medium text-gray-900 dark:text-white">@Label</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">@GetStatusDescription()</p>
+        </div>
+    </div>
+    <div class="text-right">
+        <p class="text-xs text-gray-500 dark:text-gray-400">Last checked</p>
+        <p class="text-xs font-medium text-gray-700 dark:text-gray-300">@(LastChecked.ToString())</p>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public string Status { get; set; } = "Unknown";
+    [Parameter] public DateTime? LastChecked { get; set; } = DateTime.Now;
+    [Parameter] public string? Description { get; set; }
+
+    private string GetStatusIndicatorClasses()
+    {
+        return "flex items-center justify-center w-6 h-6 rounded-full bg-white dark:bg-gray-600 border-2 " + GetBorderColor();
+    }
+
+    private string GetBorderColor()
+    {
+        return Status.ToLowerInvariant() switch
+        {
+            "online" or "connected" or "active" or "healthy" => "border-green-200 dark:border-green-800",
+            "offline" or "disconnected" or "inactive" or "unhealthy" => "border-red-200 dark:border-red-800",
+            "warning" or "degraded" => "border-yellow-200 dark:border-yellow-800",
+            _ => "border-gray-200 dark:border-gray-700"
+        };
+    }
+
+    private string GetStatusDotClasses()
+    {
+        return Status.ToLowerInvariant() switch
+        {
+            "online" or "connected" or "active" or "healthy" => "bg-green-500 animate-pulse",
+            "offline" or "disconnected" or "inactive" or "unhealthy" => "bg-red-500",
+            "warning" or "degraded" => "bg-yellow-500 animate-pulse",
+            _ => "bg-gray-400"
+        };
+    }
+
+    private string GetStatusDescription()
+    {
+        if (!string.IsNullOrEmpty(Description))
+            return Description;
+
+        return Status.ToLowerInvariant() switch
+        {
+            "online" or "connected" or "active" or "healthy" => "Everything is working normally",
+            "offline" or "disconnected" or "inactive" or "unhealthy" => "Service is not available",
+            "warning" or "degraded" => "Service is experiencing issues",
+            _ => "Status unknown"
+        };
+    }
+}

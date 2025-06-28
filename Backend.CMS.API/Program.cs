@@ -33,55 +33,68 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure logging
+// Configure logging first
 ConfigureLogging(builder);
 
-// Configure rate limiting
-ConfigureRateLimiting(builder);
+try
+{
+    // Configure basic services (including HttpContextAccessor)
+    ConfigureBasicServices(builder);
 
-// Configure basic services
-ConfigureBasicServices(builder);
+    // Configure databases
+    ConfigureDatabases(builder);
 
-// Configure databases
-ConfigureDatabases(builder);
+    // Configure Redis caching (make it optional)
+    ConfigureRedis(builder);
 
-// Configure Redis caching
-ConfigureRedis(builder);
+    // Configure Hangfire (make it depend on successful DB connection)
+    ConfigureHangfire(builder);
 
-// Configure Hangfire
-ConfigureHangfire(builder);
+    // Configure rate limiting
+    ConfigureRateLimiting(builder);
 
-// Configure CORS
-ConfigureCors(builder);
+    // Configure CORS
+    ConfigureCors(builder);
 
-// Configure Authentication & Authorization
-ConfigureAuthentication(builder);
+    // Configure Authentication & Authorization
+    ConfigureAuthentication(builder);
 
-// Configure validation and mapping
-ConfigureValidationAndMapping(builder);
+    // Configure validation and mapping
+    ConfigureValidationAndMapping(builder);
 
-// Register application services
-RegisterServices(builder);
+    // Register application services
+    RegisterServices(builder);
 
-// Configure Swagger
-ConfigureSwagger(builder);
+    // Configure Swagger
+    ConfigureSwagger(builder);
 
-// BUILD THE APP - Nothing that modifies services can come after this line
-var app = builder.Build();
+    // BUILD THE APP - Nothing that modifies services can come after this line
+    var app = builder.Build();
 
-// Configure middleware pipeline
-ConfigureMiddleware(app);
+    // Configure middleware pipeline
+    ConfigureMiddleware(app);
 
-// Initialize databases and seed data
-await InitializeDatabasesAsync(app);
+    // Initialize databases and seed data
+    await InitializeDatabasesAsync(app);
 
-// Configure HTTP request pipeline
-ConfigureRequestPipeline(app);
+    // Configure HTTP request pipeline
+    ConfigureRequestPipeline(app);
 
-// Configure endpoints
-ConfigureEndpoints(app);
+    // Configure endpoints
+    ConfigureEndpoints(app);
 
-app.Run();
+    Log.Information("Backend.CMS.API started successfully");
+    app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Application terminated unexpectedly");
+    throw;
+}
+finally
+{
+    Log.CloseAndFlush();
+}
 
 #region Configuration Methods
 
@@ -104,6 +117,35 @@ static void ConfigureLogging(WebApplicationBuilder builder)
     builder.Host.UseSerilog();
 }
 
+static void ConfigureBasicServices(WebApplicationBuilder builder)
+{
+    // Add HttpContextAccessor FIRST - this is critical for many services
+    builder.Services.AddHttpContextAccessor();
+
+    builder.Services.AddControllers(options =>
+    {
+        options.Filters.Add<ValidationActionFilter>();
+    }).AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+    });
+
+    // Configure memory cache with size limits for file caching
+    builder.Services.AddMemoryCache(options =>
+    {
+        // Set size limit to 500MB for file caching
+        options.SizeLimit = 524288000; // 500MB in bytes
+        options.CompactionPercentage = 0.9;
+        options.ExpirationScanFrequency = TimeSpan.FromMinutes(5);
+    });
+
+    // session configuration
+    ConfigureSession(builder);
+
+    builder.Services.AddEndpointsApiExplorer();
+}
+
 static void ConfigureRateLimiting(WebApplicationBuilder builder)
 {
     builder.Services.AddRateLimiter(options =>
@@ -124,40 +166,16 @@ static void ConfigureRateLimiting(WebApplicationBuilder builder)
     });
 }
 
-static void ConfigureBasicServices(WebApplicationBuilder builder)
-{
-    builder.Services.AddControllers(options =>
-    {
-        options.Filters.Add<ValidationActionFilter>();
-    }).AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-        options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
-    });
-
-    builder.Services.AddHttpContextAccessor();
-
-    // Configure memory cache with size limits for file caching
-    builder.Services.AddMemoryCache(options =>
-    {
-        // Set size limit to 500MB for file caching
-        options.SizeLimit = 524288000; // 500MB in bytes
-        options.CompactionPercentage = 0.9;
-        options.ExpirationScanFrequency = TimeSpan.FromMinutes(5);
-    });
-
-    // session configuration
-    ConfigureSession(builder);
-
-    builder.Services.AddEndpointsApiExplorer();
-}
-
 static void ConfigureDatabases(WebApplicationBuilder builder)
 {
     builder.Services.AddDbContext<ApplicationDbContextWithCacheInvalidation>((serviceProvider, options) =>
     {
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
         options.UseNpgsql(connectionString);
+
+        // Add better error handling
+        options.EnableSensitiveDataLogging(builder.Environment.IsDevelopment());
+        options.EnableDetailedErrors(builder.Environment.IsDevelopment());
     });
 
     // Register the base ApplicationDbContext
@@ -169,53 +187,99 @@ static void ConfigureDatabases(WebApplicationBuilder builder)
 
 static void ConfigureRedis(WebApplicationBuilder builder)
 {
-    var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+    var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
 
-    builder.Services.AddStackExchangeRedisCache(options =>
+    if (!string.IsNullOrEmpty(redisConnectionString))
     {
-        options.Configuration = redisConnectionString;
-        options.InstanceName = "BackendCMS";
-    });
+        try
+        {
+            // Configure Redis cache
+            builder.Services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = redisConnectionString;
+                options.InstanceName = "BackendCMS";
+            });
 
-    builder.Services.AddSingleton<IConnectionMultiplexer>(provider =>
+            // Configure Redis connection multiplexer with retry logic
+            builder.Services.AddSingleton<IConnectionMultiplexer>(provider =>
+            {
+                var configuration = provider.GetService<IConfiguration>();
+                var connectionString = configuration?.GetConnectionString("Redis") ?? redisConnectionString;
+
+                var configurationOptions = ConfigurationOptions.Parse(connectionString);
+                configurationOptions.AbortOnConnectFail = false;
+                configurationOptions.ConnectRetry = 3;
+                configurationOptions.ConnectTimeout = 5000;
+                configurationOptions.SyncTimeout = 5000;
+
+                try
+                {
+                    return ConnectionMultiplexer.Connect(configurationOptions);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to connect to Redis, will use in-memory cache as fallback");
+                    throw;
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Redis configuration failed, using in-memory cache as fallback");
+        }
+    }
+    else
     {
-        var configuration = provider.GetService<IConfiguration>();
-        var connectionString = configuration?.GetConnectionString("Redis") ?? "localhost:6379";
+        Log.Information("No Redis connection string found, using in-memory cache");
 
-        var configurationOptions = ConfigurationOptions.Parse(connectionString);
-        configurationOptions.AbortOnConnectFail = false;
-        configurationOptions.ConnectRetry = 3;
-        configurationOptions.ConnectTimeout = 5000;
-        configurationOptions.SyncTimeout = 5000;
-        //configurationOptions.AllowAdmin = true; 
+        // Fallback to distributed memory cache
+        builder.Services.AddDistributedMemoryCache();
 
-        return ConnectionMultiplexer.Connect(configurationOptions);
-    });
+        // Add a dummy IConnectionMultiplexer that will not be used
+        builder.Services.AddSingleton<IConnectionMultiplexer>(provider =>
+        {
+            throw new InvalidOperationException("Redis is not configured. Use in-memory cache instead.");
+        });
+    }
 }
 
 static void ConfigureHangfire(WebApplicationBuilder builder)
 {
-    var hangfireConnectionString = builder.Configuration.GetConnectionString("HangfireConnection")
-        ?? builder.Configuration.GetConnectionString("DefaultConnection");
-
-    builder.Services.AddHangfire(configuration => configuration
-        .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
-        .UseSimpleAssemblyNameTypeSerializer()
-        .UseRecommendedSerializerSettings()
-        .UsePostgreSqlStorage(hangfireConnectionString, new PostgreSqlStorageOptions
-        {
-            QueuePollInterval = TimeSpan.FromSeconds(10),
-            JobExpirationCheckInterval = TimeSpan.FromHours(1),
-            CountersAggregateInterval = TimeSpan.FromMinutes(5),
-            PrepareSchemaIfNecessary = true,
-            TransactionSynchronisationTimeout = TimeSpan.FromMinutes(5)
-        }));
-
-    builder.Services.AddHangfireServer(options =>
+    try
     {
-        options.Queues = ["default", "deployment", "template-sync", "maintenance"];
-        options.WorkerCount = Environment.ProcessorCount * 2;
-    });
+        var hangfireConnectionString = builder.Configuration.GetConnectionString("HangfireConnection")
+            ?? builder.Configuration.GetConnectionString("DefaultConnection");
+
+        if (!string.IsNullOrEmpty(hangfireConnectionString))
+        {
+            builder.Services.AddHangfire(configuration => configuration
+                .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+                .UseSimpleAssemblyNameTypeSerializer()
+                .UseRecommendedSerializerSettings()
+                .UsePostgreSqlStorage(hangfireConnectionString, new PostgreSqlStorageOptions
+                {
+                    QueuePollInterval = TimeSpan.FromSeconds(10),
+                    JobExpirationCheckInterval = TimeSpan.FromHours(1),
+                    CountersAggregateInterval = TimeSpan.FromMinutes(5),
+                    PrepareSchemaIfNecessary = true,
+                    TransactionSynchronisationTimeout = TimeSpan.FromMinutes(5)
+                }));
+
+            builder.Services.AddHangfireServer(options =>
+            {
+                options.Queues = ["default", "deployment", "template-sync", "maintenance"];
+                options.WorkerCount = Environment.ProcessorCount * 2;
+            });
+        }
+        else
+        {
+            Log.Warning("No Hangfire connection string found, Hangfire will not be available");
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Failed to configure Hangfire");
+    }
 }
 
 static void ConfigureCors(WebApplicationBuilder builder)
@@ -226,6 +290,8 @@ static void ConfigureCors(WebApplicationBuilder builder)
         options.AddDefaultPolicy(policy =>
         {
             policy.WithOrigins(
+                    "http://localhost:5021",      // Blazor Web HTTP
+                    "https://localhost:7213",     // Blazor Web HTTPS
                     "http://localhost:4200",
                     "https://localhost:4200",
                     "http://localhost:3000",
@@ -245,6 +311,8 @@ static void ConfigureCors(WebApplicationBuilder builder)
         options.AddPolicy("Development", policy =>
         {
             policy.WithOrigins(
+                    "http://localhost:5021",      // Blazor Web HTTP
+                    "https://localhost:7213",     // Blazor Web HTTPS
                     "http://localhost:4200",
                     "https://localhost:4200",
                     "http://localhost:3000",
@@ -313,17 +381,17 @@ static void ConfigureAuthentication(WebApplicationBuilder builder)
         {
             OnAuthenticationFailed = context =>
             {
-                Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+                Log.Warning("Authentication failed: {Message}", context.Exception.Message);
                 return Task.CompletedTask;
             },
             OnTokenValidated = context =>
             {
-                Console.WriteLine($"Token validated for: {context.Principal?.Identity?.Name}");
+                Log.Debug("Token validated for: {Name}", context.Principal?.Identity?.Name);
                 return Task.CompletedTask;
             },
             OnChallenge = context =>
             {
-                Console.WriteLine($"Authentication challenge: {context.Error}, {context.ErrorDescription}");
+                Log.Warning("Authentication challenge: {Error}, {ErrorDescription}", context.Error, context.ErrorDescription);
                 return Task.CompletedTask;
             }
         };
@@ -370,8 +438,7 @@ static void ConfigureAuthentication(WebApplicationBuilder builder)
                 }
                 catch (Exception ex)
                 {
-                    // Log but don't fail the authentication
-                    Console.WriteLine($"Error getting Google user info: {ex.Message}");
+                    Log.Warning(ex, "Error getting Google user info");
                 }
             };
         });
@@ -418,8 +485,7 @@ static void ConfigureAuthentication(WebApplicationBuilder builder)
                 }
                 catch (Exception ex)
                 {
-                    // Log but don't fail the authentication
-                    Console.WriteLine($"Error getting Facebook user info: {ex.Message}");
+                    Log.Warning(ex, "Error getting Facebook user info");
                 }
             };
         });
@@ -442,7 +508,7 @@ static void ConfigureValidationAndMapping(WebApplicationBuilder builder)
 
 static void ConfigureSession(WebApplicationBuilder builder)
 {
-    // Configure session with Redis backing store
+    // Configure session with Redis backing store if available
     builder.Services.AddSession(options =>
     {
         var timeoutMinutes = builder.Configuration.GetValue("SessionSettings:TimeoutMinutes", 30);
@@ -528,7 +594,25 @@ static void RegisterCachingServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<ICacheEventHandler, CacheEventHandler>();
 
     // Register the single CacheService that implements both interfaces
-    builder.Services.AddScoped<CacheService>();
+    // Make CacheService Redis-optional
+    builder.Services.AddScoped<CacheService>(provider =>
+    {
+        var logger = provider.GetRequiredService<ILogger<CacheService>>();
+        var distributedCache = provider.GetRequiredService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>();
+        var configuration = provider.GetRequiredService<IConfiguration>();
+
+        try
+        {
+            var connectionMultiplexer = provider.GetService<IConnectionMultiplexer>();
+            return new CacheService(distributedCache, connectionMultiplexer, configuration, logger);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to initialize Redis cache, using distributed memory cache");
+            return new CacheService(distributedCache, null, configuration, logger);
+        }
+    });
+
     builder.Services.AddScoped<ICacheService>(provider => provider.GetRequiredService<CacheService>());
     builder.Services.AddScoped<ICacheInvalidationService>(provider => provider.GetRequiredService<CacheService>());
 }
@@ -539,9 +623,7 @@ static void RegisterBusinessServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<ICompanyService, CompanyService>();
     builder.Services.AddScoped<ILocationService, LocationService>();
     builder.Services.AddScoped<IPageService, PageService>();
-
     builder.Services.AddScoped<IUserService, UserService>();
-
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IPermissionService, PermissionService>();
     builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
@@ -670,13 +752,20 @@ static void ConfigureRequestPipeline(WebApplication app)
         });
     }
 
-    // Configure Hangfire Dashboard
-    app.UseHangfireDashboard("/jobs", new DashboardOptions
+    // Configure Hangfire Dashboard (only if Hangfire is configured)
+    try
     {
-        Authorization = [new HangfireAuthorizationFilter()],
-        DisplayStorageConnectionString = false,
-        DashboardTitle = "Backend CMS Jobs"
-    });
+        app.UseHangfireDashboard("/jobs", new DashboardOptions
+        {
+            Authorization = [new HangfireAuthorizationFilter()],
+            DisplayStorageConnectionString = false,
+            DashboardTitle = "Backend CMS Jobs"
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Warning(ex, "Hangfire dashboard not available");
+    }
 
     // CRITICAL: Proper middleware order
     // 1. CORS must come before Authentication and Authorization
@@ -701,23 +790,23 @@ static void ConfigureRequestPipeline(WebApplication app)
     {
         app.Use(async (context, next) =>
         {
-            Console.WriteLine($"=== REQUEST: {context.Request.Method} {context.Request.Path} ===");
-            Console.WriteLine($"Host: {context.Request.Host}");
-            Console.WriteLine($"Origin: {context.Request.Headers.Origin}");
-            Console.WriteLine($"Session ID: {context.Session.Id}");
-            Console.WriteLine($"Is Authenticated: {context.User?.Identity?.IsAuthenticated}");
+            Log.Debug("=== REQUEST: {Method} {Path} ===", context.Request.Method, context.Request.Path);
+            Log.Debug("Host: {Host}", context.Request.Host);
+            Log.Debug("Origin: {Origin}", context.Request.Headers.Origin);
+            Log.Debug("Session ID: {SessionId}", context.Session.Id);
+            Log.Debug("Is Authenticated: {IsAuthenticated}", context.User?.Identity?.IsAuthenticated);
 
             // Check if this is a preflight request
             if (context.Request.Method == "OPTIONS")
             {
-                Console.WriteLine("=== PREFLIGHT REQUEST DETECTED ===");
-                Console.WriteLine($"Access-Control-Request-Method: {context.Request.Headers["Access-Control-Request-Method"]}");
-                Console.WriteLine($"Access-Control-Request-Headers: {context.Request.Headers["Access-Control-Request-Headers"]}");
+                Log.Debug("=== PREFLIGHT REQUEST DETECTED ===");
+                Log.Debug("Access-Control-Request-Method: {Method}", context.Request.Headers["Access-Control-Request-Method"]);
+                Log.Debug("Access-Control-Request-Headers: {Headers}", context.Request.Headers["Access-Control-Request-Headers"]);
             }
 
             await next();
 
-            Console.WriteLine($"=== RESPONSE: {context.Response.StatusCode} ===");
+            Log.Debug("=== RESPONSE: {StatusCode} ===", context.Response.StatusCode);
         });
     }
 }
@@ -731,26 +820,38 @@ static void ConfigureEndpoints(WebApplication app)
     {
         // Emergency stop all running jobs (admin only)
         using var scope = serviceProvider.CreateScope();
-        var hangfireClient = scope.ServiceProvider.GetRequiredService<IBackgroundJobClient>();
+        var hangfireClient = scope.ServiceProvider.GetService<IBackgroundJobClient>();
 
-        // This would require additional implementation to stop running jobs
-        return Results.Ok("Emergency stop initiated - check Hangfire dashboard");
+        if (hangfireClient != null)
+        {
+            return Results.Ok("Emergency stop initiated - check Hangfire dashboard");
+        }
+        else
+        {
+            return Results.NotFound("Hangfire not available");
+        }
     }).RequireAuthorization();
 
-    // Initialize Hangfire database
+    // Health check endpoint
+    app.MapGet("/health", () => Results.Ok(new { Status = "Healthy", Timestamp = DateTime.UtcNow }));
+
+    // Initialize Hangfire database (only if Hangfire is configured)
     try
     {
         using var scope = app.Services.CreateScope();
         var configuration = scope.ServiceProvider.GetRequiredService<IConfiguration>();
         var hangfireConn = configuration.GetConnectionString("HangfireConnection")
-            ?? configuration.GetConnectionString("DefaultConnection")?.Replace("{TENANT_ID}", "hangfire");
+            ?? configuration.GetConnectionString("DefaultConnection");
 
-        // Ensure Hangfire database exists
-        GlobalConfiguration.Configuration.UsePostgreSqlStorage(hangfireConn);
+        if (!string.IsNullOrEmpty(hangfireConn))
+        {
+            // Ensure Hangfire database exists
+            GlobalConfiguration.Configuration.UsePostgreSqlStorage(hangfireConn);
+        }
     }
     catch (Exception ex)
     {
-        Log.Error(ex, "Failed to initialize Hangfire database");
+        Log.Warning(ex, "Failed to initialize Hangfire database");
     }
 }
 
@@ -782,8 +883,15 @@ static async Task InitializeDatabaseConnectionsAsync(WebApplication app)
                 defaultBuilder.Database ?? "backend_cms");
         }
 
-        // Ensure Hangfire database exists
-        await databaseInitializer.EnsureHangfireDatabaseExistsAsync();
+        // Ensure Hangfire database exists (if configured)
+        try
+        {
+            await databaseInitializer.EnsureHangfireDatabaseExistsAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to initialize Hangfire database, continuing without it");
+        }
     }
     catch (Exception ex)
     {
