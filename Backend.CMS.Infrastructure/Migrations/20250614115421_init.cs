@@ -19,7 +19,7 @@ namespace Backend.CMS.Infrastructure.Migrations
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     Street = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
-                    HouseNr = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
+                    Street2 = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     City = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     State = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     Country = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
@@ -140,6 +140,41 @@ namespace Backend.CMS.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Companies", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ComponentTemplates",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    DisplayName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    Type = table.Column<int>(type: "integer", nullable: false),
+                    Icon = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    Category = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    DefaultProperties = table.Column<string>(type: "jsonb", nullable: false),
+                    DefaultStyles = table.Column<string>(type: "jsonb", nullable: false),
+                    Schema = table.Column<string>(type: "jsonb", nullable: false),
+                    PreviewHtml = table.Column<string>(type: "text", maxLength: 2147483647, nullable: true),
+                    PreviewImage = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    IsSystemTemplate = table.Column<bool>(type: "boolean", nullable: false),
+                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
+                    SortOrder = table.Column<int>(type: "integer", nullable: false),
+                    Tags = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    ConfigSchema = table.Column<string>(type: "jsonb", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ComponentTemplates", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -269,13 +304,18 @@ namespace Backend.CMS.Infrastructure.Migrations
                     LastLoginAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     FailedLoginAttempts = table.Column<int>(type: "integer", nullable: false),
                     LockoutEnd = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    TwoFactorEnabled = table.Column<bool>(type: "boolean", nullable: false),
+                    TwoFactorSecret = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     RecoveryCodes = table.Column<string>(type: "jsonb", nullable: false),
-                    PictureFileId = table.Column<int>(type: "integer", nullable: true),
+                    AvatarFileId = table.Column<int>(type: "integer", nullable: true),
+                    Timezone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Language = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: true),
                     EmailVerifiedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     EmailVerificationToken = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     PasswordChangedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     DateOfBirth = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     Gender = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Preferences = table.Column<string>(type: "jsonb", nullable: false),
                     ExternalId = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     IsExternalUser = table.Column<bool>(type: "boolean", nullable: false),
                     LastExternalSync = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
@@ -291,8 +331,8 @@ namespace Backend.CMS.Infrastructure.Migrations
                 {
                     table.PrimaryKey("PK_Users", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Users_Files_PictureFileId",
-                        column: x => x.PictureFileId,
+                        name: "FK_Users_Files_AvatarFileId",
+                        column: x => x.AvatarFileId,
                         principalTable: "Files",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.SetNull);
@@ -465,10 +505,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                     ParentPageId = table.Column<int>(type: "integer", nullable: true),
                     RequiresLogin = table.Column<bool>(type: "boolean", nullable: false),
                     AdminOnly = table.Column<bool>(type: "boolean", nullable: false),
-                    Content = table.Column<string>(type: "jsonb", nullable: false),
-                    Layout = table.Column<string>(type: "jsonb", nullable: false),
-                    Settings = table.Column<string>(type: "jsonb", nullable: false),
-                    Styles = table.Column<string>(type: "jsonb", nullable: false),
                     PublishedOn = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     PublishedBy = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -613,7 +649,7 @@ namespace Backend.CMS.Infrastructure.Migrations
                     Description = table.Column<string>(type: "text", maxLength: 2000, nullable: true),
                     ShortDescription = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     SKU = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    Price = table.Column<decimal>(type: "numeric", nullable: false),
+                    Price = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
                     CompareAtPrice = table.Column<decimal>(type: "numeric(18,2)", nullable: true),
                     CostPerItem = table.Column<decimal>(type: "numeric(18,2)", nullable: true),
                     TrackQuantity = table.Column<bool>(type: "boolean", nullable: false),
@@ -866,6 +902,76 @@ namespace Backend.CMS.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "PageComponents",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    PageId = table.Column<int>(type: "integer", nullable: false),
+                    Type = table.Column<int>(type: "integer", nullable: false),
+                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    ComponentKey = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
+                    GridColumn = table.Column<int>(type: "integer", nullable: false),
+                    GridColumnSpan = table.Column<int>(type: "integer", nullable: false),
+                    GridRow = table.Column<int>(type: "integer", nullable: false),
+                    GridRowSpan = table.Column<int>(type: "integer", nullable: false),
+                    Order = table.Column<int>(type: "integer", nullable: false),
+                    ParentComponentId = table.Column<int>(type: "integer", nullable: true),
+                    Properties = table.Column<string>(type: "jsonb", nullable: false),
+                    Styles = table.Column<string>(type: "jsonb", nullable: false),
+                    Content = table.Column<string>(type: "jsonb", nullable: false),
+                    Settings = table.Column<string>(type: "jsonb", nullable: false),
+                    IsVisible = table.Column<bool>(type: "boolean", nullable: false),
+                    IsLocked = table.Column<bool>(type: "boolean", nullable: false),
+                    CssClasses = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    CustomCss = table.Column<string>(type: "text", maxLength: 2147483647, nullable: true),
+                    ResponsiveSettings = table.Column<string>(type: "jsonb", nullable: false),
+                    AnimationSettings = table.Column<string>(type: "jsonb", nullable: false),
+                    InteractionSettings = table.Column<string>(type: "jsonb", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_PageComponents", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_PageComponents_PageComponents_ParentComponentId",
+                        column: x => x.ParentComponentId,
+                        principalTable: "PageComponents",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_PageComponents_Pages_PageId",
+                        column: x => x.PageId,
+                        principalTable: "Pages",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_PageComponents_Users_CreatedByUserId",
+                        column: x => x.CreatedByUserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_PageComponents_Users_DeletedByUserId",
+                        column: x => x.DeletedByUserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_PageComponents_Users_UpdatedByUserId",
+                        column: x => x.UpdatedByUserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "PageVersions",
                 columns: table => new
                 {
@@ -873,11 +979,8 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     PageId = table.Column<int>(type: "integer", nullable: false),
                     VersionNumber = table.Column<int>(type: "integer", nullable: false),
+                    Data = table.Column<string>(type: "jsonb", nullable: false),
                     ChangeNotes = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
-                    PageSnapshot = table.Column<string>(type: "jsonb", nullable: false),
-                    Metadata = table.Column<string>(type: "jsonb", nullable: false),
-                    IsPublished = table.Column<bool>(type: "boolean", nullable: false),
-                    PublishedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
@@ -1451,6 +1554,27 @@ namespace Backend.CMS.Infrastructure.Migrations
                 column: "UpdatedByUserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_ComponentTemplates_CreatedByUserId",
+                table: "ComponentTemplates",
+                column: "CreatedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ComponentTemplates_DeletedByUserId",
+                table: "ComponentTemplates",
+                column: "DeletedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ComponentTemplates_Name",
+                table: "ComponentTemplates",
+                column: "Name",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ComponentTemplates_UpdatedByUserId",
+                table: "ComponentTemplates",
+                column: "UpdatedByUserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_ContactDetails_CompanyId",
                 table: "ContactDetails",
                 column: "CompanyId");
@@ -1698,6 +1822,31 @@ namespace Backend.CMS.Infrastructure.Migrations
                 column: "UpdatedByUserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_PageComponents_CreatedByUserId",
+                table: "PageComponents",
+                column: "CreatedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PageComponents_DeletedByUserId",
+                table: "PageComponents",
+                column: "DeletedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PageComponents_PageId",
+                table: "PageComponents",
+                column: "PageId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PageComponents_ParentComponentId",
+                table: "PageComponents",
+                column: "ParentComponentId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_PageComponents_UpdatedByUserId",
+                table: "PageComponents",
+                column: "UpdatedByUserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Pages_CreatedByUserId",
                 table: "Pages",
                 column: "CreatedByUserId");
@@ -1916,6 +2065,11 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "IX_Products_DeletedByUserId",
                 table: "Products",
                 column: "DeletedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Products_Price",
+                table: "Products",
+                column: "Price");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Products_PublishedAt",
@@ -2155,6 +2309,11 @@ namespace Backend.CMS.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "IX_Users_AvatarFileId",
+                table: "Users",
+                column: "AvatarFileId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Users_CreatedByUserId",
                 table: "Users",
                 column: "CreatedByUserId");
@@ -2174,11 +2333,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "IX_Users_Email_IsDeleted",
                 table: "Users",
                 columns: new[] { "Email", "IsDeleted" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Users_PictureFileId",
-                table: "Users",
-                column: "PictureFileId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Users_Role_IsActive_IsDeleted",
@@ -2351,6 +2505,30 @@ namespace Backend.CMS.Infrastructure.Migrations
                 onDelete: ReferentialAction.SetNull);
 
             migrationBuilder.AddForeignKey(
+                name: "FK_ComponentTemplates_Users_CreatedByUserId",
+                table: "ComponentTemplates",
+                column: "CreatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ComponentTemplates_Users_DeletedByUserId",
+                table: "ComponentTemplates",
+                column: "DeletedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ComponentTemplates_Users_UpdatedByUserId",
+                table: "ComponentTemplates",
+                column: "UpdatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
                 name: "FK_ContactDetails_Locations_LocationId",
                 table: "ContactDetails",
                 column: "LocationId",
@@ -2497,6 +2675,9 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "CategoryImages");
 
             migrationBuilder.DropTable(
+                name: "ComponentTemplates");
+
+            migrationBuilder.DropTable(
                 name: "ContactDetails");
 
             migrationBuilder.DropTable(
@@ -2507,6 +2688,9 @@ namespace Backend.CMS.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "LocationOpeningHours");
+
+            migrationBuilder.DropTable(
+                name: "PageComponents");
 
             migrationBuilder.DropTable(
                 name: "PageVersions");
