@@ -15,7 +15,6 @@ namespace Backend.CMS.Web.Services
         private readonly JwtSecurityTokenHandler _jwtHandler;
 
         private const string TOKEN_KEY = "authToken";
-        private const string REFRESH_TOKEN_KEY = "refreshToken";
         private const string USER_KEY = "currentUser";
 
         public JwtAuthenticationStateProvider(
@@ -52,22 +51,8 @@ namespace Backend.CMS.Web.Services
                 // Check if token is expired
                 if (jwtToken.ValidTo < DateTime.UtcNow)
                 {
-                    // Try to refresh the token
-                    var refreshed = await TryRefreshTokenAsync();
-                    if (!refreshed)
-                    {
-                        await ClearAuthenticationDataAsync();
-                        return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
-                    }
-
-                    // Get the new token
-                    token = await _localStorage.GetItemAsync<string>(TOKEN_KEY);
-                    if (string.IsNullOrEmpty(token))
-                    {
-                        return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
-                    }
-
-                    jwtToken = _jwtHandler.ReadJwtToken(token);
+                    await ClearAuthenticationDataAsync();
+                    return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
                 }
 
                 var claims = GetClaimsFromToken(jwtToken);
@@ -112,7 +97,6 @@ namespace Backend.CMS.Web.Services
                     if (loginResponse != null)
                     {
                         await _localStorage.SetItemAsync(TOKEN_KEY, loginResponse.AccessToken);
-                        await _localStorage.SetItemAsync(REFRESH_TOKEN_KEY, loginResponse.RefreshToken);
                         await _localStorage.SetItemAsync(USER_KEY, loginResponse.User);
 
                         // Set authorization header
@@ -137,14 +121,8 @@ namespace Backend.CMS.Web.Services
         {
             try
             {
-                // Get refresh token for logout
-                var refreshToken = await _localStorage.GetItemAsync<string>(REFRESH_TOKEN_KEY);
-
-                if (!string.IsNullOrEmpty(refreshToken))
-                {
-                    var logoutRequest = new { RefreshToken = refreshToken };
-                    await _httpClient.PostAsJsonAsync("/api/auth/logout", logoutRequest);
-                }
+                // Call logout endpoint
+                await _httpClient.PostAsync("/api/auth/logout", null);
             }
             catch (Exception ex)
             {
@@ -176,53 +154,9 @@ namespace Backend.CMS.Web.Services
             return roles.Any(role => authState.User.IsInRole(role));
         }
 
-        private async Task<bool> TryRefreshTokenAsync()
-        {
-            try
-            {
-                var refreshToken = await _localStorage.GetItemAsync<string>(REFRESH_TOKEN_KEY);
-                if (string.IsNullOrEmpty(refreshToken))
-                {
-                    return false;
-                }
-
-                var refreshRequest = new { RefreshToken = refreshToken };
-                var response = await _httpClient.PostAsJsonAsync("/api/auth/refresh", refreshRequest);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    var content = await response.Content.ReadAsStringAsync();
-                    var refreshResponse = JsonSerializer.Deserialize<LoginResponseDto>(content, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
-
-                    if (refreshResponse != null)
-                    {
-                        await _localStorage.SetItemAsync(TOKEN_KEY, refreshResponse.AccessToken);
-                        await _localStorage.SetItemAsync(REFRESH_TOKEN_KEY, refreshResponse.RefreshToken);
-                        await _localStorage.SetItemAsync(USER_KEY, refreshResponse.User);
-
-                        _httpClient.DefaultRequestHeaders.Authorization =
-                            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", refreshResponse.AccessToken);
-
-                        return true;
-                    }
-                }
-
-                return false;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error refreshing token");
-                return false;
-            }
-        }
-
         private async Task ClearAuthenticationDataAsync()
         {
             await _localStorage.RemoveItemAsync(TOKEN_KEY);
-            await _localStorage.RemoveItemAsync(REFRESH_TOKEN_KEY);
             await _localStorage.RemoveItemAsync(USER_KEY);
             _httpClient.DefaultRequestHeaders.Authorization = null;
         }
