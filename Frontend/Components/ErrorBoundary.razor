@@ -11,7 +11,7 @@ else
 {
     <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
         <div class="max-w-lg w-full bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-            
+
             <!-- Header -->
             <div class="bg-gradient-to-r from-red-500 to-red-600 px-6 py-4">
                 <div class="flex items-center">
@@ -32,7 +32,7 @@ else
             <!-- Content -->
             <div class="p-6">
                 <p class="text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">
-                    An unexpected error occurred while processing your request. 
+                    An unexpected error occurred while processing your request.
                     @if (showDetails)
                     {
                         <span>Please try again or contact support if the problem persists.</span>
@@ -71,19 +71,19 @@ else
 
                 <!-- Actions -->
                 <div class="flex flex-col sm:flex-row gap-3">
-                    <button @onclick="TryRecover" 
+                    <button @onclick="TryRecover"
                             class="btn-primary flex-1 flex items-center justify-center">
                         <i class="fas fa-redo mr-2"></i>
                         Try Again
                     </button>
 
-                    <button @onclick="ToggleDetails" 
+                    <button @onclick="ToggleDetails"
                             class="btn-secondary flex items-center justify-center">
                         <i class="fas @(showDetails ? "fa-eye-slash" : "fa-eye") mr-2"></i>
                         @(showDetails ? "Hide" : "Show") Details
                     </button>
 
-                    <button @onclick="GoHome" 
+                    <button @onclick="GoHome"
                             class="btn-secondary flex items-center justify-center">
                         <i class="fas fa-home mr-2"></i>
                         Dashboard
@@ -93,19 +93,19 @@ else
                 <!-- Additional Actions -->
                 <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
                     <div class="flex flex-col sm:flex-row gap-3 text-sm">
-                        <button @onclick="CopyErrorDetails" 
+                        <button @onclick="CopyErrorDetails"
                                 class="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 flex items-center justify-center">
                             <i class="fas fa-copy mr-2"></i>
                             Copy Error Details
                         </button>
-                        
-                        <button @onclick="ReportIssue" 
+
+                        <button @onclick="ReportIssue"
                                 class="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 flex items-center justify-center">
                             <i class="fas fa-bug mr-2"></i>
                             Report Issue
                         </button>
-                        
-                        <button @onclick="RefreshPage" 
+
+                        <button @onclick="RefreshPage"
                                 class="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 flex items-center justify-center">
                             <i class="fas fa-refresh mr-2"></i>
                             Refresh Page
@@ -116,10 +116,11 @@ else
         </div>
     </div>
 }
-@code{
-    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+@code {
     private bool showDetails = false;
     private string errorId = string.Empty;
+
     protected override async Task OnErrorAsync(Exception exception)
     {
         errorId = Guid.NewGuid().ToString("N")[..8].ToUpper();
@@ -140,6 +141,7 @@ else
         // could also send this to a logging service here
         // await LoggingService.LogErrorAsync(errorInfo);
     }
+
     private async Task TryRecover()
     {
         try
@@ -155,6 +157,7 @@ else
             await RefreshPage();
         }
     }
+
     private void ToggleDetails()
     {
         showDetails = !showDetails;
@@ -169,6 +172,7 @@ else
     {
         await JSRuntime.InvokeVoidAsync("location.reload");
     }
+
     private async Task CopyErrorDetails()
     {
         try
@@ -195,25 +199,25 @@ else
             await JSRuntime.InvokeVoidAsync("console.error", $"Failed to copy error details: {ex.Message}");
         }
     }
+
     private async Task ReportIssue()
     {
         try
         {
             var issueBody = Uri.EscapeDataString(
-    $"## Error Report\n\n" +
-    $"**Error ID:** {errorId}\n" +
-    $"**Message:** {CurrentException?.Message}\n" +
-    $"**Type:** {CurrentException?.GetType().Name}\n" +
-    $"**URL:** {Navigation.Uri}\n" +
-    $"**Timestamp:** {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC\n\n" +
-    $"### Steps to Reproduce\n" +
-    $"<!-- Please describe what you were doing when this error occurred -->\n\n" +
-    $"### Stack Trace\n" +
-    "```\n" +
-    $"{CurrentException?.StackTrace}\n" +
-    "```"
-    );
-
+                $"## Error Report\n\n" +
+                $"**Error ID:** {errorId}\n" +
+                $"**Message:** {CurrentException?.Message}\n" +
+                $"**Type:** {CurrentException?.GetType().Name}\n" +
+                $"**URL:** {Navigation.Uri}\n" +
+                $"**Timestamp:** {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC\n\n" +
+                $"### Steps to Reproduce\n" +
+                $"<!-- Please describe what you were doing when this error occurred -->\n\n" +
+                $"### Stack Trace\n" +
+                "```\n" +
+                $"{CurrentException?.StackTrace}\n" +
+                "```"
+            );
 
             var issueUrl = $"https://github.com/repo/issues/new?title=Error%20{errorId}&body={issueBody}";
             await JSRuntime.InvokeVoidAsync("open", issueUrl, "_blank");
@@ -223,6 +227,7 @@ else
             await JSRuntime.InvokeVoidAsync("console.error", $"Failed to open issue reporter: {ex.Message}");
         }
     }
+
     private string GetErrorMessage()
     {
         if (CurrentException == null) return "Unknown error occurred";

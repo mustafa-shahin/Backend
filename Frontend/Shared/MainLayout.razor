@@ -6,7 +6,7 @@
 
 <div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
     <!-- Check if this is the login page -->
-    @if (IsLoginPage)
+    @if (isLoginPage)
     {
         @Body
     }
@@ -40,7 +40,7 @@
 
 @code {
     private Sidebar? sidebar;
-    private bool _initialized = false;
+    private bool isLoginPage = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -48,10 +48,14 @@
         {
             await JSRuntime.InvokeVoidAsync("console.log", "MainLayout loaded");
 
+            // Check if current page is login page
+            await CheckIfLoginPage();
+
             // Listen for theme changes
             ThemeService.ThemeChanged += OnThemeChanged;
 
-            _initialized = true;
+            // Listen for navigation changes
+            Navigation.LocationChanged += OnLocationChanged;
         }
         catch (Exception ex)
         {
@@ -61,7 +65,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && _initialized)
+        if (firstRender)
         {
             try
             {
@@ -75,21 +79,25 @@
         }
     }
 
-    private bool IsLoginPage
+    private async Task CheckIfLoginPage()
     {
-        get
+        try
         {
-            try
-            {
-                var currentUri = new Uri(Navigation.Uri);
-                var path = currentUri.AbsolutePath;
-                return path.Equals("/login", StringComparison.OrdinalIgnoreCase);
-            }
-            catch
-            {
-                return false;
-            }
+            var currentPath = await JSRuntime.InvokeAsync<string>("eval", "window.location.pathname");
+            isLoginPage = currentPath?.Equals("/login", StringComparison.OrdinalIgnoreCase) == true;
         }
+        catch
+        {
+            // Fallback: check the current URI
+            var uri = new Uri(Navigation.Uri);
+            isLoginPage = uri.AbsolutePath.Equals("/login", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private async void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        await CheckIfLoginPage();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void ToggleSidebar()
@@ -125,5 +133,6 @@
     public void Dispose()
     {
         ThemeService.ThemeChanged -= OnThemeChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 }

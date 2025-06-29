@@ -7,18 +7,19 @@
 @inject INotificationService NotificationService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
+@inject IConfiguration Configuration
 
 <PageTitle>Sign In - CMS Designer</PageTitle>
 
 <div class="min-h-screen flex">
     <!-- Left side - Login Form -->
     <div class="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-white dark:bg-gray-900">
-        <div class="max-w-md w-full space-y-8">
+        <div class="max-w-md w-full space-y-8 animate-slide-up">
 
             <!-- Theme toggle -->
             <div class="flex justify-end">
                 <button @onclick="ToggleTheme"
-                        class="flex items-center justify-center h-12 w-12 p-3 rounded-full text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+                        class="flex items-center justify-center h-12 w-12 p-3 rounded-full text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 focus-ring"
                         aria-label="Toggle theme">
                     <i class="@GetThemeIcon() text-xl transition-transform duration-300"></i>
                 </button>
@@ -59,7 +60,7 @@
                 <div class="space-y-4">
                     <!-- Email field -->
                     <div>
-                        <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email address</label>
+                        <label for="email" class="form-label dark:text-white">Email address</label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-envelope text-gray-400"></i>
@@ -69,14 +70,14 @@
                                        type="email"
                                        autocomplete="email"
                                        placeholder="Enter your email"
-                                       class="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 transform focus:scale-[1.02]" />
+                                       class="form-input pl-10 transform transition-all duration-200 focus-within:scale-[1.02] w-full h-10 rounded-lg" />
                         </div>
                         <ValidationMessage For="@(() => loginModel.Email)" class="text-red-500 text-sm mt-1" />
                     </div>
 
                     <!-- Password field -->
                     <div>
-                        <label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
+                        <label for="password" class="form-label dark:text-white">Password</label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-lock text-gray-400"></i>
@@ -86,7 +87,7 @@
                                        type="password"
                                        autocomplete="current-password"
                                        placeholder="Enter your password"
-                                       class="w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 transform focus:scale-[1.02]" />
+                                       class="form-input pl-10 transform transition-all duration-200 focus-within:scale-[1.02] w-full h-10 rounded-lg" />
                         </div>
                         <ValidationMessage For="@(() => loginModel.Password)" class="text-red-500 text-sm mt-1" />
                     </div>
@@ -96,7 +97,7 @@
                         <div class="flex items-center">
                             <InputCheckbox @bind-Value="loginModel.RememberMe"
                                            id="rememberMe"
-                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 transition-colors" />
+                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 transition-colors" />
                             <label for="rememberMe" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                                 Remember me
                             </label>
@@ -107,7 +108,7 @@
                 <!-- Error message -->
                 @if (!string.IsNullOrEmpty(errorMessage))
                 {
-                    <div class="rounded-lg bg-red-50 dark:bg-red-900/20 p-4 border border-red-200 dark:border-red-800">
+                    <div class="rounded-lg bg-red-50 dark:bg-red-900/20 p-4 border border-red-200 dark:border-red-800 animate-fade-in">
                         <div class="flex">
                             <div class="flex-shrink-0">
                                 <i class="fas fa-exclamation-circle text-red-400"></i>
@@ -124,7 +125,7 @@
                 <!-- Submit button -->
                 <button type="submit"
                         disabled="@isLoading"
-                        class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 dark:focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transform transition-all duration-200 hover:scale-[1.02] disabled:hover:scale-100">
+                        class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transform transition-all duration-200 hover:scale-[1.02]">
 
                     <span class="absolute left-0 inset-y-0 flex items-center pl-4">
                         <i class="@GetButtonIcon() text-blue-300 group-hover:text-blue-200 transition-colors"></i>
@@ -226,7 +227,6 @@
     private bool isLoading = false;
     private string errorMessage = string.Empty;
     private string connectionStatus = string.Empty;
-    private bool _componentInitialized = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -234,12 +234,13 @@
         {
             await JSRuntime.InvokeVoidAsync("console.log", "Login page initializing...");
 
-            // Initialize theme first
             await ThemeService.InitializeAsync();
 
+            connectionStatus = "Checking connection to backend...";
+            StateHasChanged();
+
             // Check if already authenticated
-            var isAuthenticated = await AuthService.IsAuthenticatedAsync();
-            if (isAuthenticated)
+            if (await AuthService.IsAuthenticatedAsync())
             {
                 await JSRuntime.InvokeVoidAsync("console.log", "User already authenticated, redirecting...");
                 Navigation.NavigateTo("/", true);
@@ -247,25 +248,15 @@
             }
 
             connectionStatus = "Ready to sign in";
-            _componentInitialized = true;
+            await Task.Delay(1000); // Show status for a moment
+            connectionStatus = string.Empty;
             StateHasChanged();
         }
         catch (Exception ex)
         {
             await JSRuntime.InvokeVoidAsync("console.error", $"Login initialization error: {ex.Message}");
-            connectionStatus = "Connection error. Please check if the backend is running.";
-            _componentInitialized = true;
-            StateHasChanged();
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender && _componentInitialized)
-        {
-            // Clear the connection status after a moment
-            await Task.Delay(2000);
-            connectionStatus = string.Empty;
+            var apiUrl = Configuration["ApiBaseUrl"] ?? "backend API";
+            connectionStatus = $"Connection error. Please check if the backend is running at {apiUrl}";
             StateHasChanged();
         }
     }
@@ -287,9 +278,6 @@
             {
                 await JSRuntime.InvokeVoidAsync("console.log", "Login successful, redirecting...");
                 NotificationService.ShowSuccess("Welcome back! Redirecting to dashboard...", "Login Successful");
-
-                // Small delay to show the success message
-                await Task.Delay(500);
                 Navigation.NavigateTo("/", true);
             }
         }
@@ -311,7 +299,8 @@
             }
             else
             {
-                errorMessage = "Unable to connect to the server. Please check if the backend is running on https://localhost:7206";
+                var apiUrl = Configuration["ApiBaseUrl"] ?? "the backend server";
+                errorMessage = $"Unable to connect to {apiUrl}. Please check if the backend is running.";
             }
         }
         catch (Exception ex)
