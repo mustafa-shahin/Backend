@@ -95,6 +95,8 @@
     </div>
 
     <script>
+        // Global JavaScript utilities for CMS Designer
+
         // Enhanced loading feedback
         window.addEventListener('DOMContentLoaded', function () {
             console.log('DOM loaded, initializing Blazor...');
@@ -132,7 +134,7 @@
 
         // Connection status checking
         function checkBackendConnection() {
-            fetch('http://localhost:5252/api/health', {
+            fetch('https://localhost:7206/api/health', {
                 method: 'GET',
                 timeout: 5000
             })
@@ -147,12 +149,262 @@
                 })
                 .catch(error => {
                     console.warn('Backend connection failed:', error);
-                    updateLoadingStatus('Cannot connect to backend. Please ensure it\'s running on http://localhost:5252');
+                    updateLoadingStatus('Cannot connect to backend. Please ensure it\'s running on https://localhost:7206');
                 });
         }
 
         // Check backend connection after a short delay
         setTimeout(checkBackendConnection, 1000);
+
+        // ===== Modal and UI Utilities =====
+
+        // Click outside listener for dropdowns and modals
+        let clickOutsideListeners = new Map();
+
+        window.addClickOutsideListener = function (element, dotNetRef) {
+            if (!element || !dotNetRef) return;
+
+            const listener = function (event) {
+                if (!element.contains(event.target)) {
+                    dotNetRef.invokeMethodAsync('CloseUserMenu');
+                }
+            };
+
+            // Remove existing listener if any
+            if (clickOutsideListeners.has(element)) {
+                document.removeEventListener('click', clickOutsideListeners.get(element));
+            }
+
+            // Add new listener
+            document.addEventListener('click', listener);
+            clickOutsideListeners.set(element, listener);
+        };
+
+        window.removeClickOutsideListener = function (element) {
+            if (!element) return;
+
+            const listener = clickOutsideListeners.get(element);
+            if (listener) {
+                document.removeEventListener('click', listener);
+                clickOutsideListeners.delete(element);
+            }
+        };
+
+        // Escape key handling for modals
+        let escapeKeyListener = null;
+        let escapeKeyDotNetRef = null;
+
+        window.addEscapeKeyListener = function (dotNetRef) {
+            escapeKeyDotNetRef = dotNetRef;
+
+            if (escapeKeyListener) {
+                document.removeEventListener('keydown', escapeKeyListener);
+            }
+
+            escapeKeyListener = function (event) {
+                if (event.key === 'Escape' && dotNetRef) {
+                    dotNetRef.invokeMethodAsync('HandleEscapeKey');
+                }
+            };
+
+            document.addEventListener('keydown', escapeKeyListener);
+        };
+
+        window.removeEscapeKeyListener = function () {
+            if (escapeKeyListener) {
+                document.removeEventListener('keydown', escapeKeyListener);
+                escapeKeyListener = null;
+                escapeKeyDotNetRef = null;
+            }
+        };
+
+        // Focus management
+        window.focusElement = function (selector) {
+            const element = document.querySelector(selector);
+            if (element) {
+                element.focus();
+            }
+        };
+
+        window.trapFocus = function (containerId) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            const focusableElements = container.querySelectorAll(
+                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            );
+
+            const firstElement = focusableElements[0];
+            const lastElement = focusableElements[focusableElements.length - 1];
+
+            const trapFunction = function (e) {
+                if (e.key === 'Tab') {
+                    if (e.shiftKey) {
+                        if (document.activeElement === firstElement) {
+                            lastElement.focus();
+                            e.preventDefault();
+                        }
+                    } else {
+                        if (document.activeElement === lastElement) {
+                            firstElement.focus();
+                            e.preventDefault();
+                        }
+                    }
+                }
+            };
+
+            container.addEventListener('keydown', trapFunction);
+            firstElement?.focus();
+
+            return function () {
+                container.removeEventListener('keydown', trapFunction);
+            };
+        };
+
+        // ===== Theme Utilities =====
+
+        // Theme detection and application
+        window.getSystemTheme = function () {
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        };
+
+        window.applyTheme = function (isDark) {
+            if (isDark) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        };
+
+        window.watchSystemTheme = function (dotNetRef) {
+            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+            const listener = function (e) {
+                if (dotNetRef) {
+                    dotNetRef.invokeMethodAsync('OnSystemThemeChanged', e.matches);
+                }
+            };
+
+            mediaQuery.addEventListener('change', listener);
+
+            return function () {
+                mediaQuery.removeEventListener('change', listener);
+            };
+        };
+
+        // ===== Utility Functions =====
+
+        // Smooth scrolling
+        window.smoothScrollTo = function (selector, offset = 0) {
+            const element = document.querySelector(selector);
+            if (element) {
+                const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
+                const offsetPosition = elementPosition - offset;
+
+                window.scrollTo({
+                    top: offsetPosition,
+                    behavior: 'smooth'
+                });
+            }
+        };
+
+        // Copy to clipboard
+        window.copyToClipboard = function (text) {
+            return navigator.clipboard.writeText(text).then(() => {
+                return true;
+            }).catch(() => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    return true;
+                } catch (err) {
+                    document.body.removeChild(textArea);
+                    return false;
+                }
+            });
+        };
+
+        // Download file
+        window.downloadFile = function (filename, content, contentType) {
+            const blob = new Blob([content], { type: contentType });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        };
+
+        // Local storage helpers
+        window.setLocalStorage = function (key, value) {
+            try {
+                localStorage.setItem(key, JSON.stringify(value));
+                return true;
+            } catch {
+                return false;
+            }
+        };
+
+        window.getLocalStorage = function (key) {
+            try {
+                const item = localStorage.getItem(key);
+                return item ? JSON.parse(item) : null;
+            } catch {
+                return null;
+            }
+        };
+
+        window.removeLocalStorage = function (key) {
+            try {
+                localStorage.removeItem(key);
+                return true;
+            } catch {
+                return false;
+            }
+        };
+
+        // Animation helpers
+        window.animateElement = function (selector, animationClass, duration = 300) {
+            const element = document.querySelector(selector);
+            if (element) {
+                element.classList.add(animationClass);
+                setTimeout(() => {
+                    element.classList.remove(animationClass);
+                }, duration);
+            }
+        };
+
+        // Performance monitoring
+        window.measurePerformance = function (name, fn) {
+            const start = performance.now();
+            const result = fn();
+            const end = performance.now();
+            console.log(`${name} took ${end - start} milliseconds`);
+            return result;
+        };
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function () {
+            // Clear all listeners
+            clickOutsideListeners.clear();
+            removeEscapeKeyListener();
+        });
+
+        // Console styling for development
+        if (window.location.hostname === 'localhost') {
+            console.log(
+                '%c🎨 CMS Designer %c- Development Mode',
+                'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 8px 12px; border-radius: 4px; font-weight: bold;',
+                'color: #667eea; font-weight: normal;'
+            );
+        }
     </script>
 
     <script src="_framework/blazor.webassembly.js"></script>

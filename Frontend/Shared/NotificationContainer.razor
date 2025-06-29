@@ -4,25 +4,38 @@
 @inject INotificationService NotificationService
 @implements IDisposable
 
-<div class="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+<div class="fixed top-4 right-4 z-50 space-y-3 max-w-sm">
     @foreach (var notification in notifications)
     {
-        <div class="@GetNotificationClass(notification.Type) animate-slide-down">
-            <div class="flex items-start">
+        <div class="@GetNotificationClass(notification.Type) animate-slide-down transform transition-all duration-300"
+             style="animation-delay: @(notifications.IndexOf(notification) * 100)ms">
+            <div class="flex items-start p-4">
                 <div class="flex-shrink-0 pt-0.5">
-                    <i class="@GetNotificationIcon(notification.Type)"></i>
+                    <div class="@GetIconContainerClass(notification.Type)">
+                        <i class="@GetNotificationIcon(notification.Type)"></i>
+                    </div>
                 </div>
-                <div class="ml-3 flex-1">
+                <div class="ml-3 flex-1 min-w-0">
                     <h4 class="@GetTitleClass(notification.Type) font-medium text-sm">
                         @notification.Title
                     </h4>
-                    <p class="@GetMessageClass(notification.Type) text-sm">
+                    <p class="@GetMessageClass(notification.Type) text-sm mt-1 break-words">
                         @notification.Message
                     </p>
+                    @if (notification.DurationMs > 0 && notification.AutoClose)
+                    {
+                        <div class="mt-2">
+                            <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
+                                <div class="@GetProgressBarClass(notification.Type) h-1 rounded-full transition-all duration-100 ease-linear"
+                                     style="animation: progress @(notification.DurationMs)ms linear forwards;"></div>
+                            </div>
+                        </div>
+                    }
                 </div>
                 <div class="ml-4 flex-shrink-0">
                     <button @onclick="() => RemoveNotification(notification.Id)"
-                            class="@GetCloseButtonClass(notification.Type) hover:opacity-75 transition-opacity">
+                            class="@GetCloseButtonClass(notification.Type) hover:opacity-75 transition-opacity p-1 rounded"
+                            aria-label="Close notification">
                         <i class="fas fa-times text-sm"></i>
                     </button>
                 </div>
@@ -30,6 +43,18 @@
         </div>
     }
 </div>
+
+<!-- CSS for progress bar animation -->
+<style>
+    @@keyframes progress {
+        from{
+        width: 100%;
+    }
+    to{
+        width: 0%;
+    }
+    }
+</style>
 
 @code {
     private List<NotificationMessage> notifications = new();
@@ -43,10 +68,20 @@
 
     private void AddNotification(NotificationMessage notification)
     {
+        // Limit to maximum 5 notifications
+        if (notifications.Count >= 5)
+        {
+            var oldestNotification = notifications.FirstOrDefault();
+            if (oldestNotification != null)
+            {
+                RemoveNotification(oldestNotification.Id);
+            }
+        }
+
         notifications.Add(notification);
         InvokeAsync(StateHasChanged);
 
-        if (notification.AutoClose)
+        if (notification.AutoClose && notification.DurationMs > 0)
         {
             var timer = new Timer(_ => RemoveNotification(notification.Id), null, notification.DurationMs, Timeout.Infinite);
             timers[notification.Id] = timer;
@@ -79,29 +114,43 @@
 
     private string GetNotificationClass(NotificationType type)
     {
-        var baseClass = "rounded-lg p-4 shadow-lg border";
+        var baseClass = "rounded-xl p-0 shadow-lg border backdrop-blur-sm max-w-sm";
 
         return type switch
         {
-            NotificationType.Success => $"{baseClass} bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800",
-            NotificationType.Error => $"{baseClass} bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800",
-            NotificationType.Warning => $"{baseClass} bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800",
-            NotificationType.Info => $"{baseClass} bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800",
-            _ => $"{baseClass} bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800"
+            NotificationType.Success => $"{baseClass} bg-green-50/95 dark:bg-green-900/90 border-green-200 dark:border-green-800",
+            NotificationType.Error => $"{baseClass} bg-red-50/95 dark:bg-red-900/90 border-red-200 dark:border-red-800",
+            NotificationType.Warning => $"{baseClass} bg-yellow-50/95 dark:bg-yellow-900/90 border-yellow-200 dark:border-yellow-800",
+            NotificationType.Info => $"{baseClass} bg-blue-50/95 dark:bg-blue-900/90 border-blue-200 dark:border-blue-800",
+            _ => $"{baseClass} bg-gray-50/95 dark:bg-gray-900/90 border-gray-200 dark:border-gray-800"
+        };
+    }
+
+    private string GetIconContainerClass(NotificationType type)
+    {
+        var baseClass = "w-8 h-8 rounded-full flex items-center justify-center";
+
+        return type switch
+        {
+            NotificationType.Success => $"{baseClass} bg-green-100 dark:bg-green-800",
+            NotificationType.Error => $"{baseClass} bg-red-100 dark:bg-red-800",
+            NotificationType.Warning => $"{baseClass} bg-yellow-100 dark:bg-yellow-800",
+            NotificationType.Info => $"{baseClass} bg-blue-100 dark:bg-blue-800",
+            _ => $"{baseClass} bg-gray-100 dark:bg-gray-800"
         };
     }
 
     private string GetNotificationIcon(NotificationType type)
     {
-        var baseClass = "w-5 h-5";
+        var baseClass = "w-4 h-4";
 
         return type switch
         {
-            NotificationType.Success => $"{baseClass} text-green-500 fas fa-check-circle",
-            NotificationType.Error => $"{baseClass} text-red-500 fas fa-exclamation-circle",
-            NotificationType.Warning => $"{baseClass} text-yellow-500 fas fa-exclamation-triangle",
-            NotificationType.Info => $"{baseClass} text-blue-500 fas fa-info-circle",
-            _ => $"{baseClass} text-gray-500 fas fa-bell"
+            NotificationType.Success => $"{baseClass} text-green-600 dark:text-green-300 fas fa-check",
+            NotificationType.Error => $"{baseClass} text-red-600 dark:text-red-300 fas fa-exclamation-circle",
+            NotificationType.Warning => $"{baseClass} text-yellow-600 dark:text-yellow-300 fas fa-exclamation-triangle",
+            NotificationType.Info => $"{baseClass} text-blue-600 dark:text-blue-300 fas fa-info-circle",
+            _ => $"{baseClass} text-gray-600 dark:text-gray-300 fas fa-bell"
         };
     }
 
@@ -133,11 +182,23 @@
     {
         return type switch
         {
-            NotificationType.Success => "text-green-500 dark:text-green-400",
-            NotificationType.Error => "text-red-500 dark:text-red-400",
-            NotificationType.Warning => "text-yellow-500 dark:text-yellow-400",
-            NotificationType.Info => "text-blue-500 dark:text-blue-400",
-            _ => "text-gray-500 dark:text-gray-400"
+            NotificationType.Success => "text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-800",
+            NotificationType.Error => "text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-800",
+            NotificationType.Warning => "text-yellow-600 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-yellow-800",
+            NotificationType.Info => "text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-800",
+            _ => "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+        };
+    }
+
+    private string GetProgressBarClass(NotificationType type)
+    {
+        return type switch
+        {
+            NotificationType.Success => "bg-green-500 dark:bg-green-400",
+            NotificationType.Error => "bg-red-500 dark:bg-red-400",
+            NotificationType.Warning => "bg-yellow-500 dark:bg-yellow-400",
+            NotificationType.Info => "bg-blue-500 dark:bg-blue-400",
+            _ => "bg-gray-500 dark:bg-gray-400"
         };
     }
 

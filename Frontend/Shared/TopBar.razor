@@ -3,96 +3,154 @@
 @inject IThemeService ThemeService
 @inject IAuthService AuthService
 @inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
 
-<header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-    <div class="flex items-center justify-between">
+<header class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 relative z-40">
+    <div class="mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between items-center h-16">
 
-        <!-- Left side -->
-        <div class="flex items-center space-x-4">
-            <button @onclick="() => OnToggleSidebar.InvokeAsync()"
-                    class="p-2 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    title="Toggle sidebar">
-                <i class="fas fa-bars"></i>
-            </button>
+            <!-- Left side -->
+            <div class="flex items-center space-x-4">
+                <!-- Sidebar toggle -->
+                <button @onclick="() => OnToggleSidebar.InvokeAsync()"
+                        class="p-2 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200"
+                        aria-label="Toggle sidebar">
+                    <i class="fas fa-bars text-lg"></i>
+                </button>
 
-            <div>
-                <h1 class="text-lg font-semibold text-gray-900 dark:text-white">@GetPageTitle()</h1>
-                <p class="text-sm text-gray-600 dark:text-gray-400">@GetPageDescription()</p>
-            </div>
-        </div>
-
-        <!-- Right side -->
-        <div class="flex items-center space-x-4">
-
-            <!-- Search (Disabled) -->
-            <div class="hidden md:flex">
-                <div class="relative">
-                    <input type="text"
-                           placeholder="Search..."
-                           disabled
-                           class="w-64 pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 opacity-50 cursor-not-allowed" />
-                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <i class="fas fa-search text-gray-400"></i>
+                <!-- Logo and Title -->
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-palette text-white text-sm"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold text-gray-900 dark:text-gray-100">
+                            CMS Portal
+                        </h1>
                     </div>
                 </div>
             </div>
 
-            <!-- Notifications (Disabled) -->
-            <button class="relative p-2 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors opacity-50 cursor-not-allowed"
-                    disabled
-                    title="Notifications (Coming soon)">
-                <i class="fas fa-bell"></i>
-            </button>
+            <!-- Right side -->
+            <div class="flex items-center space-x-3">
 
-            <!-- Theme toggle -->
-            <button @onclick="ToggleTheme"
-                    class="p-2 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    title="Toggle theme">
-                <i class="@GetThemeIcon()"></i>
-            </button>
-
-            <!-- User menu -->
-            <div class="relative">
-                <button @onclick="ToggleUserMenu"
-                        class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                    @if (currentUser != null)
-                    {
-                        <div class="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center">
-                            <span class="text-white text-sm font-medium">
-                                @(currentUser.FirstName?.Substring(0, 1).ToUpper())@(currentUser.LastName?.Substring(0, 1).ToUpper())
-                            </span>
-                        </div>
-                        <span class="hidden md:block text-sm font-medium text-gray-700 dark:text-gray-300">
-                            @currentUser.FirstName @currentUser.LastName
-                        </span>
-                        <i class="fas fa-chevron-down text-xs text-gray-500 dark:text-gray-400"></i>
-                    }
+                <!-- Theme toggle -->
+                <button @onclick="ToggleTheme"
+                        class="p-2 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group"
+                        aria-label="@GetThemeToggleLabel()"
+                        title="@GetThemeToggleLabel()">
+                    <i class="@GetThemeIcon() text-lg transition-all duration-300 group-hover:scale-110"></i>
                 </button>
 
-                @if (showUserMenu)
+                <!-- User menu -->
+                @if (currentUser != null)
                 {
-                    <div class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50">
-                        <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
-                            <p class="text-sm font-medium text-gray-900 dark:text-white">@currentUser?.FirstName @currentUser?.LastName</p>
-                            <p class="text-xs text-gray-500 dark:text-gray-400">@currentUser?.Email</p>
-                        </div>
+                    <div class="relative" @ref="userMenuRef">
+                        <button @onclick="ToggleUserMenu"
+                                class="flex items-center space-x-3 p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group"
+                                aria-expanded="@isUserMenuOpen"
+                                aria-haspopup="true">
+                            <div class="flex items-center space-x-2">
+                                <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-sm">
+                                    @if (!string.IsNullOrEmpty(currentUser.PictureUrl))
+                                    {
+                                        <img src="@currentUser.PictureUrl"
+                                             alt="@($"{currentUser.FirstName} {currentUser.LastName}")"
+                                             class="w-8 h-8 rounded-full object-cover" />
+                                    }
+                                    else
+                                    {
+                                        <span class="text-xs font-semibold text-white">
+                                            @currentUser.FirstName.Substring(0, 1)@currentUser.LastName.Substring(0, 1)
+                                        </span>
+                                    }
+                                </div>
+                                <div class="hidden md:block text-left">
+                                    <p class="text-sm font-medium">
+                                        @currentUser.FirstName @currentUser.LastName
+                                    </p>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                                        @currentUser.RoleName
+                                    </p>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-down text-xs transition-transform duration-200 @(isUserMenuOpen ? "rotate-180" : "")"></i>
+                        </button>
 
-                        <a href="/profile" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                            <i class="fas fa-user mr-2"></i>
-                            Profile (Soon)
-                        </a>
+                        <!-- Dropdown menu -->
+                        @if (isUserMenuOpen)
+                        {
+                            <div class="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50 animate-slide-down">
+                                <!-- User info section -->
+                                <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                                    <div class="flex items-center space-x-3">
+                                        <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
+                                            @if (!string.IsNullOrEmpty(currentUser.PictureUrl))
+                                            {
+                                                <img src="@currentUser.PictureUrl"
+                                                     alt="@($"{currentUser.FirstName} {currentUser.LastName}")"
+                                                     class="w-10 h-10 rounded-full object-cover" />
+                                            }
+                                            else
+                                            {
+                                                <span class="text-sm font-semibold text-white">
+                                                    @currentUser.FirstName.Substring(0, 1)@currentUser.LastName.Substring(0, 1)
+                                                </span>
+                                            }
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                                                @currentUser.FirstName @currentUser.LastName
+                                            </p>
+                                            <p class="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                                @currentUser.Email
+                                            </p>
+                                            <span class="inline-block mt-1 px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full">
+                                                @currentUser.RoleName
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
 
-                        <a href="/settings" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                            <i class="fas fa-cog mr-2"></i>
-                            Settings (Soon)
-                        </a>
+                                <!-- Menu items -->
+                                <div class="py-1">
+                                    <button @onclick="NavigateToProfile"
+                                            class="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                        <i class="fas fa-user mr-3 text-gray-400"></i>
+                                        Profile Settings
+                                    </button>
 
-                        <div class="border-t border-gray-200 dark:border-gray-700 mt-2 pt-2">
-                            <button @onclick="HandleLogout" class="block w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                                <i class="fas fa-sign-out-alt mr-2"></i>
-                                Sign out
-                            </button>
-                        </div>
+                                    <button @onclick="NavigateToSettings"
+                                            class="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                        <i class="fas fa-cog mr-3 text-gray-400"></i>
+                                        Account Settings
+                                    </button>
+
+                                    <button @onclick="NavigateToDashboard"
+                                            class="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                        <i class="fas fa-tachometer-alt mr-3 text-gray-400"></i>
+                                        Dashboard
+                                    </button>
+
+                                    <div class="border-t border-gray-200 dark:border-gray-700 my-1"></div>
+
+                                    <button @onclick="HandleLogout"
+                                            class="flex items-center w-full px-4 py-2 text-sm text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                        <i class="fas fa-sign-out-alt mr-3"></i>
+                                        Sign out
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="flex items-center space-x-2">
+                        <button @onclick="NavigateToLogin" class="btn-secondary">
+                            <i class="fas fa-sign-in-alt mr-1"></i>
+                            Sign in
+                        </button>
                     </div>
                 }
             </div>
@@ -103,63 +161,104 @@
 @code {
     [Parameter] public EventCallback OnToggleSidebar { get; set; }
 
-    private bool showUserMenu = false;
     private Backend.CMS.Application.DTOs.UserDto? currentUser;
+    private bool isUserMenuOpen = false;
+    private ElementReference userMenuRef;
 
     protected override async Task OnInitializedAsync()
     {
-        currentUser = await AuthService.GetCurrentUserAsync();
+        try
+        {
+            currentUser = await AuthService.GetCurrentUserAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error loading user: {ex.Message}");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("addClickOutsideListener", userMenuRef, DotNetObjectReference.Create(this));
+        }
+    }
+
+    [JSInvokable]
+    public void CloseUserMenu()
+    {
+        if (isUserMenuOpen)
+        {
+            isUserMenuOpen = false;
+            InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task ToggleTheme()
     {
-        await ThemeService.ToggleThemeAsync();
+        try
+        {
+            await ThemeService.ToggleThemeAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Theme toggle error: {ex.Message}");
+        }
     }
 
     private string GetThemeIcon()
     {
-        return ThemeService.IsDarkMode ? "fas fa-sun" : "fas fa-moon";
+        return ThemeService.IsDarkMode
+            ? "fas fa-sun text-yellow-500 group-hover:text-yellow-400"
+            : "fas fa-moon text-gray-600 dark:text-gray-400 group-hover:text-blue-500";
+    }
+
+    private string GetThemeToggleLabel()
+    {
+        return $"Switch to {(ThemeService.IsDarkMode ? "light" : "dark")} mode";
     }
 
     private void ToggleUserMenu()
     {
-        showUserMenu = !showUserMenu;
+        isUserMenuOpen = !isUserMenuOpen;
     }
 
     private async Task HandleLogout()
     {
-        await AuthService.LogoutAsync();
-        showUserMenu = false;
-        Navigation.NavigateTo("/login", forceLoad: true);
+        try
+        {
+            isUserMenuOpen = false;
+            await AuthService.LogoutAsync();
+            Navigation.NavigateTo("/login", true);
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Logout error: {ex.Message}");
+            Navigation.NavigateTo("/login", true);
+        }
     }
 
-    private string GetPageTitle()
+    private void NavigateToProfile()
     {
-        var path = new Uri(Navigation.Uri).AbsolutePath.ToLower();
-        return path switch
-        {
-            "/" => "Dashboard",
-            "/pages" => "Pages",
-            "/files" => "Files",
-            "/products" => "Products",
-            "/users" => "Users",
-            "/settings" => "Settings",
-            _ => "CMS Designer"
-        };
+        isUserMenuOpen = false;
+        Navigation.NavigateTo("/profile");
     }
 
-    private string GetPageDescription()
+    private void NavigateToSettings()
     {
-        var path = new Uri(Navigation.Uri).AbsolutePath.ToLower();
-        return path switch
-        {
-            "/" => "Welcome to your content management dashboard",
-            "/pages" => "Manage your website pages and content",
-            "/files" => "Organize and manage your files and media",
-            "/products" => "Manage your product catalog",
-            "/users" => "User management and permissions",
-            "/settings" => "Application settings and preferences",
-            _ => "Manage your content with ease"
-        };
+        isUserMenuOpen = false;
+        Navigation.NavigateTo("/settings");
+    }
+
+    private void NavigateToDashboard()
+    {
+        isUserMenuOpen = false;
+        Navigation.NavigateTo("/");
+    }
+
+    private void NavigateToLogin()
+    {
+        Navigation.NavigateTo("/login");
     }
 }

@@ -1,20 +1,117 @@
 ﻿@inherits LayoutComponentBase
+@using Frontend.Interface
 @inject IJSRuntime JSRuntime
+@inject IThemeService ThemeService
 
-<div style="min-height: 100vh; background-color: #f9fafb;">
-    @Body
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
+    <!-- Check if this is the login page -->
+    @if (IsLoginPage)
+    {
+        @Body
+    }
+    else
+    {
+        <!-- Dashboard Layout -->
+        <div class="flex h-screen overflow-hidden">
+            <!-- Sidebar -->
+            <Sidebar @ref="sidebar" />
+
+            <!-- Main Content Area -->
+            <div class="flex-1 flex flex-col overflow-hidden">
+                <!-- Top Header -->
+                <TopBar OnToggleSidebar="ToggleSidebar" />
+
+                <!-- Main Content -->
+                <main class="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900">
+                    <div class="p-6">
+                        <Frontend.Components.ErrorBoundary>
+                            @Body
+                        </Frontend.Components.ErrorBoundary>
+                    </div>
+                </main>
+            </div>
+        </div>
+    }
+
+    <!-- Notification Container -->
+    <NotificationContainer />
 </div>
 
 @code {
+    private Sidebar? sidebar;
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
             await JSRuntime.InvokeVoidAsync("console.log", "MainLayout loaded");
+            
+            // Listen for theme changes
+            ThemeService.ThemeChanged += OnThemeChanged;
         }
         catch (Exception ex)
         {
             await JSRuntime.InvokeVoidAsync("console.error", $"MainLayout error: {ex.Message}");
         }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                // Apply initial theme
+                await ApplyTheme();
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("console.error", $"Theme application error: {ex.Message}");
+            }
+        }
+    }
+
+    private bool IsLoginPage
+    {
+        get
+        {
+            var currentPath = new Uri(JSRuntime.InvokeAsync<string>("eval", "window.location.pathname").Result ?? "/").AbsolutePath;
+            return currentPath.Equals("/login", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private void ToggleSidebar()
+    {
+        sidebar?.Toggle();
+    }
+
+    private async void OnThemeChanged()
+    {
+        await ApplyTheme();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ApplyTheme()
+    {
+        try
+        {
+            if (ThemeService.IsDarkMode)
+            {
+                await JSRuntime.InvokeVoidAsync("document.documentElement.classList.add", "dark");
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("document.documentElement.classList.remove", "dark");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error applying theme: {ex.Message}");
+        }
+    }
+
+    public void Dispose()
+    {
+        ThemeService.ThemeChanged -= OnThemeChanged;
     }
 }

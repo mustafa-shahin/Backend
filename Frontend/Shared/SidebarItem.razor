@@ -2,22 +2,38 @@
 
 @if (IsDisabled)
 {
-    <div class="@GetItemClass() opacity-50 cursor-not-allowed" title="@GetTooltip()">
-        <i class="@Icon @GetIconClass()"></i>
-        @if (!IsCollapsed)
-        {
-            <span class="ml-3 text-sm font-medium">@Text</span>
-            <span class="ml-auto text-xs text-gray-400">(Soon)</span>
-        }
+    <div class="@GetItemClass()" title="@GetTooltip()">
+        <div class="flex items-center @(IsCollapsed ? "justify-center" : "")">
+            <div class="@GetIconContainerClass()">
+                <i class="@Icon @GetIconClass()"></i>
+            </div>
+            @if (!IsCollapsed)
+            {
+                <div class="ml-3 flex-1 flex items-center justify-between">
+                    <span class="text-sm font-medium">@Text</span>
+                    <span class="inline-flex items-center px-2 py-1 text-xs font-medium bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded-full">
+                        Soon
+                    </span>
+                </div>
+            }
+        </div>
     </div>
 }
 else
 {
     <a href="@Href" class="@GetItemClass()" title="@GetTooltip()">
-        <i class="@Icon @GetIconClass()"></i>
-        @if (!IsCollapsed)
+        <div class="flex items-center @(IsCollapsed ? "justify-center" : "")">
+            <div class="@GetIconContainerClass()">
+                <i class="@Icon @GetIconClass()"></i>
+            </div>
+            @if (!IsCollapsed)
+            {
+                <span class="ml-3 text-sm font-medium">@Text</span>
+            }
+        </div>
+        @if (IsActive && !IsCollapsed)
         {
-            <span class="ml-3 text-sm font-medium">@Text</span>
+            <div class="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-6 bg-blue-600 dark:bg-blue-400 rounded-l-full"></div>
         }
     </a>
 }
@@ -28,6 +44,8 @@ else
     [Parameter] public string Href { get; set; } = string.Empty;
     [Parameter] public bool IsCollapsed { get; set; }
     [Parameter] public bool IsDisabled { get; set; }
+    [Parameter] public string Badge { get; set; } = string.Empty;
+    [Parameter] public string BadgeColor { get; set; } = "blue";
 
     private bool IsActive =>
         Navigation.Uri.EndsWith(Href) ||
@@ -35,21 +53,75 @@ else
 
     private string GetItemClass()
     {
-        var baseClass = "flex items-center px-3 py-2 rounded-lg transition-colors duration-200";
+        var baseClass = "relative flex items-center px-3 py-2.5 rounded-lg transition-all duration-200 group";
+
+        if (IsDisabled)
+        {
+            return $"{baseClass} text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-60";
+        }
+
         var stateClass = IsActive
-            ? "bg-primary-100 text-primary-700 dark:bg-primary-900 dark:text-primary-300"
-            : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700";
+            ? "bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 shadow-sm"
+            : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-100";
 
         return $"{baseClass} {stateClass}";
     }
 
+    private string GetIconContainerClass()
+    {
+        if (IsDisabled)
+        {
+            return "flex items-center justify-center w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800";
+        }
+
+        if (IsActive)
+        {
+            return "flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-800/50";
+        }
+
+        return "flex items-center justify-center w-8 h-8 rounded-lg group-hover:bg-gray-200 dark:group-hover:bg-gray-600 transition-colors duration-200";
+    }
+
     private string GetIconClass()
     {
-        return IsCollapsed ? "text-lg" : "text-base";
+        var sizeClass = IsCollapsed ? "text-lg" : "text-base";
+
+        if (IsDisabled)
+        {
+            return $"{sizeClass} text-gray-400 dark:text-gray-600";
+        }
+
+        if (IsActive)
+        {
+            return $"{sizeClass} text-blue-600 dark:text-blue-300";
+        }
+
+        return $"{sizeClass} text-gray-500 dark:text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200";
     }
 
     private string GetTooltip()
     {
-        return IsCollapsed ? Text : string.Empty;
+        if (IsCollapsed)
+        {
+            if (IsDisabled)
+            {
+                return $"{Text} (Coming Soon)";
+            }
+            return Text;
+        }
+        return string.Empty;
+    }
+
+    private string GetBadgeClass()
+    {
+        return BadgeColor.ToLower() switch
+        {
+            "blue" => "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+            "green" => "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+            "yellow" => "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+            "red" => "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+            "gray" => "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200",
+            _ => "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
+        };
     }
 }

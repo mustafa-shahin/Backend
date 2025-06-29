@@ -10,70 +10,151 @@
 else
 {
     <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-        <div class="max-w-lg w-full bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
-            <div class="text-red-500 text-6xl mb-4">
-                <i class="fas fa-exclamation-triangle"></i>
-            </div>
-            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">
-                Something went wrong
-            </h2>
-            <p class="text-gray-600 dark:text-gray-400 mb-6">
-                An unexpected error occurred. Please try refreshing the page or contact support if the problem persists.
-            </p>
-
-            @if (showDetails)
-            {
-                <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6 text-left">
-                    <h3 class="font-medium text-red-800 dark:text-red-200 mb-2">Error Details:</h3>
-                    <pre class="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap overflow-auto max-h-40">@CurrentException.Message</pre>
+        <div class="max-w-lg w-full bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-red-500 to-red-600 px-6 py-4">
+                <div class="flex items-center">
+                    <div class="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center mr-4">
+                        <i class="fas fa-exclamation-triangle text-white text-xl"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold text-white">
+                            Something went wrong
+                        </h2>
+                        <p class="text-red-100 text-sm">
+                            Error ID: @errorId
+                        </p>
+                    </div>
                 </div>
-            }
+            </div>
 
-            <div class="flex flex-col sm:flex-row gap-3 justify-center">
-                <button @onclick="TryRecover" class="btn-primary">
-                    <i class="fas fa-redo mr-2"></i>
-                    Try Again
-                </button>
+            <!-- Content -->
+            <div class="p-6">
+                <p class="text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">
+                    An unexpected error occurred while processing your request. 
+                    @if (showDetails)
+                    {
+                        <span>Please try again or contact support if the problem persists.</span>
+                    }
+                    else
+                    {
+                        <span>You can try refreshing the page or view the error details below.</span>
+                    }
+                </p>
 
-                <button @onclick="ToggleDetails" class="btn-secondary">
-                    <i class="fas fa-info-circle mr-2"></i>
-                    @(showDetails ? "Hide" : "Show") Details
-                </button>
+                @if (showDetails)
+                {
+                    <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6">
+                        <div class="flex items-start">
+                            <i class="fas fa-bug text-red-500 dark:text-red-400 mt-1 mr-3"></i>
+                            <div class="flex-1 min-w-0">
+                                <h3 class="font-medium text-red-800 dark:text-red-200 mb-2">Error Details:</h3>
+                                <div class="text-sm text-red-700 dark:text-red-300 font-mono bg-red-100 dark:bg-red-900/40 rounded p-3 overflow-auto max-h-40">
+                                    <div class="whitespace-pre-wrap break-all">@GetErrorMessage()</div>
+                                </div>
+                                @if (!string.IsNullOrEmpty(CurrentException.StackTrace))
+                                {
+                                    <details class="mt-3">
+                                        <summary class="cursor-pointer text-red-600 dark:text-red-400 text-sm font-medium hover:text-red-700 dark:hover:text-red-300">
+                                            Stack Trace
+                                        </summary>
+                                        <div class="mt-2 text-xs text-red-600 dark:text-red-400 font-mono bg-red-100 dark:bg-red-900/40 rounded p-3 overflow-auto max-h-32">
+                                            <pre class="whitespace-pre-wrap break-all">@CurrentException.StackTrace</pre>
+                                        </div>
+                                    </details>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
 
-                <button @onclick="GoHome" class="btn-secondary">
-                    <i class="fas fa-home mr-2"></i>
-                    Go Home
-                </button>
+                <!-- Actions -->
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <button @onclick="TryRecover" 
+                            class="btn-primary flex-1 flex items-center justify-center">
+                        <i class="fas fa-redo mr-2"></i>
+                        Try Again
+                    </button>
+
+                    <button @onclick="ToggleDetails" 
+                            class="btn-secondary flex items-center justify-center">
+                        <i class="fas @(showDetails ? "fa-eye-slash" : "fa-eye") mr-2"></i>
+                        @(showDetails ? "Hide" : "Show") Details
+                    </button>
+
+                    <button @onclick="GoHome" 
+                            class="btn-secondary flex items-center justify-center">
+                        <i class="fas fa-home mr-2"></i>
+                        Dashboard
+                    </button>
+                </div>
+
+                <!-- Additional Actions -->
+                <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div class="flex flex-col sm:flex-row gap-3 text-sm">
+                        <button @onclick="CopyErrorDetails" 
+                                class="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 flex items-center justify-center">
+                            <i class="fas fa-copy mr-2"></i>
+                            Copy Error Details
+                        </button>
+                        
+                        <button @onclick="ReportIssue" 
+                                class="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 flex items-center justify-center">
+                            <i class="fas fa-bug mr-2"></i>
+                            Report Issue
+                        </button>
+                        
+                        <button @onclick="RefreshPage" 
+                                class="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 flex items-center justify-center">
+                            <i class="fas fa-refresh mr-2"></i>
+                            Refresh Page
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 }
-
-@code {
+@code{
     [Parameter] public RenderFragment? ChildContent { get; set; }
-
     private bool showDetails = false;
-
+    private string errorId = string.Empty;
     protected override async Task OnErrorAsync(Exception exception)
     {
-        await JSRuntime.InvokeVoidAsync("console.error", $"ErrorBoundary caught exception: {exception.Message}");
-        await JSRuntime.InvokeVoidAsync("console.error", exception.StackTrace);
-    }
+        errorId = Guid.NewGuid().ToString("N")[..8].ToUpper();
 
+        var errorInfo = new
+        {
+            ErrorId = errorId,
+            Message = exception.Message,
+            Type = exception.GetType().Name,
+            StackTrace = exception.StackTrace,
+            Timestamp = DateTime.UtcNow,
+            UserAgent = await JSRuntime.InvokeAsync<string>("eval", "navigator.userAgent"),
+            Url = Navigation.Uri
+        };
+
+        await JSRuntime.InvokeVoidAsync("console.error", $"ErrorBoundary caught exception [{errorId}]:", errorInfo);
+
+        // could also send this to a logging service here
+        // await LoggingService.LogErrorAsync(errorInfo);
+    }
     private async Task TryRecover()
     {
         try
         {
             showDetails = false;
-            await JSRuntime.InvokeVoidAsync("console.log", "Attempting to recover from error...");
+            await JSRuntime.InvokeVoidAsync("console.log", $"Attempting to recover from error [{errorId}]...");
             Recover();
         }
         catch (Exception ex)
         {
-            await JSRuntime.InvokeVoidAsync("console.error", $"Recovery failed: {ex.Message}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"Recovery failed [{errorId}]: {ex.Message}");
+            // If recovery fails, try refreshing the page
+            await RefreshPage();
         }
     }
-
     private void ToggleDetails()
     {
         showDetails = !showDetails;
@@ -82,5 +163,78 @@ else
     private void GoHome()
     {
         Navigation.NavigateTo("/", true);
+    }
+
+    private async Task RefreshPage()
+    {
+        await JSRuntime.InvokeVoidAsync("location.reload");
+    }
+    private async Task CopyErrorDetails()
+    {
+        try
+        {
+            var errorDetails =
+                $"Error ID: {errorId}\n" +
+                $"Message: {CurrentException?.Message}\n" +
+                $"Type: {CurrentException?.GetType().Name}\n" +
+                $"URL: {Navigation.Uri}\n" +
+                $"Timestamp: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC\n\n" +
+                "Stack Trace:\n" +
+                $"{CurrentException?.StackTrace}";
+
+            var success = await JSRuntime.InvokeAsync<bool>("copyToClipboard", errorDetails);
+
+            if (success)
+            {
+                // Show a temporary success message
+                await JSRuntime.InvokeVoidAsync("console.log", "Error details copied to clipboard");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Failed to copy error details: {ex.Message}");
+        }
+    }
+    private async Task ReportIssue()
+    {
+        try
+        {
+            var issueBody = Uri.EscapeDataString(
+    $"## Error Report\n\n" +
+    $"**Error ID:** {errorId}\n" +
+    $"**Message:** {CurrentException?.Message}\n" +
+    $"**Type:** {CurrentException?.GetType().Name}\n" +
+    $"**URL:** {Navigation.Uri}\n" +
+    $"**Timestamp:** {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC\n\n" +
+    $"### Steps to Reproduce\n" +
+    $"<!-- Please describe what you were doing when this error occurred -->\n\n" +
+    $"### Stack Trace\n" +
+    "```\n" +
+    $"{CurrentException?.StackTrace}\n" +
+    "```"
+    );
+
+
+            var issueUrl = $"https://github.com/repo/issues/new?title=Error%20{errorId}&body={issueBody}";
+            await JSRuntime.InvokeVoidAsync("open", issueUrl, "_blank");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Failed to open issue reporter: {ex.Message}");
+        }
+    }
+    private string GetErrorMessage()
+    {
+        if (CurrentException == null) return "Unknown error occurred";
+
+        var message = CurrentException.Message;
+
+        // Sanitize error message for display
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            message = "An error occurred but no details were provided.";
+        }
+
+        return message;
     }
 }

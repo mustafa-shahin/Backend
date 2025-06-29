@@ -3,6 +3,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
+@inject IThemeService ThemeService
 
 <CascadingAuthenticationState>
     <Router AppAssembly="@typeof(App).Assembly">
@@ -79,12 +80,15 @@
     {
         try
         {
+            // Initialize theme globally
+            await ThemeService.InitializeAsync();
+
             // Add a small delay to ensure services are initialized
             await Task.Delay(100);
-            
+
             // Log current URL for debugging
             await JSRuntime.InvokeVoidAsync("console.log", $"Current URL: {Navigation.Uri}");
-            
+
             // Force navigation to login if on root and not authenticated
             var uri = new Uri(Navigation.Uri);
             if (uri.AbsolutePath == "/" && !await AuthService.IsAuthenticatedAsync())

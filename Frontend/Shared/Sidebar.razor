@@ -2,10 +2,11 @@
 @using Frontend.Services
 @inject IAuthService AuthService
 @inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
 
 <nav class="@GetSidebarClass()">
     <!-- Logo and brand -->
-    <div class="flex items-center justify-center h-16 bg-primary-700 dark:bg-primary-800">
+    <div class="flex items-center justify-center h-16 bg-gradient-to-r from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-800">
         @if (isCollapsed)
         {
             <i class="fas fa-palette text-white text-xl"></i>
@@ -13,14 +14,16 @@
         else
         {
             <div class="flex items-center space-x-3">
-                <i class="fas fa-palette text-white text-xl"></i>
+                <div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-palette text-white text-lg"></i>
+                </div>
                 <span class="text-white font-bold text-lg">CMS Designer</span>
             </div>
         }
     </div>
 
     <!-- Navigation items -->
-    <div class="flex-1 px-4 py-6 space-y-2">
+    <div class="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
 
         <!-- Dashboard -->
         <SidebarItem Icon="fas fa-home"
@@ -34,10 +37,22 @@
                      Href="/pages"
                      IsCollapsed="@isCollapsed" />
 
+        <!-- Separator -->
+        <div class="my-4">
+            <div class="border-t border-gray-200 dark:border-gray-700"></div>
+        </div>
+
+        <!-- Coming Soon Section -->
+        <div class="@(isCollapsed ? "hidden" : "")">
+            <div class="px-3 py-2 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                Coming Soon
+            </div>
+        </div>
+
         <!-- Files (Future) -->
         <SidebarItem Icon="fas fa-folder"
-                     Text="Files"
-                     Href="/files"
+                     Text="Media Library"
+                     Href="/media"
                      IsCollapsed="@isCollapsed"
                      IsDisabled="true" />
 
@@ -55,14 +70,24 @@
                      IsCollapsed="@isCollapsed"
                      IsDisabled="true" />
 
-        <!-- Settings -->
-        <div class="pt-4">
-            <SidebarItem Icon="fas fa-cog"
-                         Text="Settings"
-                         Href="/settings"
-                         IsCollapsed="@isCollapsed"
-                         IsDisabled="true" />
+        <!-- Analytics (Future) -->
+        <SidebarItem Icon="fas fa-chart-bar"
+                     Text="Analytics"
+                     Href="/analytics"
+                     IsCollapsed="@isCollapsed"
+                     IsDisabled="true" />
+
+        <!-- Separator -->
+        <div class="my-4">
+            <div class="border-t border-gray-200 dark:border-gray-700"></div>
         </div>
+
+        <!-- Settings -->
+        <SidebarItem Icon="fas fa-cog"
+                     Text="Settings"
+                     Href="/settings"
+                     IsCollapsed="@isCollapsed"
+                     IsDisabled="true" />
     </div>
 
     <!-- User section -->
@@ -73,16 +98,30 @@
             {
                 <div class="flex justify-center">
                     <button @onclick="ShowUserMenu"
-                            class="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors">
-                        <i class="fas fa-user text-sm"></i>
+                            class="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white hover:from-blue-600 hover:to-blue-700 transition-all duration-200"
+                            title="@currentUser.FirstName @currentUser.LastName">
+                        <span class="text-sm font-semibold">
+                            @currentUser.FirstName.Substring(0, 1)@currentUser.LastName.Substring(0, 1)
+                        </span>
                     </button>
                 </div>
             }
             else
             {
                 <div class="flex items-center space-x-3">
-                    <div class="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center">
-                        <i class="fas fa-user text-gray-700 dark:text-gray-300 text-sm"></i>
+                    <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
+                        @if (!string.IsNullOrEmpty(currentUser.PictureUrl))
+                        {
+                            <img src="@currentUser.PictureUrl"
+                                 alt="@($"{currentUser.FirstName} {currentUser.LastName}")"
+                                 class="w-10 h-10 rounded-full object-cover" />
+                        }
+                        else
+                        {
+                            <span class="text-white text-sm font-semibold">
+                                @currentUser.FirstName.Substring(0, 1)@currentUser.LastName.Substring(0, 1)
+                            </span>
+                        }
                     </div>
                     <div class="flex-1 min-w-0">
                         <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
@@ -93,25 +132,58 @@
                         </p>
                     </div>
                     <button @onclick="HandleLogout"
-                            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                            class="text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors p-1 rounded"
                             title="Sign out">
-                        <i class="fas fa-sign-out-alt"></i>
+                        <i class="fas fa-sign-out-alt text-sm"></i>
                     </button>
                 </div>
             }
         }
+        else
+        {
+            <div class="text-center">
+                <button @onclick="NavigateToLogin"
+                        class="w-full btn-primary text-sm">
+                    <i class="fas fa-sign-in-alt mr-2"></i>
+                    Sign In
+                </button>
+            </div>
+        }
+    </div>
+
+    <!-- Collapse/Expand Toggle -->
+    <div class="absolute top-4 -right-3 z-10">
+        <button @onclick="Toggle"
+                class="w-6 h-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full flex items-center justify-center shadow-sm hover:shadow-md transition-all duration-200"
+                title="@(isCollapsed ? "Expand" : "Collapse") sidebar">
+            <i class="fas @(isCollapsed ? "fa-chevron-right" : "fa-chevron-left") text-xs text-gray-500 dark:text-gray-400"></i>
+        </button>
     </div>
 </nav>
+
+<!-- Mobile overlay -->
+@if (isMobileOpen)
+{
+    <div class="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden" @onclick="CloseMobile"></div>
+}
 
 @code {
     [Parameter] public EventCallback<bool> OnCollapsedChanged { get; set; }
 
     private bool isCollapsed = false;
+    private bool isMobileOpen = false;
     private Backend.CMS.Application.DTOs.UserDto? currentUser;
 
     protected override async Task OnInitializedAsync()
     {
-        currentUser = await AuthService.GetCurrentUserAsync();
+        try
+        {
+            currentUser = await AuthService.GetCurrentUserAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Error loading user in sidebar: {ex.Message}");
+        }
     }
 
     public void Toggle()
@@ -121,23 +193,52 @@
         StateHasChanged();
     }
 
+    public void OpenMobile()
+    {
+        isMobileOpen = true;
+        StateHasChanged();
+    }
+
+    public void CloseMobile()
+    {
+        isMobileOpen = false;
+        StateHasChanged();
+    }
+
     private string GetSidebarClass()
     {
-        var baseClass = "fixed left-0 top-0 h-full bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 z-30";
+        var baseClass = "fixed left-0 top-0 h-full bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 z-30 sidebar-transition";
         var widthClass = isCollapsed ? "w-16" : "w-64";
-        return $"{baseClass} {widthClass}";
+        var mobileClass = isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0";
+
+        return $"{baseClass} {widthClass} {mobileClass}";
     }
 
     private void ShowUserMenu()
     {
-        // For collapsed state, could show a tooltip or popup menu
-        // For now, just expand the sidebar
-        Toggle();
+        // For collapsed state, expand the sidebar to show user info
+        if (isCollapsed)
+        {
+            Toggle();
+        }
     }
 
     private async Task HandleLogout()
     {
-        await AuthService.LogoutAsync();
-        Navigation.NavigateTo("/login", true);
+        try
+        {
+            await AuthService.LogoutAsync();
+            Navigation.NavigateTo("/login", true);
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Logout error: {ex.Message}");
+            Navigation.NavigateTo("/login", true);
+        }
+    }
+
+    private void NavigateToLogin()
+    {
+        Navigation.NavigateTo("/login");
     }
 }
