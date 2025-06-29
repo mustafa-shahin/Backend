@@ -2,6 +2,7 @@
 @using Frontend.Interface
 @inject IJSRuntime JSRuntime
 @inject IThemeService ThemeService
+@inject NavigationManager Navigation
 
 <div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
     <!-- Check if this is the login page -->
@@ -39,15 +40,18 @@
 
 @code {
     private Sidebar? sidebar;
+    private bool _initialized = false;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
             await JSRuntime.InvokeVoidAsync("console.log", "MainLayout loaded");
-            
+
             // Listen for theme changes
             ThemeService.ThemeChanged += OnThemeChanged;
+
+            _initialized = true;
         }
         catch (Exception ex)
         {
@@ -57,7 +61,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
+        if (firstRender && _initialized)
         {
             try
             {
@@ -75,8 +79,16 @@
     {
         get
         {
-            var currentPath = new Uri(JSRuntime.InvokeAsync<string>("eval", "window.location.pathname").Result ?? "/").AbsolutePath;
-            return currentPath.Equals("/login", StringComparison.OrdinalIgnoreCase);
+            try
+            {
+                var currentUri = new Uri(Navigation.Uri);
+                var path = currentUri.AbsolutePath;
+                return path.Equals("/login", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 

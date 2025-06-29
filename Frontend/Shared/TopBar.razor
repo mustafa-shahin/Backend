@@ -13,7 +13,7 @@
             <div class="flex items-center space-x-4">
                 <!-- Sidebar toggle -->
                 <button @onclick="() => OnToggleSidebar.InvokeAsync()"
-                        class="p-2 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200"
+                        class="p-2 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
                         aria-label="Toggle sidebar">
                     <i class="fas fa-bars text-lg"></i>
                 </button>
@@ -36,7 +36,7 @@
 
                 <!-- Theme toggle -->
                 <button @onclick="ToggleTheme"
-                        class="p-2 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group"
+                        class="p-2 rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
                         aria-label="@GetThemeToggleLabel()"
                         title="@GetThemeToggleLabel()">
                     <i class="@GetThemeIcon() text-lg transition-all duration-300 group-hover:scale-110"></i>
@@ -45,9 +45,10 @@
                 <!-- User menu -->
                 @if (currentUser != null)
                 {
-                    <div class="relative" @ref="userMenuRef">
+                    <div class="relative">
                         <button @onclick="ToggleUserMenu"
-                                class="flex items-center space-x-3 p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group"
+                                @onclick:stopPropagation="true"
+                                class="flex items-center space-x-3 p-2 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 group focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800"
                                 aria-expanded="@isUserMenuOpen"
                                 aria-haspopup="true">
                             <div class="flex items-center space-x-2">
@@ -80,7 +81,8 @@
                         <!-- Dropdown menu -->
                         @if (isUserMenuOpen)
                         {
-                            <div class="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50 animate-slide-down">
+                            <div class="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50"
+                                 @onclick:stopPropagation="true">
                                 <!-- User info section -->
                                 <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
                                     <div class="flex items-center space-x-3">
@@ -147,7 +149,8 @@
                 else
                 {
                     <div class="flex items-center space-x-2">
-                        <button @onclick="NavigateToLogin" class="btn-secondary">
+                        <button @onclick="NavigateToLogin"
+                                class="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-900 dark:text-white font-medium rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800">
                             <i class="fas fa-sign-in-alt mr-1"></i>
                             Sign in
                         </button>
@@ -158,12 +161,17 @@
     </div>
 </header>
 
+<!-- Click outside handler for user menu -->
+@if (isUserMenuOpen)
+{
+    <div class="fixed inset-0 z-30" @onclick="CloseUserMenu"></div>
+}
+
 @code {
     [Parameter] public EventCallback OnToggleSidebar { get; set; }
 
     private Backend.CMS.Application.DTOs.UserDto? currentUser;
     private bool isUserMenuOpen = false;
-    private ElementReference userMenuRef;
 
     protected override async Task OnInitializedAsync()
     {
@@ -177,21 +185,12 @@
         }
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            await JSRuntime.InvokeVoidAsync("addClickOutsideListener", userMenuRef, DotNetObjectReference.Create(this));
-        }
-    }
-
-    [JSInvokable]
-    public void CloseUserMenu()
+    private void CloseUserMenu()
     {
         if (isUserMenuOpen)
         {
             isUserMenuOpen = false;
-            InvokeAsync(StateHasChanged);
+            StateHasChanged();
         }
     }
 

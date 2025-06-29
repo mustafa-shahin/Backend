@@ -64,19 +64,32 @@
 <body class="bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
     <div id="app">
         <div class="flex items-center justify-center min-h-screen">
-            <div class="text-center">
-                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p class="text-gray-600 dark:text-gray-400">Loading CMS Designer...</p>
-                <div class="mt-4">
+            <div class="text-center max-w-md mx-auto px-4">
+                <div class="mb-8">
+                    <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
+                        <i class="fas fa-palette text-white text-2xl"></i>
+                    </div>
+                    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">CMS Designer</h1>
+                    <p class="text-gray-600 dark:text-gray-400 mb-8">Initializing your creative workspace</p>
+                </div>
+
+                <div class="relative mb-6">
+                    <div class="w-12 h-12 border-4 border-blue-200 dark:border-blue-800 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin mx-auto"></div>
+                </div>
+
+                <div class="space-y-2">
                     <div id="loading-status" class="text-sm text-gray-500 dark:text-gray-400">
-                        Initializing application...
+                        Starting application...
+                    </div>
+                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                        <div id="loading-progress" class="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="blazor-error-ui" class="fixed bottom-4 right-4 max-w-sm bg-red-500 text-white rounded-lg shadow-lg p-4" style="display: none;">
+    <div id="blazor-error-ui" class="fixed bottom-4 right-4 max-w-sm bg-red-500 text-white rounded-lg shadow-lg p-4 z-50" style="display: none;">
         <div class="flex items-center space-x-2">
             <i class="fas fa-exclamation-triangle"></i>
             <div class="flex-1">
@@ -84,10 +97,10 @@
                 <div class="text-sm opacity-90">An unhandled error has occurred.</div>
             </div>
             <div class="flex space-x-2">
-                <button class="text-white hover:text-gray-200" onclick="location.reload()" title="Reload">
+                <button class="text-white hover:text-gray-200 p-1 rounded" onclick="location.reload()" title="Reload">
                     <i class="fas fa-redo text-sm"></i>
                 </button>
-                <button class="text-white hover:text-gray-200" onclick="document.getElementById('blazor-error-ui').style.display = 'none'" title="Close">
+                <button class="text-white hover:text-gray-200 p-1 rounded" onclick="document.getElementById('blazor-error-ui').style.display = 'none'" title="Close">
                     <i class="fas fa-times text-sm"></i>
                 </button>
             </div>
@@ -95,254 +108,106 @@
     </div>
 
     <script>
-        // Global JavaScript utilities for CMS Designer
+        // Enhanced loading feedback without blocking operations
+        let loadingSteps = [
+            'Starting application...',
+            'Loading Blazor WebAssembly...',
+            'Initializing components...',
+            'Connecting to services...',
+            'Almost ready...'
+        ];
+        let currentStep = 0;
 
-        // Enhanced loading feedback
-        window.addEventListener('DOMContentLoaded', function () {
-            console.log('DOM loaded, initializing Blazor...');
-            updateLoadingStatus('Loading Blazor WebAssembly...');
-        });
-
-        function updateLoadingStatus(message) {
+        function updateLoadingStatus(message, progress) {
             const statusElement = document.getElementById('loading-status');
-            if (statusElement) {
+            const progressElement = document.getElementById('loading-progress');
+
+            if (statusElement && message) {
                 statusElement.textContent = message;
+            }
+
+            if (progressElement && typeof progress === 'number') {
+                progressElement.style.width = progress + '%';
             }
         }
 
-        // Blazor loading events
-        window.addEventListener('beforestart', function () {
-            console.log('Blazor starting...');
-            updateLoadingStatus('Starting Blazor...');
-        });
+        function advanceLoadingStep() {
+            if (currentStep < loadingSteps.length) {
+                updateLoadingStatus(loadingSteps[currentStep], (currentStep + 1) * 20);
+                currentStep++;
+            }
+        }
 
-        window.addEventListener('start', function () {
-            console.log('Blazor started');
-            updateLoadingStatus('Blazor started, loading components...');
+        // Progress simulation
+        let progressInterval = setInterval(() => {
+            advanceLoadingStep();
+            if (currentStep >= loadingSteps.length) {
+                clearInterval(progressInterval);
+            }
+        }, 800);
+
+        // Blazor event handlers (non-blocking)
+        window.addEventListener('DOMContentLoaded', function () {
+            console.log('DOM loaded, initializing Blazor...');
         });
 
         // Error handling
         window.addEventListener('error', function (e) {
             console.error('Global error:', e.error);
-            updateLoadingStatus('Error loading application. Check console for details.');
+            updateLoadingStatus('Error loading application. Check console for details.', 0);
+            clearInterval(progressInterval);
         });
 
         window.addEventListener('unhandledrejection', function (e) {
             console.error('Unhandled promise rejection:', e.reason);
-            updateLoadingStatus('Error loading application. Check console for details.');
+            updateLoadingStatus('Error loading application. Check console for details.', 0);
+            clearInterval(progressInterval);
         });
 
-        // Connection status checking
-        function checkBackendConnection() {
-            fetch('https://localhost:7206/api/health', {
-                method: 'GET',
-                timeout: 5000
-            })
-                .then(response => {
-                    if (response.ok) {
-                        console.log('Backend connection successful');
-                        updateLoadingStatus('Connected to backend...');
-                    } else {
-                        console.warn('Backend returned non-OK status:', response.status);
-                        updateLoadingStatus('Backend connection issues...');
-                    }
-                })
-                .catch(error => {
-                    console.warn('Backend connection failed:', error);
-                    updateLoadingStatus('Cannot connect to backend. Please ensure it\'s running on https://localhost:7206');
-                });
-        }
-
-        // Check backend connection after a short delay
-        setTimeout(checkBackendConnection, 1000);
-
-        // ===== Modal and UI Utilities =====
-
-        // Click outside listener for dropdowns and modals
-        let clickOutsideListeners = new Map();
-
-        window.addClickOutsideListener = function (element, dotNetRef) {
-            if (!element || !dotNetRef) return;
-
-            const listener = function (event) {
-                if (!element.contains(event.target)) {
-                    dotNetRef.invokeMethodAsync('CloseUserMenu');
-                }
-            };
-
-            // Remove existing listener if any
-            if (clickOutsideListeners.has(element)) {
-                document.removeEventListener('click', clickOutsideListeners.get(element));
-            }
-
-            // Add new listener
-            document.addEventListener('click', listener);
-            clickOutsideListeners.set(element, listener);
-        };
-
-        window.removeClickOutsideListener = function (element) {
-            if (!element) return;
-
-            const listener = clickOutsideListeners.get(element);
-            if (listener) {
-                document.removeEventListener('click', listener);
-                clickOutsideListeners.delete(element);
-            }
-        };
-
-        // Escape key handling for modals
-        let escapeKeyListener = null;
-        let escapeKeyDotNetRef = null;
-
-        window.addEscapeKeyListener = function (dotNetRef) {
-            escapeKeyDotNetRef = dotNetRef;
-
-            if (escapeKeyListener) {
-                document.removeEventListener('keydown', escapeKeyListener);
-            }
-
-            escapeKeyListener = function (event) {
-                if (event.key === 'Escape' && dotNetRef) {
-                    dotNetRef.invokeMethodAsync('HandleEscapeKey');
-                }
-            };
-
-            document.addEventListener('keydown', escapeKeyListener);
-        };
-
-        window.removeEscapeKeyListener = function () {
-            if (escapeKeyListener) {
-                document.removeEventListener('keydown', escapeKeyListener);
-                escapeKeyListener = null;
-                escapeKeyDotNetRef = null;
-            }
-        };
-
-        // Focus management
-        window.focusElement = function (selector) {
-            const element = document.querySelector(selector);
-            if (element) {
-                element.focus();
-            }
-        };
-
-        window.trapFocus = function (containerId) {
-            const container = document.getElementById(containerId);
-            if (!container) return;
-
-            const focusableElements = container.querySelectorAll(
-                'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-            );
-
-            const firstElement = focusableElements[0];
-            const lastElement = focusableElements[focusableElements.length - 1];
-
-            const trapFunction = function (e) {
-                if (e.key === 'Tab') {
-                    if (e.shiftKey) {
-                        if (document.activeElement === firstElement) {
-                            lastElement.focus();
-                            e.preventDefault();
-                        }
-                    } else {
-                        if (document.activeElement === lastElement) {
-                            firstElement.focus();
-                            e.preventDefault();
-                        }
-                    }
-                }
-            };
-
-            container.addEventListener('keydown', trapFunction);
-            firstElement?.focus();
-
-            return function () {
-                container.removeEventListener('keydown', trapFunction);
-            };
-        };
-
-        // ===== Theme Utilities =====
-
-        // Theme detection and application
-        window.getSystemTheme = function () {
-            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-        };
-
-        window.applyTheme = function (isDark) {
-            if (isDark) {
-                document.documentElement.classList.add('dark');
-            } else {
-                document.documentElement.classList.remove('dark');
-            }
-        };
-
-        window.watchSystemTheme = function (dotNetRef) {
-            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-
-            const listener = function (e) {
-                if (dotNetRef) {
-                    dotNetRef.invokeMethodAsync('OnSystemThemeChanged', e.matches);
-                }
-            };
-
-            mediaQuery.addEventListener('change', listener);
-
-            return function () {
-                mediaQuery.removeEventListener('change', listener);
-            };
-        };
-
-        // ===== Utility Functions =====
-
-        // Smooth scrolling
-        window.smoothScrollTo = function (selector, offset = 0) {
-            const element = document.querySelector(selector);
-            if (element) {
-                const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
-                const offsetPosition = elementPosition - offset;
-
-                window.scrollTo({
-                    top: offsetPosition,
-                    behavior: 'smooth'
-                });
-            }
-        };
+        // ===== Essential Utilities Only =====
 
         // Copy to clipboard
         window.copyToClipboard = function (text) {
-            return navigator.clipboard.writeText(text).then(() => {
-                return true;
-            }).catch(() => {
-                // Fallback for older browsers
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                return navigator.clipboard.writeText(text).then(() => {
+                    return true;
+                }).catch(() => {
+                    return fallbackCopyToClipboard(text);
+                });
+            } else {
+                return Promise.resolve(fallbackCopyToClipboard(text));
+            }
+        };
+
+        function fallbackCopyToClipboard(text) {
+            try {
                 const textArea = document.createElement('textarea');
                 textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-999999px';
+                textArea.style.top = '-999999px';
                 document.body.appendChild(textArea);
+                textArea.focus();
                 textArea.select();
-                try {
-                    document.execCommand('copy');
-                    document.body.removeChild(textArea);
-                    return true;
-                } catch (err) {
-                    document.body.removeChild(textArea);
-                    return false;
-                }
-            });
+                const result = document.execCommand('copy');
+                document.body.removeChild(textArea);
+                return result;
+            } catch (err) {
+                console.error('Fallback copy failed:', err);
+                return false;
+            }
+        }
+
+        // Theme detection
+        window.getSystemTheme = function () {
+            try {
+                return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            } catch {
+                return 'light';
+            }
         };
 
-        // Download file
-        window.downloadFile = function (filename, content, contentType) {
-            const blob = new Blob([content], { type: contentType });
-            const url = window.URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            window.URL.revokeObjectURL(url);
-        };
-
-        // Local storage helpers
+        // Local storage helpers with error handling
         window.setLocalStorage = function (key, value) {
             try {
                 localStorage.setItem(key, JSON.stringify(value));
@@ -370,35 +235,43 @@
             }
         };
 
-        // Animation helpers
-        window.animateElement = function (selector, animationClass, duration = 300) {
-            const element = document.querySelector(selector);
-            if (element) {
-                element.classList.add(animationClass);
-                setTimeout(() => {
-                    element.classList.remove(animationClass);
-                }, duration);
+        // Focus element safely
+        window.focusElement = function (selector) {
+            try {
+                const element = document.querySelector(selector);
+                if (element && typeof element.focus === 'function') {
+                    element.focus();
+                }
+            } catch (err) {
+                console.warn('Focus failed:', err);
             }
         };
 
-        // Performance monitoring
-        window.measurePerformance = function (name, fn) {
-            const start = performance.now();
-            const result = fn();
-            const end = performance.now();
-            console.log(`${name} took ${end - start} milliseconds`);
-            return result;
-        };
+        // Clean up loading when Blazor starts
+        window.addEventListener('blazor:started', function () {
+            clearInterval(progressInterval);
+            updateLoadingStatus('Ready!', 100);
 
-        // Cleanup on page unload
-        window.addEventListener('beforeunload', function () {
-            // Clear all listeners
-            clickOutsideListeners.clear();
-            removeEscapeKeyListener();
+            setTimeout(() => {
+                const appElement = document.getElementById('app');
+                if (appElement && appElement.children.length > 1) {
+                    // Remove loading screen when app is ready
+                    const loadingScreen = appElement.firstElementChild;
+                    if (loadingScreen) {
+                        loadingScreen.style.opacity = '0';
+                        loadingScreen.style.transition = 'opacity 0.3s ease-out';
+                        setTimeout(() => {
+                            if (loadingScreen.parentNode) {
+                                loadingScreen.parentNode.removeChild(loadingScreen);
+                            }
+                        }, 300);
+                    }
+                }
+            }, 500);
         });
 
         // Console styling for development
-        if (window.location.hostname === 'localhost') {
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
             console.log(
                 '%c🎨 CMS Designer %c- Development Mode',
                 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 8px 12px; border-radius: 4px; font-weight: bold;',

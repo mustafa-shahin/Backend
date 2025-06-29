@@ -11,6 +11,7 @@ namespace Frontend.Services
         private readonly HttpClient _httpClient;
         private readonly ILocalStorageService _localStorage;
         private readonly JsonSerializerOptions _jsonOptions;
+        private bool _isInitialized = false;
 
         public event Action? AuthenticationStateChanged;
 
@@ -30,11 +31,14 @@ namespace Frontend.Services
             try
             {
                 Console.WriteLine("Attempting login...");
-                var response = await _httpClient.PostAsJsonAsync("/api/auth/login", loginDto);
+
+                // Add timeout to prevent hanging
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                var response = await _httpClient.PostAsJsonAsync("/api/auth/login", loginDto, cts.Token);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponseDto>(_jsonOptions);
+                    var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponseDto>(_jsonOptions, cts.Token);
 
                     if (loginResponse != null)
                     {
@@ -48,14 +52,8 @@ namespace Frontend.Services
                             throw new UnauthorizedAccessException("Access denied. Admin or Developer role required.");
                         }
 
-                        await _localStorage.SetItemAsync("access_token", loginResponse.AccessToken);
-                        await _localStorage.SetItemAsync("refresh_token", loginResponse.RefreshToken);
-                        await _localStorage.SetItemAsync("user", loginResponse.User);
-                        await _localStorage.SetItemAsync("token_expiry", loginResponse.ExpiresAt);
-
-                        // Add Authorization header
-                        _httpClient.DefaultRequestHeaders.Authorization =
-                            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", loginResponse.AccessToken);
+                        // Store authentication data
+                        await StoreAuthenticationDataAsync(loginResponse);
 
                         Console.WriteLine("Login completed successfully");
                         AuthenticationStateChanged?.Invoke();
@@ -66,18 +64,29 @@ namespace Frontend.Services
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
                     Console.WriteLine($"Login failed: {response.StatusCode} - {errorContent}");
-                    throw new HttpRequestException($"Login failed: {response.StatusCode} - {errorContent}");
+
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    {
+                        throw new UnauthorizedAccessException("Invalid email or password.");
+                    }
+
+                    throw new HttpRequestException($"Login failed: {response.StatusCode}");
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine("Login request timed out");
+                throw new HttpRequestException("Login request timed out. Please check your connection.");
             }
             catch (HttpRequestException)
             {
                 Console.WriteLine("HTTP request exception during login");
                 throw;
             }
-            catch (TaskCanceledException)
+            catch (UnauthorizedAccessException)
             {
-                Console.WriteLine("Login request timed out");
-                throw new HttpRequestException("Login request timed out. Please check your connection.");
+                Console.WriteLine("Unauthorized access during login");
+                throw;
             }
             catch (Exception ex)
             {
@@ -88,25 +97,49 @@ namespace Frontend.Services
             return null;
         }
 
+        private async Task StoreAuthenticationDataAsync(LoginResponseDto loginResponse)
+        {
+            try
+            {
+                await _localStorage.SetItemAsync("access_token", loginResponse.AccessToken);
+                await _localStorage.SetItemAsync("refresh_token", loginResponse.RefreshToken);
+                await _localStorage.SetItemAsync("user", loginResponse.User);
+                await _localStorage.SetItemAsync("token_expiry", loginResponse.ExpiresAt);
+
+                // Add Authorization header
+                _httpClient.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", loginResponse.AccessToken);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error storing authentication data: {ex.Message}");
+                throw;
+            }
+        }
+
         public async Task LogoutAsync()
         {
             try
             {
                 Console.WriteLine("Logging out...");
-                var refreshToken = await _localStorage.GetItemAsync<string>("refresh_token");
 
-                if (!string.IsNullOrEmpty(refreshToken))
+                // Try to call logout endpoint but don't block on it
+                _ = Task.Run(async () =>
                 {
                     try
                     {
-                        await _httpClient.PostAsJsonAsync("/api/auth/logout", new { RefreshToken = refreshToken });
+                        var refreshToken = await _localStorage.GetItemAsync<string>("refresh_token");
+                        if (!string.IsNullOrEmpty(refreshToken))
+                        {
+                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                            await _httpClient.PostAsJsonAsync("/api/auth/logout", new { RefreshToken = refreshToken }, cts.Token);
+                        }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Logout API call failed: {ex.Message}");
-                        // Continue with logout even if API call fails
+                        Console.WriteLine($"Logout API call failed (non-critical): {ex.Message}");
                     }
-                }
+                });
             }
             catch (Exception ex)
             {
@@ -114,21 +147,30 @@ namespace Frontend.Services
             }
             finally
             {
-                try
-                {
-                    await _localStorage.RemoveItemAsync("access_token");
-                    await _localStorage.RemoveItemAsync("refresh_token");
-                    await _localStorage.RemoveItemAsync("user");
-                    await _localStorage.RemoveItemAsync("token_expiry");
+                await ClearAuthenticationDataAsync();
+            }
+        }
 
-                    _httpClient.DefaultRequestHeaders.Authorization = null;
-                    Console.WriteLine("Logout completed");
-                    AuthenticationStateChanged?.Invoke();
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error clearing storage during logout: {ex.Message}");
-                }
+        private async Task ClearAuthenticationDataAsync()
+        {
+            try
+            {
+                await _localStorage.RemoveItemAsync("access_token");
+                await _localStorage.RemoveItemAsync("refresh_token");
+                await _localStorage.RemoveItemAsync("user");
+                await _localStorage.RemoveItemAsync("token_expiry");
+
+                _httpClient.DefaultRequestHeaders.Authorization = null;
+                _isInitialized = false;
+
+                Console.WriteLine("Authentication data cleared");
+                AuthenticationStateChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error clearing authentication data: {ex.Message}");
+                // Continue anyway
+                AuthenticationStateChanged?.Invoke();
             }
         }
 
@@ -145,23 +187,17 @@ namespace Frontend.Services
                     return false;
                 }
 
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 var response = await _httpClient.PostAsJsonAsync("/api/auth/refresh",
-                    new RefreshTokenDto { RefreshToken = refreshToken });
+                    new RefreshTokenDto { RefreshToken = refreshToken }, cts.Token);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponseDto>(_jsonOptions);
+                    var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponseDto>(_jsonOptions, cts.Token);
 
                     if (loginResponse != null)
                     {
-                        await _localStorage.SetItemAsync("access_token", loginResponse.AccessToken);
-                        await _localStorage.SetItemAsync("refresh_token", loginResponse.RefreshToken);
-                        await _localStorage.SetItemAsync("user", loginResponse.User);
-                        await _localStorage.SetItemAsync("token_expiry", loginResponse.ExpiresAt);
-
-                        _httpClient.DefaultRequestHeaders.Authorization =
-                            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", loginResponse.AccessToken);
-
+                        await StoreAuthenticationDataAsync(loginResponse);
                         Console.WriteLine("Token refresh successful");
                         AuthenticationStateChanged?.Invoke();
                         return true;
@@ -171,6 +207,10 @@ namespace Frontend.Services
                 {
                     Console.WriteLine($"Token refresh failed: {response.StatusCode}");
                 }
+            }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine("Token refresh timed out");
             }
             catch (Exception ex)
             {
@@ -222,7 +262,12 @@ namespace Frontend.Services
                         new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
                 }
 
-                Console.WriteLine("User is authenticated");
+                if (!_isInitialized)
+                {
+                    Console.WriteLine("User authentication verified");
+                    _isInitialized = true;
+                }
+
                 return true;
             }
             catch (Exception ex)

@@ -18,15 +18,16 @@
                     else
                     {
                         <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-                            <div class="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
-                                <div class="text-red-500 text-6xl mb-4">
-                                    <i class="fas fa-ban"></i>
+                            <div class="max-w-md w-full bg-white dark:bg-gray-800 rounded-xl shadow-xl p-8 text-center border border-gray-200 dark:border-gray-700">
+                                <div class="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <i class="fas fa-ban text-red-500 dark:text-red-400 text-2xl"></i>
                                 </div>
                                 <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Access Denied</h2>
                                 <p class="text-gray-600 dark:text-gray-400 mb-6">
                                     You don't have permission to access this area. This dashboard is only available for administrators and developers.
                                 </p>
-                                <button class="btn-primary" @onclick="HandleLogout">
+                                <button @onclick="HandleLogout"
+                                        class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900">
                                     <i class="fas fa-sign-out-alt mr-2"></i>
                                     Sign Out
                                 </button>
@@ -39,8 +40,9 @@
                     {
                         <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
                             <div class="text-center">
-                                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                                <p class="text-gray-600 dark:text-gray-400">Loading...</p>
+                                <div class="w-16 h-16 border-4 border-blue-200 dark:border-blue-800 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin mx-auto mb-4"></div>
+                                <p class="text-gray-600 dark:text-gray-400 text-lg font-medium">Loading CMS Designer...</p>
+                                <p class="text-gray-500 dark:text-gray-500 text-sm mt-2">Checking authentication status</p>
                             </div>
                         </div>
                     }
@@ -55,13 +57,17 @@
             <PageTitle>Not found</PageTitle>
             <LayoutView Layout="@typeof(MainLayout)">
                 <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
-                    <div class="text-center">
-                        <div class="text-6xl text-gray-400 dark:text-gray-600 mb-4">
-                            <i class="fas fa-search"></i>
+                    <div class="text-center max-w-md mx-auto px-4">
+                        <div class="w-24 h-24 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <i class="fas fa-search text-gray-400 dark:text-gray-600 text-3xl"></i>
                         </div>
-                        <h1 class="text-4xl font-bold text-gray-900 dark:text-white mb-2">404</h1>
-                        <p class="text-xl text-gray-600 dark:text-gray-400 mb-8">Page not found</p>
-                        <a href="/" class="btn-primary">
+                        <h1 class="text-6xl font-bold text-gray-900 dark:text-white mb-2">404</h1>
+                        <h2 class="text-2xl font-semibold text-gray-700 dark:text-gray-300 mb-4">Page not found</h2>
+                        <p class="text-gray-600 dark:text-gray-400 mb-8">
+                            The page you're looking for doesn't exist or has been moved.
+                        </p>
+                        <a href="/"
+                           class="inline-flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900">
                             <i class="fas fa-home mr-2"></i>
                             Go Home
                         </a>
@@ -83,24 +89,39 @@
             // Initialize theme globally
             await ThemeService.InitializeAsync();
 
-            // Add a small delay to ensure services are initialized
-            await Task.Delay(100);
+            // Add a small delay to ensure authentication services are properly initialized
+            await Task.Delay(200);
 
             // Log current URL for debugging
             await JSRuntime.InvokeVoidAsync("console.log", $"Current URL: {Navigation.Uri}");
 
-            // Force navigation to login if on root and not authenticated
+            // Check authentication status
+            var isAuthenticated = await AuthService.IsAuthenticatedAsync();
+
+            // Get current path without using JavaScript
             var uri = new Uri(Navigation.Uri);
-            if (uri.AbsolutePath == "/" && !await AuthService.IsAuthenticatedAsync())
+            var currentPath = uri.AbsolutePath;
+
+            // If user is not authenticated and not on login page, redirect to login
+            if (!isAuthenticated && !currentPath.Equals("/login", StringComparison.OrdinalIgnoreCase))
             {
+                await JSRuntime.InvokeVoidAsync("console.log", "User not authenticated, redirecting to login");
                 Navigation.NavigateTo("/login", true);
+                return;
+            }
+
+            // If user is authenticated and on login page, redirect to dashboard
+            if (isAuthenticated && currentPath.Equals("/login", StringComparison.OrdinalIgnoreCase))
+            {
+                await JSRuntime.InvokeVoidAsync("console.log", "User authenticated on login page, redirecting to dashboard");
+                Navigation.NavigateTo("/", true);
                 return;
             }
         }
         catch (Exception ex)
         {
             await JSRuntime.InvokeVoidAsync("console.error", $"App initialization error: {ex.Message}");
-            // Force navigation to login on error
+            // On error, redirect to login
             Navigation.NavigateTo("/login", true);
         }
         finally

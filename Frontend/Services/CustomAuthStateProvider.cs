@@ -8,7 +8,8 @@ namespace Frontend.Services
     public class CustomAuthStateProvider : AuthenticationStateProvider
     {
         private readonly IAuthService _authService;
-        private ClaimsPrincipal _anonymous = new(new ClaimsIdentity());
+        private readonly ClaimsPrincipal _anonymous = new(new ClaimsIdentity());
+        private bool _isInitialized = false;
 
         public CustomAuthStateProvider(IAuthService authService)
         {
@@ -20,6 +21,13 @@ namespace Frontend.Services
         {
             try
             {
+                // Prevent multiple rapid calls during initialization
+                if (!_isInitialized)
+                {
+                    await Task.Delay(50); // Small delay to prevent race conditions
+                    _isInitialized = true;
+                }
+
                 Console.WriteLine("Getting authentication state...");
 
                 if (!await _authService.IsAuthenticatedAsync())
@@ -87,6 +95,7 @@ namespace Frontend.Services
             try
             {
                 Console.WriteLine("Notifying user authentication");
+                _isInitialized = false; // Reset to ensure fresh state check
                 NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
             }
             catch (Exception ex)
@@ -100,12 +109,18 @@ namespace Frontend.Services
             try
             {
                 Console.WriteLine("Notifying user logout");
+                _isInitialized = false; // Reset state
                 NotifyAuthenticationStateChanged(Task.FromResult(new AuthenticationState(_anonymous)));
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error notifying user logout: {ex.Message}");
             }
+        }
+
+        public void Dispose()
+        {
+            _authService.AuthenticationStateChanged -= OnAuthenticationStateChanged;
         }
     }
 }
