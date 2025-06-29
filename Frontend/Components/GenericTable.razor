@@ -1,0 +1,135 @@
+﻿@typeparam TItem
+
+<div class="table-container">
+    <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead class="bg-gray-50 dark:bg-gray-900">
+                <tr>
+                    @TableColumns
+                </tr>
+            </thead>
+            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                @if (IsLoading)
+                {
+                    @for (int i = 0; i < LoadingRowCount; i++)
+                    {
+                        <tr class="animate-pulse">
+                            @for (int j = 0; j < ColumnCount; j++)
+                            {
+                                <td class="table-cell">
+                                    <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
+                                </td>
+                            }
+                        </tr>
+                    }
+                }
+                else if (Items?.Any() == true)
+                {
+                    @foreach (var item in Items)
+                    {
+                        <tr class="table-row">
+                            @RowTemplate(item)
+                            @if (ShowActions)
+                            {
+                                <td class="table-cell">
+                                    <div class="flex items-center space-x-2">
+                                        @if (OnEdit.HasDelegate)
+                                        {
+                                            <button @onclick="() => OnEdit.InvokeAsync(GetItemId(item))"
+                                                    class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                                    title="Edit">
+                                                <i class="fas fa-edit"></i>
+                                            </button>
+                                        }
+
+                                        @if (OnDuplicate.HasDelegate)
+                                        {
+                                            <button @onclick="() => OnDuplicate.InvokeAsync(GetItemId(item))"
+                                                    class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300"
+                                                    title="Duplicate">
+                                                <i class="fas fa-copy"></i>
+                                            </button>
+                                        }
+
+                                        @if (OnDelete.HasDelegate)
+                                        {
+                                            <button @onclick="() => OnDelete.InvokeAsync(GetItemId(item))"
+                                                    class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                                    title="Delete">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        }
+
+                                        @if (CustomActions != null)
+                                        {
+                                            @CustomActions(item)
+                                        }
+                                    </div>
+                                </td>
+                            }
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <tr>
+                        <td colspan="@ColumnCount" class="table-cell text-center py-12">
+                            <div class="text-gray-500 dark:text-gray-400">
+                                @if (EmptyStateContent != null)
+                                {
+                                    @EmptyStateContent
+                                }
+                                else
+                                {
+                                    <div>
+                                        <i class="fas fa-inbox text-4xl mb-3"></i>
+                                        <p class="text-lg font-medium">No items found</p>
+                                        <p class="text-sm">@EmptyMessage</p>
+                                    </div>
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter] public IEnumerable<TItem>? Items { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public bool ShowActions { get; set; } = true;
+    [Parameter] public int LoadingRowCount { get; set; } = 5;
+    [Parameter] public int ColumnCount { get; set; } = 5;
+    [Parameter] public string EmptyMessage { get; set; } = "Try adjusting your search or filter criteria.";
+
+    [Parameter] public RenderFragment? TableColumns { get; set; }
+    [Parameter] public RenderFragment<TItem>? RowTemplate { get; set; }
+    [Parameter] public RenderFragment<TItem>? CustomActions { get; set; }
+    [Parameter] public RenderFragment? EmptyStateContent { get; set; }
+
+    [Parameter] public EventCallback<int> OnEdit { get; set; }
+    [Parameter] public EventCallback<int> OnDelete { get; set; }
+    [Parameter] public EventCallback<int> OnDuplicate { get; set; }
+    [Parameter] public EventCallback<int> OnView { get; set; }
+
+    [Parameter] public Func<TItem, int>? IdSelector { get; set; }
+
+    private int GetItemId(TItem item)
+    {
+        if (IdSelector != null)
+        {
+            return IdSelector(item);
+        }
+
+        // Try to get Id property using reflection
+        var idProperty = typeof(TItem).GetProperty("Id");
+        if (idProperty != null && idProperty.PropertyType == typeof(int))
+        {
+            return (int)(idProperty.GetValue(item) ?? 0);
+        }
+
+        throw new InvalidOperationException($"Cannot determine ID for item of type {typeof(TItem).Name}. Please provide an IdSelector.");
+    }
+}

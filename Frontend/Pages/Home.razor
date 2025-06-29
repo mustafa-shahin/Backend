@@ -1,0 +1,267 @@
+﻿@page "/"
+@using Backend.CMS.Application.DTOs
+@using Frontend.Interface
+@using Frontend.Services
+@inject IPageService PageService
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard - CMS Designer</PageTitle>
+
+<!-- Welcome Section -->
+<div class="mb-8">
+    <div class="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-8 text-white">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold mb-2">
+                    Welcome back, @(currentUser?.FirstName ?? "Admin")! 👋
+                </h1>
+                <p class="text-blue-100 text-lg">
+                    Ready to create something amazing today?
+                </p>
+            </div>
+            <div class="hidden md:block">
+                <i class="fas fa-rocket text-6xl opacity-20"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    
+    <!-- Total Pages -->
+    <div class="card">
+        <div class="flex items-center">
+            <div class="p-3 rounded-lg bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400">
+                <i class="fas fa-file-alt text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600 dark:text-gray-400">Total Pages</p>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">@totalPages</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Published Pages -->
+    <div class="card">
+        <div class="flex items-center">
+            <div class="p-3 rounded-lg bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-400">
+                <i class="fas fa-globe text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600 dark:text-gray-400">Published</p>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">@publishedPages</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Draft Pages -->
+    <div class="card">
+        <div class="flex items-center">
+            <div class="p-3 rounded-lg bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-400">
+                <i class="fas fa-edit text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600 dark:text-gray-400">Drafts</p>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">@draftPages</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Total Users (Placeholder) -->
+    <div class="card opacity-50">
+        <div class="flex items-center">
+            <div class="p-3 rounded-lg bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-400">
+                <i class="fas fa-users text-xl"></i>
+            </div>
+            <div class="ml-4">
+                <p class="text-sm font-medium text-gray-600 dark:text-gray-400">Users</p>
+                <p class="text-2xl font-bold text-gray-900 dark:text-white">-</p>
+                <p class="text-xs text-gray-500">Coming soon</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+    
+    <!-- Quick Actions Card -->
+    <div class="card">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Actions</h3>
+        <div class="space-y-3">
+            <button @onclick="CreateNewPage" class="w-full flex items-center justify-between p-4 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors">
+                <div class="flex items-center">
+                    <i class="fas fa-plus text-primary-600 dark:text-primary-400 mr-3"></i>
+                    <span class="font-medium text-primary-700 dark:text-primary-300">Create New Page</span>
+                </div>
+                <i class="fas fa-arrow-right text-primary-500"></i>
+            </button>
+            
+            <button @onclick="GoToPages" class="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                <div class="flex items-center">
+                    <i class="fas fa-list text-gray-600 dark:text-gray-400 mr-3"></i>
+                    <span class="font-medium text-gray-700 dark:text-gray-300">View All Pages</span>
+                </div>
+                <i class="fas fa-arrow-right text-gray-500"></i>
+            </button>
+            
+            <div class="opacity-50 cursor-not-allowed">
+                <div class="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <div class="flex items-center">
+                        <i class="fas fa-upload text-gray-600 dark:text-gray-400 mr-3"></i>
+                        <span class="font-medium text-gray-700 dark:text-gray-300">Upload Files</span>
+                    </div>
+                    <span class="text-xs text-gray-500">Soon</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="card">
+        <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Recent Pages</h3>
+        @if (isLoading)
+        {
+            <div class="space-y-3">
+                @for (int i = 0; i < 3; i++)
+                {
+                    <div class="animate-pulse">
+                        <div class="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
+                        <div class="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+                    </div>
+                }
+            </div>
+        }
+        else if (recentPages.Any())
+        {
+            <div class="space-y-3">
+                @foreach (var page in recentPages.Take(5))
+                {
+                    <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                @(page.Name)
+                            </p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">
+                                @GetStatusBadge(page.Status) • @(page.UpdatedAt.ToString("MMM dd, yyyy"))
+                            </p>
+                        </div>
+                        <button @onclick="() => EditPage(page.Id)" class="ml-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                            <i class="fas fa-edit text-sm"></i>
+                        </button>
+                    </div>
+                }
+            </div>
+            @if (recentPages.Count > 5)
+            {
+                <div class="mt-4 text-center">
+                    <button @onclick="GoToPages" class="text-primary-600 dark:text-primary-400 text-sm font-medium hover:underline">
+                        View all @recentPages.Count pages
+                    </button>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="text-center py-8">
+                <i class="fas fa-file-alt text-4xl text-gray-300 dark:text-gray-600 mb-3"></i>
+                <p class="text-gray-500 dark:text-gray-400 mb-4">No pages yet</p>
+                <button @onclick="CreateNewPage" class="btn-primary">
+                    <i class="fas fa-plus mr-2"></i>
+                    Create Your First Page
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Features Coming Soon -->
+<div class="card">
+    <h3 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        <i class="fas fa-rocket mr-2 text-blue-500"></i>
+        Coming Soon
+    </h3>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="text-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <i class="fas fa-box text-2xl text-gray-400 mb-2"></i>
+            <h4 class="font-medium text-gray-700 dark:text-gray-300">Product Catalog</h4>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Manage your products and inventory</p>
+        </div>
+        <div class="text-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <i class="fas fa-users text-2xl text-gray-400 mb-2"></i>
+            <h4 class="font-medium text-gray-700 dark:text-gray-300">User Management</h4>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Manage users and permissions</p>
+        </div>
+        <div class="text-center p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <i class="fas fa-chart-bar text-2xl text-gray-400 mb-2"></i>
+            <h4 class="font-medium text-gray-700 dark:text-gray-300">Analytics</h4>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Track your site performance</p>
+        </div>
+    </div>
+</div>
+
+@code {
+    private Backend.CMS.Application.DTOs.UserDto? currentUser;
+    private List<PageListDto> recentPages = new();
+    private bool isLoading = true;
+    private int totalPages = 0;
+    private int publishedPages = 0;
+    private int draftPages = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUser = await AuthService.GetCurrentUserAsync();
+        await LoadDashboardData();
+    }
+
+    private async Task LoadDashboardData()
+    {
+        try
+        {
+            isLoading = true;
+            var pagesResult = await PageService.GetPagesAsync(1, 20);
+            recentPages = pagesResult.Items.OrderByDescending(p => p.UpdatedAt).ToList();
+            
+            totalPages = pagesResult.TotalCount;
+            publishedPages = recentPages.Count(p => p.Status == Backend.CMS.Domain.Enums.PageStatus.Published);
+            draftPages = recentPages.Count(p => p.Status == Backend.CMS.Domain.Enums.PageStatus.Draft);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading dashboard data: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CreateNewPage()
+    {
+        Navigation.NavigateTo("/pages?action=create");
+    }
+
+    private void GoToPages()
+    {
+        Navigation.NavigateTo("/pages");
+    }
+
+    private void EditPage(int pageId)
+    {
+        Navigation.NavigateTo($"/pages?action=edit&id={pageId}");
+    }
+
+    private string GetStatusBadge(Backend.CMS.Domain.Enums.PageStatus status)
+    {
+        return status switch
+        {
+            Backend.CMS.Domain.Enums.PageStatus.Published => "Published",
+            Backend.CMS.Domain.Enums.PageStatus.Draft => "Draft",
+            Backend.CMS.Domain.Enums.PageStatus.Archived => "Archived",
+            _ => status.ToString()
+        };
+    }
+}

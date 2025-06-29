@@ -1,0 +1,67 @@
+﻿@using Frontend.Interface
+@using Microsoft.AspNetCore.Components.Authorization
+<CascadingAuthenticationState>
+    <Router AppAssembly="@typeof(App).Assembly">
+        <Found Context="routeData">
+            <AuthorizeView>
+                <Authorized>
+                    <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+                    <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+                </Authorized>
+                <NotAuthorized>
+                    @if (context.User.Identity?.IsAuthenticated == true)
+                    {
+                        <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+                            <div class="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
+                                <div class="text-red-500 text-6xl mb-4">
+                                    <i class="fas fa-ban"></i>
+                                </div>
+                                <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Access Denied</h2>
+                                <p class="text-gray-600 dark:text-gray-400 mb-6">
+                                    You don't have permission to access this area. This dashboard is only available for administrators and developers.
+                                </p>
+                                <button class="btn-primary" @onclick="HandleLogout">
+                                    <i class="fas fa-sign-out-alt mr-2"></i>
+                                    Sign Out
+                                </button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <Login />
+                    }
+                </NotAuthorized>
+            </AuthorizeView>
+        </Found>
+        <NotFound>
+            <PageTitle>Not found</PageTitle>
+            <LayoutView Layout="@typeof(MainLayout)">
+                <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+                    <div class="text-center">
+                        <div class="text-6xl text-gray-400 dark:text-gray-600 mb-4">
+                            <i class="fas fa-search"></i>
+                        </div>
+                        <h1 class="text-4xl font-bold text-gray-900 dark:text-white mb-2">404</h1>
+                        <p class="text-xl text-gray-600 dark:text-gray-400 mb-8">Page not found</p>
+                        <a href="/" class="btn-primary">
+                            <i class="fas fa-home mr-2"></i>
+                            Go Home
+                        </a>
+                    </div>
+                </div>
+            </LayoutView>
+        </NotFound>
+    </Router>
+</CascadingAuthenticationState>
+
+@code {
+    [Inject] private IAuthService AuthService { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+
+    private async Task HandleLogout()
+    {
+        await AuthService.LogoutAsync();
+        Navigation.NavigateTo("/", true);
+    }
+}

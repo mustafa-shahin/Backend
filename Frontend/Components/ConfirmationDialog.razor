@@ -1,0 +1,154 @@
+﻿@if (IsVisible)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <!-- Backdrop -->
+        <div class="modal-backdrop fixed inset-0" @onclick="HandleBackdropClick"></div>
+
+        <!-- Dialog -->
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full max-w-lg animate-slide-up"
+                 @onclick:stopPropagation="true">
+
+                <!-- Header -->
+                <div class="bg-white dark:bg-gray-800 px-6 py-4">
+                    <div class="flex items-center">
+                        @if (!string.IsNullOrEmpty(Icon))
+                        {
+                            <div class="flex-shrink-0">
+                                <i class="@Icon @GetIconColorClass() text-2xl"></i>
+                            </div>
+                            <div class="ml-4">
+                                <h3 class="text-lg font-medium text-gray-900 dark:text-white">@Title</h3>
+                            </div>
+                        }
+                        else
+                        {
+                            <h3 class="text-lg font-medium text-gray-900 dark:text-white">@Title</h3>
+                        }
+                    </div>
+                </div>
+
+                <!-- Body -->
+                <div class="bg-white dark:bg-gray-800 px-6 py-4">
+                    @if (BodyContent != null)
+                    {
+                        @BodyContent
+                    }
+                    else
+                    {
+                        <p class="text-gray-600 dark:text-gray-300">@Message</p>
+                    }
+                </div>
+
+                <!-- Footer -->
+                <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 flex justify-end space-x-3">
+                    <button @onclick="Cancel"
+                            type="button"
+                            class="btn-secondary"
+                            disabled="@IsProcessing">
+                        @CancelText
+                    </button>
+
+                    <button @onclick="Confirm"
+                            type="button"
+                            class="@ConfirmClass"
+                            disabled="@IsProcessing">
+                        @if (IsProcessing)
+                        {
+                            <i class="fas fa-spinner fa-spin mr-2"></i>
+                            <span>@ProcessingText</span>
+                        }
+                        else
+                        {
+                            @if (!string.IsNullOrEmpty(ConfirmIcon))
+                            {
+                                <i class="@ConfirmIcon mr-2"></i>
+                            }
+                            <span>@ConfirmText</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "Confirm Action";
+    [Parameter] public string Message { get; set; } = "Are you sure you want to proceed?";
+    [Parameter] public string ConfirmText { get; set; } = "Confirm";
+    [Parameter] public string CancelText { get; set; } = "Cancel";
+    [Parameter] public string ProcessingText { get; set; } = "Processing...";
+    [Parameter] public string ConfirmClass { get; set; } = "btn-primary";
+    [Parameter] public string ConfirmIcon { get; set; } = string.Empty;
+    [Parameter] public string Icon { get; set; } = "fas fa-exclamation-triangle";
+    [Parameter] public string IconType { get; set; } = "warning"; // warning, danger, info, success
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public bool IsProcessing { get; set; }
+    [Parameter] public bool CloseOnBackdrop { get; set; } = true;
+
+    [Parameter] public RenderFragment? BodyContent { get; set; }
+
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private async Task Confirm()
+    {
+        if (IsProcessing) return;
+
+        IsProcessing = true;
+        StateHasChanged();
+
+        try
+        {
+            await OnConfirm.InvokeAsync();
+        }
+        finally
+        {
+            IsProcessing = false;
+            IsVisible = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Cancel()
+    {
+        if (IsProcessing) return;
+
+        IsVisible = false;
+        await OnCancel.InvokeAsync();
+        StateHasChanged();
+    }
+
+    private async Task HandleBackdropClick()
+    {
+        if (CloseOnBackdrop && !IsProcessing)
+        {
+            await Cancel();
+        }
+    }
+
+    private string GetIconColorClass()
+    {
+        return IconType.ToLower() switch
+        {
+            "warning" => "text-yellow-500",
+            "danger" => "text-red-500",
+            "info" => "text-blue-500",
+            "success" => "text-green-500",
+            _ => "text-yellow-500"
+        };
+    }
+
+    public void Show()
+    {
+        IsVisible = true;
+        StateHasChanged();
+    }
+
+    public void Hide()
+    {
+        IsVisible = false;
+        StateHasChanged();
+    }
+}

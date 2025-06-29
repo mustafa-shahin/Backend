@@ -1,0 +1,163 @@
+
+@inject IThemeService ThemeService
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+
+<header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
+    <div class="flex items-center justify-between">
+
+        <!-- Left side -->
+        <div class="flex items-center space-x-4">
+            <button @onclick="OnToggleSidebar.InvokeAsync"
+                    class="p-2 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    title="Toggle sidebar">
+                <i class="fas fa-bars"></i>
+            </button>
+
+            <div>
+                <h1 class="text-lg font-semibold text-gray-900 dark:text-white">@GetPageTitle()</h1>
+                <p class="text-sm text-gray-600 dark:text-gray-400">@GetPageDescription()</p>
+            </div>
+        </div>
+
+        <!-- Right side -->
+        <div class="flex items-center space-x-4">
+
+            <!-- Search (Future feature) -->
+            <div class="hidden md:flex">
+                <div class="relative">
+                    <input type="text"
+                           placeholder="Search..."
+                           disabled
+                           class="w-64 pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 opacity-50 cursor-not-allowed" />
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-search text-gray-400"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notifications (Future feature) -->
+            <button class="relative p-2 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors opacity-50 cursor-not-allowed"
+                    disabled
+                    title="Notifications (Coming soon)">
+                <i class="fas fa-bell"></i>
+            </button>
+
+            <!-- Theme toggle -->
+            <button @onclick="ToggleTheme"
+                    class="p-2 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    title="Toggle theme">
+                <i class="@GetThemeIcon()"></i>
+            </button>
+
+            <!-- User menu -->
+            <div class="relative">
+                <button @onclick="ToggleUserMenu"
+                        class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                    @if (currentUser != null)
+                    {
+                        <div class="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center">
+                            <span class="text-white text-sm font-medium">
+                                @(currentUser.FirstName?.Substring(0, 1).ToUpper())@(currentUser.LastName?.Substring(0, 1).ToUpper())
+                            </span>
+                        </div>
+                        <span class="hidden md:block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            @currentUser.FirstName @currentUser.LastName
+                        </span>
+                        <i class="fas fa-chevron-down text-xs text-gray-500 dark:text-gray-400"></i>
+                    }
+                </button>
+
+                @if (showUserMenu)
+                {
+                    <div class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50">
+                        <div class="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+                            <p class="text-sm font-medium text-gray-900 dark:text-white">@currentUser?.FirstName @currentUser?.LastName</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">@currentUser?.Email</p>
+                        </div>
+
+                        <a href="/profile" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                            <i class="fas fa-user mr-2"></i>
+                            Profile (Soon)
+                        </a>
+
+                        <a href="/settings" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                            <i class="fas fa-cog mr-2"></i>
+                            Settings (Soon)
+                        </a>
+
+                        <div class="border-t border-gray-200 dark:border-gray-700 mt-2 pt-2">
+                            <button @onclick="HandleLogout" class="block w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                <i class="fas fa-sign-out-alt mr-2"></i>
+                                Sign out
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</header>
+
+@code {
+    [Parameter] public EventCallback OnToggleSidebar { get; set; }
+
+    private bool showUserMenu = false;
+    private Backend.CMS.Application.DTOs.UserDto? currentUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUser = await AuthService.GetCurrentUserAsync();
+    }
+
+    private async Task ToggleTheme()
+    {
+        await ThemeService.ToggleThemeAsync();
+    }
+
+    private string GetThemeIcon()
+    {
+        return ThemeService.IsDarkMode ? "fas fa-sun" : "fas fa-moon";
+    }
+
+    private void ToggleUserMenu()
+    {
+        showUserMenu = !showUserMenu;
+    }
+
+    private async Task HandleLogout()
+    {
+        await AuthService.LogoutAsync();
+        showUserMenu = false;
+    }
+
+    private string GetPageTitle()
+    {
+        var path = new Uri(Navigation.Uri).AbsolutePath;
+        return path switch
+        {
+            "/" => "Dashboard",
+            "/pages" => "Pages",
+            "/files" => "Files",
+            "/products" => "Products",
+            "/users" => "Users",
+            "/settings" => "Settings",
+            _ => "CMS Designer"
+        };
+    }
+
+    private string GetPageDescription()
+    {
+        var path = new Uri(Navigation.Uri).AbsolutePath;
+        return path switch
+        {
+            "/" => "Welcome to your content management dashboard",
+            "/pages" => "Manage your website pages and content",
+            "/files" => "Organize and manage your files and media",
+            "/products" => "Manage your product catalog",
+            "/users" => "User management and permissions",
+            "/settings" => "Application settings and preferences",
+            _ => "Manage your content with ease"
+        };
+    }
+}

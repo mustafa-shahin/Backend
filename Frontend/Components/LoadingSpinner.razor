@@ -1,0 +1,77 @@
+﻿@if (IsVisible)
+{
+    <div class="@GetContainerClass()">
+        @if (Overlay)
+        {
+            <div class="absolute inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm z-50 flex items-center justify-center">
+                <div class="text-center">
+                    <div class="@GetSpinnerClass()"></div>
+                    @if (!string.IsNullOrEmpty(Message))
+                    {
+                        <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">@Message</p>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="flex items-center justify-center @GetPaddingClass()">
+                <div class="text-center">
+                    <div class="@GetSpinnerClass()"></div>
+                    @if (!string.IsNullOrEmpty(Message))
+                    {
+                        <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">@Message</p>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; } = true;
+    [Parameter] public bool Overlay { get; set; } = false;
+    [Parameter] public string Size { get; set; } = "medium"; // small, medium, large
+    [Parameter] public string Color { get; set; } = "primary"; // primary, secondary, white
+    [Parameter] public string Message { get; set; } = string.Empty;
+    [Parameter] public string Class { get; set; } = string.Empty;
+
+    private string GetContainerClass()
+    {
+        var baseClass = Overlay ? "relative" : "";
+        return $"{baseClass} {Class}".Trim();
+    }
+
+    private string GetSpinnerClass()
+    {
+        var sizeClass = Size.ToLower() switch
+        {
+            "small" => "h-4 w-4",
+            "medium" => "h-8 w-8",
+            "large" => "h-12 w-12",
+            _ => "h-8 w-8"
+        };
+
+        var colorClass = Color.ToLower() switch
+        {
+            "primary" => "border-primary-600",
+            "secondary" => "border-gray-600",
+            "white" => "border-white",
+            _ => "border-primary-600"
+        };
+
+        return $"animate-spin rounded-full {sizeClass} border-2 border-transparent border-t-2 {colorClass}";
+    }
+
+    private string GetPaddingClass()
+    {
+        return Size.ToLower() switch
+        {
+            "small" => "py-2",
+            "medium" => "py-4",
+            "large" => "py-8",
+            _ => "py-4"
+        };
+    }
+}
+

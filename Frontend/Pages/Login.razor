@@ -1,0 +1,284 @@
+﻿@page "/login"
+@using Backend.CMS.Application.DTOs
+@using Frontend.Services
+@using Frontend.Interface
+@inject IAuthService AuthService
+@inject IThemeService ThemeService
+@inject INotificationService NotificationService
+@inject NavigationManager Navigation
+
+<PageTitle>Sign In - CMS Designer</PageTitle>
+
+<div class="min-h-screen flex">
+    <!-- Left side - Login Form -->
+    <div class="flex-1 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-white dark:bg-gray-900">
+        <div class="max-w-md w-full space-y-8 animate-slide-up">
+
+            <!-- Theme toggle -->
+            <div class="flex justify-end">
+                <button @onclick="ToggleTheme"
+                        class="p-3 rounded-full text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 focus-ring"
+                        aria-label="Toggle theme">
+                    <i class="@GetThemeIcon() text-xl transition-transform duration-300"></i>
+                </button>
+            </div>
+
+            <!-- Header -->
+            <div class="text-center">
+                <div class="mx-auto h-16 w-16 flex items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg">
+                    <i class="fas fa-palette text-white text-2xl"></i>
+                </div>
+                <h2 class="mt-6 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
+                    Welcome back
+                </h2>
+                <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                    Sign in to access the CMS Designer
+                </p>
+            </div>
+
+            <!-- Login form -->
+            <EditForm Model="@loginModel" OnValidSubmit="@HandleLogin" class="mt-8 space-y-6">
+                <DataAnnotationsValidator />
+
+                <div class="space-y-4">
+                    <!-- Email field -->
+                    <div>
+                        <label for="email" class="form-label">Email address</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-envelope text-gray-400"></i>
+                            </div>
+                            <InputText @bind-Value="loginModel.Email"
+                                       id="email"
+                                       type="email"
+                                       autocomplete="email"
+                                       placeholder="Enter your email"
+                                       class="form-input pl-10 transform transition-all duration-200 focus-within:scale-[1.02]" />
+                        </div>
+                        <ValidationMessage For="@(() => loginModel.Email)" class="text-red-500 text-sm mt-1" />
+                    </div>
+
+                    <!-- Password field -->
+                    <div>
+                        <label for="password" class="form-label">Password</label>
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-lock text-gray-400"></i>
+                            </div>
+                            <InputText @bind-Value="loginModel.Password"
+                                       id="password"
+                                       type="password"
+                                       autocomplete="current-password"
+                                       placeholder="Enter your password"
+                                       class="form-input pl-10 transform transition-all duration-200 focus-within:scale-[1.02]" />
+                        </div>
+                        <ValidationMessage For="@(() => loginModel.Password)" class="text-red-500 text-sm mt-1" />
+                    </div>
+
+                    <!-- Remember me and forgot password -->
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <InputCheckbox @bind-Value="loginModel.RememberMe"
+                                           id="rememberMe"
+                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 transition-colors" />
+                            <label for="rememberMe" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                                Remember me
+                            </label>
+                        </div>
+
+                        <div class="text-sm">
+                            <a href="/forgot-password" class="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
+                                Forgot your password?
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error message -->
+                @if (!string.IsNullOrEmpty(errorMessage))
+                {
+                    <div class="rounded-lg bg-red-50 dark:bg-red-900/20 p-4 border border-red-200 dark:border-red-800 animate-fade-in">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-exclamation-circle text-red-400"></i>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-red-800 dark:text-red-200">
+                                    @errorMessage
+                                </h3>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <!-- Submit button -->
+                <button type="submit"
+                        disabled="@isLoading"
+                        class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transform transition-all duration-200 hover:scale-[1.02]">
+
+                    <span class="absolute left-0 inset-y-0 flex items-center pl-4">
+                        <i class="@GetButtonIcon() text-blue-300 group-hover:text-blue-200 transition-colors"></i>
+                    </span>
+
+                    @if (isLoading)
+                    {
+                        <span>Signing in...</span>
+                    }
+                    else
+                    {
+                        <span>Sign in to Dashboard</span>
+                    }
+                </button>
+
+                <!-- Contact admin -->
+                <div class="text-center">
+                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                        Don't have an account?
+                        <a href="/contact" class="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
+                            Contact your administrator
+                        </a>
+                    </p>
+                </div>
+            </EditForm>
+
+            <!-- Access level info -->
+            <div class="mt-8 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-info-circle text-blue-500 dark:text-blue-400"></i>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-medium text-blue-800 dark:text-blue-200">
+                            Designer Access Required
+                        </h3>
+                        <div class="mt-2 text-sm text-blue-700 dark:text-blue-300">
+                            <p>
+                                This application requires Admin or Developer privileges.
+                                Contact your system administrator if you need access.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right side - Brand/Feature showcase -->
+    <div class="hidden lg:flex flex-1 items-center justify-center bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 relative overflow-hidden">
+
+        <!-- Background pattern -->
+        <div class="absolute inset-0 opacity-10">
+            <div class="absolute top-0 left-0 w-96 h-96 rounded-full bg-white transform -translate-x-1/2 -translate-y-1/2"></div>
+            <div class="absolute bottom-0 right-0 w-96 h-96 rounded-full bg-white transform translate-x-1/2 translate-y-1/2"></div>
+        </div>
+
+        <div class="relative z-10 text-center text-white max-w-lg px-8">
+            <div class="mb-8">
+                <i class="fas fa-palette text-6xl mb-6 opacity-90"></i>
+                <h1 class="text-4xl font-bold mb-4">CMS Designer</h1>
+                <p class="text-xl text-blue-100 mb-8">
+                    Build beautiful pages with our drag-and-drop designer
+                </p>
+            </div>
+
+            <div class="space-y-4 text-left">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                        <i class="fas fa-check text-sm"></i>
+                    </div>
+                    <span class="text-blue-100">Visual drag-and-drop editor</span>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                        <i class="fas fa-check text-sm"></i>
+                    </div>
+                    <span class="text-blue-100">Responsive design tools</span>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                        <i class="fas fa-check text-sm"></i>
+                    </div>
+                    <span class="text-blue-100">Real-time preview</span>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+                        <i class="fas fa-check text-sm"></i>
+                    </div>
+                    <span class="text-blue-100">Team collaboration</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private LoginDto loginModel = new();
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ThemeService.InitializeAsync();
+
+        // Check if already authenticated
+        if (await AuthService.IsAuthenticatedAsync())
+        {
+            Navigation.NavigateTo("/", true);
+        }
+    }
+
+    private async Task HandleLogin()
+    {
+        if (isLoading) return;
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            var result = await AuthService.LoginAsync(loginModel);
+
+            if (result != null)
+            {
+                NotificationService.ShowSuccess("Welcome back! Redirecting to dashboard...", "Login Successful");
+                Navigation.NavigateTo("/", true);
+            }
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (HttpRequestException ex)
+        {
+            errorMessage = ex.Message.Contains("401") || ex.Message.Contains("Unauthorized")
+                ? "Invalid email or password. Please try again."
+                : "Unable to connect to the server. Please check your connection and try again.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "An unexpected error occurred. Please try again.";
+            Console.WriteLine($"Login error: {ex}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        await ThemeService.ToggleThemeAsync();
+    }
+
+    private string GetThemeIcon()
+    {
+        return ThemeService.IsDarkMode ? "fas fa-sun rotate-180" : "fas fa-moon";
+    }
+
+    private string GetButtonIcon()
+    {
+        return isLoading ? "fas fa-spinner fa-spin" : "fas fa-sign-in-alt";
+    }
+}

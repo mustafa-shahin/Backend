@@ -1,0 +1,155 @@
+﻿@using Frontend.Enums
+@using Frontend.Helpers
+@using Frontend.Interface
+@inject INotificationService NotificationService
+@implements IDisposable
+
+<div class="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+    @foreach (var notification in notifications)
+    {
+        <div class="@GetNotificationClass(notification.Type) animate-slide-down">
+            <div class="flex items-start">
+                <div class="flex-shrink-0 pt-0.5">
+                    <i class="@GetNotificationIcon(notification.Type)"></i>
+                </div>
+                <div class="ml-3 flex-1">
+                    <h4 class="@GetTitleClass(notification.Type) font-medium text-sm">
+                        @notification.Title
+                    </h4>
+                    <p class="@GetMessageClass(notification.Type) text-sm">
+                        @notification.Message
+                    </p>
+                </div>
+                <div class="ml-4 flex-shrink-0">
+                    <button @onclick="() => RemoveNotification(notification.Id)"
+                            class="@GetCloseButtonClass(notification.Type) hover:opacity-75 transition-opacity">
+                        <i class="fas fa-times text-sm"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<NotificationMessage> notifications = new();
+    private Dictionary<string, Timer> timers = new();
+
+    protected override void OnInitialized()
+    {
+        NotificationService.OnNotificationAdded += AddNotification;
+        NotificationService.OnNotificationRemoved += RemoveNotification;
+    }
+
+    private void AddNotification(NotificationMessage notification)
+    {
+        notifications.Add(notification);
+        InvokeAsync(StateHasChanged);
+
+        if (notification.AutoClose)
+        {
+            var timer = new Timer(_ => RemoveNotification(notification.Id), null, notification.DurationMs, Timeout.Infinite);
+            timers[notification.Id] = timer;
+        }
+    }
+
+    private void RemoveNotification(string id)
+    {
+        if (id == "*")
+        {
+            notifications.Clear();
+            foreach (var timer in timers.Values)
+            {
+                timer.Dispose();
+            }
+            timers.Clear();
+        }
+        else
+        {
+            notifications.RemoveAll(n => n.Id == id);
+            if (timers.TryGetValue(id, out var timer))
+            {
+                timer.Dispose();
+                timers.Remove(id);
+            }
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    private string GetNotificationClass(NotificationType type)
+    {
+        var baseClass = "rounded-lg p-4 shadow-lg border";
+
+        return type switch
+        {
+            NotificationType.Success => $"{baseClass} bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800",
+            NotificationType.Error => $"{baseClass} bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800",
+            NotificationType.Warning => $"{baseClass} bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800",
+            NotificationType.Info => $"{baseClass} bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800",
+            _ => $"{baseClass} bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800"
+        };
+    }
+
+    private string GetNotificationIcon(NotificationType type)
+    {
+        var baseClass = "w-5 h-5";
+
+        return type switch
+        {
+            NotificationType.Success => $"{baseClass} text-green-500 fas fa-check-circle",
+            NotificationType.Error => $"{baseClass} text-red-500 fas fa-exclamation-circle",
+            NotificationType.Warning => $"{baseClass} text-yellow-500 fas fa-exclamation-triangle",
+            NotificationType.Info => $"{baseClass} text-blue-500 fas fa-info-circle",
+            _ => $"{baseClass} text-gray-500 fas fa-bell"
+        };
+    }
+
+    private string GetTitleClass(NotificationType type)
+    {
+        return type switch
+        {
+            NotificationType.Success => "text-green-800 dark:text-green-200",
+            NotificationType.Error => "text-red-800 dark:text-red-200",
+            NotificationType.Warning => "text-yellow-800 dark:text-yellow-200",
+            NotificationType.Info => "text-blue-800 dark:text-blue-200",
+            _ => "text-gray-800 dark:text-gray-200"
+        };
+    }
+
+    private string GetMessageClass(NotificationType type)
+    {
+        return type switch
+        {
+            NotificationType.Success => "text-green-700 dark:text-green-300",
+            NotificationType.Error => "text-red-700 dark:text-red-300",
+            NotificationType.Warning => "text-yellow-700 dark:text-yellow-300",
+            NotificationType.Info => "text-blue-700 dark:text-blue-300",
+            _ => "text-gray-700 dark:text-gray-300"
+        };
+    }
+
+    private string GetCloseButtonClass(NotificationType type)
+    {
+        return type switch
+        {
+            NotificationType.Success => "text-green-500 dark:text-green-400",
+            NotificationType.Error => "text-red-500 dark:text-red-400",
+            NotificationType.Warning => "text-yellow-500 dark:text-yellow-400",
+            NotificationType.Info => "text-blue-500 dark:text-blue-400",
+            _ => "text-gray-500 dark:text-gray-400"
+        };
+    }
+
+    public void Dispose()
+    {
+        NotificationService.OnNotificationAdded -= AddNotification;
+        NotificationService.OnNotificationRemoved -= RemoveNotification;
+
+        foreach (var timer in timers.Values)
+        {
+            timer.Dispose();
+        }
+        timers.Clear();
+    }
+}

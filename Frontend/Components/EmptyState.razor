@@ -1,0 +1,105 @@
+﻿<div class="text-center py-12">
+    <div class="@GetIconContainerClass()">
+        <i class="@Icon @GetIconSizeClass()"></i>
+    </div>
+
+    <h3 class="mt-4 text-lg font-medium text-gray-900 dark:text-white">
+        @Title
+    </h3>
+
+    @if (!string.IsNullOrEmpty(Description))
+    {
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
+            @Description
+        </p>
+    }
+
+    @if (Actions != null)
+    {
+        <div class="mt-6">
+            @Actions
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(ButtonText) && OnButtonClick.HasDelegate)
+    {
+        <div class="mt-6">
+            <button @onclick="OnButtonClick" class="@GetButtonClass()">
+                @if (!string.IsNullOrEmpty(ButtonIcon))
+                {
+                    <i class="@ButtonIcon mr-2"></i>
+                }
+                @ButtonText
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "fas fa-inbox";
+    [Parameter] public string Title { get; set; } = "No items found";
+    [Parameter] public string Description { get; set; } = string.Empty;
+    [Parameter] public string ButtonText { get; set; } = string.Empty;
+    [Parameter] public string ButtonIcon { get; set; } = string.Empty;
+    [Parameter] public string ButtonClass { get; set; } = "btn-primary";
+    [Parameter] public string Size { get; set; } = "medium"; // small, medium, large
+    [Parameter] public string IconColor { get; set; } = "gray"; // gray, primary, blue, green, etc.
+
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public EventCallback OnButtonClick { get; set; }
+
+    private string GetIconContainerClass()
+    {
+        var baseClass = "mx-auto flex items-center justify-center rounded-full";
+
+        var sizeClass = Size.ToLower() switch
+        {
+            "small" => "h-12 w-12",
+            "medium" => "h-16 w-16",
+            "large" => "h-20 w-20",
+            _ => "h-16 w-16"
+        };
+
+        var colorClass = IconColor.ToLower() switch
+        {
+            "gray" => "bg-gray-100 dark:bg-gray-800",
+            "primary" => "bg-primary-100 dark:bg-primary-900",
+            "blue" => "bg-blue-100 dark:bg-blue-900",
+            "green" => "bg-green-100 dark:bg-green-900",
+            "yellow" => "bg-yellow-100 dark:bg-yellow-900",
+            "red" => "bg-red-100 dark:bg-red-900",
+            _ => "bg-gray-100 dark:bg-gray-800"
+        };
+
+        return $"{baseClass} {sizeClass} {colorClass}";
+    }
+
+    private string GetIconSizeClass()
+    {
+        var sizeClass = Size.ToLower() switch
+        {
+            "small" => "text-xl",
+            "medium" => "text-2xl",
+            "large" => "text-3xl",
+            _ => "text-2xl"
+        };
+
+        var colorClass = IconColor.ToLower() switch
+        {
+            "gray" => "text-gray-400 dark:text-gray-500",
+            "primary" => "text-primary-500 dark:text-primary-400",
+            "blue" => "text-blue-500 dark:text-blue-400",
+            "green" => "text-green-500 dark:text-green-400",
+            "yellow" => "text-yellow-500 dark:text-yellow-400",
+            "red" => "text-red-500 dark:text-red-400",
+            _ => "text-gray-400 dark:text-gray-500"
+        };
+
+        return $"{sizeClass} {colorClass}";
+    }
+
+    private string GetButtonClass()
+    {
+        return ButtonClass;
+    }
+}
+

@@ -1,0 +1,182 @@
+﻿@if (TotalPages > 1)
+{
+    <div class="flex items-center justify-between bg-white dark:bg-gray-800 px-4 py-3 border border-gray-200 dark:border-gray-700 rounded-lg">
+        
+        <!-- Mobile pagination -->
+        <div class="flex justify-between flex-1 sm:hidden">
+            <button @onclick="() => ChangePage(CurrentPage - 1)"
+                    disabled="@(CurrentPage <= 1 || IsLoading)"
+                    class="@GetMobileButtonClass(CurrentPage <= 1)">
+                Previous
+            </button>
+            
+            <span class="text-sm text-gray-700 dark:text-gray-300 flex items-center">
+                Page @CurrentPage of @TotalPages
+            </span>
+            
+            <button @onclick="() => ChangePage(CurrentPage + 1)"
+                    disabled="@(CurrentPage >= TotalPages || IsLoading)"
+                    class="@GetMobileButtonClass(CurrentPage >= TotalPages)">
+                Next
+            </button>
+        </div>
+
+        <!-- Desktop pagination -->
+        <div class="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+            <div>
+                <p class="text-sm text-gray-700 dark:text-gray-300">
+                    Showing page <span class="font-medium">@CurrentPage</span> of <span class="font-medium">@TotalPages</span>
+                    @if (TotalItems.HasValue)
+                    {
+                        <span>(@TotalItems.Value total items)</span>
+                    }
+                </p>
+            </div>
+            
+            <div>
+                <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                    
+                    <!-- Previous button -->
+                    <button @onclick="() => ChangePage(CurrentPage - 1)"
+                            disabled="@(CurrentPage <= 1 || IsLoading)"
+                            class="@GetDesktopButtonClass(true, CurrentPage <= 1)">
+                        <span class="sr-only">Previous</span>
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
+
+                    <!-- Page numbers -->
+                    @foreach (var page in GetVisiblePages())
+                    {
+                        @if (page == -1)
+                        {
+                            <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300">
+                                ...
+                            </span>
+                        }
+                        else
+                        {
+                            <button @onclick="() => ChangePage(page)"
+                                    disabled="@IsLoading"
+                                    class="@GetPageButtonClass(page == CurrentPage)">
+                                @(page)
+                            </button>
+                        }
+                    }
+
+                    <!-- Next button -->
+                    <button @onclick="() => ChangePage(CurrentPage + 1)"
+                            disabled="@(CurrentPage >= TotalPages || IsLoading)"
+                            class="@GetDesktopButtonClass(false, CurrentPage >= TotalPages)">
+                        <span class="sr-only">Next</span>
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </nav>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int CurrentPage { get; set; } = 1;
+    [Parameter] public int TotalPages { get; set; }
+    [Parameter] public int? TotalItems { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public EventCallback<int> OnPageChanged { get; set; }
+
+    private async Task ChangePage(int page)
+    {
+        if (page < 1 || page > TotalPages || page == CurrentPage || IsLoading)
+            return;
+
+        await OnPageChanged.InvokeAsync(page);
+    }
+
+    private List<int> GetVisiblePages()
+    {
+        var pages = new List<int>();
+        const int maxVisible = 7; // Maximum number of page buttons to show
+        
+        if (TotalPages <= maxVisible)
+        {
+            // Show all pages if total is small
+            for (int i = 1; i <= TotalPages; i++)
+            {
+                pages.Add(i);
+            }
+        }
+        else
+        {
+            // Always show first page
+            pages.Add(1);
+            
+            int startPage = Math.Max(2, CurrentPage - 2);
+            int endPage = Math.Min(TotalPages - 1, CurrentPage + 2);
+            
+            // Add ellipsis if needed
+            if (startPage > 2)
+            {
+                pages.Add(-1); // Ellipsis
+            }
+            
+            // Add middle pages
+            for (int i = startPage; i <= endPage; i++)
+            {
+                if (i != 1 && i != TotalPages) // Don't duplicate first/last
+                {
+                    pages.Add(i);
+                }
+            }
+            
+            // Add ellipsis if needed
+            if (endPage < TotalPages - 1)
+            {
+                pages.Add(-1); // Ellipsis
+            }
+            
+            // Always show last page (if not already added)
+            if (TotalPages > 1)
+            {
+                pages.Add(TotalPages);
+            }
+        }
+        
+        return pages.Distinct().OrderBy(p => p == -1 ? int.MaxValue : p).ToList();
+    }
+
+    private string GetMobileButtonClass(bool disabled)
+    {
+        var baseClass = "relative inline-flex items-center px-4 py-2 border text-sm font-medium rounded-md";
+        
+        if (disabled)
+        {
+            return $"{baseClass} border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed";
+        }
+        
+        return $"{baseClass} border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors";
+    }
+
+    private string GetDesktopButtonClass(bool isPrevious, bool disabled)
+    {
+        var baseClass = "relative inline-flex items-center px-2 py-2 border text-sm font-medium";
+        var roundedClass = isPrevious ? "rounded-l-md" : "rounded-r-md";
+        
+        if (disabled)
+        {
+            return $"{baseClass} {roundedClass} border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed";
+        }
+        
+        return $"{baseClass} {roundedClass} border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors";
+    }
+
+    private string GetPageButtonClass(bool isActive)
+    {
+        var baseClass = "relative inline-flex items-center px-4 py-2 border text-sm font-medium";
+        
+        if (isActive)
+        {
+            return $"{baseClass} border-primary-500 bg-primary-50 dark:bg-primary-900 text-primary-600 dark:text-primary-400 z-10";
+        }
+        
+        return $"{baseClass} border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors";
+    }
+}

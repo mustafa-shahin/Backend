@@ -1,0 +1,140 @@
+﻿@using Frontend.Interface
+@using Frontend.Services
+@inject IAuthService AuthService
+@inject NavigationManager Navigation
+
+<nav class="@GetSidebarClass()">
+    <!-- Logo and brand -->
+    <div class="flex items-center justify-center h-16 bg-primary-700 dark:bg-primary-800">
+        @if (isCollapsed)
+        {
+            <i class="fas fa-palette text-white text-xl"></i>
+        }
+        else
+        {
+            <div class="flex items-center space-x-3">
+                <i class="fas fa-palette text-white text-xl"></i>
+                <span class="text-white font-bold text-lg">CMS Designer</span>
+            </div>
+        }
+    </div>
+
+    <!-- Navigation items -->
+    <div class="flex-1 px-4 py-6 space-y-2">
+        
+        <!-- Dashboard -->
+        <SidebarItem Icon="fas fa-home" 
+                    Text="Dashboard" 
+                    Href="/"
+                    IsCollapsed="@isCollapsed" />
+
+        <!-- Pages -->
+        <SidebarItem Icon="fas fa-file-alt" 
+                    Text="Pages" 
+                    Href="/pages"
+                    IsCollapsed="@isCollapsed" />
+
+        <!-- Files (Future) -->
+        <SidebarItem Icon="fas fa-folder" 
+                    Text="Files" 
+                    Href="/files"
+                    IsCollapsed="@isCollapsed"
+                    IsDisabled="true" />
+
+        <!-- Products (Future) -->
+        <SidebarItem Icon="fas fa-box" 
+                    Text="Products" 
+                    Href="/products"
+                    IsCollapsed="@isCollapsed"
+                    IsDisabled="true" />
+
+        <!-- Users (Future) -->
+        <SidebarItem Icon="fas fa-users" 
+                    Text="Users" 
+                    Href="/users"
+                    IsCollapsed="@isCollapsed"
+                    IsDisabled="true" />
+
+        <!-- Settings -->
+        <div class="pt-4">
+            <SidebarItem Icon="fas fa-cog" 
+                        Text="Settings" 
+                        Href="/settings"
+                        IsCollapsed="@isCollapsed"
+                        IsDisabled="true" />
+        </div>
+    </div>
+
+    <!-- User section -->
+    <div class="border-t border-gray-200 dark:border-gray-700 p-4">
+        @if (currentUser != null)
+        {
+            @if (isCollapsed)
+            {
+                <div class="flex justify-center">
+                    <button @onclick="ShowUserMenu" 
+                            class="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors">
+                        <i class="fas fa-user text-sm"></i>
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center">
+                        <i class="fas fa-user text-gray-700 dark:text-gray-300 text-sm"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            @currentUser.FirstName @currentUser.LastName
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 truncate">
+                            @currentUser.RoleName
+                        </p>
+                    </div>
+                    <button @onclick="HandleLogout" 
+                            class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                            title="Sign out">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            }
+        }
+    </div>
+</nav>
+
+@code {
+    private bool isCollapsed = false;
+    private Backend.CMS.Application.DTOs.UserDto? currentUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentUser = await AuthService.GetCurrentUserAsync();
+    }
+
+    public void Toggle()
+    {
+        isCollapsed = !isCollapsed;
+        StateHasChanged();
+    }
+
+    private string GetSidebarClass()
+    {
+        var baseClass = "fixed left-0 top-0 h-full bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 z-30";
+        var widthClass = isCollapsed ? "w-16" : "w-64";
+        return $"{baseClass} {widthClass}";
+    }
+
+    private void ShowUserMenu()
+    {
+        // For collapsed state, could show a tooltip or popup menu
+        // For now, just expand the sidebar
+        Toggle();
+    }
+
+    private async Task HandleLogout()
+    {
+        await AuthService.LogoutAsync();
+        Navigation.NavigateTo("/login", true);
+    }
+}

@@ -1,0 +1,740 @@
+﻿@page "/pages"
+@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interface
+@inject IPageService PageService
+@inject INotificationService NotificationService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Pages - CMS Designer</PageTitle>
+
+<!-- Page Header -->
+<div class="flex items-center justify-between mb-6">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Pages</h1>
+        <p class="text-gray-600 dark:text-gray-400">Manage your website pages and content</p>
+    </div>
+    <button @onclick="ShowCreateDialog" class="btn-primary">
+        <i class="fas fa-plus mr-2"></i>
+        Create Page
+    </button>
+</div>
+
+<!-- Search and Filters -->
+<div class="mb-6 flex flex-col sm:flex-row gap-4">
+    <div class="flex-1">
+        <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i class="fas fa-search text-gray-400"></i>
+            </div>
+            <input @bind="searchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp"
+                   type="text" 
+                   placeholder="Search pages..." 
+                   class="form-input pl-10" />
+        </div>
+    </div>
+
+    <div class="flex gap-2">
+        <select @bind="selectedStatus" @bind:after="OnFilterChange" class="form-input">
+            <option value="">All Status</option>
+            <option value="@PageStatus.Published">Published</option>
+            <option value="@PageStatus.Draft">Draft</option>
+            <option value="@PageStatus.Archived">Archived</option>
+        </select>
+
+        <button @onclick="RefreshData" class="btn-secondary" title="Refresh">
+            <i class="fas fa-refresh @(isLoading ? "fa-spin" : "")"></i>
+        </button>
+    </div>
+
+</div>
+
+<!-- Pages Table -->
+<GenericTable TItem="PageListDto" 
+              Items="@pages.Items"
+              IsLoading="@isLoading"
+              OnEdit="@ShowEditDialog"
+              OnDelete="@ShowDeleteConfirmation"
+              OnDuplicate="@ShowDuplicateDialog">
+    
+    <TableColumns>
+        <th class="table-header">Name</th>
+        <th class="table-header">Title</th>
+        <th class="table-header">Status</th>
+        <th class="table-header">Updated</th>
+        <th class="table-header">Actions</th>
+    </TableColumns>
+    
+    <RowTemplate Context="page">
+        <td class="table-cell">
+            <div class="flex items-center">
+                <i class="fas fa-file-alt text-gray-400 mr-3"></i>
+                <div>
+                    <div class="font-medium text-gray-900 dark:text-white">@(page.Name)</div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">/@(page.Slug)</div>
+                </div>
+            </div>
+        </td>
+        <td class="table-cell">
+            <div class="text-gray-900 dark:text-white">@(page.Title)</div>
+        </td>
+        <td class="table-cell">
+            <span class="@GetStatusBadgeClass(page.Status)">
+                @GetStatusText(page.Status)
+            </span>
+        </td>
+        <td class="table-cell">
+            <div class="text-gray-900 dark:text-white">@(page.UpdatedAt.ToString("MMM dd, yyyy"))</div>
+            <div class="text-sm text-gray-500 dark:text-gray-400">@(page.UpdatedAt.ToString("HH:mm"))</div>
+        </td>
+        <td class="table-cell">
+            <div class="flex items-center space-x-2">
+                @if (page.Status == PageStatus.Published)
+                {
+                    <button @onclick="() => UnpublishPage(page.Id)" 
+                            class="text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300" 
+                            title="Unpublish">
+                        <i class="fas fa-eye-slash"></i>
+                    </button>
+                }
+                else
+                {
+                    <button @onclick="() => PublishPage(page.Id)" 
+                            class="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300" 
+                            title="Publish">
+                        <i class="fas fa-globe"></i>
+                    </button>
+                }
+                
+                <button @onclick="() => ShowVersionsDialog(page.Id)" 
+                        class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" 
+                        title="Versions">
+                    <i class="fas fa-history"></i>
+                </button>
+            </div>
+        </td>
+    </RowTemplate>
+</GenericTable>
+
+<!-- Pagination -->
+<Pagination CurrentPage="@currentPage" 
+           TotalPages="@totalPages" 
+           OnPageChanged="@OnPageChanged" 
+           IsLoading="@isLoading" />
+
+<!-- Create/Edit Dialog -->
+<GenericDialog @ref="pageDialog" 
+               Title="@dialogTitle" 
+               IsVisible="@showPageDialog" 
+               OnClose="@ClosePageDialog"
+               OnSave="@SavePage"
+               IsSaving="@isSaving">
+    
+    <BodyContent>
+        <EditForm Model="@pageModel" OnValidSubmit="@SavePage">
+            <DataAnnotationsValidator />
+            
+            <div class="space-y-4">
+                <!-- Name -->
+                <div>
+                    <label class="form-label">Name *</label>
+                    <InputText @bind-Value="pageModel.Name" class="form-input" placeholder="Enter page name" />
+                    <ValidationMessage For="@(() => pageModel.Name)" class="text-red-500 text-sm mt-1" />
+                </div>
+
+                <!-- Title -->
+                <div>
+                    <label class="form-label">Title *</label>
+                    <InputText @bind-Value="pageModel.Title" class="form-input" placeholder="Enter page title" />
+                    <ValidationMessage For="@(() => pageModel.Title)" class="text-red-500 text-sm mt-1" />
+                </div>
+
+                <!-- Slug -->
+                <div>
+                    <label class="form-label">Slug *</label>
+                    <InputText @bind-Value="pageModel.Slug" @oninput="OnSlugChange" class="form-input" placeholder="page-url-slug" />
+                    <ValidationMessage For="@(() => pageModel.Slug)" class="text-red-500 text-sm mt-1" />
+                    @if (!string.IsNullOrEmpty(slugValidationMessage))
+                    {
+                        <p class="text-red-500 text-sm mt-1">@slugValidationMessage</p>
+                    }
+                </div>
+
+                <!-- Description -->
+                <div>
+                    <label class="form-label">Description</label>
+                    <InputTextArea @bind-Value="pageModel.Description" class="form-input" rows="3" placeholder="Brief description of the page" />
+                </div>
+
+                <!-- Status -->
+                <div>
+                    <label class="form-label">Status</label>
+                    <InputSelect @bind-Value="pageModel.Status" class="form-input">
+                        <option value="@PageStatus.Draft">Draft</option>
+                        <option value="@PageStatus.Published">Published</option>
+                        <option value="@PageStatus.Archived">Archived</option>
+                    </InputSelect>
+                </div>
+
+                <!-- Priority -->
+                <div>
+                    <label class="form-label">Priority</label>
+                    <InputNumber @bind-Value="pageModel.Priority" class="form-input" placeholder="0" />
+                </div>
+
+                <!-- Access Control -->
+                <div class="space-y-3">
+                    <h4 class="font-medium text-gray-900 dark:text-white">Access Control</h4>
+                    
+                    <div class="flex items-center">
+                        <InputCheckbox @bind-Value="pageModel.RequiresLogin" id="requiresLogin" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                        <label for="requiresLogin" class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                            Requires Login
+                        </label>
+                    </div>
+                    
+                    <div class="flex items-center">
+                        <InputCheckbox @bind-Value="pageModel.AdminOnly" id="adminOnly" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                        <label for="adminOnly" class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                            Admin Only
+                        </label>
+                    </div>
+                </div>
+
+                <!-- SEO Section -->
+                <div class="space-y-3">
+                    <h4 class="font-medium text-gray-900 dark:text-white">SEO Settings</h4>
+                    
+                    <div>
+                        <label class="form-label">Meta Title</label>
+                        <InputText @bind-Value="pageModel.MetaTitle" class="form-input" placeholder="SEO title for search engines" />
+                    </div>
+                    
+                    <div>
+                        <label class="form-label">Meta Description</label>
+                        <InputTextArea @bind-Value="pageModel.MetaDescription" class="form-input" rows="2" placeholder="SEO description for search engines" />
+                    </div>
+                    
+                    <div>
+                        <label class="form-label">Meta Keywords</label>
+                        <InputText @bind-Value="pageModel.MetaKeywords" class="form-input" placeholder="keyword1, keyword2, keyword3" />
+                    </div>
+                </div>
+            </div>
+        </EditForm>
+    </BodyContent>
+</GenericDialog>
+
+<!-- Duplicate Dialog -->
+<GenericDialog @ref="duplicateDialog" 
+               Title="Duplicate Page" 
+               IsVisible="@showDuplicateDialog" 
+               OnClose="@CloseDuplicateDialog"
+               OnSave="@DuplicatePage"
+               IsSaving="@isSaving">
+    
+    <BodyContent>
+        <div class="space-y-4">
+            <div>
+                <label class="form-label">New Page Name *</label>
+                <InputText @bind-Value="duplicateName" class="form-input" placeholder="Enter new page name" />
+            </div>
+        </div>
+    </BodyContent>
+</GenericDialog>
+
+<!-- Delete Confirmation Dialog -->
+<ConfirmationDialog @ref="deleteDialog"
+                   Title="Delete Page"
+                   Message="Are you sure you want to delete this page? This action cannot be undone."
+                   ConfirmText="Delete"
+                   ConfirmClass="btn-danger"
+                   OnConfirm="@DeletePage" />
+
+<!-- Versions Dialog -->
+<GenericDialog @ref="versionsDialog" 
+               Title="Page Versions" 
+               IsVisible="@showVersionsDialog" 
+               OnClose="@CloseVersionsDialog"
+               HideSaveButton="true"
+               Size="large">
+    
+    <BodyContent>
+        @if (isLoadingVersions)
+        {
+            <div class="flex items-center justify-center py-8">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+        }
+        else if (pageVersions.Any())
+        {
+            <div class="space-y-3">
+                @foreach (var version in pageVersions)
+                {
+                    <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h4 class="font-medium text-gray-900 dark:text-white">
+                                    Version @version.VersionNumber
+                                </h4>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">
+                                    @version.CreatedAt.ToString("MMM dd, yyyy HH:mm") by @(version.CreatedByUserName ?? "System")
+                                </p>
+                                @if (!string.IsNullOrEmpty(version.ChangeNotes))
+                                {
+                                    <p class="text-sm text-gray-600 dark:text-gray-300 mt-1">@version.ChangeNotes</p>
+                                }
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                @if (version.IsPublished)
+                                {
+                                    <span class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded-full">
+                                        Published
+                                    </span>
+                                }
+                                <button @onclick="() => RestoreVersion(selectedPageId, version.Id)" 
+                                        class="btn-secondary text-sm">
+                                    Restore
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-8">
+                <i class="fas fa-history text-4xl text-gray-300 dark:text-gray-600 mb-3"></i>
+                <p class="text-gray-500 dark:text-gray-400">No versions available</p>
+            </div>
+        }
+    </BodyContent>
+</GenericDialog>
+
+@code {
+    private PagedResult<PageListDto> pages = new();
+    private List<PageVersionDto> pageVersions = new();
+    private bool isLoading = true;
+    private bool isLoadingVersions = false;
+    private bool isSaving = false;
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalPages = 0;
+    private string searchTerm = string.Empty;
+    private string selectedStatus = string.Empty;
+    private Timer? searchTimer;
+
+    // Dialog states
+    private bool showPageDialog = false;
+    private bool showDuplicateDialog = false;
+    private bool showVersionsDialog = false;
+    private string dialogTitle = string.Empty;
+    private bool isEditMode = false;
+    private int selectedPageId = 0;
+    private string duplicateName = string.Empty;
+    private string slugValidationMessage = string.Empty;
+
+    // Form models
+    private CreatePageDto pageModel = new();
+
+    // Component references
+    private GenericDialog? pageDialog;
+    private GenericDialog? duplicateDialog;
+    private GenericDialog? versionsDialog;
+    private ConfirmationDialog? deleteDialog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Check if we should open create dialog from query parameter
+        var uri = new Uri(Navigation.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+        
+        if (query.TryGetValue("action", out var action))
+        {
+            if (action == "create")
+            {
+                await Task.Delay(100); // Wait for render
+                ShowCreateDialog();
+            }
+            else if (action == "edit" && query.TryGetValue("id", out var id) && int.TryParse(id, out var pageId))
+            {
+                await Task.Delay(100);
+                await ShowEditDialog(pageId);
+            }
+        }
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            PageStatus? statusFilter = null;
+            if (!string.IsNullOrEmpty(selectedStatus) && Enum.TryParse<PageStatus>(selectedStatus, out var status))
+            {
+                statusFilter = status;
+            }
+
+            pages = await PageService.GetPagesAsync(currentPage, pageSize, searchTerm);
+            totalPages = (int)Math.Ceiling((double)pages.TotalCount / pageSize);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load pages: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        searchTimer?.Dispose();
+        searchTimer = new Timer(async _ =>
+        {
+            currentPage = 1;
+            await InvokeAsync(LoadData);
+        }, null, 500, Timeout.Infinite);
+    }
+
+    private async Task OnFilterChange()
+    {
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        await LoadData();
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadData();
+    }
+
+    // Dialog Management
+    private void ShowCreateDialog()
+    {
+        isEditMode = false;
+        dialogTitle = "Create New Page";
+        pageModel = new CreatePageDto { Status = PageStatus.Draft };
+        slugValidationMessage = string.Empty;
+        showPageDialog = true;
+        StateHasChanged();
+    }
+
+    private async Task ShowEditDialog(int pageId)
+    {
+        try
+        {
+            isEditMode = true;
+            selectedPageId = pageId;
+            dialogTitle = "Edit Page";
+            
+            var page = await PageService.GetPageByIdAsync(pageId);
+            if (page != null)
+            {
+                pageModel = new CreatePageDto
+                {
+                    Name = page.Name,
+                    Title = page.Title,
+                    Slug = page.Slug,
+                    Description = page.Description,
+                    MetaTitle = page.MetaTitle,
+                    MetaDescription = page.MetaDescription,
+                    MetaKeywords = page.MetaKeywords,
+                    Status = page.Status,
+                    Priority = page.Priority,
+                    RequiresLogin = page.RequiresLogin,
+                    AdminOnly = page.AdminOnly
+                };
+                
+                slugValidationMessage = string.Empty;
+                showPageDialog = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load page: {ex.Message}");
+        }
+    }
+
+    private void ClosePageDialog()
+    {
+        showPageDialog = false;
+        pageModel = new CreatePageDto();
+        slugValidationMessage = string.Empty;
+        StateHasChanged();
+    }
+
+    private async Task SavePage()
+    {
+        if (isSaving) return;
+
+        try
+        {
+            isSaving = true;
+            StateHasChanged();
+
+            // Validate slug
+            if (!await ValidateSlug())
+            {
+                return;
+            }
+
+            if (isEditMode)
+            {
+                var updateDto = new UpdatePageDto
+                {
+                    Name = pageModel.Name,
+                    Title = pageModel.Title,
+                    Slug = pageModel.Slug,
+                    Description = pageModel.Description,
+                    MetaTitle = pageModel.MetaTitle,
+                    MetaDescription = pageModel.MetaDescription,
+                    MetaKeywords = pageModel.MetaKeywords,
+                    Status = pageModel.Status,
+                    Priority = pageModel.Priority,
+                    RequiresLogin = pageModel.RequiresLogin,
+                    AdminOnly = pageModel.AdminOnly
+                };
+
+                await PageService.UpdatePageAsync(selectedPageId, updateDto);
+                NotificationService.ShowSuccess("Page updated successfully");
+            }
+            else
+            {
+                await PageService.CreatePageAsync(pageModel);
+                NotificationService.ShowSuccess("Page created successfully");
+            }
+
+            ClosePageDialog();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to save page: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnSlugChange(ChangeEventArgs e)
+    {
+        pageModel.Slug = e.Value?.ToString() ?? string.Empty;
+        await ValidateSlug();
+        StateHasChanged();
+    }
+
+    private async Task<bool> ValidateSlug()
+    {
+        if (string.IsNullOrEmpty(pageModel.Slug))
+        {
+            slugValidationMessage = "Slug is required";
+            return false;
+        }
+
+        try
+        {
+            var excludeId = isEditMode ? selectedPageId : (int?)null;
+            var isValid = await PageService.ValidateSlugAsync(pageModel.Slug, excludeId);
+            
+            if (!isValid)
+            {
+                slugValidationMessage = "This slug is already in use";
+                return false;
+            }
+
+            slugValidationMessage = string.Empty;
+            return true;
+        }
+        catch
+        {
+            slugValidationMessage = "Failed to validate slug";
+            return false;
+        }
+    }
+
+    // Actions
+    private async Task PublishPage(int pageId)
+    {
+        try
+        {
+            await PageService.PublishPageAsync(pageId);
+            NotificationService.ShowSuccess("Page published successfully");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to publish page: {ex.Message}");
+        }
+    }
+
+    private async Task UnpublishPage(int pageId)
+    {
+        try
+        {
+            await PageService.UnpublishPageAsync(pageId);
+            NotificationService.ShowSuccess("Page unpublished successfully");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to unpublish page: {ex.Message}");
+        }
+    }
+
+    private void ShowDeleteConfirmation(int pageId)
+    {
+        selectedPageId = pageId;
+        deleteDialog?.Show();
+    }
+
+    private async Task DeletePage()
+    {
+        try
+        {
+            await PageService.DeletePageAsync(selectedPageId);
+            NotificationService.ShowSuccess("Page deleted successfully");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to delete page: {ex.Message}");
+        }
+    }
+
+    private void ShowDuplicateDialog(int pageId)
+    {
+        selectedPageId = pageId;
+        duplicateName = string.Empty;
+        showDuplicateDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseDuplicateDialog()
+    {
+        showDuplicateDialog = false;
+        duplicateName = string.Empty;
+        StateHasChanged();
+    }
+
+    private async Task DuplicatePage()
+    {
+        if (string.IsNullOrEmpty(duplicateName)) return;
+
+        try
+        {
+            isSaving = true;
+            StateHasChanged();
+
+            await PageService.DuplicatePageAsync(selectedPageId, duplicateName);
+            NotificationService.ShowSuccess("Page duplicated successfully");
+            CloseDuplicateDialog();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to duplicate page: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowVersionsDialog(int pageId)
+    {
+        selectedPageId = pageId;
+        showVersionsDialog = true;
+        await LoadVersions(pageId);
+        StateHasChanged();
+    }
+
+    private void CloseVersionsDialog()
+    {
+        showVersionsDialog = false;
+        pageVersions.Clear();
+        StateHasChanged();
+    }
+
+    private async Task LoadVersions(int pageId)
+    {
+        try
+        {
+            isLoadingVersions = true;
+            StateHasChanged();
+            
+            pageVersions = await PageService.GetPageVersionsAsync(pageId);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load versions: {ex.Message}");
+        }
+        finally
+        {
+            isLoadingVersions = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RestoreVersion(int pageId, int versionId)
+    {
+        try
+        {
+            // Note: This would need to be implemented in the API
+            NotificationService.ShowInfo("Version restore functionality coming soon");
+            // await PageService.RestoreVersionAsync(pageId, versionId);
+            // NotificationService.ShowSuccess("Version restored successfully");
+            // CloseVersionsDialog();
+            // await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to restore version: {ex.Message}");
+        }
+    }
+
+    // Helper methods
+    private string GetStatusBadgeClass(PageStatus status)
+    {
+        return status switch
+        {
+            PageStatus.Published => "px-2 py-1 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 rounded-full",
+            PageStatus.Draft => "px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 rounded-full",
+            PageStatus.Archived => "px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200 rounded-full",
+            _ => "px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200 rounded-full"
+        };
+    }
+
+    private string GetStatusText(PageStatus status)
+    {
+        return status switch
+        {
+            PageStatus.Published => "Published",
+            PageStatus.Draft => "Draft",
+            PageStatus.Archived => "Archived",
+            _ => status.ToString()
+        };
+    }
+
+    public void Dispose()
+    {
+        searchTimer?.Dispose();
+    }
+}

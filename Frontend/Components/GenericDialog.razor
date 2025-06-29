@@ -1,0 +1,161 @@
+﻿@if (IsVisible)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto" @onclick:stopPropagation="true">
+        <!-- Backdrop -->
+        <div class="modal-backdrop fixed inset-0" @onclick="HandleBackdropClick"></div>
+
+        <!-- Dialog -->
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="@GetDialogSizeClass() inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle animate-slide-up"
+                 @onclick:stopPropagation="true">
+
+                <!-- Header -->
+                <div class="bg-white dark:bg-gray-800 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                            @Title
+                        </h3>
+                        <button @onclick="CloseDialog"
+                                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                                type="button">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Body -->
+                <div class="bg-white dark:bg-gray-800 px-6 py-4 max-h-96 overflow-y-auto">
+                    @if (BodyContent != null)
+                    {
+                        @BodyContent
+                    }
+                    else
+                    {
+                        <p class="text-gray-500 dark:text-gray-400">No content provided.</p>
+                    }
+                </div>
+
+                <!-- Footer -->
+                @if (!HideFooter)
+                {
+                    <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 flex justify-end space-x-3">
+                        @if (FooterContent != null)
+                        {
+                            @FooterContent
+                        }
+                        else
+                        {
+                            <button @onclick="CloseDialog"
+                                    type="button"
+                                    class="btn-secondary"
+                                    disabled="@IsSaving">
+                                Cancel
+                            </button>
+
+                            @if (!HideSaveButton)
+                            {
+                                <button @onclick="SaveDialog"
+                                        type="button"
+                                        class="btn-primary"
+                                        disabled="@IsSaving">
+                                    @if (IsSaving)
+                                    {
+                                        <i class="fas fa-spinner fa-spin mr-2"></i>
+                                        <span>@SavingText</span>
+                                    }
+                                    else
+                                    {
+                                        @if (!string.IsNullOrEmpty(SaveIcon))
+                                        {
+                                            <i class="@SaveIcon mr-2"></i>
+                                        }
+                                        <span>@SaveText</span>
+                                    }
+                                </button>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "Dialog";
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public bool IsSaving { get; set; }
+    [Parameter] public bool HideFooter { get; set; }
+    [Parameter] public bool HideSaveButton { get; set; }
+    [Parameter] public bool CloseOnBackdrop { get; set; } = true;
+    [Parameter] public string Size { get; set; } = "medium"; // small, medium, large, xlarge
+    [Parameter] public string SaveText { get; set; } = "Save";
+    [Parameter] public string SavingText { get; set; } = "Saving...";
+    [Parameter] public string SaveIcon { get; set; } = "fas fa-save";
+
+    [Parameter] public RenderFragment? BodyContent { get; set; }
+    [Parameter] public RenderFragment? FooterContent { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    private async Task CloseDialog()
+    {
+        if (IsSaving) return;
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task SaveDialog()
+    {
+        if (IsSaving) return;
+        await OnSave.InvokeAsync();
+    }
+
+    private async Task HandleBackdropClick()
+    {
+        if (CloseOnBackdrop && !IsSaving)
+        {
+            await CloseDialog();
+        }
+    }
+
+    private string GetDialogSizeClass()
+    {
+        return Size.ToLower() switch
+        {
+            "small" => "w-full max-w-md",
+            "medium" => "w-full max-w-lg",
+            "large" => "w-full max-w-2xl",
+            "xlarge" => "w-full max-w-4xl",
+            _ => "w-full max-w-lg"
+        };
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && IsVisible)
+        {
+            // Prevent body scroll when dialog is open
+            await JS.InvokeVoidAsync("document.body.classList.add", "overflow-hidden");
+        }
+        else if (!IsVisible)
+        {
+            // Restore body scroll when dialog is closed
+            await JS.InvokeVoidAsync("document.body.classList.remove", "overflow-hidden");
+        }
+    }
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    public void Show()
+    {
+        IsVisible = true;
+        StateHasChanged();
+    }
+
+    public void Hide()
+    {
+        IsVisible = false;
+        StateHasChanged();
+    }
+}
