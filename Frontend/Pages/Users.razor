@@ -6,272 +6,668 @@
 @inject IUsersService UsersService
 @inject INotificationService NotificationService
 @inject IStyleService StyleService
+@inject IJSRuntime JSRuntime
 
-<GenericCrudPage TListItem="UserDto"
-                         TDetailItem="UserDto"
-                         TCreateDto="CreateUserDto"
-                         TUpdateDto="UpdateUserDto"
-                         PageTitle="Users"
-                         EntitySingularName="User"
-                         EntityPluralName="Users"
-                         PageDescription="Manage system users and their permissions"
-                         HeaderIcon="fas fa-users"
-                         DialogSize="xlarge"
-                         ShowDuplicateAction="false"
-                         ShowViewModeToggle="true"
-                         EmptyStateIcon="fas fa-user-plus"
-                         EmptyStateTitle="No users found"
-                         EmptyStateMessage="Create your first user to get started with user management."
-                         IdSelector="@(user => user.Id)"
-                         CreateModelFactory="@CreateUserModel"
-                         EditModelFactory="@MapUserToCreateDto"
-                         LoadDataFunc="@LoadUsers"
-                         GetByIdFunc="@GetUserById"
-                         CreateFunc="@CreateUser"
-                         UpdateFunc="@UpdateUser"
-                         DeleteFunc="@DeleteUser"
-                         CreateToUpdateMapper="@MapCreateToUpdate"
-                         ValidateFunc="@ValidateUser"
-                         OnEntityCreated="@OnUserCreated"
-                         OnEntityUpdated="@OnUserUpdated"
-                         OnEntityDeleted="@OnUserDeleted">
+<PageTitle>Users - CMS Designer</PageTitle>
 
-    <FilterContent>
-        <select @bind="selectedRole" @bind:after="OnFilterChange" class="@StyleService.GetFormInputClass()">
-            <option value="">All Roles</option>
-            <option value="@UserRole.Admin">Admin</option>
-            <option value="@UserRole.Dev">Developer</option>
-            <option value="@UserRole.Customer">Customer</option>
-        </select>
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-users mr-3 text-blue-600 dark:text-blue-400"></i>
+            Users
+        </h1>
+        <p class="text-gray-600 dark:text-gray-400 mt-1">Manage system users and their permissions</p>
+    </div>
+    <div class="flex items-center space-x-3">
+        <button @onclick="ShowCreateDialog" class="@StyleService.GetButtonClass("primary")">
+            <i class="fas fa-plus mr-2"></i>
+            Create User
+        </button>
+    </div>
+</div>
 
-        <select @bind="selectedStatus" @bind:after="OnFilterChange" class="@StyleService.GetFormInputClass()">
-            <option value="">All Status</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-            <option value="locked">Locked</option>
-        </select>
-    </FilterContent>
-
-    <TableColumns>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900()">User</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900()">Email</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900()">Role</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900()">Status</th>
-        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900()">Last Login</th>
-    </TableColumns>
-
-    <RowTemplate Context="user">
-        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-            <div class="flex items-center">
-                <div class="flex-shrink-0 h-10 w-10">
-                    @if (!string.IsNullOrEmpty(user.PictureUrl))
-                    {
-                        <img class="h-10 w-10 rounded-full object-cover"
-                             src="@user.PictureUrl"
-                             alt="@($"{user.FirstName} {user.LastName}")" />
-                    }
-                    else
-                    {
-                        <div class="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                            <span class="text-sm font-medium text-white">
-                                @user.FirstName.Substring(0, 1)@user.LastName.Substring(0, 1)
-                            </span>
-                        </div>
-                    }
-                </div>
-                <div class="ml-4">
-                    <div class="text-sm font-medium text-gray-900 dark:text-white">
-                        @user.FirstName @user.LastName
+<!-- Search and Filters -->
+<div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+    <div class="p-6">
+        <div class="flex flex-col lg:flex-row gap-4">
+            <!-- Search -->
+            <div class="flex-1">
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-search text-gray-400"></i>
                     </div>
-                    <div class="text-sm text-gray-500 dark:text-gray-400">
-                        @@@user.Username
-                    </div>
+                    <input @bind="searchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp"
+                           type="text"
+                           placeholder="Search users..."
+                           class="@StyleService.GetFormInputClass() pl-10" />
                 </div>
             </div>
-        </td>
-        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-            <div class="text-sm text-gray-900 dark:text-white">@user.Email</div>
-        </td>
-        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-            <span class="@StyleService.GetUserRoleBadgeClass(user.Role)">
-                @StyleService.GetUserRoleText(user.Role)
-            </span>
-        </td>
-        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-            @if (user.IsLocked)
-            {
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                    <i class="fas fa-lock mr-1"></i>
-                    Locked
-                </span>
-            }
-            else if (!user.IsActive)
-            {
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
-                    <i class="fas fa-pause mr-1"></i>
-                    Inactive
-                </span>
-            }
-            else
-            {
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                    <i class="fas fa-check mr-1"></i>
-                    Active
-                </span>
-            }
-        </td>
-        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-            @if (user.LastLoginAt.HasValue)
-            {
-                <div class="text-sm text-gray-900 dark:text-white">
-                    @user.LastLoginAt.Value.ToString("MMM dd, yyyy")
+
+            <!-- Filters -->
+            <div class="flex items-center space-x-3">
+                <select @bind="selectedRole" @bind:after="OnFilterChange" class="@StyleService.GetFormInputClass()">
+                    <option value="">All Roles</option>
+                    <option value="@UserRole.Admin">Admin</option>
+                    <option value="@UserRole.Dev">Developer</option>
+                    <option value="@UserRole.Customer">Customer</option>
+                </select>
+
+                <select @bind="selectedStatus" @bind:after="OnFilterChange" class="@StyleService.GetFormInputClass()">
+                    <option value="">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="locked">Locked</option>
+                </select>
+
+                <!-- View Mode Toggle -->
+                <div class="flex rounded-lg shadow-sm">
+                    <button @onclick="() => SetViewMode(ViewMode.Grid)"
+                            class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.Grid) rounded-r-none border-r-0">
+                        <i class="fas fa-th mr-1"></i>
+                        Grid
+                    </button>
+                    <button @onclick="() => SetViewMode(ViewMode.List)"
+                            class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.List) rounded-l-none">
+                        <i class="fas fa-list mr-1"></i>
+                        List
+                    </button>
                 </div>
-                <div class="text-sm text-gray-500 dark:text-gray-400">
-                    @user.LastLoginAt.Value.ToString("HH:mm")
+
+                <button @onclick="RefreshData"
+                        class="@StyleService.GetButtonClass("secondary")"
+                        title="Refresh"
+                        disabled="@isLoading">
+                    <i class="fas fa-refresh @(isLoading ? "fa-spin" : "")"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Content Area -->
+<div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+    @if (isLoading)
+    {
+        <div class="p-6">
+            <div class="flex items-center justify-center py-12">
+                <div class="text-center">
+                    <div class="@StyleService.GetLoadingSpinnerClass("large") mx-auto mb-4"></div>
+                    <p class="text-gray-500 dark:text-gray-400">Loading users...</p>
                 </div>
-            }
-            else
-            {
-                <span class="text-sm text-gray-500 dark:text-gray-400">Never</span>
-            }
-        </td>
-    </RowTemplate>
-
-    <CustomRowActions Context="user">
-        @if (user.IsLocked)
+            </div>
+        </div>
+    }
+    else if (pagedResult.Items?.Any() == true)
+    {
+        @if (currentViewMode == ViewMode.Grid)
         {
-            <button @onclick="() => UnlockUser(user.Id)"
-                    class="@StyleService.GetTableActionButtonClass()"
-                    title="Unlock User">
-                <i class="fas fa-unlock text-green-600"></i>
-            </button>
-        }
-        else
-        {
-            <button @onclick="() => LockUser(user.Id)"
-                    class="@StyleService.GetTableActionButtonClass()"
-                    title="Lock User">
-                <i class="fas fa-lock text-yellow-600"></i>
-            </button>
-        }
-
-        @if (user.IsActive)
-        {
-            <button @onclick="() => DeactivateUser(user.Id)"
-                    class="@StyleService.GetTableActionButtonClass()"
-                    title="Deactivate User">
-                <i class="fas fa-pause text-orange-600"></i>
-            </button>
-        }
-        else
-        {
-            <button @onclick="() => ActivateUser(user.Id)"
-                    class="@StyleService.GetTableActionButtonClass()"
-                    title="Activate User">
-                <i class="fas fa-play text-green-600"></i>
-            </button>
-        }
-    </CustomRowActions>
-
-    <GridContent Context="users">
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-            @foreach (var user in users)
-            {
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 overflow-hidden group cursor-pointer)">
-                    <!-- User Avatar -->
-                    <div class="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
-                        @if (!string.IsNullOrEmpty(user.PictureUrl))
-                        {
-                            <img class="w-full h-full object-cover"
-                                 src="@user.PictureUrl"
-                                 alt="@($"{user.FirstName} {user.LastName}")" />
-                        }
-                        else
-                        {
-                            <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                                <span class="text-xl font-bold text-white">
-                                    @user.FirstName.Substring(0, 1)@user.LastName.Substring(0, 1)
-                                </span>
-                            </div>
-                        }
-                    </div>
-
-                    <!-- User Info -->
-                    <div class="p-4">
-                        <h3 class="font-medium text-gray-900 dark:text-white mb-1">
-                            @user.FirstName @user.LastName
-                        </h3>
-                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">
-                            @@@user.Username
-                        </p>
-                        <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
-                            @user.Email
-                        </p>
-
-                        <!-- Role Badge -->
-                        <div class="mb-3">
-                            <span class="@StyleService.GetUserRoleBadgeClass(user.Role)">
-                                @StyleService.GetUserRoleText(user.Role)
-                            </span>
-                        </div>
-
-                        <!-- Status and Actions -->
-                        <div class="flex items-center justify-between">
-                            <div>
-                                @if (user.IsLocked)
+            <!-- Grid View -->
+            <div class="p-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                    @foreach (var user in pagedResult.Items)
+                    {
+                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 overflow-hidden group cursor-pointer border border-gray-200 dark:border-gray-700">
+                            <!-- User Avatar -->
+                            <div class="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
+                                @if (!string.IsNullOrEmpty(user.PictureUrl))
                                 {
-                                    <span class="inline-flex items-center px-2 py-1 text-xs bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 rounded">
-                                        <i class="fas fa-lock mr-1"></i>
-                                        Locked
-                                    </span>
-                                }
-                                else if (!user.IsActive)
-                                {
-                                    <span class="inline-flex items-center px-2 py-1 text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 rounded">
-                                        <i class="fas fa-pause mr-1"></i>
-                                        Inactive
-                                    </span>
+                                    <img class="w-full h-full object-cover"
+                                         src="@user.PictureUrl"
+                                         alt="@($"{user.FirstName} {user.LastName}")" />
                                 }
                                 else
                                 {
-                                    <span class="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 rounded">
-                                        <i class="fas fa-check mr-1"></i>
-                                        Active
-                                    </span>
+                                    <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                                        <span class="text-xl font-bold text-white">
+                                            @user.FirstName.Substring(0, 1)@user.LastName.Substring(0, 1)
+                                        </span>
+                                    </div>
                                 }
                             </div>
 
-                            <!-- Quick Actions -->
-                            <div class="flex items-center space-x-1">
-                                <button @onclick="() => EditUser(user.Id)"
-                                        class="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded"
-                                        title="Edit">
-                                    <i class="fas fa-edit text-sm"></i>
-                                </button>
-                                <button @onclick="() => DeleteUser(user.Id)"
-                                        class="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded"
-                                        title="Delete">
-                                    <i class="fas fa-trash text-sm"></i>
-                                </button>
+                            <!-- User Info -->
+                            <div class="p-4">
+                                <h3 class="font-medium text-gray-900 dark:text-white mb-1">
+                                    @user.FirstName @user.LastName
+                                </h3>
+                                <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                                    @@@user.Username
+                                </p>
+                                <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                                    @user.Email
+                                </p>
+
+                                <!-- Role Badge -->
+                                <div class="mb-3">
+                                    <span class="@StyleService.GetUserRoleBadgeClass(user.Role)">
+                                        @StyleService.GetUserRoleText(user.Role)
+                                    </span>
+                                </div>
+
+                                <!-- Status and Actions -->
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        @if (user.IsLocked)
+                                        {
+                                            <span class="inline-flex items-center px-2 py-1 text-xs bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 rounded">
+                                                <i class="fas fa-lock mr-1"></i>
+                                                Locked
+                                            </span>
+                                        }
+                                        else if (!user.IsActive)
+                                        {
+                                            <span class="inline-flex items-center px-2 py-1 text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 rounded">
+                                                <i class="fas fa-pause mr-1"></i>
+                                                Inactive
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 rounded">
+                                                <i class="fas fa-check mr-1"></i>
+                                                Active
+                                            </span>
+                                        }
+                                    </div>
+
+                                    <!-- Quick Actions -->
+                                    <div class="flex items-center space-x-1">
+                                        <button @onclick="() => ShowEditDialog(user.Id)"
+                                                class="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded"
+                                                title="Edit">
+                                            <i class="fas fa-edit text-sm"></i>
+                                        </button>
+                                        <button @onclick="() => ShowDeleteConfirmation(user.Id)"
+                                                class="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded"
+                                                title="Delete">
+                                            <i class="fas fa-trash text-sm"></i>
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    }
                 </div>
-            }
+            </div>
+        }
+        else
+        {
+            <!-- List View -->
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-900">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">User</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Email</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Role</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Last Login</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        @foreach (var user in pagedResult.Items)
+                        {
+                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    <div class="flex items-center">
+                                        <div class="flex-shrink-0 h-10 w-10">
+                                            @if (!string.IsNullOrEmpty(user.PictureUrl))
+                                            {
+                                                <img class="h-10 w-10 rounded-full object-cover"
+                                                     src="@user.PictureUrl"
+                                                     alt="@($"{user.FirstName} {user.LastName}")" />
+                                            }
+                                            else
+                                            {
+                                                <div class="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                                                    <span class="text-sm font-medium text-white">
+                                                        @user.FirstName.Substring(0, 1)@user.LastName.Substring(0, 1)
+                                                    </span>
+                                                </div>
+                                            }
+                                        </div>
+                                        <div class="ml-4">
+                                            <div class="text-sm font-medium text-gray-900 dark:text-white">
+                                                @user.FirstName @user.LastName
+                                            </div>
+                                            <div class="text-sm text-gray-500 dark:text-gray-400">
+                                                @@@user.Username
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    @user.Email
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    <span class="@StyleService.GetUserRoleBadgeClass(user.Role)">
+                                        @StyleService.GetUserRoleText(user.Role)
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    @if (user.IsLocked)
+                                    {
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                                            <i class="fas fa-lock mr-1"></i>
+                                            Locked
+                                        </span>
+                                    }
+                                    else if (!user.IsActive)
+                                    {
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                                            <i class="fas fa-pause mr-1"></i>
+                                            Inactive
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                                            <i class="fas fa-check mr-1"></i>
+                                            Active
+                                        </span>
+                                    }
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    @if (user.LastLoginAt.HasValue)
+                                    {
+                                        <div class="text-sm text-gray-900 dark:text-white">
+                                            @user.LastLoginAt.Value.ToString("MMM dd, yyyy")
+                                        </div>
+                                        <div class="text-sm text-gray-500 dark:text-gray-400">
+                                            @user.LastLoginAt.Value.ToString("HH:mm")
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-sm text-gray-500 dark:text-gray-400">Never</span>
+                                    }
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 text-right">
+                                    <div class="flex items-center justify-end space-x-2">
+                                        @if (user.IsLocked)
+                                        {
+                                            <button @onclick="() => UnlockUser(user.Id)"
+                                                    class="@StyleService.GetTableActionButtonClass()"
+                                                    title="Unlock User">
+                                                <i class="fas fa-unlock text-green-600"></i>
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button @onclick="() => LockUser(user.Id)"
+                                                    class="@StyleService.GetTableActionButtonClass()"
+                                                    title="Lock User">
+                                                <i class="fas fa-lock text-yellow-600"></i>
+                                            </button>
+                                        }
+
+                                        @if (user.IsActive)
+                                        {
+                                            <button @onclick="() => DeactivateUser(user.Id)"
+                                                    class="@StyleService.GetTableActionButtonClass()"
+                                                    title="Deactivate User">
+                                                <i class="fas fa-pause text-orange-600"></i>
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button @onclick="() => ActivateUser(user.Id)"
+                                                    class="@StyleService.GetTableActionButtonClass()"
+                                                    title="Activate User">
+                                                <i class="fas fa-play text-green-600"></i>
+                                            </button>
+                                        }
+
+                                        <button @onclick="() => ShowEditDialog(user.Id)"
+                                                class="@StyleService.GetTableActionButtonClass("edit")"
+                                                title="Edit">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+
+                                        <button @onclick="() => ShowDeleteConfirmation(user.Id)"
+                                                class="@StyleService.GetTableActionButtonClass("delete")"
+                                                title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+    else
+    {
+        <!-- Empty State -->
+        <div class="p-6">
+            <div class="text-center py-12">
+                <div class="mx-auto w-16 h-16 text-gray-400 dark:text-gray-500 mb-4">
+                    <i class="fas fa-user-plus text-4xl"></i>
+                </div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                    No users found
+                </h3>
+                <p class="text-gray-500 dark:text-gray-400 mb-6">
+                    Create your first user to get started with user management.
+                </p>
+                <button @onclick="ShowCreateDialog" class="@StyleService.GetButtonClass("primary")">
+                    <i class="fas fa-plus mr-2"></i>
+                    Create First User
+                </button>
+            </div>
         </div>
-    </GridContent>
+    }
+</div>
+
+<!-- Pagination -->
+@if (pagedResult.TotalCount > 0 && totalPages > 1)
+{
+    <div class="mt-6">
+        <Pagination CurrentPage="@currentPage"
+                    TotalPages="@totalPages"
+                    TotalItems="@pagedResult.TotalCount"
+                    OnPageChanged="@OnPageChanged"
+                    IsLoading="@isLoading" />
+    </div>
+}
+
+<!-- Create/Edit Dialog -->
+<FormDialog @ref="userDialog"
+            Title="@dialogTitle"
+            Description="@dialogDescription"
+            HeaderIcon="@(isEditMode ? "fas fa-edit" : "fas fa-plus")"
+            IsVisible="@showUserDialog"
+            IsSaving="@isSaving"
+            Size="xlarge"
+            Model="@userModel"
+            ValidationErrors="@validationErrors"
+            IsEditMode="@isEditMode"
+            OnClose="@CloseUserDialog"
+            OnSave="@SaveUser">
 
     <FormContent Context="context">
         <UserForm Model="@((CreateUserDto)context.Model)"
                   ValidationErrors="@context.ValidationErrors"
                   IsEditMode="@context.IsEditMode" />
     </FormContent>
+</FormDialog>
 
-</GenericCrudPage>
+<!-- Delete Confirmation Dialog -->
+<ConfirmationDialog @ref="deleteDialog"
+                    Title="Delete User"
+                    Message="Are you sure you want to delete this user? This action cannot be undone."
+                    ConfirmText="Delete"
+                    ConfirmClass="@StyleService.GetButtonClass("danger")"
+                    ConfirmIcon="fas fa-trash"
+                    OnConfirm="@DeleteUser" />
 
 @code {
+    public enum ViewMode { Grid, List }
+
+    private PagedResult<UserDto> pagedResult = new();
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalPages = 0;
+    private string searchTerm = string.Empty;
     private string selectedRole = string.Empty;
     private string selectedStatus = string.Empty;
+    private Timer? searchTimer;
+    private Dictionary<string, string> validationErrors = new();
+    private ViewMode currentViewMode = ViewMode.List;
+
+    // Dialog states
+    private bool showUserDialog = false;
+    private string dialogTitle = string.Empty;
+    private string dialogDescription = string.Empty;
+    private bool isEditMode = false;
+    private int selectedUserId = 0;
+
+    // Form models
+    private CreateUserDto userModel = new();
+
+    // Component references
+    private FormDialog? userDialog;
+    private ConfirmationDialog? deleteDialog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        userModel = CreateUserModel();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            pagedResult = await UsersService.GetUsersAsync(currentPage, pageSize, string.IsNullOrEmpty(searchTerm) ? null : searchTerm);
+            totalPages = (int)Math.Ceiling((double)pagedResult.TotalCount / pageSize);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load users: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        searchTimer?.Dispose();
+        searchTimer = new Timer(async _ =>
+        {
+            currentPage = 1;
+            await InvokeAsync(LoadData);
+        }, null, 500, Timeout.Infinite);
+    }
+
+    private async Task OnFilterChange()
+    {
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        await LoadData();
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadData();
+    }
+
+    private void SetViewMode(ViewMode mode)
+    {
+        currentViewMode = mode;
+        StateHasChanged();
+    }
+
+    // Dialog Management
+    private void ShowCreateDialog()
+    {
+        isEditMode = false;
+        dialogTitle = "Create New User";
+        dialogDescription = "Add a new user to the system";
+        userModel = CreateUserModel();
+        validationErrors.Clear();
+        showUserDialog = true;
+        StateHasChanged();
+    }
+
+    private async Task ShowEditDialog(int userId)
+    {
+        try
+        {
+            isEditMode = true;
+            selectedUserId = userId;
+            dialogTitle = "Edit User";
+            dialogDescription = "Update the user information";
+
+            var user = await UsersService.GetUserByIdAsync(userId);
+            if (user != null)
+            {
+                userModel = MapUserToCreateDto(user);
+                validationErrors.Clear();
+                showUserDialog = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load user: {ex.Message}");
+        }
+    }
+
+    private void CloseUserDialog()
+    {
+        showUserDialog = false;
+        userModel = CreateUserModel();
+        validationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private async Task SaveUser()
+    {
+        if (isSaving) return;
+
+        try
+        {
+            isSaving = true;
+            StateHasChanged();
+
+            // Validate
+            validationErrors = await ValidateUser(userModel, isEditMode);
+            if (validationErrors.Any())
+            {
+                StateHasChanged();
+                return;
+            }
+
+            if (isEditMode)
+            {
+                var updateDto = MapCreateToUpdate(userModel);
+                var result = await UsersService.UpdateUserAsync(selectedUserId, updateDto);
+                if (result != null)
+                {
+                    NotificationService.ShowSuccess("User updated successfully");
+                }
+            }
+            else
+            {
+                var result = await UsersService.CreateUserAsync(userModel);
+                if (result != null)
+                {
+                    NotificationService.ShowSuccess("User created successfully");
+                }
+            }
+
+            CloseUserDialog();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to save user: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    // Actions
+    private void ShowDeleteConfirmation(int userId)
+    {
+        selectedUserId = userId;
+        deleteDialog?.Show();
+    }
+
+    private async Task DeleteUser()
+    {
+        try
+        {
+            var success = await UsersService.DeleteUserAsync(selectedUserId);
+            if (success)
+            {
+                NotificationService.ShowSuccess("User deleted successfully");
+                await LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to delete user: {ex.Message}");
+        }
+    }
+
+    // User actions
+    private async Task ActivateUser(int userId)
+    {
+        try
+        {
+            await UsersService.ActivateUserAsync(userId);
+            NotificationService.ShowSuccess("User activated successfully");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to activate user: {ex.Message}");
+        }
+    }
+
+    private async Task DeactivateUser(int userId)
+    {
+        try
+        {
+            await UsersService.DeactivateUserAsync(userId);
+            NotificationService.ShowSuccess("User deactivated successfully");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to deactivate user: {ex.Message}");
+        }
+    }
+
+    private async Task LockUser(int userId)
+    {
+        try
+        {
+            await UsersService.LockUserAsync(userId);
+            NotificationService.ShowSuccess("User locked successfully");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to lock user: {ex.Message}");
+        }
+    }
+
+    private async Task UnlockUser(int userId)
+    {
+        try
+        {
+            await UsersService.UnlockUserAsync(userId);
+            NotificationService.ShowSuccess("User unlocked successfully");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to unlock user: {ex.Message}");
+        }
+    }
 
     // Factory methods
     private CreateUserDto CreateUserModel()
@@ -279,7 +675,9 @@
         return new CreateUserDto
         {
             Role = UserRole.Customer,
-            IsActive = true
+            IsActive = true,
+            Addresses = new List<CreateAddressDto>(),
+            ContactDetails = new List<CreateContactDetailsDto>()
         };
     }
 
@@ -377,32 +775,6 @@
         };
     }
 
-    // Service methods
-    private async Task<PagedResult<UserDto>> LoadUsers(int page, int pageSize, string? search)
-    {
-        return await UsersService.GetUsersAsync(page, pageSize, search);
-    }
-
-    private async Task<UserDto?> GetUserById(int id)
-    {
-        return await UsersService.GetUserByIdAsync(id);
-    }
-
-    private async Task<UserDto?> CreateUser(CreateUserDto createDto)
-    {
-        return await UsersService.CreateUserAsync(createDto);
-    }
-
-    private async Task<UserDto?> UpdateUser(int id, UpdateUserDto updateDto)
-    {
-        return await UsersService.UpdateUserAsync(id, updateDto);
-    }
-
-    private async Task<bool> DeleteUser(int id)
-    {
-        return await UsersService.DeleteUserAsync(id);
-    }
-
     // Validation
     private async Task<Dictionary<string, string>> ValidateUser(CreateUserDto user, bool isEditMode)
     {
@@ -441,87 +813,8 @@
         }
     }
 
-    // Event handlers
-    private async Task OnFilterChange()
+    public void Dispose()
     {
-        // Implement filtering logic here
-        StateHasChanged();
-    }
-
-    private void OnUserCreated(UserDto user)
-    {
-        NotificationService.ShowSuccess($"User {user.FirstName} {user.LastName} created successfully");
-    }
-
-    private void OnUserUpdated(UserDto user)
-    {
-        NotificationService.ShowSuccess($"User {user.FirstName} {user.LastName} updated successfully");
-    }
-
-    private void OnUserDeleted(int userId)
-    {
-        NotificationService.ShowSuccess("User deleted successfully");
-    }
-
-    // User actions
-    private async Task ActivateUser(int userId)
-    {
-        try
-        {
-            await UsersService.ActivateUserAsync(userId);
-            NotificationService.ShowSuccess("User activated successfully");
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            NotificationService.ShowError($"Failed to activate user: {ex.Message}");
-        }
-    }
-
-    private async Task DeactivateUser(int userId)
-    {
-        try
-        {
-            await UsersService.DeactivateUserAsync(userId);
-            NotificationService.ShowSuccess("User deactivated successfully");
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            NotificationService.ShowError($"Failed to deactivate user: {ex.Message}");
-        }
-    }
-
-    private async Task LockUser(int userId)
-    {
-        try
-        {
-            await UsersService.LockUserAsync(userId);
-            NotificationService.ShowSuccess("User locked successfully");
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            NotificationService.ShowError($"Failed to lock user: {ex.Message}");
-        }
-    }
-
-    private async Task UnlockUser(int userId)
-    {
-        try
-        {
-            await UsersService.UnlockUserAsync(userId);
-            NotificationService.ShowSuccess("User unlocked successfully");
-            StateHasChanged();
-        }
-        catch (Exception ex)
-        {
-            NotificationService.ShowError($"Failed to unlock user: {ex.Message}");
-        }
-    }
-
-    private void EditUser(int userId)
-    {
-        // This will be handled by the generic CRUD page
+        searchTimer?.Dispose();
     }
 }

@@ -12,7 +12,6 @@ builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 // Configure HttpClient for API communication
-// 
 var apiBaseUrl = "https://localhost:7206";
 builder.Services.AddScoped(sp => new HttpClient
 {
@@ -33,10 +32,13 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 // Add API services
 builder.Services.AddScoped<IPageService, PageService>();
 builder.Services.AddScoped<IUsersService, UsersService>();
+builder.Services.AddScoped<IFileService, FileService>();
+builder.Services.AddScoped<IFolderService, FolderService>();
 
 // Add UI services
 builder.Services.AddScoped<IThemeService, ThemeService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
+builder.Services.AddScoped<IStyleService, StyleService>();
 
 // Configure logging
 builder.Logging.SetMinimumLevel(LogLevel.Information);

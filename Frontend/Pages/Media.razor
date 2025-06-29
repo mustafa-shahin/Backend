@@ -1,0 +1,1132 @@
+﻿@page "/media"
+@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interface
+@using Frontend.Interfaces
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Http
+@using Microsoft.AspNetCore.Http.Internal
+@inject IFileService FileService
+@inject IFolderService FolderService
+@inject INotificationService NotificationService
+@inject IStyleService StyleService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Media Library - CMS Designer</PageTitle>
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-folder mr-3 text-blue-600 dark:text-blue-400"></i>
+            Media Library
+        </h1>
+        <p class="text-gray-600 dark:text-gray-400 mt-1">Manage your files and folders</p>
+    </div>
+    <div class="flex items-center space-x-3">
+        <button @onclick="ShowCreateFolderDialog" class="@StyleService.GetButtonClass("secondary")">
+            <i class="fas fa-folder-plus mr-2"></i>
+            New Folder
+        </button>
+        <button @onclick="ShowUploadDialog" class="@StyleService.GetButtonClass("primary")">
+            <i class="fas fa-upload mr-2"></i>
+            Upload Files
+        </button>
+    </div>
+</div>
+
+<!-- Breadcrumbs -->
+@if (breadcrumbs.Any())
+{
+    <div class="mb-6">
+        <nav class="flex items-center space-x-2 text-sm">
+            <button @onclick="() => NavigateToFolder(null)" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+                <i class="fas fa-home mr-1"></i>
+                Root
+            </button>
+            @foreach (var folder in breadcrumbs)
+            {
+                <i class="fas fa-chevron-right text-gray-400 mx-2"></i>
+                <button @onclick="() => NavigateToFolder(folder.Id)" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+                    @folder.Name
+                </button>
+            }
+        </nav>
+    </div>
+}
+
+<!-- Search and Filters -->
+<div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+    <div class="p-6">
+        <div class="flex flex-col lg:flex-row gap-4">
+            <!-- Search -->
+            <div class="flex-1">
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-search text-gray-400"></i>
+                    </div>
+                    <input @bind="searchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp"
+                           type="text"
+                           placeholder="Search files and folders..."
+                           class="@StyleService.GetFormInputClass() pl-10" />
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="flex items-center space-x-3">
+                <select @bind="selectedFileType" @bind:after="OnFilterChange" class="@StyleService.GetFormInputClass()">
+                    <option value="">All Types</option>
+                    <option value="@FileType.Image">Images</option>
+                    <option value="@FileType.Video">Videos</option>
+                    <option value="@FileType.Audio">Audio</option>
+                    <option value="@FileType.Document">Documents</option>
+                    <option value="@FileType.Archive">Archives</option>
+                </select>
+
+                <!-- View Mode Toggle -->
+                <div class="flex rounded-lg shadow-sm">
+                    <button @onclick="() => SetViewMode(ViewMode.Grid)"
+                            class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.Grid) rounded-r-none border-r-0">
+                        <i class="fas fa-th mr-1"></i>
+                        Grid
+                    </button>
+                    <button @onclick="() => SetViewMode(ViewMode.List)"
+                            class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.List) rounded-l-none">
+                        <i class="fas fa-list mr-1"></i>
+                        List
+                    </button>
+                </div>
+
+                <button @onclick="RefreshData"
+                        class="@StyleService.GetButtonClass("secondary")"
+                        title="Refresh"
+                        disabled="@isLoading">
+                    <i class="fas fa-refresh @(isLoading ? "fa-spin" : "")"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Content Area -->
+<div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+    @if (isLoading)
+    {
+        <div class="p-6">
+            <div class="flex items-center justify-center py-12">
+                <div class="text-center">
+                    <div class="@StyleService.GetLoadingSpinnerClass("large") mx-auto mb-4"></div>
+                    <p class="text-gray-500 dark:text-gray-400">Loading media...</p>
+                </div>
+            </div>
+        </div>
+    }
+    else if (folders.Any() || files.Items?.Any() == true)
+    {
+        @if (currentViewMode == ViewMode.Grid)
+        {
+            <!-- Grid View -->
+            <div class="p-6">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                    <!-- Folders -->
+                    @foreach (var folder in folders)
+                    {
+                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 overflow-hidden group cursor-pointer border border-gray-200 dark:border-gray-700"
+                             @ondblclick="() => NavigateToFolder(folder.Id)">
+                            <div class="p-4">
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="flex items-center flex-1 cursor-pointer" @onclick="() => NavigateToFolder(folder.Id)">
+                                        <!-- Folder Icon -->
+                                        <div class="flex-shrink-0 mr-3">
+                                            <i class="@GetFolderIcon(folder.FolderType) @GetFolderColor(folder.FolderType) text-3xl"></i>
+                                        </div>
+
+                                        <!-- Folder Info -->
+                                        <div class="flex-1 min-w-0">
+                                            <h4 class="text-sm font-medium text-gray-900 dark:text-white truncate mb-1"
+                                                title="@folder.Name">
+                                                @folder.Name
+                                            </h4>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400">
+                                                @folder.FileCount file@(folder.FileCount == 1 ? "" : "s")
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Actions -->
+                                    <div class="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button @onclick="() => ShowEditFolderDialog(folder)"
+                                                @onclick:stopPropagation="true"
+                                                class="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded"
+                                                title="Edit">
+                                            <i class="fas fa-edit text-sm"></i>
+                                        </button>
+                                        <button @onclick="() => ShowDeleteFolderConfirmation(folder.Id)"
+                                                @onclick:stopPropagation="true"
+                                                class="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded"
+                                                title="Delete">
+                                            <i class="fas fa-trash text-sm"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Folder Type Badge -->
+                                <div class="flex items-center justify-between">
+                                    <span class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full @GetFolderTypeBadgeClass(folder.FolderType)">
+                                        @GetFolderTypeText(folder.FolderType)
+                                    </span>
+
+                                    <!-- Visibility -->
+                                    @if (folder.IsPublic)
+                                    {
+                                        <span class="inline-flex items-center p-1 rounded-full bg-green-100/90 dark:bg-green-900/90 text-green-600 dark:text-green-400" title="Public">
+                                            <i class="fas fa-globe text-xs"></i>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center p-1 rounded-full bg-gray-100/90 dark:bg-gray-700/90 text-gray-600 dark:text-gray-400" title="Private">
+                                            <i class="fas fa-lock text-xs"></i>
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <!-- Files -->
+                    @foreach (var file in files.Items ?? new List<FileDto>())
+                    {
+                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 overflow-hidden group cursor-pointer border border-gray-200 dark:border-gray-700">
+                            <!-- File Preview/Thumbnail -->
+                            <div class="relative aspect-square bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+                                @if (file.FileType == FileType.Image)
+                                {
+                                    <img src="/api/file/@(file.Id)/thumbnail"
+                                         alt="@(file.Alt ?? file.OriginalFileName)"
+                                         class="w-full h-full object-cover"
+                                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+
+                                    <!-- Fallback icon - initially hidden -->
+                                    <div class="w-full h-full flex items-center justify-center" style="display: none;">
+                                        <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType) text-4xl"></i>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <!-- Icon for non-images -->
+                                    <div class="w-full h-full flex items-center justify-center">
+                                        <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType) text-4xl"></i>
+                                    </div>
+                                }
+
+                                <!-- File type badge -->
+                                <div class="absolute top-2 left-2">
+                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm">
+                                        @file.FileExtension.Replace(".", "").ToUpper()
+                                    </span>
+                                </div>
+
+                                <!-- Visibility indicator -->
+                                <div class="absolute top-2 right-2">
+                                    @if (file.IsPublic)
+                                    {
+                                        <span class="inline-flex items-center p-1 rounded-full bg-green-100/90 dark:bg-green-900/90 text-green-600 dark:text-green-400 backdrop-blur-sm" title="Public">
+                                            <i class="fas fa-globe text-xs"></i>
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="inline-flex items-center p-1 rounded-full bg-gray-100/90 dark:bg-gray-700/90 text-gray-600 dark:text-gray-400 backdrop-blur-sm" title="Private">
+                                            <i class="fas fa-lock text-xs"></i>
+                                        </span>
+                                    }
+                                </div>
+
+                                <!-- Actions overlay -->
+                                <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center space-x-2">
+                                    @if (file.FileType == FileType.Image || file.FileType == FileType.Video)
+                                    {
+                                        <button @onclick="() => PreviewFile(file)"
+                                                class="p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-colors"
+                                                title="Preview">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    }
+
+                                    <button @onclick="() => DownloadFile(file)"
+                                            class="p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-colors"
+                                            title="Download">
+                                        <i class="fas fa-download"></i>
+                                    </button>
+
+                                    <button @onclick="() => ShowEditFileDialog(file)"
+                                            class="p-2 bg-white/20 hover:bg-white/30 rounded-full text-white transition-colors"
+                                            title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+
+                                    <button @onclick="() => ShowDeleteFileConfirmation(file.Id)"
+                                            class="p-2 bg-red-500/80 hover:bg-red-500 rounded-full text-white transition-colors"
+                                            title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- File Info -->
+                            <div class="p-4">
+                                <h4 class="text-sm font-medium text-gray-900 dark:text-white truncate mb-1"
+                                    title="@file.OriginalFileName">
+                                    @file.OriginalFileName
+                                </h4>
+
+                                <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-2">
+                                    <span>@FormatFileSize(file.FileSize)</span>
+                                    <span>@file.CreatedAt.ToString("MMM dd")</span>
+                                </div>
+
+                                <!-- File path -->
+                                <div class="text-xs text-gray-400 dark:text-gray-500 mb-2 font-mono truncate" title="@GetFullPath(file)">
+                                    @GetFullPath(file)
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <!-- List View -->
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-900">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Name</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Size</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Path</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Modified</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        <!-- Folders -->
+                        @foreach (var folder in folders)
+                        {
+                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150 cursor-pointer" @ondblclick="() => NavigateToFolder(folder.Id)">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    <div class="flex items-center cursor-pointer" @onclick="() => NavigateToFolder(folder.Id)">
+                                        <div class="flex-shrink-0 h-10 w-10 flex items-center justify-center">
+                                            <i class="@GetFolderIcon(folder.FolderType) @GetFolderColor(folder.FolderType) text-xl"></i>
+                                        </div>
+                                        <div class="ml-4">
+                                            <div class="text-sm font-medium text-gray-900 dark:text-white">
+                                                @folder.Name
+                                            </div>
+                                            <div class="text-sm text-gray-500 dark:text-gray-400">
+                                                @folder.FileCount file@(folder.FileCount == 1 ? "" : "s")
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium @GetFolderTypeBadgeClass(folder.FolderType)">
+                                        Folder
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    @(folder.TotalSizeFormatted ?? "—")
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 font-mono">
+                                    @(folder.Path ?? "/")
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    @folder.UpdatedAt.ToString("MMM dd, yyyy HH:mm")
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 text-right">
+                                    <div class="flex items-center justify-end space-x-2">
+                                        <button @onclick="() => ShowEditFolderDialog(folder)"
+                                                @onclick:stopPropagation="true"
+                                                class="@StyleService.GetTableActionButtonClass("edit")"
+                                                title="Edit">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button @onclick="() => ShowDeleteFolderConfirmation(folder.Id)"
+                                                @onclick:stopPropagation="true"
+                                                class="@StyleService.GetTableActionButtonClass("delete")"
+                                                title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+
+                        <!-- Files -->
+                        @foreach (var file in files.Items ?? new List<FileDto>())
+                        {
+                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    <div class="flex items-center">
+                                        <div class="flex-shrink-0 h-10 w-10 flex items-center justify-center">
+                                            @if (file.FileType == FileType.Image)
+                                            {
+                                                <img src="@FileService.GetThumbnailStreamAsync(file.Id)"
+                                                     alt="@(file.Alt ?? file.OriginalFileName)"
+                                                     class="w-10 h-10 object-cover rounded"
+                                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                                                <div class="w-10 h-10 flex items-center justify-center" style="display: none;">
+                                                    <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType)"></i>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType) text-xl"></i>
+                                            }
+                                        </div>
+                                        <div class="ml-4">
+                                            <div class="text-sm font-medium text-gray-900 dark:text-white">
+                                                @file.OriginalFileName
+                                            </div>
+                                            <div class="text-sm text-gray-500 dark:text-gray-400">
+                                                @file.FileExtension.ToUpper()
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium @GetFileTypeBadgeClass(file.FileType)">
+                                        @file.FileType
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    @FormatFileSize(file.FileSize)
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 font-mono">
+                                    @GetFullPath(file)
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                    @file.UpdatedAt.ToString("MMM dd, yyyy HH:mm")
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 text-right">
+                                    <div class="flex items-center justify-end space-x-2">
+                                        @if (file.FileType == FileType.Image || file.FileType == FileType.Video)
+                                        {
+                                            <button @onclick="() => PreviewFile(file)"
+                                                    class="@StyleService.GetTableActionButtonClass("view")"
+                                                    title="Preview">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                        }
+                                        <button @onclick="() => DownloadFile(file)"
+                                                class="@StyleService.GetTableActionButtonClass()"
+                                                title="Download">
+                                            <i class="fas fa-download"></i>
+                                        </button>
+                                        <button @onclick="() => ShowEditFileDialog(file)"
+                                                class="@StyleService.GetTableActionButtonClass("edit")"
+                                                title="Edit">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <button @onclick="() => ShowDeleteFileConfirmation(file.Id)"
+                                                class="@StyleService.GetTableActionButtonClass("delete")"
+                                                title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+    else
+    {
+        <!-- Empty State -->
+        <div class="p-6">
+            <div class="text-center py-12">
+                <div class="mx-auto w-16 h-16 text-gray-400 dark:text-gray-500 mb-4">
+                    <i class="fas fa-folder-open text-4xl"></i>
+                </div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                    No files or folders
+                </h3>
+                <p class="text-gray-500 dark:text-gray-400 mb-6">
+                    Get started by creating a folder or uploading your first file.
+                </p>
+                <div class="flex justify-center space-x-3">
+                    <button @onclick="ShowCreateFolderDialog" class="@StyleService.GetButtonClass("secondary")">
+                        <i class="fas fa-folder-plus mr-2"></i>
+                        Create Folder
+                    </button>
+                    <button @onclick="ShowUploadDialog" class="@StyleService.GetButtonClass("primary")">
+                        <i class="fas fa-upload mr-2"></i>
+                        Upload Files
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Pagination for Files -->
+@if (files.TotalCount > 0 && totalPages > 1)
+{
+    <div class="mt-6">
+        <Pagination CurrentPage="@currentPage"
+                    TotalPages="@totalPages"
+                    TotalItems="@files.TotalCount"
+                    OnPageChanged="@OnPageChanged"
+                    IsLoading="@isLoading" />
+    </div>
+}
+
+<!-- Create/Edit Folder Dialog -->
+<FormDialog @ref="folderDialog"
+            Title="@folderDialogTitle"
+            Description="@folderDialogDescription"
+            HeaderIcon="@(isFolderEditMode ? "fas fa-edit" : "fas fa-folder-plus")"
+            IsVisible="@showFolderDialog"
+            IsSaving="@isSaving"
+            Size="large"
+            Model="@folderModel"
+            ValidationErrors="@folderValidationErrors"
+            IsEditMode="@isFolderEditMode"
+            OnClose="@CloseFolderDialog"
+            OnSave="@SaveFolder">
+
+    <FormContent Context="context">
+        <FolderForm Model="@((CreateFolderDto)context.Model)"
+                    ValidationErrors="@context.ValidationErrors"
+                    ParentFolderId="@currentFolderId" />
+    </FormContent>
+</FormDialog>
+
+<!-- Edit File Dialog -->
+<FormDialog @ref="fileDialog"
+            Title="Edit File"
+            Description="Update file information and metadata"
+            HeaderIcon="fas fa-edit"
+            IsVisible="@showFileDialog"
+            IsSaving="@isSaving"
+            Size="large"
+            Model="@fileModel"
+            ValidationErrors="@fileValidationErrors"
+            IsEditMode="true"
+            OnClose="@CloseFileDialog"
+            OnSave="@SaveFile">
+
+    <FormContent Context="context">
+        <FileEditForm Model="@((UpdateFileDto)context.Model)"
+                      ValidationErrors="@context.ValidationErrors"
+                      OriginalFile="@selectedFile" />
+    </FormContent>
+</FormDialog>
+
+<!-- Upload Files Dialog -->
+<GenericDialog @ref="uploadDialog"
+               Title="Upload Files"
+               Description="Upload new files to the current folder"
+               HeaderIcon="fas fa-upload"
+               IsVisible="@showUploadDialog"
+               OnClose="@CloseUploadDialog"
+               OnSave="@UploadFiles"
+               IsSaving="@isUploading"
+               SaveText="Upload"
+               SavingText="Uploading..."
+               Size="large">
+
+    <BodyContent>
+        <FileUpload @ref="fileUpload"
+                    Files="@selectedFiles"
+                    FilesChanged="@OnFilesChanged"
+                    UploadProgress="@uploadProgress"
+                    UploadProgressChanged="@OnUploadProgressChanged"
+                    IsUploading="@isUploading"
+                    FolderId="@currentFolderId" />
+    </BodyContent>
+</GenericDialog>
+
+<!-- Delete Confirmations -->
+<ConfirmationDialog @ref="deleteFolderDialog"
+                    Title="Delete Folder"
+                    Message="Are you sure you want to delete this folder? This action cannot be undone."
+                    ConfirmText="Delete"
+                    ConfirmClass="@StyleService.GetButtonClass("danger")"
+                    ConfirmIcon="fas fa-trash"
+                    OnConfirm="@DeleteFolder" />
+
+<ConfirmationDialog @ref="deleteFileDialog"
+                    Title="Delete File"
+                    Message="Are you sure you want to delete this file? This action cannot be undone."
+                    ConfirmText="Delete"
+                    ConfirmClass="@StyleService.GetButtonClass("danger")"
+                    ConfirmIcon="fas fa-trash"
+                    OnConfirm="@DeleteFile" />
+
+@code {
+    public enum ViewMode { Grid, List }
+
+    // Data
+    private List<FolderDto> folders = new();
+    private PagedResult<FileDto> files = new();
+    private List<FolderDto> breadcrumbs = new();
+    private int? currentFolderId = null;
+
+    // Loading states
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isUploading = false;
+
+    // Pagination
+    private int currentPage = 1;
+    private int pageSize = 20;
+    private int totalPages = 0;
+
+    // Filters and search
+    private string searchTerm = string.Empty;
+    private string selectedFileType = string.Empty;
+    private Timer? searchTimer;
+    private ViewMode currentViewMode = ViewMode.Grid;
+
+    // Dialog states
+    private bool showFolderDialog = false;
+    private bool showFileDialog = false;
+    private bool showUploadDialog = false;
+    private string folderDialogTitle = string.Empty;
+    private string folderDialogDescription = string.Empty;
+    private bool isFolderEditMode = false;
+    private int selectedFolderId = 0;
+    private int selectedFileId = 0;
+    private FileDto? selectedFile = null;
+
+    // Form models and validation
+    private CreateFolderDto folderModel = new();
+    private UpdateFileDto fileModel = new();
+    private Dictionary<string, string> folderValidationErrors = new();
+    private Dictionary<string, string> fileValidationErrors = new();
+
+    // Upload
+    private List<IBrowserFile> selectedFiles = new();
+    private Dictionary<string, int> uploadProgress = new();
+
+    // Component references
+    private FormDialog? folderDialog;
+    private FormDialog? fileDialog;
+    private GenericDialog? uploadDialog;
+    private ConfirmationDialog? deleteFolderDialog;
+    private ConfirmationDialog? deleteFileDialog;
+    private FileUpload? fileUpload;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            // Load folders
+            folders = await FolderService.GetFoldersAsync(currentFolderId);
+
+            // Load files
+            FileType? fileTypeFilter = null;
+            if (!string.IsNullOrEmpty(selectedFileType) && Enum.TryParse<FileType>(selectedFileType, out var fileType))
+            {
+                fileTypeFilter = fileType;
+            }
+
+            files = await FileService.GetFilesAsync(currentPage, pageSize, currentFolderId, string.IsNullOrEmpty(searchTerm) ? null : searchTerm, fileTypeFilter);
+            totalPages = (int)Math.Ceiling((double)files.TotalCount / pageSize);
+
+            // Load breadcrumbs
+            if (currentFolderId.HasValue)
+            {
+                breadcrumbs = await FolderService.GetFolderBreadcrumbsAsync(currentFolderId.Value);
+            }
+            else
+            {
+                breadcrumbs.Clear();
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load media: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        searchTimer?.Dispose();
+        searchTimer = new Timer(async _ =>
+        {
+            currentPage = 1;
+            await InvokeAsync(LoadData);
+        }, null, 500, Timeout.Infinite);
+    }
+
+    private async Task OnFilterChange()
+    {
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        await LoadData();
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadData();
+    }
+
+    private void SetViewMode(ViewMode mode)
+    {
+        currentViewMode = mode;
+        StateHasChanged();
+    }
+
+    // Navigation
+    private async Task NavigateToFolder(int? folderId)
+    {
+        currentFolderId = folderId;
+        currentPage = 1;
+        await LoadData();
+    }
+
+    // Folder Management
+    private void ShowCreateFolderDialog()
+    {
+        isFolderEditMode = false;
+        folderDialogTitle = "Create New Folder";
+        folderDialogDescription = "Create a new folder in the current location";
+        folderModel = new CreateFolderDto { ParentFolderId = currentFolderId, FolderType = FolderType.General };
+        folderValidationErrors.Clear();
+        showFolderDialog = true;
+        StateHasChanged();
+    }
+
+    private async Task ShowEditFolderDialog(FolderDto folder)
+    {
+        isFolderEditMode = true;
+        selectedFolderId = folder.Id;
+        folderDialogTitle = "Edit Folder";
+        folderDialogDescription = "Update folder information";
+        folderModel = new CreateFolderDto
+        {
+            Name = folder.Name,
+            Description = folder.Description,
+            FolderType = folder.FolderType,
+            IsPublic = folder.IsPublic,
+            ParentFolderId = currentFolderId
+        };
+        folderValidationErrors.Clear();
+        showFolderDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseFolderDialog()
+    {
+        showFolderDialog = false;
+        folderModel = new CreateFolderDto();
+        folderValidationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private async Task SaveFolder()
+    {
+        if (isSaving) return;
+
+        try
+        {
+            isSaving = true;
+            StateHasChanged();
+
+            // Validate
+            folderValidationErrors = await ValidateFolder(folderModel);
+            if (folderValidationErrors.Any())
+            {
+                StateHasChanged();
+                return;
+            }
+
+            if (isFolderEditMode)
+            {
+                var updateDto = new UpdateFolderDto
+                {
+                    Name = folderModel.Name,
+                    Description = folderModel.Description,
+                    // FolderType = folderModel.FolderType,
+                    IsPublic = folderModel.IsPublic
+                };
+                await FolderService.UpdateFolderAsync(selectedFolderId, updateDto);
+                NotificationService.ShowSuccess("Folder updated successfully");
+            }
+            else
+            {
+                await FolderService.CreateFolderAsync(folderModel);
+                NotificationService.ShowSuccess("Folder created successfully");
+            }
+
+            CloseFolderDialog();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to save folder: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowDeleteFolderConfirmation(int folderId)
+    {
+        selectedFolderId = folderId;
+        deleteFolderDialog?.Show();
+    }
+
+    private async Task DeleteFolder()
+    {
+        try
+        {
+            await FolderService.DeleteFolderAsync(selectedFolderId);
+            NotificationService.ShowSuccess("Folder deleted successfully");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to delete folder: {ex.Message}");
+        }
+    }
+
+    // File Management
+    private async Task ShowEditFileDialog(FileDto file)
+    {
+        selectedFile = file;
+        selectedFileId = file.Id;
+        fileModel = new UpdateFileDto
+        {
+            Description = file.Description,
+            Alt = file.Alt,
+            IsPublic = file.IsPublic,
+            FolderId = file.FolderId
+        };
+        fileValidationErrors.Clear();
+        showFileDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseFileDialog()
+    {
+        showFileDialog = false;
+        fileModel = new UpdateFileDto();
+        selectedFile = null;
+        fileValidationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private async Task SaveFile()
+    {
+        if (isSaving) return;
+
+        try
+        {
+            isSaving = true;
+            StateHasChanged();
+
+            await FileService.UpdateFileAsync(selectedFileId, fileModel);
+            NotificationService.ShowSuccess("File updated successfully");
+
+            CloseFileDialog();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to save file: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowDeleteFileConfirmation(int fileId)
+    {
+        selectedFileId = fileId;
+        deleteFileDialog?.Show();
+    }
+
+    private async Task DeleteFile()
+    {
+        try
+        {
+            await FileService.DeleteFileAsync(selectedFileId);
+            NotificationService.ShowSuccess("File deleted successfully");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to delete file: {ex.Message}");
+        }
+    }
+
+    private async Task PreviewFile(FileDto file)
+    {
+        // TODO: Implement file preview
+        NotificationService.ShowInfo("File preview coming soon");
+    }
+
+    private async Task DownloadFile(FileDto file)
+    {
+        try
+        {
+            await FileService.DownloadFileAsync(file.Id);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to download file: {ex.Message}");
+        }
+    }
+
+    // Upload Management
+    private void ShowUploadDialog()
+    {
+        selectedFiles.Clear();
+        uploadProgress.Clear();
+        showUploadDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseUploadDialog()
+    {
+        showUploadDialog = false;
+        selectedFiles.Clear();
+        uploadProgress.Clear();
+        fileUpload?.ClearFiles();
+        StateHasChanged();
+    }
+
+    private async Task UploadFiles()
+    {
+        if (!selectedFiles.Any() || isUploading) return;
+
+        try
+        {
+            isUploading = true;
+            StateHasChanged();
+
+            var uploadTasks = selectedFiles.Select(async file =>
+            {
+                // Convert IBrowserFile to IFormFile
+                // You might want to add error handling for cases where the stream is too large
+                // or other issues arise during stream copying.
+                using var memoryStream = new MemoryStream();
+                await file.OpenReadStream().CopyToAsync(memoryStream);
+                memoryStream.Position = 0; // Reset stream position to the beginning
+
+                var formFile = new FormFile(memoryStream, 0, memoryStream.Length, file.Name, file.Name)
+                {
+                    Headers = new HeaderDictionary(),
+                    ContentType = file.ContentType
+                };
+
+                var uploadDto = new FileUploadDto
+                {
+                    File = formFile, // Assign the converted IFormFile
+                    FolderId = currentFolderId,
+                    IsPublic = false,
+                    GenerateThumbnail = true
+                };
+
+                return await FileService.UploadFileAsync(uploadDto);
+            });
+
+            await Task.WhenAll(uploadTasks);
+
+            NotificationService.ShowSuccess($"Successfully uploaded {selectedFiles.Count} file(s)");
+            CloseUploadDialog();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to upload files: {ex.Message}");
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private Task OnFilesChanged(List<IBrowserFile> files)
+    {
+        selectedFiles = files;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task OnUploadProgressChanged(Dictionary<string, int> progress)
+    {
+        uploadProgress = progress;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    // Validation
+    private async Task<Dictionary<string, string>> ValidateFolder(CreateFolderDto folder)
+    {
+        var errors = new Dictionary<string, string>();
+
+        if (string.IsNullOrWhiteSpace(folder.Name))
+            errors["Name"] = "Folder name is required";
+
+        return errors;
+    }
+
+    // Helper methods
+    private string GetFullPath(FileDto file)
+    {
+        var path = "/";
+        if (breadcrumbs.Any())
+        {
+            path = "/" + string.Join("/", breadcrumbs.Select(b => b.Name)) + "/";
+        }
+        return path + file.OriginalFileName;
+    }
+
+    private string GetFolderIcon(FolderType folderType)
+    {
+        return folderType switch
+        {
+            FolderType.Images => "fas fa-images",
+            FolderType.Documents => "fas fa-file-alt",
+            FolderType.Videos => "fas fa-video",
+            FolderType.Audio => "fas fa-music",
+            FolderType.UserAvatars => "fas fa-user-circle",
+            FolderType.CompanyAssets => "fas fa-building",
+            FolderType.Temporary => "fas fa-clock",
+            _ => "fas fa-folder"
+        };
+    }
+
+    private string GetFolderColor(FolderType folderType)
+    {
+        return folderType switch
+        {
+            FolderType.Images => "text-green-600 dark:text-green-400",
+            FolderType.Documents => "text-red-600 dark:text-red-400",
+            FolderType.Videos => "text-blue-600 dark:text-blue-400",
+            FolderType.Audio => "text-purple-600 dark:text-purple-400",
+            FolderType.UserAvatars => "text-indigo-600 dark:text-indigo-400",
+            FolderType.CompanyAssets => "text-gray-600 dark:text-gray-400",
+            FolderType.Temporary => "text-orange-600 dark:text-orange-400",
+            _ => "text-blue-600 dark:text-blue-400"
+        };
+    }
+
+    private string GetFolderTypeBadgeClass(FolderType folderType)
+    {
+        return folderType switch
+        {
+            FolderType.Images => "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+            FolderType.Documents => "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+            FolderType.Videos => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+            FolderType.Audio => "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+            FolderType.UserAvatars => "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+            FolderType.CompanyAssets => "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+            FolderType.Temporary => "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+            _ => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+        };
+    }
+
+    private string GetFolderTypeText(FolderType folderType)
+    {
+        return folderType switch
+        {
+            FolderType.Images => "Images",
+            FolderType.Documents => "Documents",
+            FolderType.Videos => "Videos",
+            FolderType.Audio => "Audio",
+            FolderType.UserAvatars => "Avatars",
+            FolderType.CompanyAssets => "Assets",
+            FolderType.Temporary => "Temporary",
+            _ => "General"
+        };
+    }
+
+    private string GetFileIcon(FileType fileType)
+    {
+        return fileType switch
+        {
+            FileType.Image => "fas fa-image",
+            FileType.Video => "fas fa-video",
+            FileType.Audio => "fas fa-music",
+            FileType.Document => "fas fa-file-alt",
+            FileType.Archive => "fas fa-file-archive",
+            _ => "fas fa-file"
+        };
+    }
+
+    private string GetFileTypeColor(FileType fileType)
+    {
+        return fileType switch
+        {
+            FileType.Image => "text-green-600 dark:text-green-400",
+            FileType.Video => "text-blue-600 dark:text-blue-400",
+            FileType.Audio => "text-purple-600 dark:text-purple-400",
+            FileType.Document => "text-red-600 dark:text-red-400",
+            FileType.Archive => "text-yellow-600 dark:text-yellow-400",
+            _ => "text-gray-600 dark:text-gray-400"
+        };
+    }
+
+    private string GetFileTypeBadgeClass(FileType fileType)
+    {
+        return fileType switch
+        {
+            FileType.Image => "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+            FileType.Video => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+            FileType.Audio => "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+            FileType.Document => "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+            FileType.Archive => "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+            _ => "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+        };
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len /= 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
+    }
+
+    public void Dispose()
+    {
+        searchTimer?.Dispose();
+    }
+}
