@@ -1,0 +1,433 @@
+﻿@typeparam TListItem
+@typeparam TDetailItem
+@typeparam TCreateDto
+@typeparam TUpdateDto
+@using Frontend.Interface
+@using Frontend.Interfaces
+@inject IStyleService StyleService
+@inject INotificationService NotificationService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>@PageTitle</PageTitle>
+
+<!-- Page Header -->
+<div class="flex items-center justify-between mb-6">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white">@EntityPluralName</h1>
+        <p class="text-gray-600 dark:text-gray-400">@PageDescription</p>
+    </div>
+    <button @onclick="ShowCreateDialog" class="@StyleService.GetButtonClass("primary")">
+        <i class="fas fa-plus mr-2"></i>
+        Create @EntitySingularName
+    </button>
+</div>
+
+<!-- Search and Filters -->
+<div class="mb-6 flex flex-col sm:flex-row gap-4">
+    <div class="flex-1">
+        <div class="relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i class="fas fa-search text-gray-400"></i>
+            </div>
+            <input @bind="searchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp"
+                   type="text"
+                   placeholder="Search @EntityPluralName.ToLower()..."
+                   class="@StyleService.GetFormInputClass() pl-10" />
+        </div>
+    </div>
+
+    <div class="flex gap-2">
+        @if (FilterContent != null)
+        {
+            @FilterContent
+        }
+        
+        <button @onclick="RefreshData" class="@StyleService.GetButtonClass("secondary")" title="Refresh">
+            <i class="fas fa-refresh @(isLoading ? "fa-spin" : "")"></i>
+        </button>
+    </div>
+</div>
+
+<!-- Data Table -->
+<GenericTable TItem="TListItem"
+              Items="@pagedResult.Items"
+              IsLoading="@isLoading"
+              ColumnCount="@ColumnCount"
+              OnEdit="@ShowEditDialog"
+              OnDelete="@ShowDeleteConfirmation"
+              OnDuplicate="@(ShowDuplicateAction ? ShowDuplicateDialog : null)"
+              IdSelector="@IdSelector">
+
+    <TableColumns>
+        @TableColumns
+    </TableColumns>
+
+    <RowTemplate Context="item">
+        @if (RowTemplate(item) is not null)
+        {
+            @RowTemplate(item)
+        }
+      
+    </RowTemplate>
+
+    <CustomActions Context="item">
+        @if (CustomRowActions != null)
+        {
+            @CustomRowActions(item)
+        }
+    </CustomActions>
+</GenericTable>
+
+<!-- Pagination -->
+@if (pagedResult.TotalCount > 0)
+{
+    <div class="mt-6">
+        <Pagination CurrentPage="@currentPage"
+                    TotalPages="@totalPages"
+                    TotalItems="@pagedResult.TotalCount"
+                    OnPageChanged="@OnPageChanged"
+                    IsLoading="@isLoading" />
+    </div>
+}
+
+<!-- Create/Edit Dialog -->
+<GenericDialog @ref="entityDialog"
+               Title="@dialogTitle"
+               IsVisible="@showEntityDialog"
+               OnClose="@CloseEntityDialog"
+               OnSave="@SaveEntity"
+               IsSaving="@isSaving"
+               Size="@DialogSize"
+               HeaderIcon="@(isEditMode ? "fas fa-edit" : "fas fa-plus")">
+
+    <BodyContent>
+        @if (FormContent != null)
+        {
+            @FormContent(entityModel, isEditMode, validationErrors)
+        }
+        else
+        {
+            <div class="text-center py-8">
+                <p class="text-gray-500 dark:text-gray-400">No form content provided.</p>
+            </div>
+        }
+    </BodyContent>
+</GenericDialog>
+
+<!-- Duplicate Dialog -->
+@if (ShowDuplicateAction)
+{
+    <GenericDialog @ref="duplicateDialog"
+                   Title="@($"Duplicate {EntitySingularName}")"
+                   IsVisible="@showDuplicateDialog"
+                   OnClose="@CloseDuplicateDialog"
+                   OnSave="@DuplicateEntity"
+                   IsSaving="@isSaving"
+                   Size="medium">
+
+        <BodyContent>
+            <div class="space-y-4">
+                <div>
+                    <label class="@StyleService.GetFormLabelClass()">New @EntitySingularName Name *</label>
+                    <input @bind="duplicateName" 
+                           type="text"
+                           placeholder="Enter new name"
+                           class="@StyleService.GetFormInputClass()" />
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Choose a unique name for the duplicated @EntitySingularName.ToLower().</p>
+                </div>
+            </div>
+        </BodyContent>
+    </GenericDialog>
+}
+Title="@($"Delete {EntitySingularName}")"
+
+<!-- Delete Confirmation Dialog -->
+<ConfirmationDialog @ref="deleteDialog"
+                    Title="@($"Delete {EntitySingularName}")"
+                    Message="@($"Are you sure you want to delete this {EntitySingularName.ToLower()}? This action cannot be undone.")"
+                    ConfirmText="Delete"
+                    ConfirmClass="@StyleService.GetButtonClass("danger")"
+                    OnConfirm="@DeleteEntity" />
+
+@code {
+    // Parameters
+    [Parameter] public string PageTitle { get; set; } = string.Empty;
+    [Parameter] public string EntitySingularName { get; set; } = "Item";
+    [Parameter] public string EntityPluralName { get; set; } = "Items";
+    [Parameter] public string PageDescription { get; set; } = string.Empty;
+    [Parameter] public string DialogSize { get; set; } = "large";
+    [Parameter] public int ColumnCount { get; set; } = 5;
+    [Parameter] public bool ShowDuplicateAction { get; set; } = false;
+
+    // Content Parameters
+    [Parameter] public RenderFragment? TableColumns { get; set; }
+    [Parameter] public RenderFragment<TListItem>? RowTemplate { get; set; }
+    [Parameter] public RenderFragment<TListItem>? CustomRowActions { get; set; }
+    [Parameter] public RenderFragment<(TCreateDto Model, bool IsEditMode, Dictionary<string, string> ValidationErrors)>? FormContent { get; set; }
+    [Parameter] public RenderFragment? FilterContent { get; set; }
+
+    // Data Parameters
+    [Parameter] public Func<TListItem, int> IdSelector { get; set; } = null!;
+    [Parameter] public Func<TCreateDto> CreateModelFactory { get; set; } = null!;
+    [Parameter] public Func<TDetailItem, TCreateDto> EditModelFactory { get; set; } = null!;
+
+    // Service Parameters
+    [Parameter] public Func<int, int, string?, Task<PagedResult<TListItem>>> LoadDataFunc { get; set; } = null!;
+    [Parameter] public Func<int, Task<TDetailItem?>> GetByIdFunc { get; set; } = null!;
+    [Parameter] public Func<TCreateDto, Task<TDetailItem?>> CreateFunc { get; set; } = null!;
+    [Parameter] public Func<int, TUpdateDto, Task<TDetailItem?>> UpdateFunc { get; set; } = null!;
+    [Parameter] public Func<int, Task<bool>> DeleteFunc { get; set; } = null!;
+    [Parameter] public Func<int, string, Task<TDetailItem?>>? DuplicateFunc { get; set; }
+    [Parameter] public Func<TCreateDto, TUpdateDto> CreateToUpdateMapper { get; set; } = null!;
+
+    // Validation Parameters
+    [Parameter] public Func<TCreateDto, bool, Task<Dictionary<string, string>>> ValidateFunc { get; set; } = (model, isEdit) => Task.FromResult(new Dictionary<string, string>());
+
+    // Events
+    [Parameter] public EventCallback<TDetailItem> OnEntityCreated { get; set; }
+    [Parameter] public EventCallback<TDetailItem> OnEntityUpdated { get; set; }
+    [Parameter] public EventCallback<int> OnEntityDeleted { get; set; }
+
+    // Private fields
+    private PagedResult<TListItem> pagedResult = new();
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalPages = 0;
+    private string searchTerm = string.Empty;
+    private Timer? searchTimer;
+    private Dictionary<string, string> validationErrors = new();
+
+    // Dialog states
+    private bool showEntityDialog = false;
+    private bool showDuplicateDialog = false;
+    private string dialogTitle = string.Empty;
+    private bool isEditMode = false;
+    private int selectedEntityId = 0;
+    private string duplicateName = string.Empty;
+
+    // Form models
+    private TCreateDto entityModel = default!;
+
+    // Component references
+    private GenericDialog? entityDialog;
+    private GenericDialog? duplicateDialog;
+    private ConfirmationDialog? deleteDialog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        entityModel = CreateModelFactory();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            pagedResult = await LoadDataFunc(currentPage, pageSize, string.IsNullOrEmpty(searchTerm) ? null : searchTerm);
+            totalPages = (int)Math.Ceiling((double)pagedResult.TotalCount / pageSize);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load {EntityPluralName.ToLower()}: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        searchTimer?.Dispose();
+        searchTimer = new Timer(async _ =>
+        {
+            currentPage = 1;
+            await InvokeAsync(LoadData);
+        }, null, 500, Timeout.Infinite);
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        currentPage = page;
+        await LoadData();
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadData();
+    }
+
+    // Dialog Management
+    private void ShowCreateDialog()
+    {
+        isEditMode = false;
+        dialogTitle = $"Create New {EntitySingularName}";
+        entityModel = CreateModelFactory();
+        validationErrors.Clear();
+        showEntityDialog = true;
+        StateHasChanged();
+    }
+
+    private async Task ShowEditDialog(int entityId)
+    {
+        try
+        {
+            isEditMode = true;
+            selectedEntityId = entityId;
+            dialogTitle = $"Edit {EntitySingularName}";
+
+            var entity = await GetByIdFunc(entityId);
+            if (entity != null)
+            {
+                entityModel = EditModelFactory(entity);
+                validationErrors.Clear();
+                showEntityDialog = true;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load {EntitySingularName.ToLower()}: {ex.Message}");
+        }
+    }
+
+    private void CloseEntityDialog()
+    {
+        showEntityDialog = false;
+        entityModel = CreateModelFactory();
+        validationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private async Task SaveEntity()
+    {
+        if (isSaving) return;
+
+        try
+        {
+            isSaving = true;
+            StateHasChanged();
+
+            // Validate
+            validationErrors = await ValidateFunc(entityModel, isEditMode);
+            if (validationErrors.Any())
+            {
+                StateHasChanged();
+                return;
+            }
+
+            if (isEditMode)
+            {
+                var updateDto = CreateToUpdateMapper(entityModel);
+                var result = await UpdateFunc(selectedEntityId, updateDto);
+                if (result != null)
+                {
+                    NotificationService.ShowSuccess($"{EntitySingularName} updated successfully");
+                    await OnEntityUpdated.InvokeAsync(result);
+                }
+            }
+            else
+            {
+                var result = await CreateFunc(entityModel);
+                if (result != null)
+                {
+                    NotificationService.ShowSuccess($"{EntitySingularName} created successfully");
+                    await OnEntityCreated.InvokeAsync(result);
+                }
+            }
+
+            CloseEntityDialog();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to save {EntitySingularName.ToLower()}: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    // Actions
+    private void ShowDeleteConfirmation(int entityId)
+    {
+        selectedEntityId = entityId;
+        deleteDialog?.Show();
+    }
+
+    private async Task DeleteEntity()
+    {
+        try
+        {
+            var success = await DeleteFunc(selectedEntityId);
+            if (success)
+            {
+                NotificationService.ShowSuccess($"{EntitySingularName} deleted successfully");
+                await OnEntityDeleted.InvokeAsync(selectedEntityId);
+                await LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to delete {EntitySingularName.ToLower()}: {ex.Message}");
+        }
+    }
+
+    private void ShowDuplicateDialog(int entityId)
+    {
+        if (!ShowDuplicateAction || DuplicateFunc == null) return;
+        
+        selectedEntityId = entityId;
+        duplicateName = string.Empty;
+        showDuplicateDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseDuplicateDialog()
+    {
+        showDuplicateDialog = false;
+        duplicateName = string.Empty;
+        StateHasChanged();
+    }
+
+    private async Task DuplicateEntity()
+    {
+        if (string.IsNullOrEmpty(duplicateName) || DuplicateFunc == null) return;
+
+        try
+        {
+            isSaving = true;
+            StateHasChanged();
+
+            var result = await DuplicateFunc(selectedEntityId, duplicateName);
+            if (result != null)
+            {
+                NotificationService.ShowSuccess($"{EntitySingularName} duplicated successfully");
+                CloseDuplicateDialog();
+                await LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to duplicate {EntitySingularName.ToLower()}: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        searchTimer?.Dispose();
+    }
+}
