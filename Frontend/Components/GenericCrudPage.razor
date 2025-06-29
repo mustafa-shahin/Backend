@@ -210,19 +210,20 @@
             Size="@DialogSize"
             Model="@entityModel"
             ValidationErrors="@validationErrors"
+            IsEditMode="@isEditMode" @* <--- Pass IsEditMode directly to FormDialog *@
             OnClose="@CloseEntityDialog"
             OnSave="@SaveEntity">
 
     <FormContent Context="context">
         @if (FormContent != null)
         {
-            @FormContent(context.Model, context.ValidationErrors, isEditMode)
+                @FormContent(context)
         }
         else
         {
-            <div class="text-center py-8">
-                <p class="text-gray-500 dark:text-gray-400">No form content provided.</p>
-            </div>
+                <div class="text-center py-8">
+                    <p class="text-gray-500 dark:text-gray-400">No form content provided.</p>
+                </div>
         }
     </FormContent>
 </FormDialog>

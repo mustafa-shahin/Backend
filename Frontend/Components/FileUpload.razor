@@ -1,0 +1,244 @@
+﻿
+@using Microsoft.AspNetCore.Components.Forms
+@using Frontend.Interfaces
+@inject IStyleService StyleService
+@inject IJSRuntime JSRuntime
+
+<div class="space-y-6">
+    <!-- Upload Area -->
+    <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-blue-400 dark:hover:border-blue-500 transition-colors duration-200">
+        <InputFile @ref="fileInput"
+                   OnChange="OnFilesSelected"
+                   multiple
+                   accept="*/*"
+                   class="hidden" />
+
+        <div class="space-y-4">
+            <div class="w-16 h-16 mx-auto bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                <i class="fas fa-cloud-upload-alt text-2xl text-gray-400"></i>
+            </div>
+
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                    Upload Files
+                </h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                    Drag and drop files here, or click to browse
+                </p>
+
+                <button type="button"
+                        @onclick="OpenFileDialog"
+                        class="@StyleService.GetButtonClass("primary", "medium")"
+                        disabled="@IsUploading">
+                    <i class="fas fa-plus mr-2"></i>
+                    Choose Files
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Selected Files -->
+    @if (selectedFiles.Any())
+    {
+        <div class="space-y-4">
+            <h4 class="text-lg font-medium text-gray-900 dark:text-white">
+                Selected Files (@selectedFiles.Count)
+            </h4>
+
+            <div class="space-y-2">
+                @foreach (var file in selectedFiles)
+                {
+                    var fileIndex = selectedFiles.IndexOf(file);
+                    <div class="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div class="flex items-center space-x-3 flex-1">
+                            <div class="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center">
+                                <i class="@GetFileIcon(file.ContentType) text-blue-600 dark:text-blue-400"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                    @file.Name
+                                </p>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">
+                                    @FormatFileSize(file.Size) • @file.ContentType
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Progress Bar -->
+                        @if (IsUploading && uploadProgress.ContainsKey(file.Name))
+                        {
+                            <div class="w-24 mr-4">
+                                <div class="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                                    <div class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                         style="width: @(uploadProgress[file.Name])%"></div>
+                                </div>
+                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 text-center">
+                                    @(uploadProgress[file.Name])%
+                                </p>
+                            </div>
+                        }
+
+                        <button type="button"
+                                @onclick="() => RemoveFile(file)"
+                                class="@StyleService.GetButtonClass("danger", "small")"
+                                disabled="@IsUploading">
+                            <i class="fas fa-trash text-sm"></i>
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- Upload Settings -->
+    @if (selectedFiles.Any())
+    {
+        <div class="space-y-4">
+            <h4 class="text-lg font-medium text-gray-900 dark:text-white">
+                Upload Settings
+            </h4>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Visibility
+                    </label>
+                    <div class="flex items-center space-x-4">
+                        <label class="flex items-center">
+                            <input type="radio"
+                                   @onchange="() => SetPublicAccess(false)"
+                                   checked="@(!isPublic)"
+                                   class="mr-2" />
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Private</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="radio"
+                                   @onchange="() => SetPublicAccess(true)"
+                                   checked="@isPublic"
+                                   class="mr-2" />
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Public</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Options
+                    </label>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="checkbox"
+                                   @bind="generateThumbnails"
+                                   class="mr-2" />
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Generate thumbnails</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Current Folder Info -->
+    @if (FolderId.HasValue)
+    {
+        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div class="flex items-center">
+                <i class="fas fa-folder text-blue-500 mr-2"></i>
+                <span class="text-sm text-blue-700 dark:text-blue-300">
+                    Files will be uploaded to the current folder
+                </span>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<IBrowserFile> Files { get; set; } = new();
+    [Parameter] public EventCallback<List<IBrowserFile>> FilesChanged { get; set; }
+    [Parameter] public Dictionary<string, int> UploadProgress { get; set; } = new();
+    [Parameter] public EventCallback<Dictionary<string, int>> UploadProgressChanged { get; set; }
+    [Parameter] public bool IsUploading { get; set; }
+    [Parameter] public int? FolderId { get; set; }
+
+    private InputFile? fileInput;
+    private List<IBrowserFile> selectedFiles = new();
+    private Dictionary<string, int> uploadProgress = new();
+    private bool isPublic = false;
+    private bool generateThumbnails = true;
+
+    protected override void OnParametersSet()
+    {
+        selectedFiles = Files;
+        uploadProgress = UploadProgress;
+    }
+
+    private async Task OpenFileDialog()
+    {
+        if (fileInput?.Element != null)
+        {
+            await JSRuntime.InvokeVoidAsync("eval", "arguments[0].click()", fileInput.Element);
+        }
+    }
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        var newFiles = e.GetMultipleFiles(10).ToList(); // Limit to 10 files
+        selectedFiles.AddRange(newFiles);
+
+        await FilesChanged.InvokeAsync(selectedFiles);
+        StateHasChanged();
+    }
+
+    private async Task RemoveFile(IBrowserFile file)
+    {
+        selectedFiles.Remove(file);
+        uploadProgress.Remove(file.Name);
+
+        await FilesChanged.InvokeAsync(selectedFiles);
+        await UploadProgressChanged.InvokeAsync(uploadProgress);
+        StateHasChanged();
+    }
+
+    private async Task SetPublicAccess(bool isPublicAccess)
+    {
+        isPublic = isPublicAccess;
+        StateHasChanged();
+    }
+
+    private string GetFileIcon(string contentType)
+    {
+        return contentType.ToLower() switch
+        {
+            var ct when ct.StartsWith("image/") => "fas fa-image",
+            var ct when ct.StartsWith("video/") => "fas fa-video",
+            var ct when ct.StartsWith("audio/") => "fas fa-music",
+            var ct when ct.Contains("pdf") => "fas fa-file-pdf",
+            var ct when ct.Contains("word") => "fas fa-file-word",
+            var ct when ct.Contains("excel") => "fas fa-file-excel",
+            var ct when ct.Contains("powerpoint") => "fas fa-file-powerpoint",
+            var ct when ct.Contains("zip") || ct.Contains("rar") || ct.Contains("7z") => "fas fa-file-archive",
+            _ => "fas fa-file"
+        };
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len /= 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
+    }
+
+    public void ClearFiles()
+    {
+        selectedFiles.Clear();
+        uploadProgress.Clear();
+        StateHasChanged();
+    }
+}
+

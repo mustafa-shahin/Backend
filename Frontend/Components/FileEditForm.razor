@@ -1,0 +1,332 @@
+﻿@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interfaces
+@inject IStyleService StyleService
+
+<div class="space-y-6">
+    <!-- File Preview -->
+    @if (OriginalFile != null)
+    {
+        <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-6">
+            <div class="flex items-start space-x-4">
+                <!-- File Thumbnail/Icon -->
+                <div class="flex-shrink-0">
+                    @if (OriginalFile.FileType == FileType.Image)
+                    {
+                        <img src="/api/file/@(OriginalFile.Id)/thumbnail"
+                             alt="@OriginalFile.Alt"
+                             class="w-24 h-24 object-cover rounded-lg"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                        <div class="w-24 h-24 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center" style="display: none;">
+                            <i class="fas fa-image text-2xl text-gray-400"></i>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="w-24 h-24 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center">
+                            <i class="@GetFileIcon(OriginalFile.FileType) text-2xl @GetFileIconColor(OriginalFile.FileType)"></i>
+                        </div>
+                    }
+                </div>
+
+                <!-- File Info -->
+                <div class="flex-1">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        @OriginalFile.OriginalFileName
+                    </h3>
+                    <div class="mt-2 space-y-1 text-sm text-gray-500 dark:text-gray-400">
+                        <p><strong>Type:</strong> @OriginalFile.ContentType</p>
+                        <p><strong>Size:</strong> @FormatFileSize(OriginalFile.FileSize)</p>
+                        <p><strong>Created:</strong> @OriginalFile.CreatedAt.ToString("MMM dd, yyyy HH:mm")</p>
+                        @if (OriginalFile.Width.HasValue && OriginalFile.Height.HasValue)
+                        {
+                            <p><strong>Dimensions:</strong> @OriginalFile.Width × @OriginalFile.Height px</p>
+                        }
+                        @if (OriginalFile.Duration.HasValue)
+                        {
+                            <p><strong>Duration:</strong> @FormatDuration(OriginalFile.Duration.Value)</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Edit Form -->
+    <div class="space-y-6">
+        <!-- Basic Information -->
+        <div class="space-y-4">
+            <h4 class="text-lg font-medium text-gray-900 dark:text-white">
+                File Information
+            </h4>
+
+            <div class="@StyleService.GetFormGridClass(1)">
+                <!-- Description -->
+                <div class="space-y-1">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Description
+                    </label>
+                    <InputTextArea @bind-Value="Model.Description"
+                                   class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("Description"))"
+                                   rows="3"
+                                   placeholder="Enter a description for this file" />
+                    @if (ValidationErrors.ContainsKey("Description"))
+                    {
+                        <div class="text-red-600 dark:text-red-400 text-sm mt-1">
+                            @ValidationErrors["Description"]
+                        </div>
+                    }
+                </div>
+
+                <!-- Alt Text (for images) -->
+                @if (OriginalFile?.FileType == FileType.Image)
+                {
+                    <div class="space-y-1">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Alt Text
+                        </label>
+                        <InputText @bind-Value="Model.Alt"
+                                   class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("Alt"))"
+                                   placeholder="Describe the image for accessibility" />
+                        @if (ValidationErrors.ContainsKey("Alt"))
+                        {
+                            <div class="text-red-600 dark:text-red-400 text-sm mt-1">
+                                @ValidationErrors["Alt"]
+                            </div>
+                        }
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            Alternative text for screen readers and SEO
+                        </p>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Visibility and Location -->
+        <div class="space-y-4">
+            <h4 class="text-lg font-medium text-gray-900 dark:text-white">
+                Visibility & Location
+            </h4>
+
+            <div class="@StyleService.GetFormGridClass(2)">
+                <!-- Visibility -->
+                <div class="space-y-1">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Visibility
+                    </label>
+                    <div class="space-y-3">
+                        <div class="flex items-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                            <InputCheckbox @bind-Value="Model.IsPublic"
+                                           id="isPublic"
+                                           class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                            <label for="isPublic" class="ml-3">
+                                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Public File</span>
+                                <p class="text-xs text-gray-500 dark:text-gray-400">Allow public access to this file</p>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Folder (placeholder for now) -->
+                <div class="space-y-1">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Current Folder
+                    </label>
+                    <div class="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                        <div class="flex items-center">
+                            <i class="fas fa-folder text-blue-500 mr-2"></i>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">
+                                @if (Model.FolderId.HasValue)
+                                {
+                                    <text>Folder ID: @Model.FolderId</text>
+                                }
+                                else
+                                {
+                                    <text>Root Folder</text>
+                                }
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tags -->
+        <div class="space-y-4">
+            <h4 class="text-lg font-medium text-gray-900 dark:text-white">
+                Tags
+            </h4>
+
+            <div class="space-y-4">
+                <!-- Current Tags -->
+                @if (currentTags.Any())
+                {
+                    <div class="flex flex-wrap gap-2">
+                        @foreach (var tag in currentTags)
+                        {
+                            <span class="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                                @tag
+                                <button type="button"
+                                        @onclick="() => RemoveTag(tag)"
+                                        class="ml-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200">
+                                    <i class="fas fa-times text-xs"></i>
+                                </button>
+                            </span>
+                        }
+                    </div>
+                }
+
+                <!-- Add Tag -->
+                <div class="flex space-x-2">
+                    <input @bind="newTag"
+                           @onkeyup="OnTagKeyUp"
+                           type="text"
+                           placeholder="Add a tag"
+                           class="@StyleService.GetFormInputClass() flex-1" />
+                    <button type="button"
+                            @onclick="AddTag"
+                            class="@StyleService.GetButtonClass("secondary", "medium")">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- File Statistics (read-only) -->
+        @if (OriginalFile != null)
+        {
+            <div class="space-y-4">
+                <h4 class="text-lg font-medium text-gray-900 dark:text-white">
+                    Statistics
+                </h4>
+
+                <div class="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="text-center">
+                            <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                                @OriginalFile.DownloadCount
+                            </div>
+                            <div class="text-sm text-gray-500 dark:text-gray-400">Downloads</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold text-green-600 dark:text-green-400">
+                                @(OriginalFile.IsPublic ? "Public" : "Private")
+                            </div>
+                            <div class="text-sm text-gray-500 dark:text-gray-400">Visibility</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                                @OriginalFile.FileType
+                            </div>
+                            <div class="text-sm text-gray-500 dark:text-gray-400">Type</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold text-orange-600 dark:text-orange-400">
+                                @(OriginalFile.LastAccessedAt?.ToString("MMM dd") ?? "Never")
+                            </div>
+                            <div class="text-sm text-gray-500 dark:text-gray-400">Last Access</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public UpdateFileDto Model { get; set; } = new();
+    [Parameter] public Dictionary<string, string> ValidationErrors { get; set; } = new();
+    [Parameter] public FileDto? OriginalFile { get; set; }
+
+    private List<string> currentTags = new();
+    private string newTag = string.Empty;
+
+    protected override void OnParametersSet()
+    {
+        // Initialize tags from model
+        if (Model.Tags?.Any() == true)
+        {
+            currentTags = Model.Tags.Select(kvp => kvp.Value?.ToString() ?? string.Empty).ToList();
+        }
+    }
+
+    private void AddTag()
+    {
+        if (!string.IsNullOrWhiteSpace(newTag) && !currentTags.Contains(newTag.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            currentTags.Add(newTag.Trim());
+            UpdateModelTags();
+            newTag = string.Empty;
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveTag(string tag)
+    {
+        currentTags.Remove(tag);
+        UpdateModelTags();
+        StateHasChanged();
+    }
+
+    private void OnTagKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AddTag();
+        }
+    }
+
+    private void UpdateModelTags()
+    {
+        Model.Tags = currentTags.Select((tag, index) => new KeyValuePair<string, object>($"tag_{index}", tag))
+                               .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+    }
+
+    private string GetFileIcon(FileType fileType)
+    {
+        return fileType switch
+        {
+            FileType.Image => "fas fa-image",
+            FileType.Video => "fas fa-video",
+            FileType.Audio => "fas fa-music",
+            FileType.Document => "fas fa-file-alt",
+            FileType.Archive => "fas fa-file-archive",
+            _ => "fas fa-file"
+        };
+    }
+
+    private string GetFileIconColor(FileType fileType)
+    {
+        return fileType switch
+        {
+            FileType.Image => "text-green-600 dark:text-green-400",
+            FileType.Video => "text-blue-600 dark:text-blue-400",
+            FileType.Audio => "text-purple-600 dark:text-purple-400",
+            FileType.Document => "text-red-600 dark:text-red-400",
+            FileType.Archive => "text-yellow-600 dark:text-yellow-400",
+            _ => "text-gray-600 dark:text-gray-400"
+        };
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len /= 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
+    }
+
+    private string FormatDuration(TimeSpan duration)
+    {
+        if (duration.TotalHours >= 1)
+        {
+            return duration.ToString(@"h\:mm\:ss");
+        }
+        return duration.ToString(@"m\:ss");
+    }
+}

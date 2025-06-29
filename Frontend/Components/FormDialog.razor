@@ -52,7 +52,7 @@
                     <div class="@StyleService.GetModalBodyClass(Size)">
                         @if (FormContent != null)
                         {
-                            @FormContent(Model, ValidationErrors)
+                            @FormContent((Model, ValidationErrors, IsEditMode))
                         }
                         else
                         {
@@ -68,7 +68,7 @@
                                 type="button"
                                 class="@StyleService.GetButtonClass("secondary")"
                                 disabled="@IsSaving">
-                            <i class="fas fa-times mr-2"></i>
+                            <i class="fas fa-times mr-2 sdfsd"></i>
                             Cancel
                         </button>
 
@@ -106,8 +106,9 @@
     [Parameter] public string SaveIcon { get; set; } = "fas fa-save";
     [Parameter] public object Model { get; set; } = new();
     [Parameter] public Dictionary<string, string> ValidationErrors { get; set; } = new();
+    [Parameter] public bool IsEditMode { get; set; } = false;
 
-    [Parameter] public RenderFragment<(object Model, Dictionary<string, string> ValidationErrors)>? FormContent { get; set; }
+    [Parameter] public RenderFragment<(object Model, Dictionary<string, string> ValidationErrors, bool IsEditMode)>? FormContent { get; set; }
 
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnSave { get; set; }
