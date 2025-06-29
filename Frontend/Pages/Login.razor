@@ -6,6 +6,7 @@
 @inject IThemeService ThemeService
 @inject INotificationService NotificationService
 @inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Sign In - CMS Designer</PageTitle>
 
@@ -35,6 +36,21 @@
                     Sign in to access the CMS Designer
                 </p>
             </div>
+
+            <!-- Connection Status -->
+            @if (!string.IsNullOrEmpty(connectionStatus))
+            {
+                <div class="rounded-lg bg-blue-50 dark:bg-blue-900/20 p-4 border border-blue-200 dark:border-blue-800">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-info-circle text-blue-400"></i>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm text-blue-700 dark:text-blue-300">@connectionStatus</p>
+                        </div>
+                    </div>
+                </div>
+            }
 
             <!-- Login form -->
             <EditForm Model="@loginModel" OnValidSubmit="@HandleLogin" class="mt-8 space-y-6">
@@ -75,7 +91,7 @@
                         <ValidationMessage For="@(() => loginModel.Password)" class="text-red-500 text-sm mt-1" />
                     </div>
 
-                    <!-- Remember me and forgot password -->
+                    <!-- Remember me -->
                     <div class="flex items-center justify-between">
                         <div class="flex items-center">
                             <InputCheckbox @bind-Value="loginModel.RememberMe"
@@ -84,12 +100,6 @@
                             <label for="rememberMe" class="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                                 Remember me
                             </label>
-                        </div>
-
-                        <div class="text-sm">
-                            <a href="/forgot-password" class="font-medium text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
-                                Forgot your password?
-                            </a>
                         </div>
                     </div>
                 </div>
@@ -130,7 +140,7 @@
                     }
                 </button>
 
-                <!-- Contact admin -->
+                <!-- Demo credentials -->
                 <div class="text-center">
                     <p class="text-sm text-gray-600 dark:text-gray-400">
                         Don't have an account?
@@ -215,15 +225,37 @@
     private LoginDto loginModel = new();
     private bool isLoading = false;
     private string errorMessage = string.Empty;
+    private string connectionStatus = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        await ThemeService.InitializeAsync();
-
-        // Check if already authenticated
-        if (await AuthService.IsAuthenticatedAsync())
+        try
         {
-            Navigation.NavigateTo("/", true);
+            await JSRuntime.InvokeVoidAsync("console.log", "Login page initializing...");
+
+            await ThemeService.InitializeAsync();
+
+            connectionStatus = "Checking connection to backend...";
+            StateHasChanged();
+
+            // Check if already authenticated
+            if (await AuthService.IsAuthenticatedAsync())
+            {
+                await JSRuntime.InvokeVoidAsync("console.log", "User already authenticated, redirecting...");
+                Navigation.NavigateTo("/", true);
+                return;
+            }
+
+            connectionStatus = "Ready to sign in";
+            await Task.Delay(1000); // Show status for a moment
+            connectionStatus = string.Empty;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Login initialization error: {ex.Message}");
+            connectionStatus = "Connection error. Please check if the backend is running.";
+            StateHasChanged();
         }
     }
 
@@ -237,28 +269,41 @@
 
         try
         {
+            await JSRuntime.InvokeVoidAsync("console.log", "Attempting login...");
             var result = await AuthService.LoginAsync(loginModel);
 
             if (result != null)
             {
+                await JSRuntime.InvokeVoidAsync("console.log", "Login successful, redirecting...");
                 NotificationService.ShowSuccess("Welcome back! Redirecting to dashboard...", "Login Successful");
                 Navigation.NavigateTo("/", true);
             }
         }
         catch (UnauthorizedAccessException ex)
         {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Authorization error: {ex.Message}");
             errorMessage = ex.Message;
         }
         catch (HttpRequestException ex)
         {
-            errorMessage = ex.Message.Contains("401") || ex.Message.Contains("Unauthorized")
-                ? "Invalid email or password. Please try again."
-                : "Unable to connect to the server. Please check your connection and try again.";
+            await JSRuntime.InvokeVoidAsync("console.error", $"HTTP error: {ex.Message}");
+            if (ex.Message.Contains("401") || ex.Message.Contains("Unauthorized"))
+            {
+                errorMessage = "Invalid email or password. Please try again.";
+            }
+            else if (ex.Message.Contains("timeout"))
+            {
+                errorMessage = "Connection timeout. Please check if the backend server is running.";
+            }
+            else
+            {
+                errorMessage = "Unable to connect to the server. Please check if the backend is running onxcvxcvxcvxcv http://localhost:5252";
+            }
         }
         catch (Exception ex)
         {
-            errorMessage = "An unexpected error occurred. Please try again.";
-            Console.WriteLine($"Login error: {ex}");
+            await JSRuntime.InvokeVoidAsync("console.error", $"Unexpected error: {ex.Message}");
+            errorMessage = "An unexpected error occurred. Please check the console for details.";
         }
         finally
         {
@@ -269,7 +314,14 @@
 
     private async Task ToggleTheme()
     {
-        await ThemeService.ToggleThemeAsync();
+        try
+        {
+            await ThemeService.ToggleThemeAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Theme toggle error: {ex.Message}");
+        }
     }
 
     private string GetThemeIcon()

@@ -29,6 +29,7 @@ namespace Frontend.Services
         {
             try
             {
+                Console.WriteLine("Attempting login...");
                 var response = await _httpClient.PostAsJsonAsync("/api/auth/login", loginDto);
 
                 if (response.IsSuccessStatusCode)
@@ -37,10 +38,13 @@ namespace Frontend.Services
 
                     if (loginResponse != null)
                     {
+                        Console.WriteLine($"Login successful. User role: {loginResponse.User.Role}");
+
                         // Check if user has admin or dev role
                         if (loginResponse.User.Role != Backend.CMS.Domain.Enums.UserRole.Admin &&
                             loginResponse.User.Role != Backend.CMS.Domain.Enums.UserRole.Dev)
                         {
+                            Console.WriteLine("Access denied: User does not have required role");
                             throw new UnauthorizedAccessException("Access denied. Admin or Developer role required.");
                         }
 
@@ -53,6 +57,7 @@ namespace Frontend.Services
                         _httpClient.DefaultRequestHeaders.Authorization =
                             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", loginResponse.AccessToken);
 
+                        Console.WriteLine("Login completed successfully");
                         AuthenticationStateChanged?.Invoke();
                         return loginResponse;
                     }
@@ -60,15 +65,23 @@ namespace Frontend.Services
                 else
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"Login failed: {response.StatusCode} - {errorContent}");
                     throw new HttpRequestException($"Login failed: {response.StatusCode} - {errorContent}");
                 }
             }
             catch (HttpRequestException)
             {
+                Console.WriteLine("HTTP request exception during login");
                 throw;
+            }
+            catch (TaskCanceledException)
+            {
+                Console.WriteLine("Login request timed out");
+                throw new HttpRequestException("Login request timed out. Please check your connection.");
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"Unexpected login error: {ex.Message}");
                 throw new Exception($"Login error: {ex.Message}", ex);
             }
 
@@ -79,26 +92,43 @@ namespace Frontend.Services
         {
             try
             {
+                Console.WriteLine("Logging out...");
                 var refreshToken = await _localStorage.GetItemAsync<string>("refresh_token");
 
                 if (!string.IsNullOrEmpty(refreshToken))
                 {
-                    await _httpClient.PostAsJsonAsync("/api/auth/logout", new { RefreshToken = refreshToken });
+                    try
+                    {
+                        await _httpClient.PostAsJsonAsync("/api/auth/logout", new { RefreshToken = refreshToken });
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Logout API call failed: {ex.Message}");
+                        // Continue with logout even if API call fails
+                    }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Continue with logout even if API call fails
+                Console.WriteLine($"Error during logout: {ex.Message}");
             }
             finally
             {
-                await _localStorage.RemoveItemAsync("access_token");
-                await _localStorage.RemoveItemAsync("refresh_token");
-                await _localStorage.RemoveItemAsync("user");
-                await _localStorage.RemoveItemAsync("token_expiry");
+                try
+                {
+                    await _localStorage.RemoveItemAsync("access_token");
+                    await _localStorage.RemoveItemAsync("refresh_token");
+                    await _localStorage.RemoveItemAsync("user");
+                    await _localStorage.RemoveItemAsync("token_expiry");
 
-                _httpClient.DefaultRequestHeaders.Authorization = null;
-                AuthenticationStateChanged?.Invoke();
+                    _httpClient.DefaultRequestHeaders.Authorization = null;
+                    Console.WriteLine("Logout completed");
+                    AuthenticationStateChanged?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error clearing storage during logout: {ex.Message}");
+                }
             }
         }
 
@@ -106,10 +136,12 @@ namespace Frontend.Services
         {
             try
             {
+                Console.WriteLine("Attempting token refresh...");
                 var refreshToken = await _localStorage.GetItemAsync<string>("refresh_token");
 
                 if (string.IsNullOrEmpty(refreshToken))
                 {
+                    Console.WriteLine("No refresh token available");
                     return false;
                 }
 
@@ -130,17 +162,23 @@ namespace Frontend.Services
                         _httpClient.DefaultRequestHeaders.Authorization =
                             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", loginResponse.AccessToken);
 
+                        Console.WriteLine("Token refresh successful");
                         AuthenticationStateChanged?.Invoke();
                         return true;
                     }
                 }
+                else
+                {
+                    Console.WriteLine($"Token refresh failed: {response.StatusCode}");
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // If refresh fails, logout
-                await LogoutAsync();
+                Console.WriteLine($"Token refresh error: {ex.Message}");
             }
 
+            // If refresh fails, logout
+            await LogoutAsync();
             return false;
         }
 
@@ -150,8 +188,9 @@ namespace Frontend.Services
             {
                 return await _localStorage.GetItemAsync<UserDto>("user");
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"Error getting current user: {ex.Message}");
                 return null;
             }
         }
@@ -165,12 +204,14 @@ namespace Frontend.Services
 
                 if (string.IsNullOrEmpty(token) || !expiry.HasValue)
                 {
+                    Console.WriteLine("No token or expiry found");
                     return false;
                 }
 
                 // Check if token is expired
                 if (expiry.Value <= DateTime.UtcNow.AddMinutes(5)) // Refresh 5 minutes before expiry
                 {
+                    Console.WriteLine("Token expired or expiring soon, attempting refresh");
                     return await RefreshTokenAsync();
                 }
 
@@ -181,10 +222,12 @@ namespace Frontend.Services
                         new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
                 }
 
+                Console.WriteLine("User is authenticated");
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"Error checking authentication: {ex.Message}");
                 return false;
             }
         }
@@ -195,11 +238,11 @@ namespace Frontend.Services
             {
                 return await _localStorage.GetItemAsync<string>("access_token");
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"Error getting token: {ex.Message}");
                 return null;
             }
         }
     }
 }
-

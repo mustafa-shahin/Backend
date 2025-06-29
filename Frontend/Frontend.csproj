@@ -19,4 +19,8 @@
     <ProjectReference Include="..\Backend.CMS.Application\Backend.CMS.Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Layout\" />
+  </ItemGroup>
+
 </Project>

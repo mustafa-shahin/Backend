@@ -1,0 +1,86 @@
+﻿@using Microsoft.AspNetCore.Components.Web
+@inherits ErrorBoundaryBase
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+
+@if (CurrentException is null)
+{
+    @ChildContent
+}
+else
+{
+    <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+        <div class="max-w-lg w-full bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
+            <div class="text-red-500 text-6xl mb-4">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-4">
+                Something went wrong
+            </h2>
+            <p class="text-gray-600 dark:text-gray-400 mb-6">
+                An unexpected error occurred. Please try refreshing the page or contact support if the problem persists.
+            </p>
+
+            @if (showDetails)
+            {
+                <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 mb-6 text-left">
+                    <h3 class="font-medium text-red-800 dark:text-red-200 mb-2">Error Details:</h3>
+                    <pre class="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap overflow-auto max-h-40">@CurrentException.Message</pre>
+                </div>
+            }
+
+            <div class="flex flex-col sm:flex-row gap-3 justify-center">
+                <button @onclick="TryRecover" class="btn-primary">
+                    <i class="fas fa-redo mr-2"></i>
+                    Try Again
+                </button>
+
+                <button @onclick="ToggleDetails" class="btn-secondary">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    @(showDetails ? "Hide" : "Show") Details
+                </button>
+
+                <button @onclick="GoHome" class="btn-secondary">
+                    <i class="fas fa-home mr-2"></i>
+                    Go Home
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private bool showDetails = false;
+
+    protected override async Task OnErrorAsync(Exception exception)
+    {
+        await JSRuntime.InvokeVoidAsync("console.error", $"ErrorBoundary caught exception: {exception.Message}");
+        await JSRuntime.InvokeVoidAsync("console.error", exception.StackTrace);
+    }
+
+    private async Task TryRecover()
+    {
+        try
+        {
+            showDetails = false;
+            await JSRuntime.InvokeVoidAsync("console.log", "Attempting to recover from error...");
+            Recover();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Recovery failed: {ex.Message}");
+        }
+    }
+
+    private void ToggleDetails()
+    {
+        showDetails = !showDetails;
+    }
+
+    private void GoHome()
+    {
+        Navigation.NavigateTo("/", true);
+    }
+}

@@ -21,47 +21,47 @@
 
     <!-- Navigation items -->
     <div class="flex-1 px-4 py-6 space-y-2">
-        
+
         <!-- Dashboard -->
-        <SidebarItem Icon="fas fa-home" 
-                    Text="Dashboard" 
-                    Href="/"
-                    IsCollapsed="@isCollapsed" />
+        <SidebarItem Icon="fas fa-home"
+                     Text="Dashboard"
+                     Href="/"
+                     IsCollapsed="@isCollapsed" />
 
         <!-- Pages -->
-        <SidebarItem Icon="fas fa-file-alt" 
-                    Text="Pages" 
-                    Href="/pages"
-                    IsCollapsed="@isCollapsed" />
+        <SidebarItem Icon="fas fa-file-alt"
+                     Text="Pages"
+                     Href="/pages"
+                     IsCollapsed="@isCollapsed" />
 
         <!-- Files (Future) -->
-        <SidebarItem Icon="fas fa-folder" 
-                    Text="Files" 
-                    Href="/files"
-                    IsCollapsed="@isCollapsed"
-                    IsDisabled="true" />
+        <SidebarItem Icon="fas fa-folder"
+                     Text="Files"
+                     Href="/files"
+                     IsCollapsed="@isCollapsed"
+                     IsDisabled="true" />
 
         <!-- Products (Future) -->
-        <SidebarItem Icon="fas fa-box" 
-                    Text="Products" 
-                    Href="/products"
-                    IsCollapsed="@isCollapsed"
-                    IsDisabled="true" />
+        <SidebarItem Icon="fas fa-box"
+                     Text="Products"
+                     Href="/products"
+                     IsCollapsed="@isCollapsed"
+                     IsDisabled="true" />
 
         <!-- Users (Future) -->
-        <SidebarItem Icon="fas fa-users" 
-                    Text="Users" 
-                    Href="/users"
-                    IsCollapsed="@isCollapsed"
-                    IsDisabled="true" />
+        <SidebarItem Icon="fas fa-users"
+                     Text="Users"
+                     Href="/users"
+                     IsCollapsed="@isCollapsed"
+                     IsDisabled="true" />
 
         <!-- Settings -->
         <div class="pt-4">
-            <SidebarItem Icon="fas fa-cog" 
-                        Text="Settings" 
-                        Href="/settings"
-                        IsCollapsed="@isCollapsed"
-                        IsDisabled="true" />
+            <SidebarItem Icon="fas fa-cog"
+                         Text="Settings"
+                         Href="/settings"
+                         IsCollapsed="@isCollapsed"
+                         IsDisabled="true" />
         </div>
     </div>
 
@@ -72,7 +72,7 @@
             @if (isCollapsed)
             {
                 <div class="flex justify-center">
-                    <button @onclick="ShowUserMenu" 
+                    <button @onclick="ShowUserMenu"
                             class="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-500 transition-colors">
                         <i class="fas fa-user text-sm"></i>
                     </button>
@@ -92,7 +92,7 @@
                             @currentUser.RoleName
                         </p>
                     </div>
-                    <button @onclick="HandleLogout" 
+                    <button @onclick="HandleLogout"
                             class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
                             title="Sign out">
                         <i class="fas fa-sign-out-alt"></i>
@@ -104,6 +104,8 @@
 </nav>
 
 @code {
+    [Parameter] public EventCallback<bool> OnCollapsedChanged { get; set; }
+
     private bool isCollapsed = false;
     private Backend.CMS.Application.DTOs.UserDto? currentUser;
 
@@ -115,6 +117,7 @@
     public void Toggle()
     {
         isCollapsed = !isCollapsed;
+        OnCollapsedChanged.InvokeAsync(isCollapsed);
         StateHasChanged();
     }
 

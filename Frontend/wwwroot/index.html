@@ -65,21 +65,95 @@
     <div id="app">
         <div class="flex items-center justify-center min-h-screen">
             <div class="text-center">
-                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-                <p class="mt-4 text-gray-600 dark:text-gray-400">Loading CMS Designer...</p>
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p class="text-gray-600 dark:text-gray-400">Loading CMS Designer...</p>
+                <div class="mt-4">
+                    <div id="loading-status" class="text-sm text-gray-500 dark:text-gray-400">
+                        Initializing application...
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <div id="blazor-error-ui" class="fixed bottom-0 right-0 p-4 bg-red-500 text-white rounded-tl-lg shadow-lg" style="display: none;">
+    <div id="blazor-error-ui" class="fixed bottom-4 right-4 max-w-sm bg-red-500 text-white rounded-lg shadow-lg p-4" style="display: none;">
         <div class="flex items-center space-x-2">
             <i class="fas fa-exclamation-triangle"></i>
-            <span>An unhandled error has occurred. <a class="underline" href="" onclick="location.reload()">Reload</a></span>
-            <button class="ml-2" onclick="document.getElementById('blazor-error-ui').style.display = 'none'">
-                <i class="fas fa-times"></i>
-            </button>
+            <div class="flex-1">
+                <div class="font-medium">Application Error</div>
+                <div class="text-sm opacity-90">An unhandled error has occurred.</div>
+            </div>
+            <div class="flex space-x-2">
+                <button class="text-white hover:text-gray-200" onclick="location.reload()" title="Reload">
+                    <i class="fas fa-redo text-sm"></i>
+                </button>
+                <button class="text-white hover:text-gray-200" onclick="document.getElementById('blazor-error-ui').style.display = 'none'" title="Close">
+                    <i class="fas fa-times text-sm"></i>
+                </button>
+            </div>
         </div>
     </div>
+
+    <script>
+        // Enhanced loading feedback
+        window.addEventListener('DOMContentLoaded', function () {
+            console.log('DOM loaded, initializing Blazor...');
+            updateLoadingStatus('Loading Blazor WebAssembly...');
+        });
+
+        function updateLoadingStatus(message) {
+            const statusElement = document.getElementById('loading-status');
+            if (statusElement) {
+                statusElement.textContent = message;
+            }
+        }
+
+        // Blazor loading events
+        window.addEventListener('beforestart', function () {
+            console.log('Blazor starting...');
+            updateLoadingStatus('Starting Blazor...');
+        });
+
+        window.addEventListener('start', function () {
+            console.log('Blazor started');
+            updateLoadingStatus('Blazor started, loading components...');
+        });
+
+        // Error handling
+        window.addEventListener('error', function (e) {
+            console.error('Global error:', e.error);
+            updateLoadingStatus('Error loading application. Check console for details.');
+        });
+
+        window.addEventListener('unhandledrejection', function (e) {
+            console.error('Unhandled promise rejection:', e.reason);
+            updateLoadingStatus('Error loading application. Check console for details.');
+        });
+
+        // Connection status checking
+        function checkBackendConnection() {
+            fetch('http://localhost:5252/api/health', {
+                method: 'GET',
+                timeout: 5000
+            })
+                .then(response => {
+                    if (response.ok) {
+                        console.log('Backend connection successful');
+                        updateLoadingStatus('Connected to backend...');
+                    } else {
+                        console.warn('Backend returned non-OK status:', response.status);
+                        updateLoadingStatus('Backend connection issues...');
+                    }
+                })
+                .catch(error => {
+                    console.warn('Backend connection failed:', error);
+                    updateLoadingStatus('Cannot connect to backend. Please ensure it\'s running on http://localhost:5252');
+                });
+        }
+
+        // Check backend connection after a short delay
+        setTimeout(checkBackendConnection, 1000);
+    </script>
 
     <script src="_framework/blazor.webassembly.js"></script>
 </body>

@@ -1,44 +1,20 @@
 ﻿@inherits LayoutComponentBase
-@using Frontend.Interface
-@using Frontend.Services
-@inject IThemeService ThemeService
-@inject INotificationService NotificationService
+@inject IJSRuntime JSRuntime
 
-<div class="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
-    <Sidebar @ref="sidebar" />
-
-    <div class="@GetMainContentClass()">
-        <TopBar OnToggleSidebar="ToggleSidebar" />
-
-        <main class="flex-1 overflow-y-auto">
-            <div class="p-6">
-                @Body
-            </div>
-        </main>
-    </div>
-
-    <NotificationContainer />
+<div style="min-height: 100vh; background-color: #f9fafb;">
+    @Body
 </div>
 
 @code {
-    private Sidebar? sidebar;
-    private bool isSidebarCollapsed = false;
-
     protected override async Task OnInitializedAsync()
     {
-        await ThemeService.InitializeAsync();
-    }
-
-    private void ToggleSidebar()
-    {
-        sidebar?.Toggle();
-        isSidebarCollapsed = !isSidebarCollapsed;
-    }
-
-    private string GetMainContentClass()
-    {
-        return isSidebarCollapsed
-            ? "ml-16 flex flex-col min-h-screen transition-all duration-300"
-            : "ml-64 flex flex-col min-h-screen transition-all duration-300";
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("console.log", "MainLayout loaded");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"MainLayout error: {ex.Message}");
+        }
     }
 }

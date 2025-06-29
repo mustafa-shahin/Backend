@@ -233,7 +233,8 @@ static void ConfigureCors(WebApplicationBuilder builder)
                     "http://localhost:3001",
                     "https://localhost:3001",
                     "http://127.0.0.1:3000",
-                    "https://127.0.0.1:3000"
+                    "https://127.0.0.1:3000",
+                    "https://localhost:5001"
                   )
                   .AllowAnyHeader()
                   .AllowAnyMethod()
@@ -252,7 +253,8 @@ static void ConfigureCors(WebApplicationBuilder builder)
                     "http://localhost:3001",
                     "https://localhost:3001",
                     "http://127.0.0.1:3000",
-                    "https://127.0.0.1:3000"
+                    "https://127.0.0.1:3000",
+                    "https://localhost:5001"
                   )
                   .AllowAnyHeader()
                   .AllowAnyMethod()

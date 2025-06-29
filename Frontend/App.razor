@@ -1,15 +1,20 @@
 ﻿@using Frontend.Interface
+@using Frontend.Pages
 @using Microsoft.AspNetCore.Components.Authorization
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
 <CascadingAuthenticationState>
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
             <AuthorizeView>
                 <Authorized>
-                    <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
-                    <FocusOnNavigate RouteData="@routeData" Selector="h1" />
-                </Authorized>
-                <NotAuthorized>
-                    @if (context.User.Identity?.IsAuthenticated == true)
+                    @if (IsAuthorizedUser(context))
+                    {
+                        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+                        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+                    }
+                    else
                     {
                         <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
                             <div class="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
@@ -24,6 +29,17 @@
                                     <i class="fas fa-sign-out-alt mr-2"></i>
                                     Sign Out
                                 </button>
+                            </div>
+                        </div>
+                    }
+                </Authorized>
+                <NotAuthorized>
+                    @if (isLoading)
+                    {
+                        <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+                            <div class="text-center">
+                                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                                <p class="text-gray-600 dark:text-gray-400">Loading...</p>
                             </div>
                         </div>
                     }
@@ -57,11 +73,66 @@
 
 @code {
     [Inject] private IAuthService AuthService { get; set; } = default!;
-    [Inject] private NavigationManager Navigation { get; set; } = default!;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Add a small delay to ensure services are initialized
+            await Task.Delay(100);
+            
+            // Log current URL for debugging
+            await JSRuntime.InvokeVoidAsync("console.log", $"Current URL: {Navigation.Uri}");
+            
+            // Force navigation to login if on root and not authenticated
+            var uri = new Uri(Navigation.Uri);
+            if (uri.AbsolutePath == "/" && !await AuthService.IsAuthenticatedAsync())
+            {
+                Navigation.NavigateTo("/login", true);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"App initialization error: {ex.Message}");
+            // Force navigation to login on error
+            Navigation.NavigateTo("/login", true);
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private bool IsAuthorizedUser(AuthenticationState authState)
+    {
+        try
+        {
+            if (authState?.User?.Identity?.IsAuthenticated != true)
+                return false;
+
+            var roleClaim = authState.User.FindFirst("role")?.Value;
+            return roleClaim == "Admin" || roleClaim == "Dev";
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private async Task HandleLogout()
     {
-        await AuthService.LogoutAsync();
-        Navigation.NavigateTo("/", true);
+        try
+        {
+            await AuthService.LogoutAsync();
+            Navigation.NavigateTo("/login", true);
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"Logout error: {ex.Message}");
+            Navigation.NavigateTo("/login", true);
+        }
     }
 }
