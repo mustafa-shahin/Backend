@@ -1,6 +1,6 @@
 ﻿using Backend.CMS.Application.DTOs;
 using Blazored.LocalStorage;
-using Frontend.Interface;
+using Frontend.Interfaces;
 using System.Net.Http.Json;
 using System.Text.Json;
 

@@ -1,5 +1,5 @@
 ﻿using Backend.CMS.Domain.Enums;
-using Frontend.Interface;
+using Frontend.Interfaces;
 using Microsoft.AspNetCore.Components.Authorization;
 using System.Security.Claims;
 

@@ -1,6 +1,7 @@
 using Blazored.LocalStorage;
 using Frontend;
 using Frontend.Interface;
+using Frontend.Interfaces;
 using Frontend.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
