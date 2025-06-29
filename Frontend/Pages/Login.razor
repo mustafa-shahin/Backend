@@ -18,11 +18,12 @@
             <!-- Theme toggle -->
             <div class="flex justify-end">
                 <button @onclick="ToggleTheme"
-                        class="p-3 rounded-full text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 focus-ring"
+                       class="flex items-center justify-center h-12 w-12 p-3 rounded-full text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200 focus-ring"
                         aria-label="Toggle theme">
                     <i class="@GetThemeIcon() text-xl transition-transform duration-300"></i>
                 </button>
             </div>
+
 
             <!-- Header -->
             <div class="text-center">
@@ -59,7 +60,7 @@
                 <div class="space-y-4">
                     <!-- Email field -->
                     <div>
-                        <label for="email" class="form-label">Email address</label>
+                        <label for="email" class="form-label dark:text-white">Email address</label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-envelope text-gray-400"></i>
@@ -69,14 +70,14 @@
                                        type="email"
                                        autocomplete="email"
                                        placeholder="Enter your email"
-                                       class="form-input pl-10 transform transition-all duration-200 focus-within:scale-[1.02]" />
+                                       class="form-input pl-10 transform transition-all duration-200 focus-within:scale-[1.02] w-full h-10 rounded-lg" />
                         </div>
                         <ValidationMessage For="@(() => loginModel.Email)" class="text-red-500 text-sm mt-1" />
                     </div>
 
                     <!-- Password field -->
                     <div>
-                        <label for="password" class="form-label">Password</label>
+                        <label for="password" class="form-label  dark:text-white">Password</label>
                         <div class="relative">
                             <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                 <i class="fas fa-lock text-gray-400"></i>
@@ -86,7 +87,7 @@
                                        type="password"
                                        autocomplete="current-password"
                                        placeholder="Enter your password"
-                                       class="form-input pl-10 transform transition-all duration-200 focus-within:scale-[1.02]" />
+                                       class="form-input pl-10 transform transition-all duration-200 focus-within:scale-[1.02] w-full h-10 rounded-lg" />
                         </div>
                         <ValidationMessage For="@(() => loginModel.Password)" class="text-red-500 text-sm mt-1" />
                     </div>
