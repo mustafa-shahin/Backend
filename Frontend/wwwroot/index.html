@@ -247,6 +247,54 @@
             }
         };
 
+        // ===== Modal/Dialog Utilities =====
+
+        // Global variables for escape key handling
+        let currentEscapeHandler = null;
+        let escapeKeyListener = null;
+
+        // Add escape key listener for modals
+        window.addEscapeKeyListener = function (dotNetRef) {
+            try {
+                // Remove existing listener first
+                removeEscapeKeyListener();
+
+                // Store the .NET reference
+                currentEscapeHandler = dotNetRef;
+
+                // Create the event handler
+                escapeKeyListener = function (event) {
+                    if (event.key === 'Escape' && currentEscapeHandler) {
+                        try {
+                            currentEscapeHandler.invokeMethodAsync('HandleEscapeKey');
+                        } catch (err) {
+                            console.warn('Failed to invoke escape key handler:', err);
+                        }
+                    }
+                };
+
+                // Add the listener
+                document.addEventListener('keydown', escapeKeyListener);
+            } catch (err) {
+                console.error('Failed to add escape key listener:', err);
+            }
+        };
+
+        // Remove escape key listener
+        window.removeEscapeKeyListener = function () {
+            try {
+                if (escapeKeyListener) {
+                    document.removeEventListener('keydown', escapeKeyListener);
+                    escapeKeyListener = null;
+                }
+                currentEscapeHandler = null;
+            } catch (err) {
+                console.error('Failed to remove escape key listener:', err);
+            }
+        };
+
+        // ===== End Modal/Dialog Utilities =====
+
         // Clean up loading when Blazor starts
         window.addEventListener('blazor:started', function () {
             clearInterval(progressInterval);

@@ -15,8 +15,8 @@
         <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Pages</h1>
         <p class="text-gray-600 dark:text-gray-400">Manage your website pages and content</p>
     </div>
-    <button @onclick="ShowCreateDialog" class="btn-primary">
-        <i class="fas fa-plus mr-2"></i>
+    <button @onclick="ShowCreateDialog" class="btn-primary dark:text-white relative flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transform transition-all duration-200 hover:scale-[1.02]">
+        <i class="fas fa-plus mr-2 dark:text-white relative top-1"></i>
         Create Page
     </button>
 </div>
@@ -31,19 +31,19 @@
             <input @bind="searchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp"
                    type="text"
                    placeholder="Search pages..."
-                   class="form-input pl-10" />
+                   class="form-input pl-10 h-10 rounded-lg bg-gray-200" />
         </div>
     </div>
 
     <div class="flex gap-2">
-        <select @bind="selectedStatus" @bind:after="OnFilterChange" class="form-input">
+        <select @bind="selectedStatus" @bind:after="OnFilterChange" class="form-input h-10 rounded-lg pl-2 pr-2 bg-gray-200">
             <option value="">All Status</option>
             <option value="@PageStatus.Published">Published</option>
             <option value="@PageStatus.Draft">Draft</option>
             <option value="@PageStatus.Archived">Archived</option>
         </select>
 
-        <button @onclick="RefreshData" class="btn-secondary" title="Refresh">
+        <button @onclick="RefreshData" class="btn-secondary dark:text-white" title="Refresh">
             <i class="fas fa-refresh @(isLoading ? "fa-spin" : "")"></i>
         </button>
     </div>
@@ -58,11 +58,11 @@
               OnDuplicate="@ShowDuplicateDialog">
 
     <TableColumns>
-        <th class="table-header">Name</th>
-        <th class="table-header">Title</th>
-        <th class="table-header">Status</th>
-        <th class="table-header">Updated</th>
-        <th class="table-header">Actions</th>
+        <th class="table-header dark:text-white text-gray-600">Name</th>
+        <th class="table-header dark:text-white text-gray-600">Title</th>
+        <th class="table-header dark:text-white text-gray-600">Status</th>
+        <th class="table-header dark:text-white text-gray-600">Updated</th>
+        <th class="table-header dark:text-white text-gray-600">Actions</th>
     </TableColumns>
 
     <RowTemplate Context="page">
@@ -165,35 +165,35 @@
                 <!-- Basic Fields -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <!-- Name -->
-                    <div>
-                        <label class="form-label">
+                    <div class="flex flex-col">
+                        <label class="form-label dark:text-white">
                             <i class="fas fa-file-alt mr-2"></i>
                             Page Name *
                         </label>
-                        <InputText @bind-Value="pageModel.Name" class="form-input" placeholder="Enter page name" />
+                        <InputText @bind-Value="pageModel.Name" class="form-input bg-gray-200 rounded-lg h-10 pr-2 pl-2" placeholder="Enter page name" />
                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Internal name for the page (not visible to visitors)</p>
                         <ValidationMessage For="@(() => pageModel.Name)" class="text-red-500 text-sm mt-1" />
                     </div>
 
                     <!-- Title -->
-                    <div>
-                        <label class="form-label">
+                    <div class="flex flex-col">
+                        <label class="form-label dark:text-white">
                             <i class="fas fa-heading mr-2"></i>
                             Page Title *
                         </label>
-                        <InputText @bind-Value="pageModel.Title" class="form-input" placeholder="Enter page title" />
+                        <InputText @bind-Value="pageModel.Title" class="form-input bg-gray-200 rounded-lg h-10 pr-2 pl-2" placeholder="Enter page title" />
                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Title displayed to visitors and in browser tabs</p>
                         <ValidationMessage For="@(() => pageModel.Title)" class="text-red-500 text-sm mt-1" />
                     </div>
                 </div>
 
                 <!-- Slug -->
-                <div>
-                    <label class="form-label">
+                <div class="flex flex-col">
+                    <label class="form-label dark:text-white">
                         <i class="fas fa-link mr-2"></i>
                         URL Slug *
                     </label>
-                    <InputText @bind-Value="pageModel.Slug" @oninput="OnSlugChange" class="form-input" placeholder="page-url-slug" />
+                    <InputText @bind-Value="pageModel.Slug" @oninput="OnSlugChange" class="form-input bg-gray-200 rounded-lg h-10 pr-2 pl-2" placeholder="page-url-slug" />
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">URL-friendly version (e.g., about-us)</p>
                     <ValidationMessage For="@(() => pageModel.Slug)" class="text-red-500 text-sm mt-1" />
                     @if (!string.IsNullOrEmpty(slugValidationMessage))
@@ -203,36 +203,36 @@
                 </div>
 
                 <!-- Description -->
-                <div>
-                    <label class="form-label">Description</label>
-                    <InputTextArea @bind-Value="pageModel.Description" class="form-input" rows="3" placeholder="Brief description of the page content" />
+                <div class="flex flex-col">
+                    <label class="form-label dark:text-white">Description</label>
+                    <InputTextArea @bind-Value="pageModel.Description" class="form-input bg-gray-200 rounded-lg h-40 pr-2 pl-2" rows="3" placeholder="Brief description of the page content" />
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Brief description of the page content</p>
                 </div>
 
                 <!-- Status and Settings -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <!-- Status -->
-                    <div>
+                    <div class="flex flex-col dark:text-white">
                         <label class="form-label">Status</label>
-                        <InputSelect @bind-Value="pageModel.Status" class="form-input">
-                            <option value="@PageStatus.Draft">Draft</option>
-                            <option value="@PageStatus.Published">Published</option>
-                            <option value="@PageStatus.Archived">Archived</option>
+                        <InputSelect @bind-Value="pageModel.Status" class="form-input rounded-lg h-10 pr-2 pl-2 dark:text-black">
+                            <option class="dark:text-black rounded-lg h-10 pr-2 pl-2" value="@PageStatus.Draft">Draft</option>
+                            <option class="dark:text-black rounded-lg h-10 pr-2 pl-2" value="@PageStatus.Published">Published</option>
+                            <option class="dark:text-black rounded-lg h-10 pr-2 pl-2" value="@PageStatus.Archived">Archived</option>
                         </InputSelect>
                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Current status of the page</p>
                     </div>
 
                     <!-- Priority -->
-                    <div>
-                        <label class="form-label">Priority</label>
-                        <InputNumber @bind-Value="pageModel.Priority" class="form-input" placeholder="0" />
+                    <div class="flex flex-col">
+                        <label class="form-label dark:text-white">Priority</label>
+                        <InputNumber @bind-Value="pageModel.Priority" class="form-input bg-gray-200 rounded-lg h-10 pr-2 pl-2" placeholder="0" />
                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Higher numbers have higher priority in navigation</p>
                     </div>
 
                     <!-- Template -->
-                    <div>
-                        <label class="form-label">Template</label>
-                        <InputText @bind-Value="pageModel.Template" class="form-input" placeholder="Enter template name (optional)" />
+                    <div class="flex flex-col">
+                        <label class="form-label dark:text-white">Template</label>
+                        <InputText @bind-Value="pageModel.Template" class="form-input bg-gray-200 rounded-lg h-10 pr-2 pl-2" placeholder="Enter template name (optional)" />
                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Template to use for rendering this page</p>
                     </div>
                 </div>
@@ -271,21 +271,21 @@
                     </h4>
 
                     <div class="grid grid-cols-1 gap-4">
-                        <div>
-                            <label class="form-label">Meta Title</label>
-                            <InputText @bind-Value="pageModel.MetaTitle" class="form-input" placeholder="SEO title for search engines" />
+                        <div class="flex flex-col">
+                            <label class="form-label dark:text-white">Meta Title</label>
+                            <InputText @bind-Value="pageModel.MetaTitle" class="form-input rounded-lg h-10 pr-2 pl-2" placeholder="SEO title for search engines" />
                             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Title for search engines (if different from page title)</p>
                         </div>
 
-                        <div>
-                            <label class="form-label">Meta Description</label>
-                            <InputTextArea @bind-Value="pageModel.MetaDescription" class="form-input" rows="2" placeholder="SEO description for search engines" />
+                        <div class="flex flex-col">
+                            <label class="form-label dark:text-white">Meta Description</label>
+                            <InputTextArea @bind-Value="pageModel.MetaDescription" class="form-input rounded-lg h-40 pr-2 pl-2" rows="2" placeholder="SEO description for search engines" />
                             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Description for search engines (150-160 characters recommended)</p>
                         </div>
 
-                        <div>
-                            <label class="form-label">Meta Keywords</label>
-                            <InputText @bind-Value="pageModel.MetaKeywords" class="form-input" placeholder="keyword1, keyword2, keyword3" />
+                        <div class="flex flex-col">
+                            <label class="form-label dark:text-white">Meta Keywords</label>
+                            <InputText @bind-Value="pageModel.MetaKeywords" class="form-input rounded-lg h-10 pr-2 pl-2" placeholder="keyword1, keyword2, keyword3" />
                             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Keywords for search engines (comma-separated)</p>
                         </div>
                     </div>
