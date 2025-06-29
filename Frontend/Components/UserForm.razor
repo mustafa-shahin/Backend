@@ -1,0 +1,607 @@
+﻿@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interfaces
+@inject IStyleService StyleService
+
+<div class="space-y-6">
+    <!-- Profile Picture Section -->
+    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                <i class="fas fa-user-circle text-blue-400 text-xl"></i>
+            </div>
+            <div class="ml-3">
+                <h3 class="text-sm font-medium text-blue-800 dark:text-blue-200">
+                    User Profile
+                </h3>
+                <div class="mt-2 text-sm text-blue-700 dark:text-blue-300">
+                    <p>
+                        @if (IsEditMode)
+                        {
+                            <text>Update the user's profile information and settings.</text>
+                        }
+                        else
+                        {
+                            <text>Create a new user account with profile information and access permissions.</text>
+                        }
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Profile Picture -->
+    <div class="space-y-1">
+        <label class="@StyleService.GetFormLabelClass()">
+            <i class="fas fa-image mr-2"></i>
+            Profile Picture
+        </label>
+        <div class="flex items-center space-x-4">
+            <!-- Current/Preview Image -->
+            <div class="flex-shrink-0">
+                @if (Model.PictureFileId.HasValue || !string.IsNullOrEmpty(previewImageUrl))
+                {
+                    <img class="h-20 w-20 rounded-full object-cover border-4 border-white shadow-lg"
+                         src="@GetProfileImageUrl()"
+                         alt="Profile picture" />
+                }
+                else
+                {
+                    <div class="h-20 w-20 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg">
+                        <span class="text-lg font-bold text-white">
+                            @GetInitials()
+                        </span>
+                    </div>
+                }
+            </div>
+
+            <!-- Upload Controls -->
+            <div class="flex-1">
+                <div class="flex space-x-2">
+                    <button type="button"
+                            @onclick="OpenFileSelector"
+                            class="@StyleService.GetButtonClass("secondary", "small")">
+                        <i class="fas fa-upload mr-2"></i>
+                        Upload New
+                    </button>
+
+                    <button type="button"
+                            @onclick="OpenImageLibrary"
+                            class="@StyleService.GetButtonClass("outline", "small")">
+                        <i class="fas fa-images mr-2"></i>
+                        Choose Existing
+                    </button>
+
+                    @if (Model.PictureFileId.HasValue || !string.IsNullOrEmpty(previewImageUrl))
+                    {
+                        <button type="button"
+                                @onclick="RemoveProfilePicture"
+                                class="@StyleService.GetButtonClass("danger", "small")">
+                            <i class="fas fa-trash mr-2"></i>
+                            Remove
+                        </button>
+                    }
+                </div>
+
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                    JPG, PNG or GIF up to 5MB. Recommended size: 400x400px.
+                </p>
+
+                <!-- Hidden file input -->
+                <InputFile @ref="fileInput"
+                           OnChange="OnFileSelected"
+                           accept="image/*"
+                           class="hidden" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Basic Information -->
+    <div class="@StyleService.GetFormGridClass(2)">
+        <!-- First Name -->
+        <div class="space-y-1">
+            <label class="@StyleService.GetFormLabelClass()">
+                <i class="fas fa-user mr-2"></i>
+                First Name *
+            </label>
+            <InputText @bind-Value="Model.FirstName"
+                       class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("FirstName"))"
+                       placeholder="Enter first name" />
+            @if (ValidationErrors.ContainsKey("FirstName"))
+            {
+                <div class="text-red-600 dark:text-red-400 text-sm mt-1 flex items-center">
+                    <i class="fas fa-exclamation-circle mr-1"></i>
+                    @ValidationErrors["FirstName"]
+                </div>
+            }
+        </div>
+
+        <!-- Last Name -->
+        <div class="space-y-1">
+            <label class="@StyleService.GetFormLabelClass()">
+                <i class="fas fa-user mr-2"></i>
+                Last Name *
+            </label>
+            <InputText @bind-Value="Model.LastName"
+                       class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("LastName"))"
+                       placeholder="Enter last name" />
+            @if (ValidationErrors.ContainsKey("LastName"))
+            {
+                <div class="text-red-600 dark:text-red-400 text-sm mt-1 flex items-center">
+                    <i class="fas fa-exclamation-circle mr-1"></i>
+                    @ValidationErrors["LastName"]
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Account Information -->
+    <div class="@StyleService.GetFormGridClass(2)">
+        <!-- Username -->
+        <div class="space-y-1">
+            <label class="@StyleService.GetFormLabelClass()">
+                <i class="fas fa-at mr-2"></i>
+                Username *
+            </label>
+            <InputText @bind-Value="Model.Username"
+                       class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("Username"))"
+                       placeholder="Enter username" />
+            @if (ValidationErrors.ContainsKey("Username"))
+            {
+                <div class="text-red-600 dark:text-red-400 text-sm mt-1 flex items-center">
+                    <i class="fas fa-exclamation-circle mr-1"></i>
+                    @ValidationErrors["Username"]
+                </div>
+            }
+        </div>
+
+        <!-- Email -->
+        <div class="space-y-1">
+            <label class="@StyleService.GetFormLabelClass()">
+                <i class="fas fa-envelope mr-2"></i>
+                Email *
+            </label>
+            <InputText @bind-Value="Model.Email"
+                       type="email"
+                       class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("Email"))"
+                       placeholder="Enter email address" />
+            @if (ValidationErrors.ContainsKey("Email"))
+            {
+                <div class="text-red-600 dark:text-red-400 text-sm mt-1 flex items-center">
+                    <i class="fas fa-exclamation-circle mr-1"></i>
+                    @ValidationErrors["Email"]
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Password Section -->
+    @if (!IsEditMode)
+    {
+        <div class="@StyleService.GetFormGridClass(2)">
+            <!-- Password -->
+            <div class="space-y-1">
+                <label class="@StyleService.GetFormLabelClass()">
+                    <i class="fas fa-lock mr-2"></i>
+                    Password *
+                </label>
+                <InputText @bind-Value="Model.Password"
+                           type="password"
+                           class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("Password"))"
+                           placeholder="Enter password" />
+                @if (ValidationErrors.ContainsKey("Password"))
+                {
+                    <div class="text-red-600 dark:text-red-400 text-sm mt-1 flex items-center">
+                        <i class="fas fa-exclamation-circle mr-1"></i>
+                        @ValidationErrors["Password"]
+                    </div>
+                }
+            </div>
+
+            <!-- Confirm Password -->
+            <div class="space-y-1">
+                <label class="@StyleService.GetFormLabelClass()">
+                    <i class="fas fa-lock mr-2"></i>
+                    Confirm Password *
+                </label>
+                <InputText @bind-Value="confirmPassword"
+                           type="password"
+                           class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("ConfirmPassword"))"
+                           placeholder="Confirm password" />
+                @if (ValidationErrors.ContainsKey("ConfirmPassword"))
+                {
+                    <div class="text-red-600 dark:text-red-400 text-sm mt-1 flex items-center">
+                        <i class="fas fa-exclamation-circle mr-1"></i>
+                        @ValidationErrors["ConfirmPassword"]
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- Role and Status -->
+    <div class="@StyleService.GetFormGridClass(2)">
+        <!-- Role -->
+        <div class="space-y-1">
+            <label class="@StyleService.GetFormLabelClass()">
+                <i class="fas fa-user-tag mr-2"></i>
+                Role *
+            </label>
+            <InputSelect @bind-Value="Model.Role"
+                         class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("Role"))">
+                <option value="@UserRole.Customer">Customer</option>
+                <option value="@UserRole.Admin">Administrator</option>
+                <option value="@UserRole.Dev">Developer</option>
+            </InputSelect>
+            @if (ValidationErrors.ContainsKey("Role"))
+            {
+                <div class="text-red-600 dark:text-red-400 text-sm mt-1 flex items-center">
+                    <i class="fas fa-exclamation-circle mr-1"></i>
+                    @ValidationErrors["Role"]
+                </div>
+            }
+        </div>
+
+        <!-- Active Status -->
+        <div class="space-y-1">
+            <label class="@StyleService.GetFormLabelClass()">
+                <i class="fas fa-toggle-on mr-2"></i>
+                Account Status
+            </label>
+            <div class="flex items-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                <InputCheckbox @bind-Value="Model.IsActive"
+                               id="isActive"
+                               class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                <label for="isActive" class="ml-3">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Active Account</span>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">User can log in and access the system</p>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Addresses Section -->
+    <div class="space-y-4">
+        <div class="flex items-center justify-between">
+            <h4 class="text-lg font-medium text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-map-marker-alt mr-2"></i>
+                Addresses
+            </h4>
+            <button type="button"
+                    @onclick="AddAddress"
+                    class="@StyleService.GetButtonClass("outline", "small")">
+                <i class="fas fa-plus mr-1"></i>
+                Add Address
+            </button>
+        </div>
+
+        @if (Model.Addresses?.Any() == true)
+        {
+            @for (int i = 0; i < Model.Addresses.Count; i++)
+            {
+                var index = i; // Capture for closure
+                var address = Model.Addresses[index];
+
+                <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h5 class="font-medium text-gray-900 dark:text-white">
+                            Address @(index + 1)
+                        </h5>
+                        <button type="button"
+                                @onclick="() => RemoveAddress(index)"
+                                class="@StyleService.GetButtonClass("danger", "small")">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+
+                    <div class="@StyleService.GetFormGridClass(2)">
+                        <div class="space-y-1">
+                            <label class="@StyleService.GetFormLabelClass()">Street</label>
+                            <InputText @bind-Value="address.Street"
+                                       class="@StyleService.GetFormInputClass()"
+                                       placeholder="Street address" />
+                        </div>
+
+                        <div class="space-y-1">
+                            <label class="@StyleService.GetFormLabelClass()">House Number</label>
+                            <InputText @bind-Value="address.HouseNr"
+                                       class="@StyleService.GetFormInputClass()"
+                                       placeholder="House number" />
+                        </div>
+
+                        <div class="space-y-1">
+                            <label class="@StyleService.GetFormLabelClass()">City</label>
+                            <InputText @bind-Value="address.City"
+                                       class="@StyleService.GetFormInputClass()"
+                                       placeholder="City" />
+                        </div>
+
+                        <div class="space-y-1">
+                            <label class="@StyleService.GetFormLabelClass()">State/Province</label>
+                            <InputText @bind-Value="address.State"
+                                       class="@StyleService.GetFormInputClass()"
+                                       placeholder="State or province" />
+                        </div>
+
+                        <div class="space-y-1">
+                            <label class="@StyleService.GetFormLabelClass()">Country</label>
+                            <InputText @bind-Value="address.Country"
+                                       class="@StyleService.GetFormInputClass()"
+                                       placeholder="Country" />
+                        </div>
+
+                        <div class="space-y-1">
+                            <label class="@StyleService.GetFormLabelClass()">Postal Code</label>
+                            <InputText @bind-Value="address.PostalCode"
+                                       class="@StyleService.GetFormInputClass()"
+                                       placeholder="Postal code" />
+                        </div>
+                    </div>
+
+                    <div class="flex items-center">
+                        <InputCheckbox @bind-Value="address.IsDefault"
+                                       id="@($"address-default-{index}")"
+                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                        <label for="@($"address-default-{index}")" class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                            Default address
+                        </label>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="text-center py-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+                <i class="fas fa-map-marker-alt text-gray-400 text-2xl mb-2"></i>
+                <p class="text-gray-500 dark:text-gray-400">No addresses added yet</p>
+                <button type="button"
+                        @onclick="AddAddress"
+                        class="@StyleService.GetButtonClass("primary", "small") mt-2">
+                    <i class="fas fa-plus mr-1"></i>
+                    Add First Address
+                </button>
+            </div>
+        }
+    </div>
+
+    <!-- Contact Details Section -->
+    <div class="space-y-4">
+        <div class="flex items-center justify-between">
+            <h4 class="text-lg font-medium text-gray-900 dark:text-white flex items-center">
+                <i class="fas fa-phone mr-2"></i>
+                Contact Details
+            </h4>
+            <button type="button"
+                    @onclick="AddContactDetail"
+                    class="@StyleService.GetButtonClass("outline", "small")">
+                <i class="fas fa-plus mr-1"></i>
+                Add Contact
+            </button>
+        </div>
+
+        @if (Model.ContactDetails?.Any() == true)
+        {
+            @for (int i = 0; i < Model.ContactDetails.Count; i++)
+            {
+                var index = i; // Capture for closure
+                var contact = Model.ContactDetails[index];
+
+                <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h5 class="font-medium text-gray-900 dark:text-white">
+                            Contact @(index + 1)
+                        </h5>
+                        <button type="button"
+                                @onclick="() => RemoveContactDetail(index)"
+                                class="@StyleService.GetButtonClass("danger", "small")">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+
+                    <div class="@StyleService.GetFormGridClass(2)">
+                        <div class="space-y-1">
+                            <label class="@StyleService.GetFormLabelClass()">Primary Phone</label>
+                            <InputText @bind-Value="contact.PrimaryPhone"
+                                       class="@StyleService.GetFormInputClass()"
+                                       placeholder="Primary phone number" />
+                        </div>
+
+                        <div class="space-y-1">
+                            <label class="@StyleService.GetFormLabelClass()">Mobile</label>
+                            <InputText @bind-Value="contact.Mobile"
+                                       class="@StyleService.GetFormInputClass()"
+                                       placeholder="Mobile number" />
+                        </div>
+
+                        <div class="space-y-1">
+                            <label class="@StyleService.GetFormLabelClass()">Email</label>
+                            <InputText @bind-Value="contact.Email"
+                                       type="email"
+                                       class="@StyleService.GetFormInputClass()"
+                                       placeholder="Email address" />
+                        </div>
+
+                        <div class="space-y-1">
+                            <label class="@StyleService.GetFormLabelClass()">Website</label>
+                            <InputText @bind-Value="contact.Website"
+                                       class="@StyleService.GetFormInputClass()"
+                                       placeholder="Website URL" />
+                        </div>
+                    </div>
+
+                    <div class="flex items-center">
+                        <InputCheckbox @bind-Value="contact.IsDefault"
+                                       id="@($"contact-default-{index}")"
+                                       class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                        <label for="@($"contact-default-{index}")" class="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                            Default contact
+                        </label>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="text-center py-6 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+                <i class="fas fa-phone text-gray-400 text-2xl mb-2"></i>
+                <p class="text-gray-500 dark:text-gray-400">No contact details added yet</p>
+                <button type="button"
+                        @onclick="AddContactDetail"
+                        class="@StyleService.GetButtonClass("primary", "small") mt-2">
+                    <i class="fas fa-plus mr-1"></i>
+                    Add First Contact
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Image Library Modal -->
+@if (showImageLibrary)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" @onclick="CloseImageLibrary"></div>
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="@StyleService.GetModalDialogSizeClass("large") inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle">
+                <div class="bg-white dark:bg-gray-800 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        Select Profile Picture
+                    </h3>
+                </div>
+                <div class="bg-white dark:bg-gray-800 px-6 py-4">
+                    <p class="text-gray-500 dark:text-gray-400">
+                        Image library functionality will be implemented here.
+                    </p>
+                </div>
+                <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 flex justify-end space-x-3">
+                    <button @onclick="CloseImageLibrary" class="@StyleService.GetButtonClass("secondary")">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public CreateUserDto Model { get; set; } = new();
+    [Parameter] public Dictionary<string, string> ValidationErrors { get; set; } = new();
+    [Parameter] public bool IsEditMode { get; set; }
+
+    private InputFile? fileInput;
+    private string confirmPassword = string.Empty;
+    private string previewImageUrl = string.Empty;
+    private bool showImageLibrary = false;
+
+    protected override void OnParametersSet()
+    {
+        // Initialize collections if they're null
+        Model.Addresses ??= new List<CreateAddressDto>();
+        Model.ContactDetails ??= new List<CreateContactDetailsDto>();
+    }
+
+    private string GetInitials()
+    {
+        var firstInitial = !string.IsNullOrEmpty(Model.FirstName) ? Model.FirstName.Substring(0, 1).ToUpper() : "U";
+        var lastInitial = !string.IsNullOrEmpty(Model.LastName) ? Model.LastName.Substring(0, 1).ToUpper() : "U";
+        return firstInitial + lastInitial;
+    }
+
+    private string GetProfileImageUrl()
+    {
+        if (!string.IsNullOrEmpty(previewImageUrl))
+            return previewImageUrl;
+
+        if (Model.PictureFileId.HasValue)
+            return $"/api/file/{Model.PictureFileId}/thumbnail"; // Adjust based on your API
+
+        return string.Empty;
+    }
+
+    private async Task OpenFileSelector()
+    {
+        if (fileInput?.Element != null)
+        {
+            await fileInput.Element.Value.InvokeVoidAsync("click");
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file != null)
+        {
+            // Validate file
+            if (!file.ContentType.StartsWith("image/"))
+            {
+                ValidationErrors["PictureFile"] = "Please select a valid image file.";
+                return;
+            }
+
+            if (file.Size > 5 * 1024 * 1024) // 5MB
+            {
+                ValidationErrors["PictureFile"] = "File size cannot exceed 5MB.";
+                return;
+            }
+
+            // Create preview
+            var buffer = new byte[file.Size];
+            await file.OpenReadStream(5 * 1024 * 1024).ReadAsync(buffer);
+            var base64 = Convert.ToBase64String(buffer);
+            previewImageUrl = $"data:{file.ContentType};base64,{base64}";
+
+            // TODO: Upload file to server and get file ID
+            // Model.PictureFileId = uploadedFileId;
+
+            ValidationErrors.Remove("PictureFile");
+            StateHasChanged();
+        }
+    }
+
+    private void OpenImageLibrary()
+    {
+        showImageLibrary = true;
+    }
+
+    private void CloseImageLibrary()
+    {
+        showImageLibrary = false;
+    }
+
+    private void RemoveProfilePicture()
+    {
+        Model.PictureFileId = null;
+        previewImageUrl = string.Empty;
+        StateHasChanged();
+    }
+
+    private void AddAddress()
+    {
+        Model.Addresses.Add(new CreateAddressDto());
+        StateHasChanged();
+    }
+
+    private void RemoveAddress(int index)
+    {
+        if (index >= 0 && index < Model.Addresses.Count)
+        {
+            Model.Addresses.RemoveAt(index);
+            StateHasChanged();
+        }
+    }
+
+    private void AddContactDetail()
+    {
+        Model.ContactDetails.Add(new CreateContactDetailsDto());
+        StateHasChanged();
+    }
+
+    private void RemoveContactDetail(int index)
+    {
+        if (index >= 0 && index < Model.ContactDetails.Count)
+        {
+            Model.ContactDetails.RemoveAt(index);
+            StateHasChanged();
+        }
+    }
+}

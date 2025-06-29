@@ -1,0 +1,327 @@
+﻿@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interfaces
+@inject IStyleService StyleService
+
+<div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
+    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <thead class="bg-gray-50 dark:bg-gray-900">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900">
+                    <span class="flex items-center">
+                        <i class="fas fa-folder mr-2"></i>
+                        Folder
+                    </span>
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900)">Type</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900">Items</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900">Size</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900">Modified</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900">Status</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900 text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+            @foreach (var folder in Folders)
+            {
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150 cursor-pointer" @ondblclick="() => OnFolderClick.InvokeAsync(folder.Id)">
+                    <!-- Folder Name and Icon -->
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        <div class="flex items-center cursor-pointer" @onclick="() => OnFolderClick.InvokeAsync(folder.Id)">
+                            <div class="flex-shrink-0 h-10 w-10 flex items-center justify-center">
+                                @if (folder.FolderType == FolderType.Images)
+                                {
+                                    <i class="fas fa-images text-green-600 dark:text-green-400 text-xl"></i>
+                                }
+                                else if (folder.FolderType == FolderType.Documents)
+                                {
+                                    <i class="fas fa-file-alt text-red-600 dark:text-red-400 text-xl"></i>
+                                }
+                                else if (folder.FolderType == FolderType.Videos)
+                                {
+                                    <i class="fas fa-video text-blue-600 dark:text-blue-400 text-xl"></i>
+                                }
+                                else if (folder.FolderType == FolderType.Audio)
+                                {
+                                    <i class="fas fa-music text-purple-600 dark:text-purple-400 text-xl"></i>
+                                }
+                                else if (folder.FolderType == FolderType.UserAvatars)
+                                {
+                                    <i class="fas fa-user-circle text-indigo-600 dark:text-indigo-400 text-xl"></i>
+                                }
+                                else if (folder.FolderType == FolderType.CompanyAssets)
+                                {
+                                    <i class="fas fa-building text-gray-600 dark:text-gray-400 text-xl"></i>
+                                }
+                                else if (folder.FolderType == FolderType.Temporary)
+                                {
+                                    <i class="fas fa-clock text-orange-600 dark:text-orange-400 text-xl"></i>
+                                }
+                                else
+                                {
+                                    <i class="fas fa-folder text-blue-600 dark:text-blue-400 text-xl"></i>
+                                }
+                            </div>
+                            <div class="ml-4">
+                                <div class="text-sm font-medium text-gray-900 dark:text-white"
+                                     title="@folder.Name">
+                                    @folder.Name
+                                </div>
+                                @if (!string.IsNullOrEmpty(folder.Description))
+                                {
+                                    <div class="text-sm text-gray-500 dark:text-gray-400"
+                                         title="@folder.Description">
+                                        @TruncateText(folder.Description, 60)
+                                    </div>
+                                }
+                                @if (!string.IsNullOrEmpty(folder.Path))
+                                {
+                                    <div class="text-xs text-gray-400 dark:text-gray-500 font-mono">
+                                        @folder.Path
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </td>
+
+                    <!-- Folder Type -->
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium @GetFolderTypeBadgeClass(folder.FolderType)">
+                            @GetFolderTypeText(folder.FolderType)
+                        </span>
+                    </td>
+
+                    <!-- Items Count -->
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        <div class="text-sm text-gray-900 dark:text-white">
+                            @folder.FileCount file@(folder.FileCount == 1 ? "" : "s")
+                        </div>
+                        @if (folder.SubFolderCount > 0)
+                        {
+                            <div class="text-xs text-gray-500 dark:text-gray-400">
+                                @folder.SubFolderCount folder@(folder.SubFolderCount == 1 ? "" : "s")
+                            </div>
+                        }
+                    </td>
+
+                    <!-- Total Size -->
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        @if (!string.IsNullOrEmpty(folder.TotalSizeFormatted))
+                        {
+                            <div class="text-sm text-gray-900 dark:text-white">
+                                @folder.TotalSizeFormatted
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-sm text-gray-500 dark:text-gray-400">
+                                —
+                            </div>
+                        }
+                    </td>
+
+                    <!-- Modified Date -->
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        <div class="text-sm text-gray-900 dark:text-white">
+                            @folder.UpdatedAt.ToString("MMM dd, yyyy")
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">
+                            @folder.UpdatedAt.ToString("HH:mm")
+                        </div>
+                    </td>
+
+                    <!-- Status -->
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        @if (folder.IsPublic)
+                        {
+                            <span class="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 rounded-full">
+                                <i class="fas fa-globe mr-1"></i>
+                                Public
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="inline-flex items-center px-2 py-1 text-xs bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300 rounded-full">
+                                <i class="fas fa-lock mr-1"></i>
+                                Private
+                            </span>
+                        }
+                    </td>
+
+                    <!-- Actions -->
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 text-right">
+                        <div class="flex items-center justify-end space-x-2">
+                            <button @onclick="() => OpenFolder(folder)"
+                                    @onclick:stopPropagation="true"
+                                    class="@StyleService.GetTableActionButtonClass("view")"
+                                    title="Open">
+                                <i class="fas fa-folder-open"></i>
+                            </button>
+
+                            <button @onclick="() => EditFolder(folder)"
+                                    @onclick:stopPropagation="true"
+                                    class="@StyleService.GetTableActionButtonClass("edit")"
+                                    title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </button>
+
+                            <!-- More Actions Dropdown -->
+                            <div class="relative inline-block text-left">
+                                <button @onclick="() => ToggleMoreActions(folder.Id)"
+                                        @onclick:stopPropagation="true"
+                                        class="@StyleService.GetTableActionButtonClass()"
+                                        title="More actions">
+                                    <i class="fas fa-ellipsis-v"></i>
+                                </button>
+
+                                @if (showMoreActions == folder.Id)
+                                {
+                                    <div class="absolute right-0 z-10 mt-2 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700">
+                                        <div class="py-1">
+                                            <button @onclick="() => RenameFolder(folder)"
+                                                    @onclick:stopPropagation="true"
+                                                    class="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                                <i class="fas fa-i-cursor mr-2"></i>
+                                                Rename
+                                            </button>
+                                            <button @onclick="() => CopyFolder(folder)"
+                                                    @onclick:stopPropagation="true"
+                                                    class="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                                <i class="fas fa-copy mr-2"></i>
+                                                Duplicate
+                                            </button>
+                                            <button @onclick="() => MoveFolder(folder)"
+                                                    @onclick:stopPropagation="true"
+                                                    class="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                                <i class="fas fa-cut mr-2"></i>
+                                                Move
+                                            </button>
+                                            <button @onclick="() => CopyFolderPath(folder)"
+                                                    @onclick:stopPropagation="true"
+                                                    class="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                                <i class="fas fa-link mr-2"></i>
+                                                Copy Path
+                                            </button>
+                                            <button @onclick="() => ViewFolderStats(folder)"
+                                                    @onclick:stopPropagation="true"
+                                                    class="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                                                <i class="fas fa-chart-bar mr-2"></i>
+                                                Statistics
+                                            </button>
+                                            <div class="border-t border-gray-200 dark:border-gray-600 my-1"></div>
+                                            <button @onclick="() => OnDeleteFolder.InvokeAsync(folder)"
+                                                    @onclick:stopPropagation="true"
+                                                    class="flex items-center w-full px-4 py-2 text-sm text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20">
+                                                <i class="fas fa-trash mr-2"></i>
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    [Parameter] public IEnumerable<FolderDto> Folders { get; set; } = new List<FolderDto>();
+    [Parameter] public EventCallback<int> OnFolderClick { get; set; }
+    [Parameter] public EventCallback<FolderDto> OnDeleteFolder { get; set; }
+
+    private int showMoreActions = -1;
+
+    private string GetFolderTypeBadgeClass(FolderType folderType)
+    {
+        return folderType switch
+        {
+            FolderType.Images => "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+            FolderType.Documents => "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+            FolderType.Videos => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+            FolderType.Audio => "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+            FolderType.UserAvatars => "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+            FolderType.CompanyAssets => "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+            FolderType.Temporary => "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+            _ => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+        };
+    }
+
+    private string GetFolderTypeText(FolderType folderType)
+    {
+        return folderType switch
+        {
+            FolderType.Images => "Images",
+            FolderType.Documents => "Documents",
+            FolderType.Videos => "Videos",
+            FolderType.Audio => "Audio",
+            FolderType.UserAvatars => "Avatars",
+            FolderType.CompanyAssets => "Assets",
+            FolderType.Temporary => "Temporary",
+            _ => "General"
+        };
+    }
+
+    private string TruncateText(string text, int maxLength)
+    {
+        if (text.Length <= maxLength) return text;
+        return text.Substring(0, maxLength - 3) + "...";
+    }
+
+    private void ToggleMoreActions(int folderId)
+    {
+        showMoreActions = showMoreActions == folderId ? -1 : folderId;
+        StateHasChanged();
+    }
+
+    private void OpenFolder(FolderDto folder)
+    {
+        OnFolderClick.InvokeAsync(folder.Id);
+        showMoreActions = -1;
+        StateHasChanged();
+    }
+
+    private void EditFolder(FolderDto folder)
+    {
+        // TODO: Implement edit folder functionality
+        showMoreActions = -1;
+        StateHasChanged();
+    }
+
+    private void RenameFolder(FolderDto folder)
+    {
+        // TODO: Implement rename folder functionality
+        showMoreActions = -1;
+        StateHasChanged();
+    }
+
+    private void CopyFolder(FolderDto folder)
+    {
+        // TODO: Implement copy folder functionality
+        showMoreActions = -1;
+        StateHasChanged();
+    }
+
+    private void MoveFolder(FolderDto folder)
+    {
+        // TODO: Implement move folder functionality
+        showMoreActions = -1;
+        StateHasChanged();
+    }
+
+    private async Task CopyFolderPath(FolderDto folder)
+    {
+        // TODO: Implement copy folder path functionality
+        showMoreActions = -1;
+        StateHasChanged();
+    }
+
+    private void ViewFolderStats(FolderDto folder)
+    {
+        // TODO: Implement folder statistics view
+        showMoreActions = -1;
+        StateHasChanged();
+    }
+}

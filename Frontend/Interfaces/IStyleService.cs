@@ -31,13 +31,7 @@ namespace Frontend.Interfaces
         // Form methods
         string GetFormInputClass(bool hasError = false);
         string GetFormLabelClass();
-        string GetValidationMessageClass();
 
-        // Table methods
-        string GetTableContainerClass();
-        string GetTableHeaderClass();
-        string GetTableCellClass();
-        string GetTableRowClass();
 
         // Icon and color methods
         string GetIconColorClass(string iconType);
@@ -49,9 +43,14 @@ namespace Frontend.Interfaces
         string GetSidebarItemClass(bool isActive, bool isDisabled);
         string GetSidebarIconClass(bool isActive, bool isDisabled, bool isCollapsed);
 
-        // Modal methods
-        string GetModalBackdropClass();
         string GetModalDialogSizeClass(string size);
         string GetModalBodyClass(string size);
+
+        string GetViewModeToggleClass(bool isActive);
+        string GetLoadingSpinnerClass(string size = "medium");
+        string GetEmptyStateClass();
+        string GetEmptyStateIconClass();
+        string GetFormGridClass(int columns = 1);
+        public string GetTableActionButtonClass(string variant = "primary");
     }
 }

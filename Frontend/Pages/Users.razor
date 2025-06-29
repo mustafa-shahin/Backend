@@ -1,0 +1,527 @@
+﻿@page "/users"
+@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interface
+@using Frontend.Interfaces
+@inject IUsersService UsersService
+@inject INotificationService NotificationService
+@inject IStyleService StyleService
+
+<GenericCrudPage TListItem="UserDto"
+                         TDetailItem="UserDto"
+                         TCreateDto="CreateUserDto"
+                         TUpdateDto="UpdateUserDto"
+                         PageTitle="Users"
+                         EntitySingularName="User"
+                         EntityPluralName="Users"
+                         PageDescription="Manage system users and their permissions"
+                         HeaderIcon="fas fa-users"
+                         DialogSize="xlarge"
+                         ShowDuplicateAction="false"
+                         ShowViewModeToggle="true"
+                         EmptyStateIcon="fas fa-user-plus"
+                         EmptyStateTitle="No users found"
+                         EmptyStateMessage="Create your first user to get started with user management."
+                         IdSelector="@(user => user.Id)"
+                         CreateModelFactory="@CreateUserModel"
+                         EditModelFactory="@MapUserToCreateDto"
+                         LoadDataFunc="@LoadUsers"
+                         GetByIdFunc="@GetUserById"
+                         CreateFunc="@CreateUser"
+                         UpdateFunc="@UpdateUser"
+                         DeleteFunc="@DeleteUser"
+                         CreateToUpdateMapper="@MapCreateToUpdate"
+                         ValidateFunc="@ValidateUser"
+                         OnEntityCreated="@OnUserCreated"
+                         OnEntityUpdated="@OnUserUpdated"
+                         OnEntityDeleted="@OnUserDeleted">
+
+    <FilterContent>
+        <select @bind="selectedRole" @bind:after="OnFilterChange" class="@StyleService.GetFormInputClass()">
+            <option value="">All Roles</option>
+            <option value="@UserRole.Admin">Admin</option>
+            <option value="@UserRole.Dev">Developer</option>
+            <option value="@UserRole.Customer">Customer</option>
+        </select>
+
+        <select @bind="selectedStatus" @bind:after="OnFilterChange" class="@StyleService.GetFormInputClass()">
+            <option value="">All Status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+            <option value="locked">Locked</option>
+        </select>
+    </FilterContent>
+
+    <TableColumns>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900()">User</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900()">Email</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900()">Role</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900()">Status</th>
+        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900()">Last Login</th>
+    </TableColumns>
+
+    <RowTemplate Context="user">
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+            <div class="flex items-center">
+                <div class="flex-shrink-0 h-10 w-10">
+                    @if (!string.IsNullOrEmpty(user.PictureUrl))
+                    {
+                        <img class="h-10 w-10 rounded-full object-cover"
+                             src="@user.PictureUrl"
+                             alt="@($"{user.FirstName} {user.LastName}")" />
+                    }
+                    else
+                    {
+                        <div class="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                            <span class="text-sm font-medium text-white">
+                                @user.FirstName.Substring(0, 1)@user.LastName.Substring(0, 1)
+                            </span>
+                        </div>
+                    }
+                </div>
+                <div class="ml-4">
+                    <div class="text-sm font-medium text-gray-900 dark:text-white">
+                        @user.FirstName @user.LastName
+                    </div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400">
+                        @@@user.Username
+                    </div>
+                </div>
+            </div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+            <div class="text-sm text-gray-900 dark:text-white">@user.Email</div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+            <span class="@StyleService.GetUserRoleBadgeClass(user.Role)">
+                @StyleService.GetUserRoleText(user.Role)
+            </span>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+            @if (user.IsLocked)
+            {
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                    <i class="fas fa-lock mr-1"></i>
+                    Locked
+                </span>
+            }
+            else if (!user.IsActive)
+            {
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                    <i class="fas fa-pause mr-1"></i>
+                    Inactive
+                </span>
+            }
+            else
+            {
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                    <i class="fas fa-check mr-1"></i>
+                    Active
+                </span>
+            }
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+            @if (user.LastLoginAt.HasValue)
+            {
+                <div class="text-sm text-gray-900 dark:text-white">
+                    @user.LastLoginAt.Value.ToString("MMM dd, yyyy")
+                </div>
+                <div class="text-sm text-gray-500 dark:text-gray-400">
+                    @user.LastLoginAt.Value.ToString("HH:mm")
+                </div>
+            }
+            else
+            {
+                <span class="text-sm text-gray-500 dark:text-gray-400">Never</span>
+            }
+        </td>
+    </RowTemplate>
+
+    <CustomRowActions Context="user">
+        @if (user.IsLocked)
+        {
+            <button @onclick="() => UnlockUser(user.Id)"
+                    class="@StyleService.GetTableActionButtonClass()"
+                    title="Unlock User">
+                <i class="fas fa-unlock text-green-600"></i>
+            </button>
+        }
+        else
+        {
+            <button @onclick="() => LockUser(user.Id)"
+                    class="@StyleService.GetTableActionButtonClass()"
+                    title="Lock User">
+                <i class="fas fa-lock text-yellow-600"></i>
+            </button>
+        }
+
+        @if (user.IsActive)
+        {
+            <button @onclick="() => DeactivateUser(user.Id)"
+                    class="@StyleService.GetTableActionButtonClass()"
+                    title="Deactivate User">
+                <i class="fas fa-pause text-orange-600"></i>
+            </button>
+        }
+        else
+        {
+            <button @onclick="() => ActivateUser(user.Id)"
+                    class="@StyleService.GetTableActionButtonClass()"
+                    title="Activate User">
+                <i class="fas fa-play text-green-600"></i>
+            </button>
+        }
+    </CustomRowActions>
+
+    <GridContent Context="users">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+            @foreach (var user in users)
+            {
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 overflow-hidden group cursor-pointer)">
+                    <!-- User Avatar -->
+                    <div class="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 flex items-center justify-center">
+                        @if (!string.IsNullOrEmpty(user.PictureUrl))
+                        {
+                            <img class="w-full h-full object-cover"
+                                 src="@user.PictureUrl"
+                                 alt="@($"{user.FirstName} {user.LastName}")" />
+                        }
+                        else
+                        {
+                            <div class="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
+                                <span class="text-xl font-bold text-white">
+                                    @user.FirstName.Substring(0, 1)@user.LastName.Substring(0, 1)
+                                </span>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- User Info -->
+                    <div class="p-4">
+                        <h3 class="font-medium text-gray-900 dark:text-white mb-1">
+                            @user.FirstName @user.LastName
+                        </h3>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                            @@@user.Username
+                        </p>
+                        <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                            @user.Email
+                        </p>
+
+                        <!-- Role Badge -->
+                        <div class="mb-3">
+                            <span class="@StyleService.GetUserRoleBadgeClass(user.Role)">
+                                @StyleService.GetUserRoleText(user.Role)
+                            </span>
+                        </div>
+
+                        <!-- Status and Actions -->
+                        <div class="flex items-center justify-between">
+                            <div>
+                                @if (user.IsLocked)
+                                {
+                                    <span class="inline-flex items-center px-2 py-1 text-xs bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 rounded">
+                                        <i class="fas fa-lock mr-1"></i>
+                                        Locked
+                                    </span>
+                                }
+                                else if (!user.IsActive)
+                                {
+                                    <span class="inline-flex items-center px-2 py-1 text-xs bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 rounded">
+                                        <i class="fas fa-pause mr-1"></i>
+                                        Inactive
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="inline-flex items-center px-2 py-1 text-xs bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 rounded">
+                                        <i class="fas fa-check mr-1"></i>
+                                        Active
+                                    </span>
+                                }
+                            </div>
+
+                            <!-- Quick Actions -->
+                            <div class="flex items-center space-x-1">
+                                <button @onclick="() => EditUser(user.Id)"
+                                        class="p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 rounded"
+                                        title="Edit">
+                                    <i class="fas fa-edit text-sm"></i>
+                                </button>
+                                <button @onclick="() => DeleteUser(user.Id)"
+                                        class="p-1 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 rounded"
+                                        title="Delete">
+                                    <i class="fas fa-trash text-sm"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </GridContent>
+
+    <FormContent Context="context">
+        <UserForm Model="@((CreateUserDto)context.Model)"
+                  ValidationErrors="@context.ValidationErrors"
+                  IsEditMode="@context.IsEditMode" />
+    </FormContent>
+
+</GenericCrudPage>
+
+@code {
+    private string selectedRole = string.Empty;
+    private string selectedStatus = string.Empty;
+
+    // Factory methods
+    private CreateUserDto CreateUserModel()
+    {
+        return new CreateUserDto
+        {
+            Role = UserRole.Customer,
+            IsActive = true
+        };
+    }
+
+    private CreateUserDto MapUserToCreateDto(UserDto user)
+    {
+        return new CreateUserDto
+        {
+            Email = user.Email,
+            Username = user.Username,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            IsActive = user.IsActive,
+            PictureFileId = user.PictureFileId,
+            Role = user.Role,
+            Addresses = user.Addresses.Select(a => new CreateAddressDto
+            {
+                Street = a.Street,
+                HouseNr = a.HouseNr,
+                City = a.City,
+                State = a.State,
+                Country = a.Country,
+                PostalCode = a.PostalCode,
+                Region = a.Region,
+                District = a.District,
+                IsDefault = a.IsDefault,
+                AddressType = a.AddressType,
+                Notes = a.Notes
+            }).ToList(),
+            ContactDetails = user.ContactDetails.Select(c => new CreateContactDetailsDto
+            {
+                PrimaryPhone = c.PrimaryPhone,
+                SecondaryPhone = c.SecondaryPhone,
+                Mobile = c.Mobile,
+                Fax = c.Fax,
+                Email = c.Email,
+                SecondaryEmail = c.SecondaryEmail,
+                Website = c.Website,
+                LinkedInProfile = c.LinkedInProfile,
+                TwitterProfile = c.TwitterProfile,
+                FacebookProfile = c.FacebookProfile,
+                InstagramProfile = c.InstagramProfile,
+                WhatsAppNumber = c.WhatsAppNumber,
+                TelegramHandle = c.TelegramHandle,
+                AdditionalContacts = c.AdditionalContacts,
+                IsDefault = c.IsDefault,
+                ContactType = c.ContactType
+            }).ToList()
+        };
+    }
+
+    private UpdateUserDto MapCreateToUpdate(CreateUserDto createDto)
+    {
+        return new UpdateUserDto
+        {
+            Email = createDto.Email,
+            Username = createDto.Username,
+            FirstName = createDto.FirstName,
+            LastName = createDto.LastName,
+            IsActive = createDto.IsActive,
+            PictureFileId = createDto.PictureFileId,
+            Role = createDto.Role,
+            Addresses = createDto.Addresses.Select(a => new UpdateAddressDto
+            {
+                Street = a.Street,
+                HouseNr = a.HouseNr,
+                City = a.City,
+                State = a.State,
+                Country = a.Country,
+                PostalCode = a.PostalCode,
+                Region = a.Region,
+                District = a.District,
+                IsDefault = a.IsDefault,
+                AddressType = a.AddressType,
+                Notes = a.Notes
+            }).ToList(),
+            ContactDetails = createDto.ContactDetails.Select(c => new UpdateContactDetailsDto
+            {
+                PrimaryPhone = c.PrimaryPhone,
+                SecondaryPhone = c.SecondaryPhone,
+                Mobile = c.Mobile,
+                Fax = c.Fax,
+                Email = c.Email,
+                SecondaryEmail = c.SecondaryEmail,
+                Website = c.Website,
+                LinkedInProfile = c.LinkedInProfile,
+                TwitterProfile = c.TwitterProfile,
+                FacebookProfile = c.FacebookProfile,
+                InstagramProfile = c.InstagramProfile,
+                WhatsAppNumber = c.WhatsAppNumber,
+                TelegramHandle = c.TelegramHandle,
+                AdditionalContacts = c.AdditionalContacts,
+                IsDefault = c.IsDefault,
+                ContactType = c.ContactType
+            }).ToList()
+        };
+    }
+
+    // Service methods
+    private async Task<PagedResult<UserDto>> LoadUsers(int page, int pageSize, string? search)
+    {
+        return await UsersService.GetUsersAsync(page, pageSize, search);
+    }
+
+    private async Task<UserDto?> GetUserById(int id)
+    {
+        return await UsersService.GetUserByIdAsync(id);
+    }
+
+    private async Task<UserDto?> CreateUser(CreateUserDto createDto)
+    {
+        return await UsersService.CreateUserAsync(createDto);
+    }
+
+    private async Task<UserDto?> UpdateUser(int id, UpdateUserDto updateDto)
+    {
+        return await UsersService.UpdateUserAsync(id, updateDto);
+    }
+
+    private async Task<bool> DeleteUser(int id)
+    {
+        return await UsersService.DeleteUserAsync(id);
+    }
+
+    // Validation
+    private async Task<Dictionary<string, string>> ValidateUser(CreateUserDto user, bool isEditMode)
+    {
+        var errors = new Dictionary<string, string>();
+
+        if (string.IsNullOrWhiteSpace(user.Email))
+            errors["Email"] = "Email is required";
+        else if (!IsValidEmail(user.Email))
+            errors["Email"] = "Please enter a valid email address";
+
+        if (string.IsNullOrWhiteSpace(user.Username))
+            errors["Username"] = "Username is required";
+
+        if (string.IsNullOrWhiteSpace(user.FirstName))
+            errors["FirstName"] = "First name is required";
+
+        if (string.IsNullOrWhiteSpace(user.LastName))
+            errors["LastName"] = "Last name is required";
+
+        if (!isEditMode && string.IsNullOrWhiteSpace(user.Password))
+            errors["Password"] = "Password is required";
+
+        return errors;
+    }
+
+    private bool IsValidEmail(string email)
+    {
+        try
+        {
+            var addr = new System.Net.Mail.MailAddress(email);
+            return addr.Address == email;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // Event handlers
+    private async Task OnFilterChange()
+    {
+        // Implement filtering logic here
+        StateHasChanged();
+    }
+
+    private void OnUserCreated(UserDto user)
+    {
+        NotificationService.ShowSuccess($"User {user.FirstName} {user.LastName} created successfully");
+    }
+
+    private void OnUserUpdated(UserDto user)
+    {
+        NotificationService.ShowSuccess($"User {user.FirstName} {user.LastName} updated successfully");
+    }
+
+    private void OnUserDeleted(int userId)
+    {
+        NotificationService.ShowSuccess("User deleted successfully");
+    }
+
+    // User actions
+    private async Task ActivateUser(int userId)
+    {
+        try
+        {
+            await UsersService.ActivateUserAsync(userId);
+            NotificationService.ShowSuccess("User activated successfully");
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to activate user: {ex.Message}");
+        }
+    }
+
+    private async Task DeactivateUser(int userId)
+    {
+        try
+        {
+            await UsersService.DeactivateUserAsync(userId);
+            NotificationService.ShowSuccess("User deactivated successfully");
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to deactivate user: {ex.Message}");
+        }
+    }
+
+    private async Task LockUser(int userId)
+    {
+        try
+        {
+            await UsersService.LockUserAsync(userId);
+            NotificationService.ShowSuccess("User locked successfully");
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to lock user: {ex.Message}");
+        }
+    }
+
+    private async Task UnlockUser(int userId)
+    {
+        try
+        {
+            await UsersService.UnlockUserAsync(userId);
+            NotificationService.ShowSuccess("User unlocked successfully");
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to unlock user: {ex.Message}");
+        }
+    }
+
+    private void EditUser(int userId)
+    {
+        // This will be handled by the generic CRUD page
+    }
+}

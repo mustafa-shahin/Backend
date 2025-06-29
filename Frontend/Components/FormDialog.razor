@@ -1,0 +1,134 @@
+﻿@using Frontend.Interfaces
+@inject IStyleService StyleService
+
+@if (IsVisible)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto" @onclick:stopPropagation="true">
+        <!-- Backdrop -->
+        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" @onclick="HandleBackdropClick"></div>
+
+        <!-- Dialog -->
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+            <div class="@StyleService.GetModalDialogSizeClass(Size) inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle animate-slide-up"
+                 @onclick:stopPropagation="true">
+
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-700 px-6 py-4 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <div class="flex-shrink-0">
+                                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
+                                    <i class="@HeaderIcon text-white text-lg"></i>
+                                </div>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100">
+                                    @Title
+                                </h2>
+                                @if (!string.IsNullOrEmpty(Description))
+                                {
+                                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                        @Description
+                                    </p>
+                                }
+                            </div>
+                        </div>
+                        <button @onclick="CloseDialog"
+                                class="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
+                                aria-label="Close modal"
+                                disabled="@IsSaving">
+                            <i class="fas fa-times text-lg"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Form Content -->
+                <EditForm Model="@Model" OnValidSubmit="@SaveDialog">
+                    <DataAnnotationsValidator />
+
+                    <!-- Body -->
+                    <div class="@StyleService.GetModalBodyClass(Size)">
+                        @if (FormContent != null)
+                        {
+                            @FormContent(Model, ValidationErrors)
+                        }
+                        else
+                        {
+                            <div class="flex items-center justify-center py-8">
+                                <p class="text-gray-500 dark:text-gray-400">No form content provided.</p>
+                            </div>
+                        }
+                    </div>
+
+                    <!-- Footer -->
+                    <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 flex justify-end space-x-3 border-t border-gray-200 dark:border-gray-700 rounded-b-xl">
+                        <button @onclick="CloseDialog"
+                                type="button"
+                                class="@StyleService.GetButtonClass("secondary")"
+                                disabled="@IsSaving">
+                            <i class="fas fa-times mr-2"></i>
+                            Cancel
+                        </button>
+
+                        <button type="submit"
+                                class="@StyleService.GetButtonClass("primary")"
+                                disabled="@IsSaving">
+                            @if (IsSaving)
+                            {
+                                <i class="fas fa-spinner fa-spin mr-2"></i>
+                                <span>@SavingText</span>
+                            }
+                            else
+                            {
+                                <i class="@SaveIcon mr-2"></i>
+                                <span>@SaveText</span>
+                            }
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "Form";
+    [Parameter] public string Description { get; set; } = string.Empty;
+    [Parameter] public string HeaderIcon { get; set; } = "fas fa-edit";
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public bool IsSaving { get; set; }
+    [Parameter] public bool CloseOnBackdrop { get; set; } = true;
+    [Parameter] public string Size { get; set; } = "large";
+    [Parameter] public string SaveText { get; set; } = "Save";
+    [Parameter] public string SavingText { get; set; } = "Saving...";
+    [Parameter] public string SaveIcon { get; set; } = "fas fa-save";
+    [Parameter] public object Model { get; set; } = new();
+    [Parameter] public Dictionary<string, string> ValidationErrors { get; set; } = new();
+
+    [Parameter] public RenderFragment<(object Model, Dictionary<string, string> ValidationErrors)>? FormContent { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+
+    private async Task CloseDialog()
+    {
+        if (IsSaving) return;
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task SaveDialog()
+    {
+        if (IsSaving) return;
+        await OnSave.InvokeAsync();
+    }
+
+    private async Task HandleBackdropClick()
+    {
+        if (CloseOnBackdrop && !IsSaving)
+        {
+            await CloseDialog();
+        }
+    }
+}

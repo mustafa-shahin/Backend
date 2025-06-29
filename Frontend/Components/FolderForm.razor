@@ -1,0 +1,379 @@
+﻿@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interfaces
+@inject IStyleService StyleService
+
+<div class="space-y-6">
+    <!-- Basic Information -->
+    <div class="@StyleService.GetFormGridClass(1)">
+        <!-- Folder Name -->
+        <div class="space-y-1">
+            <label class="@StyleService.GetFormLabelClass()">
+                <i class="fas fa-folder mr-2"></i>
+                Folder Name *
+            </label>
+            <InputText @bind-Value="Model.Name"
+                       class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("Name"))"
+                       placeholder="Enter folder name" />
+            @if (ValidationErrors.ContainsKey("Name"))
+            {
+                <div class="text-red-600 dark:text-red-400 text-sm mt-1 flex items-center">
+                    <i class="fas fa-exclamation-circle mr-1"></i>
+                    @ValidationErrors["Name"]
+                </div>
+            }
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                The folder name as it will appear in the file manager
+            </p>
+        </div>
+
+        <!-- Description -->
+        <div class="space-y-1">
+            <label class="@StyleService.GetFormLabelClass()">
+                <i class="fas fa-align-left mr-2"></i>
+                Description
+            </label>
+            <InputTextArea @bind-Value="Model.Description"
+                           class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("Description"))"
+                           rows="3"
+                           placeholder="Optional description for this folder" />
+            @if (ValidationErrors.ContainsKey("Description"))
+            {
+                <div class="text-red-600 dark:text-red-400 text-sm mt-1 flex items-center">
+                    <i class="fas fa-exclamation-circle mr-1"></i>
+                    @ValidationErrors["Description"]
+                </div>
+            }
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Brief description of what this folder contains
+            </p>
+        </div>
+    </div>
+
+    <!-- Folder Settings -->
+    <div class="@StyleService.GetFormGridClass(2)">
+        <!-- Folder Type -->
+        <div class="space-y-1">
+            <label class="@StyleService.GetFormLabelClass()">
+                <i class="fas fa-tag mr-2"></i>
+                Folder Type *
+            </label>
+            <InputSelect @bind-Value="Model.FolderType"
+                         class="@StyleService.GetFormInputClass(ValidationErrors.ContainsKey("FolderType"))">
+                <option value="@FolderType.General">General</option>
+                <option value="@FolderType.Images">Images</option>
+                <option value="@FolderType.Documents">Documents</option>
+                <option value="@FolderType.Videos">Videos</option>
+                <option value="@FolderType.Audio">Audio</option>
+                <option value="@FolderType.UserAvatars">User Avatars</option>
+                <option value="@FolderType.CompanyAssets">Company Assets</option>
+                <option value="@FolderType.Temporary">Temporary</option>
+            </InputSelect>
+            @if (ValidationErrors.ContainsKey("FolderType"))
+            {
+                <div class="text-red-600 dark:text-red-400 text-sm mt-1 flex items-center">
+                    <i class="fas fa-exclamation-circle mr-1"></i>
+                    @ValidationErrors["FolderType"]
+                </div>
+            }
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                Category that determines the folder's purpose and icon
+            </p>
+        </div>
+
+        <!-- Visibility -->
+        <div class="space-y-1">
+            <label class="@StyleService.GetFormLabelClass()">
+                <i class="fas fa-eye mr-2"></i>
+                Visibility
+            </label>
+            <div class="space-y-3">
+                <div class="flex items-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                    <InputCheckbox @bind-Value="Model.IsPublic"
+                                   id="isPublic"
+                                   class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
+                    <label for="isPublic" class="ml-3">
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Public Folder</span>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">Allow public access to this folder and its contents</p>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Parent Folder Info -->
+    @if (ParentFolderId.HasValue)
+    {
+        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <i class="fas fa-info-circle text-blue-400"></i>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-blue-800 dark:text-blue-200">
+                        Folder Location
+                    </h3>
+                    <div class="mt-2 text-sm text-blue-700 dark:text-blue-300">
+                        <p>
+                            This folder will be created inside the current directory.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                        Root Level Folder
+                    </h3>
+                    <div class="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+                        <p>
+                            This folder will be created at the root level of your file system.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Folder Type Information -->
+    <div class="space-y-4">
+        <h4 class="text-lg font-medium text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-info-circle mr-2"></i>
+            Folder Type Information
+        </h4>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            @foreach (var folderTypeInfo in GetFolderTypeInfos())
+            {
+                <div class="border border-gray-200 dark:border-gray-700 rounded-lg p-4 @(Model.FolderType == folderTypeInfo.Type ? "ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20" : "")">
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0">
+                            <i class="@folderTypeInfo.Icon @folderTypeInfo.ColorClass text-xl"></i>
+                        </div>
+                        <div class="ml-3">
+                            <h5 class="text-sm font-medium text-gray-900 dark:text-white">
+                                @folderTypeInfo.Name
+                            </h5>
+                            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                @folderTypeInfo.Description
+                            </p>
+                            @if (folderTypeInfo.Features.Any())
+                            {
+                                <ul class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                    @foreach (var feature in folderTypeInfo.Features)
+                                    {
+                                        <li class="flex items-center">
+                                            <i class="fas fa-check text-green-500 mr-1"></i>
+                                            @feature
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Advanced Settings -->
+    <div class="space-y-4">
+        <h4 class="text-lg font-medium text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-cogs mr-2"></i>
+            Advanced Settings
+        </h4>
+
+        <div class="grid grid-cols-1 gap-4">
+            <!-- Metadata -->
+            <div class="space-y-1">
+                <label class="@StyleService.GetFormLabelClass()">
+                    <i class="fas fa-code mr-2"></i>
+                    Custom Metadata
+                </label>
+                <div class="space-y-2">
+                    @if (customMetadata.Any())
+                    {
+                        @for (int i = 0; i < customMetadata.Count; i++)
+                        {
+                            var index = i; // Capture for closure
+                                           <div class="flex space-x-2">
+                                               <input @bind="customMetadata[index].Key"
+                                                      placeholder="Key"
+                                                      class="@StyleService.GetFormInputClass() flex-1" />
+                                               <input @bind="customMetadata[index].Value"
+                                                      placeholder="Value"
+                                                      class="@StyleService.GetFormInputClass() flex-1" />
+                                               <button type="button"
+                                                       @onclick="() => RemoveMetadata(index)"
+                                                       class="@StyleService.GetButtonClass("danger", "small")">
+                                                   <i class="fas fa-trash"></i>
+                                               </button>
+                                           </div>
+                        }
+                    }
+                    <button type="button"
+                            @onclick="AddMetadata"
+                            class="@StyleService.GetButtonClass("outline", "small")">
+                        <i class="fas fa-plus mr-2"></i>
+                        Add Metadata
+                    </button>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Custom key-value pairs for additional folder information
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public CreateFolderDto Model { get; set; } = new();
+    [Parameter] public Dictionary<string, string> ValidationErrors { get; set; } = new();
+    [Parameter] public int? ParentFolderId { get; set; }
+
+    private List<MetadataItem> customMetadata = new();
+
+    public class MetadataItem
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
+    protected override void OnParametersSet()
+    {
+        // Initialize metadata from model
+        if (Model.Metadata?.Any() == true)
+        {
+            customMetadata = Model.Metadata.Select(kvp => new MetadataItem
+            {
+                Key = kvp.Key,
+                Value = kvp.Value?.ToString() ?? string.Empty
+            }).ToList();
+        }
+        else
+        {
+            customMetadata = new List<MetadataItem>();
+        }
+    }
+
+    private void AddMetadata()
+    {
+        customMetadata.Add(new MetadataItem());
+        UpdateModelMetadata();
+        StateHasChanged();
+    }
+
+    private void RemoveMetadata(int index)
+    {
+        if (index >= 0 && index < customMetadata.Count)
+        {
+            customMetadata.RemoveAt(index);
+            UpdateModelMetadata();
+            StateHasChanged();
+        }
+    }
+
+    private void UpdateModelMetadata()
+    {
+        Model.Metadata = customMetadata
+            .Where(m => !string.IsNullOrWhiteSpace(m.Key))
+            .ToDictionary(m => m.Key, m => (object)m.Value);
+    }
+
+    private List<FolderTypeInfo> GetFolderTypeInfos()
+    {
+        return new List<FolderTypeInfo>
+        {
+            new FolderTypeInfo
+            {
+                Type = FolderType.General,
+                Name = "General",
+                Icon = "fas fa-folder",
+                ColorClass = "text-blue-600 dark:text-blue-400",
+                Description = "General purpose folder for mixed content",
+                Features = new[] { "Flexible organization", "No restrictions" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.Images,
+                Name = "Images",
+                Icon = "fas fa-images",
+                ColorClass = "text-green-600 dark:text-green-400",
+                Description = "Optimized for image files and galleries",
+                Features = new[] { "Image previews", "EXIF data support", "Thumbnail generation" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.Documents,
+                Name = "Documents",
+                Icon = "fas fa-file-alt",
+                ColorClass = "text-red-600 dark:text-red-400",
+                Description = "Document storage with preview support",
+                Features = new[] { "Document previews", "Search indexing", "Version control" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.Videos,
+                Name = "Videos",
+                Icon = "fas fa-video",
+                ColorClass = "text-blue-600 dark:text-blue-400",
+                Description = "Video files with streaming capabilities",
+                Features = new[] { "Video previews", "Duration tracking", "Thumbnail generation" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.Audio,
+                Name = "Audio",
+                Icon = "fas fa-music",
+                ColorClass = "text-purple-600 dark:text-purple-400",
+                Description = "Audio files with metadata support",
+                Features = new[] { "Audio previews", "Metadata extraction", "Playlist support" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.UserAvatars,
+                Name = "User Avatars",
+                Icon = "fas fa-user-circle",
+                ColorClass = "text-indigo-600 dark:text-indigo-400",
+                Description = "User profile pictures and avatars",
+                Features = new[] { "Automatic resizing", "Multiple formats", "CDN optimization" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.CompanyAssets,
+                Name = "Company Assets",
+                Icon = "fas fa-building",
+                ColorClass = "text-gray-600 dark:text-gray-400",
+                Description = "Company branding and official assets",
+                Features = new[] { "Brand compliance", "Version control", "Usage tracking" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.Temporary,
+                Name = "Temporary",
+                Icon = "fas fa-clock",
+                ColorClass = "text-orange-600 dark:text-orange-400",
+                Description = "Temporary files with automatic cleanup",
+                Features = new[] { "Auto-deletion", "Short-term storage", "Quick access" }
+            }
+        };
+    }
+
+    private class FolderTypeInfo
+    {
+        public FolderType Type { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Icon { get; set; } = string.Empty;
+        public string ColorClass { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string[] Features { get; set; } = Array.Empty<string>();
+    }
+}

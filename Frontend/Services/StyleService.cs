@@ -6,12 +6,29 @@ namespace Frontend.Services
 {
     public class StyleService : IStyleService
     {
+        private readonly Dictionary<string, string> _themeVariables = [];
+
+        public StyleService()
+        {
+            InitializeThemeVariables();
+        }
+
+        private void InitializeThemeVariables()
+        {
+            _themeVariables["primary"] = "blue";
+            _themeVariables["secondary"] = "gray";
+            _themeVariables["success"] = "green";
+            _themeVariables["warning"] = "yellow";
+            _themeVariables["danger"] = "red";
+            _themeVariables["info"] = "blue";
+        }
+
         #region Theme Methods
         public string GetThemeIcon(bool isDarkMode)
         {
             return isDarkMode
-                ? "fas fa-sun text-yellow-500 group-hover:text-yellow-400"
-                : "fas fa-moon text-gray-600 dark:text-gray-400 group-hover:text-blue-500";
+                ? "fas fa-sun text-yellow-500 group-hover:text-yellow-400 transition-all duration-300"
+                : "fas fa-moon text-gray-600 dark:text-gray-400 group-hover:text-blue-500 transition-all duration-300";
         }
 
         public string GetThemeToggleLabel(bool isDarkMode)
@@ -28,28 +45,63 @@ namespace Frontend.Services
 
         public string GetButtonClass(string variant = "primary", string size = "medium")
         {
-            var baseClass = "inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
+            var baseClass = GetButtonBaseClass();
+            var sizeClass = GetButtonSizeClass(size);
+            var variantClass = GetButtonVariantClass(variant);
 
-            var sizeClass = size.ToLower() switch
+            return $"{baseClass} {sizeClass} {variantClass}";
+        }
+
+        private string GetButtonBaseClass()
+        {
+            return "inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 " +
+                   "focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed " +
+                   "transform hover:scale-[1.02] active:scale-[0.98]";
+        }
+
+        private string GetButtonSizeClass(string size)
+        {
+            return size.ToLower() switch
             {
+                "xs" => "px-2 py-1 text-xs",
                 "small" => "px-3 py-1.5 text-sm",
                 "medium" => "px-4 py-2 text-sm",
                 "large" => "px-6 py-3 text-base",
+                "xl" => "px-8 py-4 text-lg",
                 _ => "px-4 py-2 text-sm"
             };
+        }
 
-            var variantClass = variant.ToLower() switch
+        private string GetButtonVariantClass(string variant)
+        {
+            return variant.ToLower() switch
             {
-                "primary" => "text-white bg-blue-600 hover:bg-blue-700 focus:ring-blue-500 shadow-sm hover:shadow-md transform hover:scale-[1.02]",
-                "secondary" => "text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 focus:ring-blue-500 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700",
-                "danger" => "text-white bg-red-600 hover:bg-red-700 focus:ring-red-500 shadow-sm hover:shadow-md",
-                "success" => "text-white bg-green-600 hover:bg-green-700 focus:ring-green-500 shadow-sm hover:shadow-md",
-                "warning" => "text-white bg-yellow-600 hover:bg-yellow-700 focus:ring-yellow-500 shadow-sm hover:shadow-md",
-                "ghost" => "text-gray-700 hover:bg-gray-100 focus:ring-blue-500 dark:text-gray-300 dark:hover:bg-gray-700",
-                _ => "text-white bg-blue-600 hover:bg-blue-700 focus:ring-blue-500 shadow-sm hover:shadow-md"
-            };
+                "primary" => "text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 " +
+                           "focus:ring-blue-500 shadow-md hover:shadow-lg dark:shadow-blue-500/25",
 
-            return $"{baseClass} {sizeClass} {variantClass}";
+                "secondary" => "text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 focus:ring-blue-500 " +
+                             "dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700 shadow-sm",
+
+                "danger" => "text-white bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 " +
+                          "focus:ring-red-500 shadow-md hover:shadow-lg dark:shadow-red-500/25",
+
+                "success" => "text-white bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 " +
+                           "focus:ring-green-500 shadow-md hover:shadow-lg dark:shadow-green-500/25",
+
+                "warning" => "text-white bg-gradient-to-r from-yellow-600 to-yellow-700 hover:from-yellow-700 hover:to-yellow-800 " +
+                           "focus:ring-yellow-500 shadow-md hover:shadow-lg dark:shadow-yellow-500/25",
+
+                "info" => "text-white bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 " +
+                        "focus:ring-blue-500 shadow-md hover:shadow-lg dark:shadow-blue-500/25",
+
+                "ghost" => "text-gray-700 hover:bg-gray-100 focus:ring-blue-500 dark:text-gray-300 dark:hover:bg-gray-700",
+
+                "outline" => "text-blue-600 border border-blue-600 hover:bg-blue-50 focus:ring-blue-500 " +
+                           "dark:text-blue-400 dark:border-blue-400 dark:hover:bg-blue-900/20",
+
+                _ => "text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 " +
+                   "focus:ring-blue-500 shadow-md hover:shadow-lg"
+            };
         }
         #endregion
 
@@ -57,7 +109,6 @@ namespace Frontend.Services
         public string GetStatusBadgeClass(PageStatus status)
         {
             var baseClass = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
-
             return status switch
             {
                 PageStatus.Published => $"{baseClass} bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
@@ -83,7 +134,6 @@ namespace Frontend.Services
         public string GetUserRoleBadgeClass(UserRole role)
         {
             var baseClass = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
-
             return role switch
             {
                 UserRole.Admin => $"{baseClass} bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
@@ -108,8 +158,7 @@ namespace Frontend.Services
         #region Notification Methods
         public string GetNotificationClass(NotificationType type)
         {
-            var baseClass = "rounded-xl p-0 shadow-lg border backdrop-blur-sm max-w-sm";
-
+            var baseClass = "rounded-xl p-0 shadow-lg border backdrop-blur-sm max-w-sm transition-all duration-300";
             return type switch
             {
                 NotificationType.Success => $"{baseClass} bg-green-50/95 dark:bg-green-900/90 border-green-200 dark:border-green-800",
@@ -123,7 +172,6 @@ namespace Frontend.Services
         public string GetNotificationIconContainerClass(NotificationType type)
         {
             var baseClass = "w-8 h-8 rounded-full flex items-center justify-center";
-
             return type switch
             {
                 NotificationType.Success => $"{baseClass} bg-green-100 dark:bg-green-800",
@@ -137,7 +185,6 @@ namespace Frontend.Services
         public string GetNotificationIcon(NotificationType type)
         {
             var baseClass = "w-4 h-4";
-
             return type switch
             {
                 NotificationType.Success => $"{baseClass} text-green-600 dark:text-green-300 fas fa-check",
@@ -152,11 +199,11 @@ namespace Frontend.Services
         {
             return type switch
             {
-                NotificationType.Success => "text-green-800 dark:text-green-200",
-                NotificationType.Error => "text-red-800 dark:text-red-200",
-                NotificationType.Warning => "text-yellow-800 dark:text-yellow-200",
-                NotificationType.Info => "text-blue-800 dark:text-blue-200",
-                _ => "text-gray-800 dark:text-gray-200"
+                NotificationType.Success => "text-green-800 dark:text-green-200 font-medium",
+                NotificationType.Error => "text-red-800 dark:text-red-200 font-medium",
+                NotificationType.Warning => "text-yellow-800 dark:text-yellow-200 font-medium",
+                NotificationType.Info => "text-blue-800 dark:text-blue-200 font-medium",
+                _ => "text-gray-800 dark:text-gray-200 font-medium"
             };
         }
 
@@ -176,11 +223,11 @@ namespace Frontend.Services
         {
             return type switch
             {
-                NotificationType.Success => "text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-800",
-                NotificationType.Error => "text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-800",
-                NotificationType.Warning => "text-yellow-600 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-yellow-800",
-                NotificationType.Info => "text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-800",
-                _ => "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                NotificationType.Success => "text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-800 rounded-md p-1 transition-colors",
+                NotificationType.Error => "text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-800 rounded-md p-1 transition-colors",
+                NotificationType.Warning => "text-yellow-600 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-yellow-800 rounded-md p-1 transition-colors",
+                NotificationType.Info => "text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-800 rounded-md p-1 transition-colors",
+                _ => "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md p-1 transition-colors"
             };
         }
 
@@ -188,11 +235,11 @@ namespace Frontend.Services
         {
             return type switch
             {
-                NotificationType.Success => "bg-green-500 dark:bg-green-400",
-                NotificationType.Error => "bg-red-500 dark:bg-red-400",
-                NotificationType.Warning => "bg-yellow-500 dark:bg-yellow-400",
-                NotificationType.Info => "bg-blue-500 dark:bg-blue-400",
-                _ => "bg-gray-500 dark:bg-gray-400"
+                NotificationType.Success => "bg-green-500 dark:bg-green-400 h-1 rounded-full transition-all duration-100 ease-linear",
+                NotificationType.Error => "bg-red-500 dark:bg-red-400 h-1 rounded-full transition-all duration-100 ease-linear",
+                NotificationType.Warning => "bg-yellow-500 dark:bg-yellow-400 h-1 rounded-full transition-all duration-100 ease-linear",
+                NotificationType.Info => "bg-blue-500 dark:bg-blue-400 h-1 rounded-full transition-all duration-100 ease-linear",
+                _ => "bg-gray-500 dark:bg-gray-400 h-1 rounded-full transition-all duration-100 ease-linear"
             };
         }
         #endregion
@@ -200,14 +247,17 @@ namespace Frontend.Services
         #region Form Methods
         public string GetFormInputClass(bool hasError = false)
         {
-            var baseClass = "block w-full px-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-0 dark:bg-gray-700 dark:placeholder-gray-400 dark:text-white sm:text-sm transition-colors duration-200";
+            var baseClass = "block w-full px-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 " +
+                           "focus:outline-none focus:ring-2 focus:ring-offset-0 dark:bg-gray-700 " +
+                           "dark:placeholder-gray-400 dark:text-white sm:text-sm transition-all duration-200";
 
             if (hasError)
             {
                 return $"{baseClass} border-red-300 focus:border-red-500 focus:ring-red-500 dark:border-red-600";
             }
 
-            return $"{baseClass} border-gray-300 focus:border-blue-500 focus:ring-blue-500 dark:border-gray-600 dark:focus:border-blue-500 dark:focus:ring-blue-500";
+            return $"{baseClass} border-gray-300 focus:border-blue-500 focus:ring-blue-500 " +
+                   "dark:border-gray-600 dark:focus:border-blue-500 dark:focus:ring-blue-500";
         }
 
         public string GetFormLabelClass()
@@ -217,7 +267,25 @@ namespace Frontend.Services
 
         public string GetValidationMessageClass()
         {
-            return "text-red-600 dark:text-red-400 text-sm mt-1";
+            return "text-red-600 dark:text-red-400 text-sm mt-1 flex items-center";
+        }
+        public string GetFormFieldContainerClass()
+        {
+            return "space-y-1";
+        }
+
+
+
+        public string GetFormGridClass(int columns = 1)
+        {
+            return columns switch
+            {
+                1 => "grid grid-cols-1 gap-6",
+                2 => "grid grid-cols-1 md:grid-cols-2 gap-6",
+                3 => "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6",
+                4 => "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6",
+                _ => "grid grid-cols-1 gap-6"
+            };
         }
         #endregion
 
@@ -229,7 +297,7 @@ namespace Frontend.Services
 
         public string GetTableHeaderClass()
         {
-            return "px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider";
+            return "px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900";
         }
 
         public string GetTableCellClass()
@@ -239,7 +307,18 @@ namespace Frontend.Services
 
         public string GetTableRowClass()
         {
-            return "hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-150";
+            return "hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150 cursor-pointer";
+        }
+
+        public string GetTableActionButtonClass(string variant = "primary")
+        {
+            return variant.ToLower() switch
+            {
+                "edit" => "text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors p-1 rounded",
+                "delete" => "text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 transition-colors p-1 rounded",
+                "view" => "text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors p-1 rounded",
+                _ => "text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors p-1 rounded"
+            };
         }
         #endregion
 
@@ -248,14 +327,14 @@ namespace Frontend.Services
         {
             return iconType.ToLower() switch
             {
-                "warning" => "text-yellow-500",
-                "danger" => "text-red-500",
-                "error" => "text-red-500",
-                "info" => "text-blue-500",
-                "success" => "text-green-500",
-                "primary" => "text-blue-500",
-                "secondary" => "text-gray-500",
-                _ => "text-gray-500"
+                "warning" => "text-yellow-500 dark:text-yellow-400",
+                "danger" => "text-red-500 dark:text-red-400",
+                "error" => "text-red-500 dark:text-red-400",
+                "info" => "text-blue-500 dark:text-blue-400",
+                "success" => "text-green-500 dark:text-green-400",
+                "primary" => "text-blue-500 dark:text-blue-400",
+                "secondary" => "text-gray-500 dark:text-gray-400",
+                _ => "text-gray-500 dark:text-gray-400"
             };
         }
 
@@ -263,12 +342,14 @@ namespace Frontend.Services
         {
             return size.ToLower() switch
             {
+                "xs" => "text-xs",
                 "small" => "text-sm",
                 "medium" => "text-base",
                 "large" => "text-lg",
                 "xl" => "text-xl",
                 "2xl" => "text-2xl",
                 "3xl" => "text-3xl",
+                "4xl" => "text-4xl",
                 _ => "text-base"
             };
         }
@@ -282,7 +363,8 @@ namespace Frontend.Services
         #region Layout Methods
         public string GetSidebarClass(bool isCollapsed, bool isMobileOpen)
         {
-            var baseClass = "left-0 top-0 h-full bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 z-30";
+            var baseClass = "left-0 top-0 h-full bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 " +
+                           "flex flex-col transition-all duration-300 z-30 sidebar-transition";
             var widthClass = isCollapsed ? "w-16" : "w-64";
             var mobileClass = isMobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0";
 
@@ -333,10 +415,12 @@ namespace Frontend.Services
         {
             return size.ToLower() switch
             {
+                "xs" => "w-full max-w-xs",
                 "small" => "w-full max-w-md",
                 "medium" => "w-full max-w-lg",
                 "large" => "w-full max-w-2xl",
                 "xlarge" => "w-full max-w-4xl",
+                "2xlarge" => "w-full max-w-6xl",
                 "full" => "w-full max-w-7xl mx-4",
                 _ => "w-full max-w-lg"
             };
@@ -348,11 +432,76 @@ namespace Frontend.Services
             var heightClass = size.ToLower() switch
             {
                 "xlarge" => "max-h-[70vh] overflow-y-auto",
-                "full" => "max-h-[75vh] overflow-y-auto",
+                "2xlarge" => "max-h-[75vh] overflow-y-auto",
+                "full" => "max-h-[80vh] overflow-y-auto",
                 _ => "max-h-96 overflow-y-auto"
             };
 
             return $"{baseClass} {heightClass}";
+        }
+        #endregion
+
+
+        public string GetCardHeaderClass()
+        {
+            return "px-6 py-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700";
+        }
+
+
+        public string GetCardFooterClass()
+        {
+            return "px-6 py-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700";
+        }
+
+        #region Grid and List View Methods
+        public string GetGridContainerClass()
+        {
+            return "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4";
+        }
+
+        public string GetGridItemClass()
+        {
+            return "bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 overflow-hidden group cursor-pointer";
+        }
+        public string GetCardBodyClass()
+        {
+            return "p-6";
+        }
+        public string GetListItemClass()
+        {
+            return "flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors border-b border-gray-200 dark:border-gray-700 last:border-b-0";
+        }
+
+        public string GetViewModeToggleClass(bool isActive)
+        {
+            return isActive
+                ? GetButtonClass("primary", "small")
+                : GetButtonClass("outline", "small");
+        }
+        #endregion
+
+        #region Loading and State Methods
+        public string GetLoadingSpinnerClass(string size = "medium")
+        {
+            var sizeClass = size.ToLower() switch
+            {
+                "small" => "w-4 h-4",
+                "medium" => "w-8 h-8",
+                "large" => "w-12 h-12",
+                _ => "w-8 h-8"
+            };
+
+            return $"animate-spin rounded-full {sizeClass} border-2 border-gray-300 border-t-blue-600 dark:border-gray-600 dark:border-t-blue-400";
+        }
+
+        public string GetEmptyStateClass()
+        {
+            return "text-center py-12";
+        }
+
+        public string GetEmptyStateIconClass()
+        {
+            return "mx-auto w-16 h-16 text-gray-400 dark:text-gray-500 mb-4";
         }
         #endregion
     }

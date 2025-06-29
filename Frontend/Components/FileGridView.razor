@@ -1,0 +1,253 @@
+﻿@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interfaces
+@inject IStyleService StyleService
+
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+    @foreach (var file in Files)
+    {
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 overflow-hidden group cursor-pointer">
+            <!-- File Preview/Thumbnail -->
+            <div class="relative aspect-square bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
+                @if (file.FileType == FileType.Image && !string.IsNullOrEmpty(GetThumbnailUrl(file)))
+                {
+                    <img src="@GetThumbnailUrl(file)"
+                         alt="@(file.Alt ?? file.OriginalFileName)"
+                         class="w-full h-full object-cover"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+
+                    <!-- Fallback icon - initially hidden -->
+                    <div class="w-full h-full flex items-center justify-center" style="display: none;">
+                        <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType) text-4xl"></i>
+                    </div>
+                }
+                else
+                {
+                    <!-- Icon for non-images -->
+                    <div class="w-full h-full flex items-center justify-center">
+                        <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType) text-4xl"></i>
+                    </div>
+                }
+
+                <!-- File type badge -->
+                <div class="absolute top-2 left-2">
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-white/90 dark:bg-gray-800/90 @GetFileTypeColor(file.FileType) backdrop-blur-sm">
+                        @file.FileExtension.Replace(".", "")
+                    </span>
+                </div>
+
+                <!-- Visibility indicator -->
+                <div class="absolute top-2 right-2">
+                    @if (file.IsPublic)
+                    {
+                        <span class="inline-flex items-center p-1 rounded-full bg-green-100/90 dark:bg-green-900/90 text-green-600 dark:text-green-400 backdrop-blur-sm" title="Public">
+                            <i class="fas fa-globe text-xs"></i>
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="inline-flex items-center p-1 rounded-full bg-gray-100/90 dark:bg-gray-700/90 text-gray-600 dark:text-gray-400 backdrop-blur-sm" title="Private">
+                            <i class="fas fa-lock text-xs"></i>
+                        </span>
+                    }
+                </div>
+
+                <!-- Actions overlay -->
+                <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-200 flex items-center justify-center space-x-2">
+                    @if (file.FileType == FileType.Image || file.FileType == FileType.Video)
+                    {
+                        <button @onclick="() => OnPreviewFile.InvokeAsync(file)"
+                                class="@StyleService.GetButtonClass("secondary", "small") text-white border-white hover:bg-white hover:text-gray-900"
+                                title="Preview">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    }
+
+                    <button @onclick="() => OnDownloadFile.InvokeAsync(file)"
+                            class="@StyleService.GetButtonClass("secondary", "small") text-white border-white hover:bg-white hover:text-gray-900"
+                            title="Download">
+                        <i class="fas fa-download"></i>
+                    </button>
+
+                    <button @onclick="() => OnEditFile.InvokeAsync(file)"
+                            class="@StyleService.GetButtonClass("secondary", "small") text-white border-white hover:bg-white hover:text-gray-900"
+                            title="Edit">
+                        <i class="fas fa-edit"></i>
+                    </button>
+
+                    <button @onclick="() => OnDeleteFile.InvokeAsync(file)"
+                            class="@StyleService.GetButtonClass("danger", "small") opacity-90 hover:opacity-100"
+                            title="Delete">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- File Info -->
+            <div class="p-4">
+                <h4 class="text-sm font-medium text-gray-900 dark:text-white truncate mb-1"
+                    title="@file.OriginalFileName">
+                    @file.OriginalFileName
+                </h4>
+
+                <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-2">
+                    <span>@FormatFileSize(file.FileSize)</span>
+                    <span>@file.CreatedAt.ToString("MMM dd")</span>
+                </div>
+
+                @if (!string.IsNullOrEmpty(file.Description))
+                {
+                    <p class="text-xs text-gray-600 dark:text-gray-400 line-clamp-2 mb-3"
+                       title="@file.Description">
+                        @file.Description
+                    </p>
+                }
+
+                <!-- Additional file info for images -->
+                @if (file.FileType == FileType.Image && file.Width.HasValue && file.Height.HasValue)
+                {
+                    <div class="flex items-center text-xs text-gray-500 dark:text-gray-400 mb-2">
+                        <i class="fas fa-expand-arrows-alt mr-1"></i>
+                        <span>@file.Width × @file.Height</span>
+                    </div>
+                }
+
+                <!-- Additional file info for videos -->
+                @if (file.FileType == FileType.Video && file.Duration.HasValue)
+                {
+                    <div class="flex items-center text-xs text-gray-500 dark:text-gray-400 mb-2">
+                        <i class="fas fa-clock mr-1"></i>
+                        <span>@FormatDuration(file.Duration.Value)</span>
+                    </div>
+                }
+
+                <!-- Tags -->
+                @if (file.Tags?.Any() == true)
+                {
+                    <div class="flex flex-wrap gap-1 mb-3">
+                        @foreach (var tag in file.Tags.Take(3))
+                        {
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                                @tag.Value
+                            </span>
+                        }
+                        @if (file.Tags.Count > 3)
+                        {
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+                                +@(file.Tags.Count - 3)
+                            </span>
+                        }
+                    </div>
+                }
+
+                <!-- Quick Actions -->
+                <div class="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center space-x-1">
+                        <button @onclick="() => OnEditFile.InvokeAsync(file)"
+                                class="@StyleService.GetTableActionButtonClass("edit") p-1"
+                                title="Edit">
+                            <i class="fas fa-edit text-sm"></i>
+                        </button>
+
+                        <button @onclick="() => OnDownloadFile.InvokeAsync(file)"
+                                class="@StyleService.GetTableActionButtonClass() p-1"
+                                title="Download">
+                            <i class="fas fa-download text-sm"></i>
+                        </button>
+
+                        @if (file.FileType == FileType.Image || file.FileType == FileType.Video)
+                        {
+                            <button @onclick="() => OnPreviewFile.InvokeAsync(file)"
+                                    class="@StyleService.GetTableActionButtonClass("view") p-1"
+                                    title="Preview">
+                                <i class="fas fa-eye text-sm"></i>
+                            </button>
+                        }
+                    </div>
+
+                    <button @onclick="() => OnDeleteFile.InvokeAsync(file)"
+                            class="@StyleService.GetTableActionButtonClass("delete") p-1"
+                            title="Delete">
+                        <i class="fas fa-trash text-sm"></i>
+                    </button>
+                </div>
+
+                <!-- Download count -->
+                @if (file.DownloadCount > 0)
+                {
+                    <div class="flex items-center justify-center mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                        <span class="text-xs text-gray-500 dark:text-gray-400">
+                            <i class="fas fa-download mr-1"></i>
+                            Downloaded @file.DownloadCount time@(file.DownloadCount == 1 ? "" : "s")
+                        </span>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IEnumerable<FileDto> Files { get; set; } = new List<FileDto>();
+    [Parameter] public EventCallback<FileDto> OnEditFile { get; set; }
+    [Parameter] public EventCallback<FileDto> OnDeleteFile { get; set; }
+    [Parameter] public EventCallback<FileDto> OnDownloadFile { get; set; }
+    [Parameter] public EventCallback<FileDto> OnPreviewFile { get; set; }
+
+    private string GetFileIcon(FileType fileType)
+    {
+        return fileType switch
+        {
+            FileType.Image => "fas fa-image",
+            FileType.Video => "fas fa-video",
+            FileType.Audio => "fas fa-music",
+            FileType.Document => "fas fa-file-alt",
+            FileType.Archive => "fas fa-file-archive",
+            _ => "fas fa-file"
+        };
+    }
+
+    private string GetFileTypeColor(FileType fileType)
+    {
+        return fileType switch
+        {
+            FileType.Image => "text-green-600 dark:text-green-400",
+            FileType.Video => "text-blue-600 dark:text-blue-400",
+            FileType.Audio => "text-purple-600 dark:text-purple-400",
+            FileType.Document => "text-red-600 dark:text-red-400",
+            FileType.Archive => "text-yellow-600 dark:text-yellow-400",
+            _ => "text-gray-600 dark:text-gray-400"
+        };
+    }
+
+    private string GetThumbnailUrl(FileDto file)
+    {
+        if (file.FileType == FileType.Image)
+        {
+            return $"/api/file/{file.Id}/thumbnail";
+        }
+        return string.Empty;
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len /= 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
+    }
+
+    private string FormatDuration(TimeSpan duration)
+    {
+        if (duration.TotalHours >= 1)
+        {
+            return duration.ToString(@"h\:mm\:ss");
+        }
+        return duration.ToString(@"m\:ss");
+    }
+}

@@ -1,0 +1,615 @@
+﻿@page "/files"
+@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interface
+@using Frontend.Interfaces
+@inject IFileService FileService
+@inject IFolderService FolderService
+@inject INotificationService NotificationService
+@inject IStyleService StyleService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>File Manager - CMS Designer</PageTitle>
+
+<div class="space-y-6">
+    <!-- Header with Breadcrumbs -->
+    <div class="flex flex-col space-y-4">
+        <!-- Breadcrumbs -->
+        <nav class="flex" aria-label="Breadcrumb">
+            <ol class="inline-flex items-center space-x-1 md:space-x-3">
+                <li class="inline-flex items-center">
+                    <button @onclick="() => NavigateToFolder(null)"
+                            class="inline-flex items-center text-sm font-medium text-gray-700 hover:text-blue-600 dark:text-gray-400 dark:hover:text-white transition-colors">
+                        <i class="fas fa-home text-sm mr-2"></i>
+                        Root
+                    </button>
+                </li>
+                @foreach (var folder in breadcrumbs)
+                {
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 mx-1 text-sm"></i>
+                            <button @onclick="() => NavigateToFolder(folder.Id)"
+                                    class="ml-1 text-sm font-medium text-gray-700 hover:text-blue-600 dark:text-gray-400 dark:hover:text-white md:ml-2 transition-colors">
+                                @folder.Name
+                            </button>
+                        </div>
+                    </li>
+                }
+            </ol>
+        </nav>
+
+        <!-- Actions -->
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
+                    <i class="fas fa-folder-open mr-3 text-blue-600 dark:text-blue-400"></i>
+                    @(currentFolder?.Name ?? "File Manager")
+                </h1>
+                <p class="text-gray-600 dark:text-gray-400">
+                    Current path: @GetCurrentPath()
+                </p>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                <!-- View mode toggle -->
+                <div class="flex rounded-lg shadow-sm">
+                    <button @onclick="() => SetViewMode(ViewMode.Grid)"
+                            class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.Grid) rounded-r-none border-r-0">
+                        <i class="fas fa-th mr-1"></i>
+                        Grid
+                    </button>
+                    <button @onclick="() => SetViewMode(ViewMode.List)"
+                            class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.List) rounded-l-none">
+                        <i class="fas fa-list mr-1"></i>
+                        List
+                    </button>
+                </div>
+
+                <button @onclick="ShowCreateFolderDialog"
+                        class="@StyleService.GetButtonClass("outline")">
+                    <i class="fas fa-folder-plus mr-2"></i>
+                    New Folder
+                </button>
+
+                <button @onclick="ShowUploadDialog"
+                        class="@StyleService.GetButtonClass("primary")">
+                    <i class="fas fa-upload mr-2"></i>
+                    Upload Files
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search and Filters -->
+    <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <div class="p-6">
+            <div class="flex flex-col lg:flex-row gap-4">
+                <!-- Search -->
+                <div class="flex-1">
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-search text-gray-400"></i>
+                        </div>
+                        <input @bind="searchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp"
+                               type="text"
+                               placeholder="Search files and folders..."
+                               class="@StyleService.GetFormInputClass() pl-10" />
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="flex items-center space-x-3">
+                    <select @bind="selectedFileType" @bind:after="OnFilterChange" class="@StyleService.GetFormInputClass()">
+                        <option value="">All Types</option>
+                        <option value="@FileType.Image">Images</option>
+                        <option value="@FileType.Document">Documents</option>
+                        <option value="@FileType.Video">Videos</option>
+                        <option value="@FileType.Audio">Audio</option>
+                        <option value="@FileType.Archive">Archives</option>
+                    </select>
+
+                    <button @onclick="RefreshData" 
+                            class="@StyleService.GetButtonClass("secondary")" 
+                            title="Refresh"
+                            disabled="@isLoading">
+                        <i class="fas fa-refresh @(isLoading ? "fa-spin" : "")"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Content Area -->
+    <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+        @if (isLoading)
+        {
+            <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                <div class="flex items-center justify-center py-12">
+                    <div class="text-center">
+                        <div class="@StyleService.GetLoadingSpinnerClass("large") mx-auto mb-4"></div>
+                        <p class="text-gray-500 dark:text-gray-400">Loading files and folders...</p>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="p-6">
+                <!-- Folders Section -->
+                @if (folders.Any())
+                {
+                    <div class="mb-8">
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center">
+                            <i class="fas fa-folder mr-2 text-blue-600 dark:text-blue-400"></i>
+                            Folders (@folders.Count)
+                        </h3>
+                        
+                        @if (currentViewMode == ViewMode.Grid)
+                        {
+                            <FolderGridView Folders="folders"
+                                           OnFolderClick="NavigateToFolder"
+                                           OnDeleteFolder="DeleteFolder" />
+                        }
+                        else
+                        {
+                            <FolderListView Folders="folders"
+                                           OnFolderClick="NavigateToFolder"
+                                           OnDeleteFolder="DeleteFolder" />
+                        }
+                    </div>
+                }
+
+                <!-- Files Section -->
+                @if (files.Any())
+                {
+                    <div>
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4 flex items-center">
+                            <i class="fas fa-file mr-2 text-green-600 dark:text-green-400"></i>
+                            Files (@files.Count)
+                        </h3>
+                        
+                        @if (currentViewMode == ViewMode.Grid)
+                        {
+                            <FileGridView Files="files"
+                                         OnEditFile="EditFile"
+                                         OnDeleteFile="DeleteFile"
+                                         OnDownloadFile="DownloadFile"
+                                         OnPreviewFile="PreviewFile" />
+                        }
+                        else
+                        {
+                            <FileListView Files="files"
+                                         OnEditFile="EditFile"
+                                         OnDeleteFile="DeleteFile"
+                                         OnDownloadFile="DownloadFile"
+                                         OnPreviewFile="PreviewFile" />
+                        }
+                    </div>
+                }
+
+                <!-- Empty State -->
+                @if (!folders.Any() && !files.Any())
+                {
+                    <div class="@StyleService.GetEmptyStateClass()">
+                        <div class="@StyleService.GetEmptyStateIconClass()">
+                            <i class="fas fa-folder-open"></i>
+                        </div>
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                            This folder is empty
+                        </h3>
+                        <p class="text-gray-500 dark:text-gray-400 mb-6">
+                            Get started by creating a new folder or uploading some files.
+                        </p>
+                        <div class="flex justify-center space-x-3">
+                            <button @onclick="ShowCreateFolderDialog"
+                                    class="@StyleService.GetButtonClass("outline")">
+                                <i class="fas fa-folder-plus mr-2"></i>
+                                Create Folder
+                            </button>
+                            <button @onclick="ShowUploadDialog"
+                                    class="@StyleService.GetButtonClass("primary")">
+                                <i class="fas fa-upload mr-2"></i>
+                                Upload Files
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Create Folder Dialog -->
+<FormDialog @ref="createFolderDialog"
+            Title="Create New Folder"
+            Description="Create a new folder to organize your files"
+            HeaderIcon="fas fa-folder-plus"
+            IsVisible="@showCreateFolderDialog"
+            IsSaving="@isSaving"
+            Size="medium"
+            Model="@folderModel"
+            ValidationErrors="@validationErrors"
+            OnClose="@CloseCreateFolderDialog"
+            OnSave="@CreateFolder">
+
+    <FormContent Context="context">
+        <FolderForm Model="@((CreateFolderDto)context.Model)"
+                    ValidationErrors="@context.ValidationErrors"
+                    ParentFolderId="@currentFolderId" />
+    </FormContent>
+</FormDialog>
+
+<!-- Upload Files Dialog -->
+<FormDialog @ref="uploadDialog"
+            Title="Upload Files"
+            Description="@($"Upload files to: {GetCurrentPath()}")"
+            HeaderIcon="fas fa-upload"
+            IsVisible="@showUploadDialog"
+            IsSaving="@isUploading"
+            Size="large"
+            Model="@uploadModel"
+            OnClose="@CloseUploadDialog"
+            OnSave="@UploadFiles">
+
+    <FormContent Context="context">
+        <FileUploadForm @bind-Files="selectedFiles"
+                       @bind-UploadProgress="uploadProgress"
+                       IsUploading="@isUploading"
+                       FolderId="@currentFolderId" />
+    </FormContent>
+</FormDialog>
+
+<!-- Edit File Dialog -->
+<FormDialog @ref="editFileDialog"
+            Title="Edit File"
+            Description="Update file information and settings"
+            HeaderIcon="fas fa-edit"
+            IsVisible="@showEditFileDialog"
+            IsSaving="@isSaving"
+            Size="large"
+            Model="@fileEditModel"
+            ValidationErrors="@validationErrors"
+            OnClose="@CloseEditFileDialog"
+            OnSave="@UpdateFile">
+
+    <FormContent Context="context">
+        <FileEditForm Model="@((UpdateFileDto)context.Model)"
+                     ValidationErrors="@context.ValidationErrors"
+                     OriginalFile="@selectedFile" />
+    </FormContent>
+</FormDialog>
+
+<!-- Delete Confirmation Dialog -->
+<ConfirmationDialog @ref="deleteDialog"
+                    Title="@deleteDialogTitle"
+                    Message="@deleteDialogMessage"
+                    ConfirmText="Delete"
+                    ConfirmClass="@StyleService.GetButtonClass("danger")"
+                    ConfirmIcon="fas fa-trash"
+                    OnConfirm="@ConfirmDelete" />
+
+@code {
+    public enum ViewMode { Grid, List }
+
+    // State
+    private ViewMode currentViewMode = ViewMode.Grid;
+    private int? currentFolderId;
+    private FolderDto? currentFolder;
+    private List<FolderDto> folders = new();
+    private List<FileDto> files = new();
+    private List<FolderDto> breadcrumbs = new();
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isUploading = false;
+    private string searchTerm = string.Empty;
+    private string selectedFileType = string.Empty;
+    private Timer? searchTimer;
+
+    // Dialog states
+    private bool showCreateFolderDialog = false;
+    private bool showUploadDialog = false;
+    private bool showEditFileDialog = false;
+    private CreateFolderDto folderModel = new();
+    private object uploadModel = new();
+    private UpdateFileDto fileEditModel = new();
+    private Dictionary<string, string> validationErrors = new();
+
+    // Upload state
+    private List<IBrowserFile> selectedFiles = new();
+    private Dictionary<string, int> uploadProgress = new();
+
+    // Delete state
+    private string deleteDialogTitle = string.Empty;
+    private string deleteDialogMessage = string.Empty;
+    private object? itemToDelete;
+    private FileDto? selectedFile;
+
+    // Component references
+    private FormDialog? createFolderDialog;
+    private FormDialog? uploadDialog;
+    private FormDialog? editFileDialog;
+    private ConfirmationDialog? deleteDialog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFolderContents();
+    }
+
+    private async Task LoadFolderContents()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            // Load current folder info
+            if (currentFolderId.HasValue)
+            {
+                currentFolder = await FolderService.GetFolderByIdAsync(currentFolderId.Value);
+                breadcrumbs = await FolderService.GetFolderBreadcrumbsAsync(currentFolderId.Value);
+            }
+            else
+            {
+                currentFolder = null;
+                breadcrumbs.Clear();
+            }
+
+            // Load folders
+            folders = await FolderService.GetFoldersAsync(currentFolderId);
+
+            // Load files
+            var filesResult = await FileService.GetFilesAsync(1, 100, currentFolderId, searchTerm, 
+                string.IsNullOrEmpty(selectedFileType) ? null : Enum.Parse<FileType>(selectedFileType));
+            files = filesResult.Items.ToList();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load folder contents: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void SetViewMode(ViewMode mode)
+    {
+        currentViewMode = mode;
+        StateHasChanged();
+    }
+
+    private async Task NavigateToFolder(int? folderId)
+    {
+        currentFolderId = folderId;
+        await LoadFolderContents();
+    }
+
+    private void OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        searchTimer?.Dispose();
+        searchTimer = new Timer(async _ =>
+        {
+            await InvokeAsync(LoadFolderContents);
+        }, null, 500, Timeout.Infinite);
+    }
+
+    private async Task OnFilterChange()
+    {
+        await LoadFolderContents();
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadFolderContents();
+    }
+
+    private string GetCurrentPath()
+    {
+        if (!breadcrumbs.Any()) return "/";
+        return "/" + string.Join("/", breadcrumbs.Select(b => b.Name));
+    }
+
+    // Folder operations
+    private void ShowCreateFolderDialog()
+    {
+        folderModel = new CreateFolderDto
+        {
+            ParentFolderId = currentFolderId,
+            FolderType = FolderType.General
+        };
+        validationErrors.Clear();
+        showCreateFolderDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseCreateFolderDialog()
+    {
+        showCreateFolderDialog = false;
+        StateHasChanged();
+    }
+
+    private async Task CreateFolder()
+    {
+        try
+        {
+            isSaving = true;
+            StateHasChanged();
+
+            await FolderService.CreateFolderAsync(folderModel);
+            NotificationService.ShowSuccess("Folder created successfully");
+            CloseCreateFolderDialog();
+            await LoadFolderContents();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to create folder: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void DeleteFolder(FolderDto folder)
+    {
+        deleteDialogTitle = "Delete Folder";
+        deleteDialogMessage = $"Are you sure you want to delete the folder \"{folder.Name}\"? This will also delete all files and subfolders within it.";
+        itemToDelete = folder;
+        deleteDialog?.Show();
+    }
+
+    // File operations
+    private void ShowUploadDialog()
+    {
+        selectedFiles.Clear();
+        uploadProgress.Clear();
+        showUploadDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseUploadDialog()
+    {
+        showUploadDialog = false;
+        StateHasChanged();
+    }
+
+    private async Task UploadFiles()
+    {
+        if (!selectedFiles.Any()) return;
+
+        try
+        {
+            isUploading = true;
+            StateHasChanged();
+
+            foreach (var file in selectedFiles)
+            {
+                // TODO: Implement file upload with progress tracking
+                // await FileService.UploadFileAsync(file, currentFolderId);
+                NotificationService.ShowSuccess($"File {file.Name} uploaded successfully");
+            }
+
+            CloseUploadDialog();
+            await LoadFolderContents();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to upload files: {ex.Message}");
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void EditFile(FileDto file)
+    {
+        selectedFile = file;
+        fileEditModel = new UpdateFileDto
+        {
+            Description = file.Description,
+            Alt = file.Alt,
+            IsPublic = file.IsPublic,
+            Tags = file.Tags,
+            FolderId = file.FolderId
+        };
+        validationErrors.Clear();
+        showEditFileDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseEditFileDialog()
+    {
+        showEditFileDialog = false;
+        selectedFile = null;
+        StateHasChanged();
+    }
+
+    private async Task UpdateFile()
+    {
+        if (selectedFile == null) return;
+
+        try
+        {
+            isSaving = true;
+            StateHasChanged();
+
+            await FileService.UpdateFileAsync(selectedFile.Id, fileEditModel);
+            NotificationService.ShowSuccess("File updated successfully");
+            CloseEditFileDialog();
+            await LoadFolderContents();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to update file: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void DeleteFile(FileDto file)
+    {
+        deleteDialogTitle = "Delete File";
+        deleteDialogMessage = $"Are you sure you want to delete the file \"{file.OriginalFileName}\"? This action cannot be undone.";
+        itemToDelete = file;
+        deleteDialog?.Show();
+    }
+
+    private async Task DownloadFile(FileDto file)
+    {
+        try
+        {
+            await FileService.DownloadFileAsync(file.Id);
+            NotificationService.ShowSuccess("Download started");
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to download file: {ex.Message}");
+        }
+    }
+
+    private void PreviewFile(FileDto file)
+    {
+        // TODO: Implement file preview
+        NotificationService.ShowInfo("File preview functionality coming soon");
+    }
+
+    private async Task ConfirmDelete()
+    {
+        try
+        {
+            if (itemToDelete is FolderDto folder)
+            {
+                await FolderService.DeleteFolderAsync(folder.Id, true);
+                NotificationService.ShowSuccess("Folder deleted successfully");
+            }
+            else if (itemToDelete is FileDto file)
+            {
+                await FileService.DeleteFileAsync(file.Id);
+                NotificationService.ShowSuccess("File deleted successfully");
+            }
+
+            await LoadFolderContents();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to delete item: {ex.Message}");
+        }
+        finally
+        {
+            itemToDelete = null;
+        }
+    }
+
+    public void Dispose()
+    {
+        searchTimer?.Dispose();
+    }
+}
