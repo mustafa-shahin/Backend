@@ -32,7 +32,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 
 // Add API services
 builder.Services.AddScoped<IPageService, PageService>();
-builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<IUsersService, UsersService>();
 
 // Add UI services
 builder.Services.AddScoped<IThemeService, ThemeService>();
