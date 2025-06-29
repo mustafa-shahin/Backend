@@ -45,19 +45,15 @@ namespace Frontend.Services
 
         public string GetButtonClass(string variant = "primary", string size = "medium")
         {
-            var baseClass = GetButtonBaseClass();
+            var baseClass = "inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 " +
+                   "focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed " +
+                   "transform hover:scale-[1.02] active:scale-[0.98]"; ;
             var sizeClass = GetButtonSizeClass(size);
             var variantClass = GetButtonVariantClass(variant);
 
             return $"{baseClass} {sizeClass} {variantClass}";
         }
 
-        private string GetButtonBaseClass()
-        {
-            return "inline-flex items-center justify-center font-medium rounded-lg transition-all duration-200 " +
-                   "focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed " +
-                   "transform hover:scale-[1.02] active:scale-[0.98]";
-        }
 
         private string GetButtonSizeClass(string size)
         {
@@ -260,22 +256,6 @@ namespace Frontend.Services
                    "dark:border-gray-600 dark:focus:border-blue-500 dark:focus:ring-blue-500";
         }
 
-        public string GetFormLabelClass()
-        {
-            return "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1";
-        }
-
-        public string GetValidationMessageClass()
-        {
-            return "text-red-600 dark:text-red-400 text-sm mt-1 flex items-center";
-        }
-        public string GetFormFieldContainerClass()
-        {
-            return "space-y-1";
-        }
-
-
-
         public string GetFormGridClass(int columns = 1)
         {
             return columns switch
@@ -288,27 +268,7 @@ namespace Frontend.Services
             };
         }
         #endregion
-
-        #region Table Methods
-        public string GetTableContainerClass()
-        {
-            return "bg-white dark:bg-gray-800 shadow-sm rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700";
-        }
-
-        public string GetTableHeaderClass()
-        {
-            return "px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider bg-gray-50 dark:bg-gray-900";
-        }
-
-        public string GetTableCellClass()
-        {
-            return "px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100";
-        }
-
-        public string GetTableRowClass()
-        {
-            return "hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150 cursor-pointer";
-        }
+       
 
         public string GetTableActionButtonClass(string variant = "primary")
         {
@@ -320,7 +280,6 @@ namespace Frontend.Services
                 _ => "text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 transition-colors p-1 rounded"
             };
         }
-        #endregion
 
         #region Icon and Color Methods
         public string GetIconColorClass(string iconType)
@@ -405,11 +364,6 @@ namespace Frontend.Services
         }
         #endregion
 
-        #region Modal Methods
-        public string GetModalBackdropClass()
-        {
-            return "fixed inset-0 bg-black/50 backdrop-blur-sm z-40";
-        }
 
         public string GetModalDialogSizeClass(string size)
         {
@@ -439,38 +393,7 @@ namespace Frontend.Services
 
             return $"{baseClass} {heightClass}";
         }
-        #endregion
 
-
-        public string GetCardHeaderClass()
-        {
-            return "px-6 py-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700";
-        }
-
-
-        public string GetCardFooterClass()
-        {
-            return "px-6 py-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700";
-        }
-
-        #region Grid and List View Methods
-        public string GetGridContainerClass()
-        {
-            return "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4";
-        }
-
-        public string GetGridItemClass()
-        {
-            return "bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 overflow-hidden group cursor-pointer";
-        }
-        public string GetCardBodyClass()
-        {
-            return "p-6";
-        }
-        public string GetListItemClass()
-        {
-            return "flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors border-b border-gray-200 dark:border-gray-700 last:border-b-0";
-        }
 
         public string GetViewModeToggleClass(bool isActive)
         {
@@ -478,9 +401,8 @@ namespace Frontend.Services
                 ? GetButtonClass("primary", "small")
                 : GetButtonClass("outline", "small");
         }
-        #endregion
 
-        #region Loading and State Methods
+
         public string GetLoadingSpinnerClass(string size = "medium")
         {
             var sizeClass = size.ToLower() switch
@@ -494,15 +416,5 @@ namespace Frontend.Services
             return $"animate-spin rounded-full {sizeClass} border-2 border-gray-300 border-t-blue-600 dark:border-gray-600 dark:border-t-blue-400";
         }
 
-        public string GetEmptyStateClass()
-        {
-            return "text-center py-12";
-        }
-
-        public string GetEmptyStateIconClass()
-        {
-            return "mx-auto w-16 h-16 text-gray-400 dark:text-gray-500 mb-4";
-        }
-        #endregion
     }
 }

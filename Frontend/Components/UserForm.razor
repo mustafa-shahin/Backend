@@ -32,7 +32,7 @@
 
     <!-- Profile Picture -->
     <div class="space-y-1">
-        <label class="@StyleService.GetFormLabelClass()">
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             <i class="fas fa-image mr-2"></i>
             Profile Picture
         </label>
@@ -100,7 +100,7 @@
     <div class="@StyleService.GetFormGridClass(2)">
         <!-- First Name -->
         <div class="space-y-1">
-            <label class="@StyleService.GetFormLabelClass()">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 <i class="fas fa-user mr-2"></i>
                 First Name *
             </label>
@@ -118,7 +118,7 @@
 
         <!-- Last Name -->
         <div class="space-y-1">
-            <label class="@StyleService.GetFormLabelClass()">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 <i class="fas fa-user mr-2"></i>
                 Last Name *
             </label>
@@ -139,7 +139,7 @@
     <div class="@StyleService.GetFormGridClass(2)">
         <!-- Username -->
         <div class="space-y-1">
-            <label class="@StyleService.GetFormLabelClass()">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 <i class="fas fa-at mr-2"></i>
                 Username *
             </label>
@@ -157,7 +157,7 @@
 
         <!-- Email -->
         <div class="space-y-1">
-            <label class="@StyleService.GetFormLabelClass()">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 <i class="fas fa-envelope mr-2"></i>
                 Email *
             </label>
@@ -181,7 +181,7 @@
         <div class="@StyleService.GetFormGridClass(2)">
             <!-- Password -->
             <div class="space-y-1">
-                <label class="@StyleService.GetFormLabelClass()">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     <i class="fas fa-lock mr-2"></i>
                     Password *
                 </label>
@@ -200,7 +200,7 @@
 
             <!-- Confirm Password -->
             <div class="space-y-1">
-                <label class="@StyleService.GetFormLabelClass()">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     <i class="fas fa-lock mr-2"></i>
                     Confirm Password *
                 </label>
@@ -223,7 +223,7 @@
     <div class="@StyleService.GetFormGridClass(2)">
         <!-- Role -->
         <div class="space-y-1">
-            <label class="@StyleService.GetFormLabelClass()">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 <i class="fas fa-user-tag mr-2"></i>
                 Role *
             </label>
@@ -244,7 +244,7 @@
 
         <!-- Active Status -->
         <div class="space-y-1">
-            <label class="@StyleService.GetFormLabelClass()">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 <i class="fas fa-toggle-on mr-2"></i>
                 Account Status
             </label>
@@ -296,42 +296,42 @@
 
                     <div class="@StyleService.GetFormGridClass(2)">
                         <div class="space-y-1">
-                            <label class="@StyleService.GetFormLabelClass()">Street</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Street</label>
                             <InputText @bind-Value="address.Street"
                                        class="@StyleService.GetFormInputClass()"
                                        placeholder="Street address" />
                         </div>
 
                         <div class="space-y-1">
-                            <label class="@StyleService.GetFormLabelClass()">House Number</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">House Number</label>
                             <InputText @bind-Value="address.HouseNr"
                                        class="@StyleService.GetFormInputClass()"
                                        placeholder="House number" />
                         </div>
 
                         <div class="space-y-1">
-                            <label class="@StyleService.GetFormLabelClass()">City</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">City</label>
                             <InputText @bind-Value="address.City"
                                        class="@StyleService.GetFormInputClass()"
                                        placeholder="City" />
                         </div>
 
                         <div class="space-y-1">
-                            <label class="@StyleService.GetFormLabelClass()">State/Province</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">State/Province</label>
                             <InputText @bind-Value="address.State"
                                        class="@StyleService.GetFormInputClass()"
                                        placeholder="State or province" />
                         </div>
 
                         <div class="space-y-1">
-                            <label class="@StyleService.GetFormLabelClass()">Country</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Country</label>
                             <InputText @bind-Value="address.Country"
                                        class="@StyleService.GetFormInputClass()"
                                        placeholder="Country" />
                         </div>
 
                         <div class="space-y-1">
-                            <label class="@StyleService.GetFormLabelClass()">Postal Code</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Postal Code</label>
                             <InputText @bind-Value="address.PostalCode"
                                        class="@StyleService.GetFormInputClass()"
                                        placeholder="Postal code" />
@@ -400,21 +400,21 @@
 
                     <div class="@StyleService.GetFormGridClass(2)">
                         <div class="space-y-1">
-                            <label class="@StyleService.GetFormLabelClass()">Primary Phone</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Primary Phone</label>
                             <InputText @bind-Value="contact.PrimaryPhone"
                                        class="@StyleService.GetFormInputClass()"
                                        placeholder="Primary phone number" />
                         </div>
 
                         <div class="space-y-1">
-                            <label class="@StyleService.GetFormLabelClass()">Mobile</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mobile</label>
                             <InputText @bind-Value="contact.Mobile"
                                        class="@StyleService.GetFormInputClass()"
                                        placeholder="Mobile number" />
                         </div>
 
                         <div class="space-y-1">
-                            <label class="@StyleService.GetFormLabelClass()">Email</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Email</label>
                             <InputText @bind-Value="contact.Email"
                                        type="email"
                                        class="@StyleService.GetFormInputClass()"
@@ -422,7 +422,7 @@
                         </div>
 
                         <div class="space-y-1">
-                            <label class="@StyleService.GetFormLabelClass()">Website</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Website</label>
                             <InputText @bind-Value="contact.Website"
                                        class="@StyleService.GetFormInputClass()"
                                        placeholder="Website URL" />
@@ -513,7 +513,7 @@
             return previewImageUrl;
 
         if (Model.PictureFileId.HasValue)
-            return $"/api/file/{Model.PictureFileId}/thumbnail"; // Adjust based on your API
+            return $"/api/file/{Model.PictureFileId}/thumbnail";
 
         return string.Empty;
     }

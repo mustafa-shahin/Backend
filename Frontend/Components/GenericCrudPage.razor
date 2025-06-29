@@ -170,7 +170,7 @@
         <!-- Empty State -->
         <div class="p-6">
             <div class="text-center py-12">
-                <div class="@StyleService.GetEmptyStateIconClass()">
+                <div class="mx-auto w-16 h-16 text-gray-400 dark:text-gray-500 mb-4">
                     <i class="@EmptyStateIcon"></i>
                 </div>
                 <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
@@ -243,7 +243,7 @@
 
         <FormContent Context="context">
             <div class="space-y-1">
-                <label class="@StyleService.GetFormLabelClass()">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     New @EntitySingularName Name *
                 </label>
                 <input @bind="duplicateName"
