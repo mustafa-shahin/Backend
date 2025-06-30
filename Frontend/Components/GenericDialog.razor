@@ -2,16 +2,16 @@
 
 @if (IsVisible)
 {
-    <div class="fixed inset-0 z-50 overflow-y-auto" @onclick:stopPropagation="true">
+    <div class="fixed inset-0 z-50 overflow-y-auto">
         <!-- Backdrop -->
-        <div class="modal-backdrop fixed inset-0" @onclick="HandleBackdropClick"></div>
+        <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity" @onclick="HandleBackdropClick"></div>
 
         <!-- Dialog -->
         <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
             <!-- This element is to trick the browser into centering the modal contents. -->
             <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
 
-            <div class="@GetDialogSizeClass() inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle animate-slide-up"
+            <div class="@GetDialogSizeClass() inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle animate-slide-up relative z-50"
                  @onclick:stopPropagation="true">
 
                 <!-- Header -->
@@ -36,6 +36,7 @@
                             </div>
                         </div>
                         <button @onclick="CloseDialog"
+                                type="button"
                                 class="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
                                 aria-label="Close modal"
                                 disabled="@IsSaving">
@@ -182,39 +183,11 @@
         {
             // Prevent body scroll when modal is open
             await JS.InvokeVoidAsync("document.body.classList.add", "overflow-hidden");
-
-            // Focus management
-            if (firstRender)
-            {
-                await JS.InvokeVoidAsync("setTimeout", "() => { const modal = document.querySelector('[data-modal-focus]'); if (modal) modal.focus(); }", 100);
-            }
         }
         else
         {
             // Restore body scroll when modal is closed
             await JS.InvokeVoidAsync("document.body.classList.remove", "overflow-hidden");
-        }
-    }
-
-    protected override async Task OnParametersSetAsync()
-    {
-        // Handle escape key
-        if (IsVisible)
-        {
-            await JS.InvokeVoidAsync("addEscapeKeyListener", DotNetObjectReference.Create(this));
-        }
-        else
-        {
-            await JS.InvokeVoidAsync("removeEscapeKeyListener");
-        }
-    }
-
-    [JSInvokable]
-    public async Task HandleEscapeKey()
-    {
-        if (IsVisible && !IsSaving)
-        {
-            await CloseDialog();
         }
     }
 
@@ -234,7 +207,6 @@
     {
         try
         {
-            JS.InvokeVoidAsync("removeEscapeKeyListener");
             JS.InvokeVoidAsync("document.body.classList.remove", "overflow-hidden");
         }
         catch

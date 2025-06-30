@@ -2,6 +2,7 @@
 @using Backend.CMS.Domain.Enums
 @using Frontend.Interfaces
 @inject IStyleService StyleService
+@inject IJSRuntime JSRuntime
 
 <div class="space-y-6">
     <!-- File Preview -->
@@ -52,7 +53,7 @@
         </div>
     }
 
-    <!-- File Location -->
+    <!-- Full File Path Display -->
     @if (OriginalFile != null)
     {
         <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
@@ -67,9 +68,15 @@
                     <div class="space-y-2">
                         <div class="flex items-center">
                             <span class="text-sm font-medium text-blue-700 dark:text-blue-300 mr-2">Full Path:</span>
-                            <code class="px-2 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 rounded text-sm font-mono">
+                            <code class="px-2 py-1 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 rounded text-sm font-mono break-all">
                                 @GetFullPath()
                             </code>
+                            <button type="button"
+                                    @onclick="() => CopyToClipboard(GetFullPath())"
+                                    class="ml-2 p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200"
+                                    title="Copy path">
+                                <i class="fas fa-copy text-xs"></i>
+                            </button>
                         </div>
                         @if (Model.FolderId.HasValue)
                         {
@@ -168,10 +175,10 @@
                     </div>
                 </div>
 
-                <!-- Folder Management -->
+                <!-- Current Location Display -->
                 <div class="space-y-1">
                     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Folder Management
+                        Current Location
                     </label>
                     <div class="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                         <div class="flex items-center justify-between">
@@ -179,19 +186,13 @@
                                 <i class="fas fa-folder text-blue-500 mr-2"></i>
                                 <div>
                                     <span class="text-sm text-gray-700 dark:text-gray-300 font-medium">
-                                        Current Location
+                                        @GetFolderDisplayName()
                                     </span>
                                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                                        @GetFolderDisplayName()
+                                        @GetFullPath()
                                     </p>
                                 </div>
                             </div>
-                            <button type="button" 
-                                    class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm font-medium"
-                                    title="Move to different folder (Feature coming soon)">
-                                <i class="fas fa-external-link-alt mr-1"></i>
-                                Move
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -292,15 +293,15 @@
                             Direct Access URL
                         </label>
                         <div class="flex items-center space-x-2">
-                            <code class="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono text-gray-800 dark:text-gray-200">
+                            <code class="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono text-gray-800 dark:text-gray-200 break-all">
                                 /api/file/@OriginalFile.Id/download
                             </code>
-<button type="button" 
-        @onclick="@(() => CopyToClipboard($"/api/file/{OriginalFile.Id}/download"))"
-        class="@StyleService.GetButtonClass("secondary", "small")"
-        title="Copy URL">
-    <i class="fas fa-copy"></i>
-</button>
+                            <button type="button"
+                                    @onclick="@(() => CopyToClipboard($"/api/file/{OriginalFile.Id}/download"))"
+                                    class="@StyleService.GetButtonClass("secondary", "small")"
+                                    title="Copy URL">
+                                <i class="fas fa-copy"></i>
+                            </button>
                         </div>
                     </div>
 
@@ -311,7 +312,7 @@
                                 Thumbnail URL
                             </label>
                             <div class="flex items-center space-x-2">
-                                <code class="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono text-gray-800 dark:text-gray-200">
+                                <code class="flex-1 px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-sm font-mono text-gray-800 dark:text-gray-200 break-all">
                                     /api/file/@OriginalFile.Id/thumbnail
                                 </code>
                                 <button type="button"
@@ -320,7 +321,6 @@
                                         title="Copy URL">
                                     <i class="fas fa-copy"></i>
                                 </button>
-
                             </div>
                         </div>
                     }
@@ -334,6 +334,7 @@
     [Parameter] public UpdateFileDto Model { get; set; } = new();
     [Parameter] public Dictionary<string, string> ValidationErrors { get; set; } = new();
     [Parameter] public FileDto? OriginalFile { get; set; }
+    [Parameter] public List<FolderDto> FolderPath { get; set; } = new();
 
     private List<string> currentTags = new();
     private string newTag = string.Empty;
@@ -382,13 +383,14 @@
     private string GetFullPath()
     {
         if (OriginalFile == null) return "/";
-        
-        // This would ideally come from a breadcrumb service or be passed as a parameter
-        // For now, we'll construct it based on the folder structure
+
         var path = "/";
-        if (Model.FolderId.HasValue)
+        if (FolderPath?.Any() == true)
         {
-            // In a real implementation, you'd get the full folder path from the service
+            path = "/" + string.Join("/", FolderPath.Select(f => f.Name)) + "/";
+        }
+        else if (Model.FolderId.HasValue)
+        {
             path = $"/folder-{Model.FolderId}/";
         }
         return path + OriginalFile.OriginalFileName;
@@ -396,7 +398,11 @@
 
     private string GetFolderDisplayName()
     {
-        if (Model.FolderId.HasValue)
+        if (FolderPath?.Any() == true)
+        {
+            return string.Join(" > ", FolderPath.Select(f => f.Name));
+        }
+        else if (Model.FolderId.HasValue)
         {
             return $"Folder ID: {Model.FolderId}";
         }
@@ -405,8 +411,14 @@
 
     private async Task CopyToClipboard(string text)
     {
-        // This would require JavaScript interop to copy to clipboard
-        // For now, just show a placeholder notification
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("copyToClipboard", text);
+        }
+        catch (Exception)
+        {
+            // Handle silently
+        }
     }
 
     private string GetFileIcon(FileType fileType)

@@ -2,6 +2,7 @@
 using Backend.CMS.Domain.Enums;
 using Frontend.Interfaces;
 using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.JSInterop;
 using System.Net.Http.Json;
 using System.Text.Json;
 
@@ -11,10 +12,12 @@ namespace Frontend.Services
     {
         private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonOptions;
+        private readonly IJSRuntime _jsRuntime;
 
-        public FileService(HttpClient httpClient)
+        public FileService(HttpClient httpClient, IJSRuntime jsRuntime)
         {
             _httpClient = httpClient;
+            _jsRuntime = jsRuntime;
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
@@ -174,7 +177,8 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.DeleteAsync($"/api/file/bulk-delete");
+                var bulkDto = new { FileIds = fileIds };
+                var response = await _httpClient.PostAsJsonAsync("/api/file/bulk-delete", bulkDto, _jsonOptions);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -288,12 +292,22 @@ namespace Frontend.Services
         {
             try
             {
-                var token = await GenerateDownloadTokenAsync(id);
-                if (!string.IsNullOrEmpty(token))
+                // For public files, use direct download
+                var fileInfo = await GetFileByIdAsync(id);
+                if (fileInfo?.IsPublic == true)
                 {
-                    var downloadUrl = $"/api/file/download/{token}";
-                    // This would typically trigger a browser download
-                    // Implementation depends on how you want to handle downloads
+                    var downloadUrl = $"/api/file/{id}/download";
+                    await _jsRuntime.InvokeVoidAsync("downloadFile", downloadUrl, fileInfo.OriginalFileName);
+                }
+                else
+                {
+                    // For private files, generate token first
+                    var token = await GenerateDownloadTokenAsync(id);
+                    if (!string.IsNullOrEmpty(token))
+                    {
+                        var downloadUrl = $"/api/file/download/{token}";
+                        await _jsRuntime.InvokeVoidAsync("downloadFile", downloadUrl, fileInfo?.OriginalFileName ?? "file");
+                    }
                 }
             }
             catch (Exception ex)

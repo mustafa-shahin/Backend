@@ -3,15 +3,15 @@
 
 @if (IsVisible)
 {
-    <div class="fixed inset-0 z-50 overflow-y-auto" @onclick:stopPropagation="true">
+    <div class="fixed inset-0 z-50 overflow-y-auto">
         <!-- Backdrop -->
-        <div class="fixed inset-0  z-40" @onclick="HandleBackdropClick"></div>
+        <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity" @onclick="HandleBackdropClick"></div>
 
         <!-- Dialog -->
         <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
             <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
 
-            <div class="@StyleService.GetModalDialogSizeClass(Size) inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle animate-slide-up"
+            <div class="@StyleService.GetModalDialogSizeClass(Size) inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle animate-slide-up relative z-50"
                  @onclick:stopPropagation="true">
 
                 <!-- Header -->
@@ -36,6 +36,7 @@
                             </div>
                         </div>
                         <button @onclick="CloseDialog"
+                                type="button"
                                 class="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
                                 aria-label="Close modal"
                                 disabled="@IsSaving">
@@ -68,7 +69,7 @@
                                 type="button"
                                 class="@StyleService.GetButtonClass("secondary")"
                                 disabled="@IsSaving">
-                            <i class="fas fa-times mr-2 sdfsd"></i>
+                            <i class="fas fa-times mr-2"></i>
                             Cancel
                         </button>
 
