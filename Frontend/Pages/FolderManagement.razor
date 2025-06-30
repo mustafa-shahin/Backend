@@ -7,153 +7,492 @@
 @inject INotificationService NotificationService
 @inject IStyleService StyleService
 @inject NavigationManager Navigation
-
+@inject IJSRuntime JSRuntime
 <PageTitle>Folders - Media Library</PageTitle>
 
-<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
-    <div>
-        <h1 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-            <i class="fas fa-folder mr-3 text-blue-600 dark:text-blue-400"></i>
-            Folders
-        </h1>
-        <p class="text-gray-600 dark:text-gray-400 mt-1">Manage your folder structure</p>
-    </div>
-    <div class="flex items-center space-x-3">
-        <button @onclick="ShowCreateFolderDialog" class="@StyleService.GetButtonClass("primary")">
-            <i class="fas fa-folder-plus mr-2"></i>
-            New Folder
-        </button>
-    </div>
-</div>
-
-@if (breadcrumbs.Any())
-{
-    <div class="mb-6">
-        <nav class="flex items-center space-x-2 text-sm bg-white dark:bg-gray-800 rounded-lg px-4 py-3 border border-gray-200 dark:border-gray-700">
-            <button @onclick="() => NavigateToFolder(null)"
-                    class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center hover:bg-blue-50 dark:hover:bg-blue-900/20 px-2 py-1 rounded transition-colors">
-                <i class="fas fa-home mr-1"></i>
-                Root
-            </button>
-            @foreach (var folder in breadcrumbs)
-            {
-                <i class="fas fa-chevron-right text-gray-400 mx-2"></i>
-                <button @onclick="() => NavigateToFolder(folder.Id)"
-                        class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 px-2 py-1 rounded transition-colors">
-                    @folder.Name
-                </button>
-            }
-        </nav>
-    </div>
-}
-
-<div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
-    <div class="p-6">
-        <div class="flex flex-col lg:flex-row gap-4">
-            <div class="flex-1">
-                <div class="relative">
-                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <i class="fas fa-search text-gray-400"></i>
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <!-- Page Header -->
+    <div class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between py-6 space-y-4 sm:space-y-0">
+                <div>
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center mr-4">
+                            <i class="fas fa-folder text-white text-lg"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Folders</h1>
+                            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                Organize and manage your file structure
+                                @if (folders.Any())
+                                {
+                                    <span class="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                                        @folders.Count folder@(folders.Count == 1 ? "" : "s")
+                                    </span>
+                                }
+                            </p>
+                        </div>
                     </div>
-                    <input @bind="searchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp"
-                           type="text"
-                           placeholder="Search folders..."
-                           class="@StyleService.GetFormInputClass() pl-10" />
                 </div>
-            </div>
-
-            <div class="flex items-center space-x-3">
-                <div class="flex rounded-lg shadow-sm">
-                    <button @onclick="() => SetViewMode(ViewMode.Grid)"
-                            class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.Grid) rounded-r-none border-r-0">
-                        <i class="fas fa-th mr-1"></i>
-                        Grid
-                    </button>
-                    <button @onclick="() => SetViewMode(ViewMode.List)"
-                            class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.List) rounded-l-none">
-                        <i class="fas fa-list mr-1"></i>
-                        List
+                <div class="flex items-center space-x-3">
+                    <button @onclick="ShowCreateFolderDialog"
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200">
+                        <i class="fas fa-folder-plus mr-2"></i>
+                        New Folder
                     </button>
                 </div>
-
-                <button @onclick="RefreshData"
-                        class="@StyleService.GetButtonClass("secondary")"
-                        title="Refresh"
-                        disabled="@isLoading">
-                    <i class="fas fa-refresh @(isLoading ? "fa-spin" : "")"></i>
-                </button>
             </div>
         </div>
     </div>
-</div>
 
-<div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-    @if (isLoading)
-    {
-        <div class="p-6">
-            <div class="flex items-center justify-center py-12">
-                <div class="text-center">
-                    <div class="@StyleService.GetLoadingSpinnerClass("large") mx-auto mb-4"></div>
-                    <p class="text-gray-500 dark:text-gray-400">Loading folders...</p>
-                </div>
-            </div>
-        </div>
-    }
-    else if (folders.Any())
-    {
-        @if (currentViewMode == ViewMode.Grid)
+    <div class="mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Breadcrumbs -->
+        @if (breadcrumbs.Any())
         {
+            <div class="mb-6">
+                <nav class="flex items-center space-x-2 text-sm bg-white dark:bg-gray-800 rounded-lg px-4 py-3 border border-gray-200 dark:border-gray-700 shadow-sm">
+                    <button @onclick="() => NavigateToFolder(null)"
+                            class="inline-flex items-center text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 px-2 py-1 rounded transition-colors">
+                        <i class="fas fa-home mr-1"></i>
+                        Root
+                    </button>
+                    @foreach (var folder in breadcrumbs)
+                    {
+                        <i class="fas fa-chevron-right text-gray-400 mx-2"></i>
+                        <button @onclick="() => NavigateToFolder(folder.Id)"
+                                class="inline-flex items-center text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 px-2 py-1 rounded transition-colors">
+                            @folder.Name
+                        </button>
+                    }
+                </nav>
+            </div>
+        }
+
+        <!-- Search and Controls -->
+        <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
             <div class="p-6">
-                <FolderListView Folders="@folders"
-                                OnFolderClick="@((folderId) => NavigateToFolder(folderId))"
-                                OnDeleteFolder="@ShowDeleteFolderConfirmation"
-                                OnEditFolder="@ShowEditFolderDialog" />
-            </div>
-        }
-        else
-        {
-            <div class="overflow-x-auto">
-                <FolderListView Folders="@folders"
-                                OnFolderClick="@((folderId) => NavigateToFolder(folderId))"
-                                OnDeleteFolder="@ShowDeleteFolderConfirmation"
-                                OnEditFolder="@ShowEditFolderDialog" />
-            </div>
-        }
-    }
-    else
-    {
-        <div class="p-6">
-            <div class="text-center py-12">
-                <div class="mx-auto w-16 h-16 text-gray-400 dark:text-gray-500 mb-4">
-                    <i class="fas fa-folder-open text-4xl"></i>
+                <div class="flex flex-col lg:flex-row gap-4">
+                    <!-- Search -->
+                    <div class="flex-1">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-search text-gray-400"></i>
+                            </div>
+                            <input @bind="searchTerm"
+                                   @bind:event="oninput"
+                                   @onkeyup="OnSearchKeyUp"
+                                   type="text"
+                                   placeholder="Search folders by name or description..."
+                                   class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 sm:text-sm" />
+                            @if (!string.IsNullOrEmpty(searchTerm))
+                            {
+                                <button @onclick="ClearSearch"
+                                        class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Controls -->
+                    <div class="flex items-center space-x-3">
+                        <!-- View Mode Toggle -->
+                        <div class="inline-flex rounded-lg shadow-sm" role="group">
+                            <button @onclick="() => SetViewMode(ViewMode.Grid)"
+                                    type="button"
+                                    class="@GetViewToggleClass(currentViewMode == ViewMode.Grid, true)">
+                                <i class="fas fa-th mr-1"></i>
+                                Grid
+                            </button>
+                            <button @onclick="() => SetViewMode(ViewMode.List)"
+                                    type="button"
+                                    class="@GetViewToggleClass(currentViewMode == ViewMode.List, false)">
+                                <i class="fas fa-list mr-1"></i>
+                                List
+                            </button>
+                        </div>
+
+                        <!-- Refresh Button -->
+                        <button @onclick="RefreshData"
+                                class="inline-flex items-center p-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200"
+                                title="Refresh"
+                                disabled="@isLoading">
+                            <i class="fas fa-refresh @(isLoading ? "fa-spin" : "") text-sm"></i>
+                        </button>
+                    </div>
                 </div>
-                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
-                    @if (string.IsNullOrEmpty(searchTerm))
-                    {
-                        <span>No folders in this location</span>
-                    }
-                    else
-                    {
-                        <span>No folders found matching "@searchTerm"</span>
-                    }
-                </h3>
-                <p class="text-gray-500 dark:text-gray-400 mb-6">
-                    @if (string.IsNullOrEmpty(searchTerm))
-                    {
-                        <span>Get started by creating your first folder.</span>
-                    }
-                    else
-                    {
-                        <span>Try adjusting your search terms or create a new folder.</span>
-                    }
-                </p>
-                <button @onclick="ShowCreateFolderDialog" class="@StyleService.GetButtonClass("primary")">
-                    <i class="fas fa-folder-plus mr-2"></i>
-                    Create Folder
-                </button>
+
+                <!-- Results Summary -->
+                @if (!isLoading && (displayedFolders.Any() || !string.IsNullOrEmpty(searchTerm)))
+                {
+                    <div class="mt-4 flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+                        <div>
+                            @if (!string.IsNullOrEmpty(searchTerm))
+                            {
+                                <span>
+                                    Found <strong class="text-gray-900 dark:text-gray-100">@displayedFolders.Count</strong> folders matching
+                                    <strong class="text-gray-900 dark:text-gray-100">"@searchTerm"</strong>
+                                </span>
+                            }
+                            else if (currentFolderId.HasValue)
+                            {
+                                <span>
+                                    <strong class="text-gray-900 dark:text-gray-100">@displayedFolders.Count</strong> subfolder@(displayedFolders.Count == 1 ? "" : "s") in this location
+                                </span>
+                            }
+                            else
+                            {
+                                <span>
+                                    <strong class="text-gray-900 dark:text-gray-100">@displayedFolders.Count</strong> root folder@(displayedFolders.Count == 1 ? "" : "s")
+                                </span>
+                            }
+                        </div>
+                        @if (GetFolderStatsSummary() is var stats && !string.IsNullOrEmpty(stats))
+                        {
+                            <div class="text-xs text-gray-500 dark:text-gray-400">
+                                @stats
+                            </div>
+                        }
+                    </div>
+                }
             </div>
         </div>
-    }
+
+        <!-- Content Area -->
+        <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            @if (isLoading)
+            {
+                <div class="p-6">
+                    <div class="flex items-center justify-center py-12">
+                        <div class="text-center">
+                            <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 dark:border-gray-600 border-t-blue-600 dark:border-t-blue-400 mb-4"></div>
+                            <p class="text-gray-500 dark:text-gray-400 text-lg font-medium">Loading folders...</p>
+                            <p class="text-gray-400 dark:text-gray-500 text-sm mt-1">Organizing your file structure</p>
+                        </div>
+                    </div>
+                </div>
+            }
+            else if (displayedFolders.Any())
+            {
+                @if (currentViewMode == ViewMode.Grid)
+                {
+                    <!-- Grid View -->
+                    <div class="p-6">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+                            @foreach (var folder in displayedFolders)
+                            {
+                                <div class="group relative bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden border border-gray-200 dark:border-gray-700 cursor-pointer"
+                                     @ondblclick="() => NavigateToFolder(folder.Id)">
+
+                                    <!-- Folder Icon and Content -->
+                                    <div class="p-4">
+                                        <div class="flex items-start justify-between mb-3">
+                                            <div class="flex items-center flex-1 min-w-0" @onclick="() => NavigateToFolder(folder.Id)">
+                                                <!-- Folder Icon -->
+                                                <div class="flex-shrink-0 mr-3">
+                                                    <div class="w-12 h-12 rounded-lg flex items-center justify-center @GetFolderIconBackgroundClass(folder.FolderType)">
+                                                        <i class="@GetFolderIcon(folder.FolderType) @GetFolderIconColorClass(folder.FolderType) text-xl"></i>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Folder Info -->
+                                                <div class="flex-1 min-w-0">
+                                                    <h4 class="text-sm font-medium text-gray-900 dark:text-white truncate mb-1" title="@folder.Name">
+                                                        @folder.Name
+                                                    </h4>
+                                                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                                                        @folder.FileCount file@(folder.FileCount == 1 ? "" : "s")
+                                                        @if (folder.SubFolderCount > 0)
+                                                        {
+                                                            <span>, @folder.SubFolderCount folder@(folder.SubFolderCount == 1 ? "" : "s")</span>
+                                                        }
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            <!-- Actions Menu -->
+                                            <div class="relative opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                                                <button @onclick="() => ToggleFolderActions(folder.Id)"
+                                                        @onclick:stopPropagation="true"
+                                                        class="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                                                        title="More actions">
+                                                    <i class="fas fa-ellipsis-v text-sm"></i>
+                                                </button>
+
+                                                @if (showFolderActions == folder.Id)
+                                                {
+                                                    <div class="absolute right-0 z-20 mt-1 w-48 bg-white dark:bg-gray-800 rounded-md shadow-lg border border-gray-200 dark:border-gray-700">
+                                                        <div class="py-1">
+                                                            <button @onclick="() => ShowEditFolderDialog(folder)"
+                                                                    @onclick:stopPropagation="true"
+                                                                    class="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                                                <i class="fas fa-edit mr-2"></i>
+                                                                Edit Properties
+                                                            </button>
+                                                            <button @onclick="() => ShowRenameFolderDialog(folder)"
+                                                                    @onclick:stopPropagation="true"
+                                                                    class="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                                                <i class="fas fa-i-cursor mr-2"></i>
+                                                                Rename
+                                                            </button>
+                                                            <button @onclick="() => CopyFolderPath(folder)"
+                                                                    @onclick:stopPropagation="true"
+                                                                    class="flex items-center w-full px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                                                <i class="fas fa-link mr-2"></i>
+                                                                Copy Path
+                                                            </button>
+                                                            <div class="border-t border-gray-200 dark:border-gray-600 my-1"></div>
+                                                            <button @onclick="() => ShowDeleteFolderConfirmation(folder)"
+                                                                    @onclick:stopPropagation="true"
+                                                                    class="flex items-center w-full px-4 py-2 text-sm text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
+                                                                <i class="fas fa-trash mr-2"></i>
+                                                                Delete
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+
+                                        <!-- Folder Description -->
+                                        @if (!string.IsNullOrEmpty(folder.Description))
+                                        {
+                                            <p class="text-xs text-gray-600 dark:text-gray-400 line-clamp-2 mb-3" title="@folder.Description">
+                                                @TruncateText(folder.Description, 80)
+                                            </p>
+                                        }
+
+                                        <!-- Folder Type Badge and Visibility -->
+                                        <div class="flex items-center justify-between mb-3">
+                                            <span class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full @GetFolderTypeBadgeClass(folder.FolderType)">
+                                                @GetFolderTypeText(folder.FolderType)
+                                            </span>
+
+                                            <div class="flex items-center space-x-1">
+                                                @if (folder.IsPublic)
+                                                {
+                                                    <span class="inline-flex items-center p-1 rounded-full bg-green-100/90 dark:bg-green-900/90 text-green-600 dark:text-green-400" title="Public">
+                                                        <i class="fas fa-globe text-xs"></i>
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="inline-flex items-center p-1 rounded-full bg-gray-100/90 dark:bg-gray-700/90 text-gray-600 dark:text-gray-400" title="Private">
+                                                        <i class="fas fa-lock text-xs"></i>
+                                                    </span>
+                                                }
+                                            </div>
+                                        </div>
+
+                                        <!-- Folder Path -->
+                                        @if (!string.IsNullOrEmpty(folder.Path))
+                                        {
+                                            <div class="mb-3">
+                                                <p class="text-xs text-gray-400 dark:text-gray-500 font-mono truncate" title="/@folder.Path">
+                                                    <i class="fas fa-map-marker-alt mr-1"></i>
+                                                    /@GetCompactPath(folder.Path)
+                                                </p>
+                                            </div>
+                                        }
+
+                                        <!-- Folder Stats -->
+                                        <div class="pt-3 border-t border-gray-200 dark:border-gray-700">
+                                            <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                                                <span class="flex items-center">
+                                                    <i class="fas fa-calendar mr-1"></i>
+                                                    @folder.UpdatedAt.ToString("MMM dd")
+                                                </span>
+                                                @if (!string.IsNullOrEmpty(folder.TotalSizeFormatted))
+                                                {
+                                                    <span class="flex items-center">
+                                                        <i class="fas fa-hdd mr-1"></i>
+                                                        @folder.TotalSizeFormatted
+                                                    </span>
+                                                }
+                                                else if (folder.FileCount > 0)
+                                                {
+                                                    <span class="flex items-center">
+                                                        <i class="fas fa-file mr-1"></i>
+                                                        @folder.FileCount
+                                                    </span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <!-- List View -->
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                            <thead class="bg-gray-50 dark:bg-gray-900">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Folder</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Contents</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Path</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Modified</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                @foreach (var folder in displayedFolders)
+                                {
+                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150 cursor-pointer"
+                                        @ondblclick="() => NavigateToFolder(folder.Id)">
+                                        <td class="px-6 py-4 whitespace-nowrap" @onclick="() => NavigateToFolder(folder.Id)">
+                                            <div class="flex items-center">
+                                                <div class="flex-shrink-0 mr-3">
+                                                    <div class="w-10 h-10 rounded-lg flex items-center justify-center @GetFolderIconBackgroundClass(folder.FolderType)">
+                                                        <i class="@GetFolderIcon(folder.FolderType) @GetFolderIconColorClass(folder.FolderType) text-lg"></i>
+                                                    </div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-sm font-medium text-gray-900 dark:text-white">@folder.Name</div>
+                                                    @if (!string.IsNullOrEmpty(folder.Description))
+                                                    {
+                                                        <div class="text-sm text-gray-500 dark:text-gray-400 truncate max-w-xs" title="@folder.Description">
+                                                            @TruncateText(folder.Description, 50)
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full @GetFolderTypeBadgeClass(folder.FolderType)">
+                                                @GetFolderTypeText(folder.FolderType)
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                            <div class="flex items-center space-x-2">
+                                                <span class="flex items-center">
+                                                    <i class="fas fa-file mr-1 text-gray-400"></i>
+                                                    @folder.FileCount
+                                                </span>
+                                                @if (folder.SubFolderCount > 0)
+                                                {
+                                                    <span class="flex items-center">
+                                                        <i class="fas fa-folder mr-1 text-gray-400"></i>
+                                                        @folder.SubFolderCount
+                                                    </span>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 font-mono">
+                                            <span title="/@folder.Path">/@GetCompactPath(folder.Path ?? "")</span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                                            @folder.UpdatedAt.ToString("MMM dd, yyyy HH:mm")
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 text-right">
+                                            <div class="flex items-center justify-end space-x-2">
+                                                <button @onclick="() => NavigateToFolder(folder.Id)"
+                                                        @onclick:stopPropagation="true"
+                                                        class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 p-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                                        title="Open">
+                                                    <i class="fas fa-folder-open"></i>
+                                                </button>
+                                                <button @onclick="() => ShowEditFolderDialog(folder)"
+                                                        @onclick:stopPropagation="true"
+                                                        class="text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 dark:hover:text-yellow-300 p-1 rounded hover:bg-yellow-50 dark:hover:bg-yellow-900/20 transition-colors"
+                                                        title="Edit">
+                                                    <i class="fas fa-edit"></i>
+                                                </button>
+                                                <button @onclick="() => CopyFolderPath(folder)"
+                                                        @onclick:stopPropagation="true"
+                                                        class="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300 p-1 rounded hover:bg-gray-50 dark:hover:bg-gray-900/20 transition-colors"
+                                                        title="Copy Path">
+                                                    <i class="fas fa-link"></i>
+                                                </button>
+                                                <button @onclick="() => ShowDeleteFolderConfirmation(folder)"
+                                                        @onclick:stopPropagation="true"
+                                                        class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                        title="Delete">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            }
+            else
+            {
+                <!-- Enhanced Empty State -->
+                <div class="p-6">
+                    <div class="text-center py-12">
+                        <div class="mx-auto w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
+                            @if (!string.IsNullOrEmpty(searchTerm))
+                            {
+                                <i class="fas fa-search text-gray-400 text-2xl"></i>
+                            }
+                            else
+                            {
+                                <i class="fas fa-folder-open text-gray-400 text-2xl"></i>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(searchTerm))
+                        {
+                            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                                No folders found matching "@searchTerm"
+                            </h3>
+                            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                                Try adjusting your search terms or create a new folder instead.
+                            </p>
+                            <div class="flex flex-col sm:flex-row gap-3 justify-center">
+                                <button @onclick="ClearSearch"
+                                        class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
+                                    <i class="fas fa-times mr-2"></i>
+                                    Clear Search
+                                </button>
+                                <button @onclick="ShowCreateFolderDialog"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors">
+                                    <i class="fas fa-folder-plus mr-2"></i>
+                                    Create Folder
+                                </button>
+                            </div>
+                        }
+                        else if (currentFolderId.HasValue)
+                        {
+                            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                                No subfolders in this location
+                            </h3>
+                            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                                This folder doesn't contain any subfolders. Create one to organize your files better.
+                            </p>
+                            <button @onclick="ShowCreateFolderDialog"
+                                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors">
+                                <i class="fas fa-folder-plus mr-2"></i>
+                                Create Subfolder
+                            </button>
+                        }
+                        else
+                        {
+                            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                                Welcome to folder management
+                            </h3>
+                            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                                Get started by creating your first folder. Organize your files into a structured hierarchy for better management.
+                            </p>
+                            <button @onclick="ShowCreateFolderDialog"
+                                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors">
+                                <i class="fas fa-folder-plus mr-2"></i>
+                                Create Your First Folder
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
 </div>
 
 <!-- Create/Edit Folder Dialog -->
@@ -178,12 +517,45 @@
     </FormContent>
 </FormDialog>
 
+<!-- Rename Folder Dialog -->
+<GenericDialog @ref="renameDialog"
+               Title="Rename Folder"
+               Description="Enter a new name for this folder"
+               HeaderIcon="fas fa-i-cursor"
+               IsVisible="@showRenameDialog"
+               OnClose="@CloseRenameDialog"
+               OnSave="@RenameFolder"
+               IsSaving="@isSaving"
+               SaveText="Rename"
+               SavingText="Renaming..."
+               Size="medium">
+
+    <BodyContent>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    New Folder Name
+                </label>
+                <input @bind="newFolderName"
+                       @onkeyup="@(async (e) => { if (e.Key == "Enter") await RenameFolder(); })"
+                       type="text"
+                       placeholder="Enter new folder name"
+                       class="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 sm:text-sm" />
+                @if (!string.IsNullOrEmpty(renameValidationError))
+                {
+                    <p class="mt-1 text-sm text-red-600 dark:text-red-400">@renameValidationError</p>
+                }
+            </div>
+        </div>
+    </BodyContent>
+</GenericDialog>
+
 <!-- Delete Confirmation -->
 <ConfirmationDialog @ref="deleteFolderDialog"
                     Title="Delete Folder"
                     Message="Are you sure you want to delete this folder? This action cannot be undone."
                     ConfirmText="Delete"
-                    ConfirmClass="@StyleService.GetButtonClass("danger")"
+                    ConfirmClass="bg-red-600 hover:bg-red-700 focus:ring-red-500"
                     ConfirmIcon="fas fa-trash"
                     OnConfirm="@DeleteFolder" />
 
@@ -192,6 +564,7 @@
 
     // Data
     private List<FolderDto> folders = new();
+    private List<FolderDto> displayedFolders = new();
     private List<FolderDto> breadcrumbs = new();
     private int? currentFolderId = null;
 
@@ -206,85 +579,96 @@
 
     // Dialog states
     private bool showFolderDialog = false;
+    private bool showRenameDialog = false;
     private string folderDialogTitle = string.Empty;
     private string folderDialogDescription = string.Empty;
     private bool isFolderEditMode = false;
     private int selectedFolderId = 0;
+    private int showFolderActions = -1;
 
     // Form models and validation
     private CreateFolderDto folderModel = new();
     private Dictionary<string, string> folderValidationErrors = new();
+    private string newFolderName = string.Empty;
+    private string renameValidationError = string.Empty;
 
     // Component references
     private FormDialog? folderDialog;
+    private GenericDialog? renameDialog;
     private ConfirmationDialog? deleteFolderDialog;
+
+    // Performance optimization
+    private readonly SemaphoreSlim loadingSemaphore = new(1, 1);
 
     protected override async Task OnInitializedAsync()
     {
-        // Check if we have a folder ID in the query string
-        var uri = new Uri(Navigation.Uri);
-        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
-        if (int.TryParse(query["folderId"], out var folderId))
+        try
         {
-            currentFolderId = folderId;
-        }
+            // Parse URL parameters
+            var uri = new Uri(Navigation.Uri);
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            if (int.TryParse(query["folderId"], out var folderId))
+            {
+                currentFolderId = folderId;
+            }
 
-        await LoadData();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to initialize folder management: {ex.Message}");
+        }
     }
 
     private async Task LoadData()
     {
+        if (!await loadingSemaphore.WaitAsync(100))
+        {
+            return; // Skip if already loading
+        }
+
         try
         {
             isLoading = true;
             StateHasChanged();
 
-            // Load folders for the current location
-            var allFolders = await FolderService.GetFoldersAsync(currentFolderId);
+            // Load folders and breadcrumbs in parallel
+            var foldersTask = FolderService.GetFoldersAsync(currentFolderId);
+            var breadcrumbsTask = currentFolderId.HasValue
+                ? FolderService.GetFolderBreadcrumbsAsync(currentFolderId.Value)
+                : Task.FromResult(new List<FolderDto>());
+
+            await Task.WhenAll(foldersTask, breadcrumbsTask);
+
+            var allFolders = await foldersTask;
+            breadcrumbs = await breadcrumbsTask;
 
             // Apply search filter if needed
             if (!string.IsNullOrEmpty(searchTerm))
             {
-                folders = allFolders.Where(f => f.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
-                                               (!string.IsNullOrEmpty(f.Description) && f.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)))
-                                  .ToList();
+                folders = allFolders.Where(f =>
+                    f.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrEmpty(f.Description) && f.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
             }
             else
             {
                 folders = allFolders;
             }
 
-            // Load breadcrumbs if we're in a specific folder
-            if (currentFolderId.HasValue)
-            {
-                try
-                {
-                    breadcrumbs = await FolderService.GetFolderBreadcrumbsAsync(currentFolderId.Value);
-                }
-                catch (Exception ex)
-                {
-                    // If we can't get breadcrumbs, it might mean the folder doesn't exist
-                    // Navigate back to root
-                    currentFolderId = null;
-                    breadcrumbs.Clear();
-                    Navigation.NavigateTo("/media/folders", false);
-                    NotificationService.ShowWarning("Folder not found, redirected to root");
-                }
-            }
-            else
-            {
-                breadcrumbs.Clear();
-            }
+            displayedFolders = folders.OrderBy(f => f.Name).ToList();
         }
         catch (Exception ex)
         {
             NotificationService.ShowError($"Failed to load folders: {ex.Message}");
             folders = new List<FolderDto>();
             breadcrumbs = new List<FolderDto>();
+            displayedFolders = new List<FolderDto>();
         }
         finally
         {
             isLoading = false;
+            loadingSemaphore.Release();
             StateHasChanged();
         }
     }
@@ -294,8 +678,31 @@
         searchTimer?.Dispose();
         searchTimer = new Timer(async _ =>
         {
-            await InvokeAsync(LoadData);
-        }, null, 500, Timeout.Infinite);
+            await InvokeAsync(() =>
+            {
+                // Apply search filter locally for better performance
+                if (!string.IsNullOrEmpty(searchTerm))
+                {
+                    displayedFolders = folders.Where(f =>
+                        f.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                        (!string.IsNullOrEmpty(f.Description) && f.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)))
+                        .OrderBy(f => f.Name)
+                        .ToList();
+                }
+                else
+                {
+                    displayedFolders = folders.OrderBy(f => f.Name).ToList();
+                }
+                StateHasChanged();
+            });
+        }, null, 300, Timeout.Infinite);
+    }
+
+    private void ClearSearch()
+    {
+        searchTerm = string.Empty;
+        displayedFolders = folders.OrderBy(f => f.Name).ToList();
+        StateHasChanged();
     }
 
     private async Task RefreshData()
@@ -365,7 +772,7 @@
             isFolderEditMode = true;
             selectedFolderId = folder.Id;
             folderDialogTitle = "Edit Folder";
-            folderDialogDescription = "Update folder information";
+            folderDialogDescription = "Update folder information and properties";
 
             folderModel = new CreateFolderDto
             {
@@ -378,6 +785,7 @@
             };
             folderValidationErrors.Clear();
             showFolderDialog = true;
+            showFolderActions = -1; // Close actions menu
             StateHasChanged();
         }
         catch (Exception ex)
@@ -386,11 +794,29 @@
         }
     }
 
+    private void ShowRenameFolderDialog(FolderDto folder)
+    {
+        selectedFolderId = folder.Id;
+        newFolderName = folder.Name;
+        renameValidationError = string.Empty;
+        showRenameDialog = true;
+        showFolderActions = -1; // Close actions menu
+        StateHasChanged();
+    }
+
     private void CloseFolderDialog()
     {
         showFolderDialog = false;
         folderModel = new CreateFolderDto();
         folderValidationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private void CloseRenameDialog()
+    {
+        showRenameDialog = false;
+        newFolderName = string.Empty;
+        renameValidationError = string.Empty;
         StateHasChanged();
     }
 
@@ -449,8 +875,6 @@
             }
 
             CloseFolderDialog();
-
-            // Refresh the folder list to show the new/updated folder
             await LoadData();
         }
         catch (Exception ex)
@@ -464,9 +888,57 @@
         }
     }
 
+    private async Task RenameFolder()
+    {
+        if (isSaving || string.IsNullOrWhiteSpace(newFolderName)) return;
+
+        try
+        {
+            isSaving = true;
+            renameValidationError = string.Empty;
+            StateHasChanged();
+
+            // Basic validation
+            if (newFolderName.Trim().Length < 1)
+            {
+                renameValidationError = "Folder name is required";
+                return;
+            }
+
+            if (newFolderName.Trim().Length > 255)
+            {
+                renameValidationError = "Folder name must be less than 255 characters";
+                return;
+            }
+
+            var success = await FolderService.RenameFolderAsync(selectedFolderId, newFolderName.Trim());
+
+            if (success)
+            {
+                NotificationService.ShowSuccess("Folder renamed successfully");
+                CloseRenameDialog();
+                await LoadData();
+            }
+            else
+            {
+                renameValidationError = "Failed to rename folder. Name may already exist or be invalid.";
+            }
+        }
+        catch (Exception ex)
+        {
+            renameValidationError = $"Failed to rename folder: {ex.Message}";
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
     private void ShowDeleteFolderConfirmation(FolderDto folder)
     {
         selectedFolderId = folder.Id;
+        showFolderActions = -1; // Close actions menu
         deleteFolderDialog?.Show();
     }
 
@@ -488,6 +960,28 @@
         catch (Exception ex)
         {
             NotificationService.ShowError($"Failed to delete folder: {ex.Message}");
+        }
+    }
+
+    private void ToggleFolderActions(int folderId)
+    {
+        showFolderActions = showFolderActions == folderId ? -1 : folderId;
+        StateHasChanged();
+    }
+
+    private async Task CopyFolderPath(FolderDto folder)
+    {
+        try
+        {
+            var path = string.IsNullOrEmpty(folder.Path) ? "/" : $"/{folder.Path}";
+            await JSRuntime.InvokeVoidAsync("copyToClipboard", path);
+            NotificationService.ShowSuccess("Folder path copied to clipboard");
+            showFolderActions = -1; // Close actions menu
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            NotificationService.ShowError("Failed to copy folder path");
         }
     }
 
@@ -532,14 +1026,133 @@
         }
         catch (Exception)
         {
-            // If validation service fails, we'll let the server handle validation
+            // If validation service fails, let the server handle validation
         }
 
         return errors;
     }
 
+    // Helper methods
+    private string GetViewToggleClass(bool isActive, bool isFirst)
+    {
+        var baseClass = "px-4 py-2 text-sm font-medium transition-colors duration-200";
+        var positionClass = isFirst ? "rounded-l-lg border border-r-0" : "rounded-r-lg border";
+        var stateClass = isActive
+            ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700"
+            : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600";
+
+        return $"{baseClass} {positionClass} {stateClass}";
+    }
+
+    private string GetFolderIcon(FolderType folderType)
+    {
+        return folderType switch
+        {
+            FolderType.Images => "fas fa-images",
+            FolderType.Documents => "fas fa-file-alt",
+            FolderType.Videos => "fas fa-video",
+            FolderType.Audio => "fas fa-music",
+            FolderType.UserAvatars => "fas fa-user-circle",
+            FolderType.CompanyAssets => "fas fa-building",
+            FolderType.Temporary => "fas fa-clock",
+            _ => "fas fa-folder"
+        };
+    }
+
+    private string GetFolderIconBackgroundClass(FolderType folderType)
+    {
+        return folderType switch
+        {
+            FolderType.Images => "bg-green-100 dark:bg-green-900/30",
+            FolderType.Documents => "bg-red-100 dark:bg-red-900/30",
+            FolderType.Videos => "bg-blue-100 dark:bg-blue-900/30",
+            FolderType.Audio => "bg-purple-100 dark:bg-purple-900/30",
+            FolderType.UserAvatars => "bg-indigo-100 dark:bg-indigo-900/30",
+            FolderType.CompanyAssets => "bg-gray-100 dark:bg-gray-700",
+            FolderType.Temporary => "bg-orange-100 dark:bg-orange-900/30",
+            _ => "bg-blue-100 dark:bg-blue-900/30"
+        };
+    }
+
+    private string GetFolderIconColorClass(FolderType folderType)
+    {
+        return folderType switch
+        {
+            FolderType.Images => "text-green-600 dark:text-green-400",
+            FolderType.Documents => "text-red-600 dark:text-red-400",
+            FolderType.Videos => "text-blue-600 dark:text-blue-400",
+            FolderType.Audio => "text-purple-600 dark:text-purple-400",
+            FolderType.UserAvatars => "text-indigo-600 dark:text-indigo-400",
+            FolderType.CompanyAssets => "text-gray-600 dark:text-gray-400",
+            FolderType.Temporary => "text-orange-600 dark:text-orange-400",
+            _ => "text-blue-600 dark:text-blue-400"
+        };
+    }
+
+    private string GetFolderTypeBadgeClass(FolderType folderType)
+    {
+        return folderType switch
+        {
+            FolderType.Images => "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+            FolderType.Documents => "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+            FolderType.Videos => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+            FolderType.Audio => "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+            FolderType.UserAvatars => "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+            FolderType.CompanyAssets => "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+            FolderType.Temporary => "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+            _ => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+        };
+    }
+
+    private string GetFolderTypeText(FolderType folderType)
+    {
+        return folderType switch
+        {
+            FolderType.Images => "Images",
+            FolderType.Documents => "Documents",
+            FolderType.Videos => "Videos",
+            FolderType.Audio => "Audio",
+            FolderType.UserAvatars => "Avatars",
+            FolderType.CompanyAssets => "Assets",
+            FolderType.Temporary => "Temporary",
+            _ => "General"
+        };
+    }
+
+    private string TruncateText(string text, int maxLength)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= maxLength)
+            return text;
+        return text.Substring(0, maxLength - 3) + "...";
+    }
+
+    private string GetCompactPath(string path)
+    {
+        if (string.IsNullOrEmpty(path) || path.Length <= 30) return path;
+
+        var parts = path.Split('/').Where(p => !string.IsNullOrEmpty(p)).ToArray();
+        if (parts.Length <= 2) return path;
+
+        return parts[0] + "/.../" + parts[^1];
+    }
+
+    private string GetFolderStatsSummary()
+    {
+        if (!displayedFolders.Any()) return string.Empty;
+
+        var totalFiles = displayedFolders.Sum(f => f.FileCount);
+        var totalSubfolders = displayedFolders.Sum(f => f.SubFolderCount);
+
+        var parts = new List<string>();
+        if (totalFiles > 0) parts.Add($"{totalFiles} files");
+        if (totalSubfolders > 0) parts.Add($"{totalSubfolders} subfolders");
+
+        return string.Join(", ", parts);
+    }
+
     public void Dispose()
     {
         searchTimer?.Dispose();
+        loadingSemaphore?.Dispose();
     }
 }
