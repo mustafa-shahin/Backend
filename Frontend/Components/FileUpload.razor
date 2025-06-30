@@ -1,9 +1,9 @@
-﻿
-@using Microsoft.AspNetCore.Components.Forms
+﻿@using Microsoft.AspNetCore.Components.Forms
 @using Frontend.Interfaces
 @inject IStyleService StyleService
 @inject IJSRuntime JSRuntime
 @inject IFileService FileSerive
+
 <div class="space-y-6">
     <!-- Upload Area -->
     <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center hover:border-blue-400 dark:hover:border-blue-500 transition-colors duration-200">
@@ -174,9 +174,26 @@
 
     private async Task OpenFileDialog()
     {
-        if (fileInput?.Element != null)
+        try
         {
-            await JSRuntime.InvokeVoidAsync("eval", "arguments[0].click()", fileInput.Element);
+            if (fileInput?.Element != null)
+            {
+                // Use the fixed JavaScript function
+                await JSRuntime.InvokeVoidAsync("triggerFileInput", fileInput.Element);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error opening file dialog: {ex.Message}");
+            // Fallback: try alternative approach
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("eval", "document.querySelector('input[type=file]').click()");
+            }
+            catch (Exception fallbackEx)
+            {
+                Console.WriteLine($"Fallback also failed: {fallbackEx.Message}");
+            }
         }
     }
 
@@ -212,4 +229,3 @@
         StateHasChanged();
     }
 }
-

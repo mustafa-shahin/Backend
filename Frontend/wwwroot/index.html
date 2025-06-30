@@ -164,6 +164,20 @@
             clearInterval(progressInterval);
         });
 
+        // ===== FIXED FILE INPUT TRIGGER =====
+        window.triggerFileInput = function (element) {
+            try {
+                if (element && typeof element.click === 'function') {
+                    element.click();
+                    return true;
+                }
+                return false;
+            } catch (error) {
+                console.error('Failed to trigger file input:', error);
+                return false;
+            }
+        };
+
         // ===== Essential Utilities Only =====
 
         // Copy to clipboard
@@ -326,8 +340,6 @@
                 'color: #667eea; font-weight: normal;'
             );
         }
-    </script>
-    <script>
 
         window.downloadFileWithAuth = async (url, filename) => {
             try {
@@ -383,8 +395,6 @@
                 }
             }
         };
-
-
 
         // copy to clipboard with better error handling
         window.copyToClipboard = async (text) => {
@@ -483,13 +493,13 @@
             }
 
             notification.innerHTML = `
-        <div class="flex items-center space-x-2">
-            <span>${message}</span>
-            <button onclick="this.parentElement.parentElement.remove()" class="ml-2 text-current opacity-70 hover:opacity-100">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-    `;
+            <div class="flex items-center space-x-2">
+                <span>${message}</span>
+                <button onclick="this.parentElement.parentElement.remove()" class="ml-2 text-current opacity-70 hover:opacity-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        `;
 
             document.body.appendChild(notification);
 
