@@ -589,7 +589,6 @@
 
             // Load data in parallel where possible
             await Task.WhenAll(
-                LoadFoldersAsync(),
                 LoadDataAsync()
             );
         }
@@ -599,22 +598,7 @@
         }
     }
 
-    private async Task LoadFoldersAsync()
-    {
-        if (hasLoadedFolders) return;
-
-        try
-        {
-            allFolders = await GetAllFoldersFlat();
-            hasLoadedFolders = true;
-        }
-        catch (Exception ex)
-        {
-            NotificationService.ShowError($"Failed to load folders: {ex.Message}");
-            allFolders = new List<FolderDto>();
-        }
-    }
-
+    
     private async Task LoadDataAsync()
     {
         if (!await loadingSemaphore.WaitAsync(100))
@@ -662,25 +646,7 @@
         }
     }
 
-    private async Task<List<FolderDto>> GetAllFoldersFlat()
-    {
-        try
-        {
-            // Use the new optimized folder service method if available
-            var folders = await FolderService.GetFoldersAsync(null);
-            var result = new List<FolderDto>();
-
-            // Build flat list with paths
-            BuildFlatFolderList(folders, result, "");
-
-            return result.OrderBy(f => f.Path).ToList();
-        }
-        catch (Exception ex)
-        {
-            NotificationService.ShowError($"Failed to load folder structure: {ex.Message}");
-            return new List<FolderDto>();
-        }
-    }
+    
 
     private void BuildFlatFolderList(List<FolderDto> folders, List<FolderDto> result, string parentPath)
     {
@@ -746,7 +712,6 @@
     {
         hasLoadedFolders = false; // Force folder reload
         await Task.WhenAll(
-            LoadFoldersAsync(),
             LoadDataAsync()
         );
     }

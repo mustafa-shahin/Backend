@@ -49,5 +49,14 @@ namespace Frontend.Interfaces
         string GetLoadingSpinnerClass(string size = "medium");
         string GetFormGridClass(int columns = 1);
         public string GetTableActionButtonClass(string variant = "primary");
+        string GetFileIcon(FileType fileType);
+        string GetFileTypeColor(FileType fileType);
+        string GetFolderTypeBadgeClass(FolderType folderType);
+        string GetFolderTypeText(FolderType folderType);
+        string GetDocumentIcon(string extension);
+        string GetDocumentColor(string extension);
+        string GetFileIcon(string contentType);
+        string GetDialogSizeClass(string size);
+        string GetBodyClass(string size);
     }
 }

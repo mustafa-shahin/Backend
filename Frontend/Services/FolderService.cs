@@ -51,7 +51,7 @@ namespace Frontend.Services
         {
             try
             {
-                var query = "api/folder/all";
+                var query = "api/folder";
                 if (parentFolderId.HasValue)
                     query += $"?parentFolderId={parentFolderId}";
 
@@ -432,5 +432,92 @@ namespace Frontend.Services
                 throw new Exception($"Error getting folder tree: {ex.Message}", ex);
             }
         }
+        public List<FolderTypeInfo> GetFolderTypeInfos()
+        {
+            return new List<FolderTypeInfo>
+        {
+            new FolderTypeInfo
+            {
+                Type = FolderType.General,
+                Name = "General",
+                Icon = "fas fa-folder",
+                ColorClass = "text-blue-600 dark:text-blue-400",
+                Description = "General purpose folder for mixed content",
+                Features = new[] { "Flexible organization", "No restrictions" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.Images,
+                Name = "Images",
+                Icon = "fas fa-images",
+                ColorClass = "text-green-600 dark:text-green-400",
+                Description = "Optimized for image files and galleries",
+                Features = new[] { "Image previews", "EXIF data support", "Thumbnail generation" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.Documents,
+                Name = "Documents",
+                Icon = "fas fa-file-alt",
+                ColorClass = "text-red-600 dark:text-red-400",
+                Description = "Document storage with preview support",
+                Features = new[] { "Document previews", "Search indexing", "Version control" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.Videos,
+                Name = "Videos",
+                Icon = "fas fa-video",
+                ColorClass = "text-blue-600 dark:text-blue-400",
+                Description = "Video files with streaming capabilities",
+                Features = new[] { "Video previews", "Duration tracking", "Thumbnail generation" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.Audio,
+                Name = "Audio",
+                Icon = "fas fa-music",
+                ColorClass = "text-purple-600 dark:text-purple-400",
+                Description = "Audio files with metadata support",
+                Features = new[] { "Audio previews", "Metadata extraction", "Playlist support" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.UserAvatars,
+                Name = "User Avatars",
+                Icon = "fas fa-user-circle",
+                ColorClass = "text-indigo-600 dark:text-indigo-400",
+                Description = "User profile pictures and avatars",
+                Features = new[] { "Automatic resizing", "Multiple formats", "CDN optimization" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.CompanyAssets,
+                Name = "Company Assets",
+                Icon = "fas fa-building",
+                ColorClass = "text-gray-600 dark:text-gray-400",
+                Description = "Company branding and official assets",
+                Features = new[] { "Brand compliance", "Version control", "Usage tracking" }
+            },
+            new FolderTypeInfo
+            {
+                Type = FolderType.Temporary,
+                Name = "Temporary",
+                Icon = "fas fa-clock",
+                ColorClass = "text-orange-600 dark:text-orange-400",
+                Description = "Temporary files with automatic cleanup",
+                Features = new[] { "Auto-deletion", "Short-term storage", "Quick access" }
+            }
+        };
+        }
+    }
+    public class FolderTypeInfo
+    {
+        public FolderType Type { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Icon { get; set; } = string.Empty;
+        public string ColorClass { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string[] Features { get; set; } = Array.Empty<string>();
     }
 }

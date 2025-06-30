@@ -43,7 +43,7 @@ namespace Frontend.Interfaces
         // Additional operations
         Task<bool> VerifyFileIntegrityAsync(int fileId);
         Task<object> GetFileDiagnosticInfoAsync(int fileId);
+        string FormatFileSize(long bytes);
+        string FormatDuration(TimeSpan duration);
     }
-
-  
 }

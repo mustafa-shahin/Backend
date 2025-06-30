@@ -1,5 +1,6 @@
 ﻿using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Enums;
+using Frontend.Services;
 
 namespace Frontend.Interfaces
 {
@@ -36,5 +37,6 @@ namespace Frontend.Interfaces
 
         // Utility
         Task<bool> FolderExistsAsync(int id);
+        List<FolderTypeInfo> GetFolderTypeInfos();
     }
 }

@@ -18,20 +18,20 @@
 
                     <!-- Fallback icon - initially hidden -->
                     <div class="w-full h-full flex items-center justify-center" style="display: none;">
-                        <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType) text-4xl"></i>
+                        <i class="@StyleService.GetFileIcon(file.FileType) @StyleService.GetFileTypeColor(file.FileType) text-4xl"></i>
                     </div>
                 }
                 else
                 {
                     <!-- Icon for non-images -->
                     <div class="w-full h-full flex items-center justify-center">
-                        <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType) text-4xl"></i>
+                        <i class="@StyleService.GetFileIcon(file.FileType) @StyleService.GetFileTypeColor(file.FileType) text-4xl"></i>
                     </div>
                 }
 
                 <!-- File type badge -->
                 <div class="absolute top-2 left-2">
-                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-white/90 dark:bg-gray-800/90 @GetFileTypeColor(file.FileType)">
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-white/90 dark:bg-gray-800/90 @StyleService.GetFileTypeColor(file.FileType)">
                         @file.FileExtension.Replace(".", "")
                     </span>
                 </div>
@@ -91,7 +91,7 @@
                 </h4>
 
                 <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-2">
-                    <span>@FormatFileSize(file.FileSize)</span>
+                    <span>@FileSerive.FormatFileSize(file.FileSize)</span>
                     <span>@file.CreatedAt.ToString("MMM dd")</span>
                 </div>
 
@@ -117,7 +117,7 @@
                 {
                     <div class="flex items-center text-xs text-gray-500 dark:text-gray-400 mb-2">
                         <i class="fas fa-clock mr-1"></i>
-                        <span>@FormatDuration(file.Duration.Value)</span>
+                        <span>@FileSerive.FormatDuration(file.Duration.Value)</span>
                     </div>
                 }
 
@@ -193,53 +193,4 @@
     [Parameter] public EventCallback<FileDto> OnDeleteFile { get; set; }
     [Parameter] public EventCallback<FileDto> OnDownloadFile { get; set; }
     [Parameter] public EventCallback<FileDto> OnPreviewFile { get; set; }
-
-    private string GetFileIcon(FileType fileType)
-    {
-        return fileType switch
-        {
-            FileType.Image => "fas fa-image",
-            FileType.Video => "fas fa-video",
-            FileType.Audio => "fas fa-music",
-            FileType.Document => "fas fa-file-alt",
-            FileType.Archive => "fas fa-file-archive",
-            _ => "fas fa-file"
-        };
-    }
-
-    private string GetFileTypeColor(FileType fileType)
-    {
-        return fileType switch
-        {
-            FileType.Image => "text-green-600 dark:text-green-400",
-            FileType.Video => "text-blue-600 dark:text-blue-400",
-            FileType.Audio => "text-purple-600 dark:text-purple-400",
-            FileType.Document => "text-red-600 dark:text-red-400",
-            FileType.Archive => "text-yellow-600 dark:text-yellow-400",
-            _ => "text-gray-600 dark:text-gray-400"
-        };
-    }
-
-
-    private string FormatFileSize(long bytes)
-    {
-        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
-        double len = bytes;
-        int order = 0;
-        while (len >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            len /= 1024;
-        }
-        return $"{len:0.##} {sizes[order]}";
-    }
-
-    private string FormatDuration(TimeSpan duration)
-    {
-        if (duration.TotalHours >= 1)
-        {
-            return duration.ToString(@"h\:mm\:ss");
-        }
-        return duration.ToString(@"m\:ss");
-    }
 }

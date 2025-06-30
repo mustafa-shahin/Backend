@@ -538,5 +538,25 @@ namespace Frontend.Services
                 throw new Exception($"Error getting diagnostic info for file {fileId}: {ex.Message}", ex);
             }
         }
+        public string FormatFileSize(long bytes)
+        {
+            string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+            double len = bytes;
+            int order = 0;
+            while (len >= 1024 && order < sizes.Length - 1)
+            {
+                order++;
+                len /= 1024;
+            }
+            return $"{len:0.##} {sizes[order]}";
+        }
+        public string FormatDuration(TimeSpan duration)
+        {
+            if (duration.TotalHours >= 1)
+            {
+                return duration.ToString(@"h\:mm\:ss");
+            }
+            return duration.ToString(@"m\:ss");
+        }
     }
 }

@@ -3,7 +3,7 @@
 @using Frontend.Interfaces
 @inject IJSRuntime JSRuntime
 @inject IFileService FileSerive
-
+@inject IStyleService StyleService
 @if (IsVisible && selectedFile != null)
 {
     <div class="fixed inset-0 z-50 overflow-y-auto">
@@ -21,7 +21,7 @@
                         <div class="flex items-center space-x-3">
                             <div class="flex-shrink-0">
                                 <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
-                                    <i class="@GetFileIcon(selectedFile.FileType) text-white text-lg"></i>
+                                    <i class="@StyleService.GetFileIcon(selectedFile.FileType) text-white text-lg"></i>
                                 </div>
                             </div>
                             <div class="flex-1 min-w-0">
@@ -31,7 +31,7 @@
                                 <div class="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400 mt-1">
                                     <span class="flex items-center">
                                         <i class="fas fa-weight-hanging mr-1"></i>
-                                        @FormatFileSize(selectedFile.FileSize)
+                                        @FileSerive.FormatFileSize(selectedFile.FileSize)
                                     </span>
                                     <span class="flex items-center">
                                         <i class="fas fa-file-alt mr-1"></i>
@@ -48,7 +48,7 @@
                                     {
                                         <span class="flex items-center">
                                             <i class="fas fa-clock mr-1"></i>
-                                            @FormatDuration(selectedFile.Duration.Value)
+                                            @FileSerive.FormatDuration(selectedFile.Duration.Value)
                                         </span>
                                     }
                                 </div>
@@ -104,7 +104,7 @@
                                     <h4 class="text-white font-semibold text-lg">@selectedFile.OriginalFileName</h4>
                                     @if (selectedFile.Duration.HasValue)
                                     {
-                                        <p class="text-purple-200 text-sm mt-2">Duration: @FormatDuration(selectedFile.Duration.Value)</p>
+                                        <p class="text-purple-200 text-sm mt-2">Duration: @FileSerive.FormatDuration(selectedFile.Duration.Value)</p>
                                     }
                                 </div>
                                 <audio controls class="w-full">
@@ -118,7 +118,7 @@
                     {
                         <div class="text-center py-12">
                             <div class="mb-6">
-                                <i class="@GetDocumentIcon(selectedFile.FileExtension) text-6xl mb-4 @GetDocumentColor(selectedFile.FileExtension)"></i>
+                                <i class="@StyleService.GetDocumentIcon(selectedFile.FileExtension) text-6xl mb-4 @StyleService.GetDocumentColor(selectedFile.FileExtension)"></i>
                                 <h4 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">@selectedFile.OriginalFileName</h4>
                                 <p class="text-gray-600 dark:text-gray-400 mb-4">Document preview not available in browser</p>
                             </div>
@@ -169,7 +169,7 @@
                         {
                             <span class="flex items-center">
                                 <i class="fas fa-clock mr-1"></i>
-                                @FormatDuration(selectedFile.Duration.Value)
+                                @FileSerive.FormatDuration(selectedFile.Duration.Value)
                             </span>
                         }
                         @if (selectedFile.IsPublic)
@@ -241,70 +241,5 @@
                 await JSRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, selectedFile.OriginalFileName);
             }
         }
-    }
-
-
-
-    private string GetFileIcon(FileType fileType)
-    {
-        return fileType switch
-        {
-            FileType.Image => "fas fa-image",
-            FileType.Video => "fas fa-video",
-            FileType.Audio => "fas fa-music",
-            FileType.Document => "fas fa-file-alt",
-            FileType.Archive => "fas fa-file-archive",
-            _ => "fas fa-file"
-        };
-    }
-
-    private string GetDocumentIcon(string extension)
-    {
-        return extension.ToLower() switch
-        {
-            ".pdf" => "fas fa-file-pdf",
-            ".doc" or ".docx" => "fas fa-file-word",
-            ".xls" or ".xlsx" => "fas fa-file-excel",
-            ".ppt" or ".pptx" => "fas fa-file-powerpoint",
-            ".txt" => "fas fa-file-alt",
-            ".zip" or ".rar" or ".7z" => "fas fa-file-archive",
-            _ => "fas fa-file"
-        };
-    }
-
-    private string GetDocumentColor(string extension)
-    {
-        return extension.ToLower() switch
-        {
-            ".pdf" => "text-red-600 dark:text-red-400",
-            ".doc" or ".docx" => "text-blue-600 dark:text-blue-400",
-            ".xls" or ".xlsx" => "text-green-600 dark:text-green-400",
-            ".ppt" or ".pptx" => "text-orange-600 dark:text-orange-400",
-            ".txt" => "text-gray-600 dark:text-gray-400",
-            ".zip" or ".rar" or ".7z" => "text-yellow-600 dark:text-yellow-400",
-            _ => "text-gray-600 dark:text-gray-400"
-        };
-    }
-
-    private string FormatFileSize(long bytes)
-    {
-        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
-        double len = bytes;
-        int order = 0;
-        while (len >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            len /= 1024;
-        }
-        return $"{len:0.##} {sizes[order]}";
-    }
-
-    private string FormatDuration(TimeSpan duration)
-    {
-        if (duration.TotalHours >= 1)
-        {
-            return duration.ToString(@"h\:mm\:ss");
-        }
-        return duration.ToString(@"m\:ss");
     }
 }

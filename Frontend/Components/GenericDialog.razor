@@ -1,5 +1,6 @@
-﻿@inject IJSRuntime JS
-
+﻿@using Frontend.Interfaces
+@inject IJSRuntime JS
+@inject IStyleService StyleService
 @if (IsVisible)
 {
     <div class="fixed inset-0 z-50 overflow-y-auto">
@@ -11,7 +12,7 @@
             <!-- This element is to trick the browser into centering the modal contents. -->
             <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
 
-            <div class="@GetDialogSizeClass() inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle animate-slide-up relative z-50"
+            <div class="@StyleService.GetDialogSizeClass(Size) inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle animate-slide-up relative z-50"
                  @onclick:stopPropagation="true">
 
                 <!-- Header -->
@@ -46,7 +47,7 @@
                 </div>
 
                 <!-- Body -->
-                <div class="bg-white dark:bg-gray-800 @GetBodyClass()">
+                <div class="bg-white dark:bg-gray-800 @StyleService.GetBodyClass(Size)">
                     @if (BodyContent != null)
                     {
                         @BodyContent
@@ -146,31 +147,9 @@
         }
     }
 
-    private string GetDialogSizeClass()
-    {
-        return Size.ToLower() switch
-        {
-            "small" => "w-full max-w-md",
-            "medium" => "w-full max-w-lg",
-            "large" => "w-full max-w-2xl",
-            "xlarge" => "w-full max-w-4xl",
-            "full" => "w-full max-w-7xl mx-4",
-            _ => "w-full max-w-lg"
-        };
-    }
 
-    private string GetBodyClass()
-    {
-        var baseClass = "p-6";
-        var heightClass = Size.ToLower() switch
-        {
-            "xlarge" => "max-h-[70vh] overflow-y-auto",
-            "full" => "max-h-[75vh] overflow-y-auto",
-            _ => "max-h-96 overflow-y-auto"
-        };
 
-        return $"{baseClass} {heightClass}";
-    }
+ 
 
     private string GetHeaderIcon()
     {

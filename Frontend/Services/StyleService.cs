@@ -416,5 +416,124 @@ namespace Frontend.Services
             return $"animate-spin rounded-full {sizeClass} border-2 border-gray-300 border-t-blue-600 dark:border-gray-600 dark:border-t-blue-400";
         }
 
+        public string GetFileIcon(FileType fileType)
+        {
+            return fileType switch
+            {
+                FileType.Image => "fas fa-image",
+                FileType.Video => "fas fa-video",
+                FileType.Audio => "fas fa-music",
+                FileType.Document => "fas fa-file-alt",
+                FileType.Archive => "fas fa-file-archive",
+                _ => "fas fa-file"
+            };
+        }
+        public string GetFileTypeColor(FileType fileType)
+        {
+            return fileType switch
+            {
+                FileType.Image => "text-green-600 dark:text-green-400",
+                FileType.Video => "text-blue-600 dark:text-blue-400",
+                FileType.Audio => "text-purple-600 dark:text-purple-400",
+                FileType.Document => "text-red-600 dark:text-red-400",
+                FileType.Archive => "text-yellow-600 dark:text-yellow-400",
+                _ => "text-gray-600 dark:text-gray-400"
+            };
+        }
+        public string GetFolderTypeBadgeClass(FolderType folderType)
+        {
+            return folderType switch
+            {
+                FolderType.Images => "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+                FolderType.Documents => "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+                FolderType.Videos => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+                FolderType.Audio => "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+                FolderType.UserAvatars => "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
+                FolderType.CompanyAssets => "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+                FolderType.Temporary => "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+                _ => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300"
+            };
+        }
+        public string GetFolderTypeText(FolderType folderType)
+        {
+            return folderType switch
+            {
+                FolderType.Images => "Images",
+                FolderType.Documents => "Documents",
+                FolderType.Videos => "Videos",
+                FolderType.Audio => "Audio",
+                FolderType.UserAvatars => "Avatars",
+                FolderType.CompanyAssets => "Assets",
+                FolderType.Temporary => "Temporary",
+                _ => "General"
+            };
+        }
+
+        public string GetDocumentIcon(string extension)
+        {
+            return extension.ToLower() switch
+            {
+                ".pdf" => "fas fa-file-pdf",
+                ".doc" or ".docx" => "fas fa-file-word",
+                ".xls" or ".xlsx" => "fas fa-file-excel",
+                ".ppt" or ".pptx" => "fas fa-file-powerpoint",
+                ".txt" => "fas fa-file-alt",
+                ".zip" or ".rar" or ".7z" => "fas fa-file-archive",
+                _ => "fas fa-file"
+            };
+        }
+
+        public string GetDocumentColor(string extension)
+        {
+            return extension.ToLower() switch
+            {
+                ".pdf" => "text-red-600 dark:text-red-400",
+                ".doc" or ".docx" => "text-blue-600 dark:text-blue-400",
+                ".xls" or ".xlsx" => "text-green-600 dark:text-green-400",
+                ".ppt" or ".pptx" => "text-orange-600 dark:text-orange-400",
+                ".txt" => "text-gray-600 dark:text-gray-400",
+                ".zip" or ".rar" or ".7z" => "text-yellow-600 dark:text-yellow-400",
+                _ => "text-gray-600 dark:text-gray-400"
+            };
+        }
+        public string GetFileIcon(string contentType)
+        {
+            return contentType.ToLower() switch
+            {
+                var ct when ct.StartsWith("image/") => "fas fa-image",
+                var ct when ct.StartsWith("video/") => "fas fa-video",
+                var ct when ct.StartsWith("audio/") => "fas fa-music",
+                var ct when ct.Contains("pdf") => "fas fa-file-pdf",
+                var ct when ct.Contains("word") => "fas fa-file-word",
+                var ct when ct.Contains("excel") => "fas fa-file-excel",
+                var ct when ct.Contains("powerpoint") => "fas fa-file-powerpoint",
+                var ct when ct.Contains("zip") || ct.Contains("rar") || ct.Contains("7z") => "fas fa-file-archive",
+                _ => "fas fa-file"
+            };
+        }
+        public string GetDialogSizeClass(string size)
+        {
+            return size.ToLower() switch
+            {
+                "small" => "w-full max-w-md",
+                "medium" => "w-full max-w-lg",
+                "large" => "w-full max-w-2xl",
+                "xlarge" => "w-full max-w-4xl",
+                "full" => "w-full max-w-7xl mx-4",
+                _ => "w-full max-w-lg"
+            };
+        }
+        public string GetBodyClass(string size)
+        {
+            var baseClass = "p-6";
+            var heightClass = size.ToLower() switch
+            {
+                "xlarge" => "max-h-[70vh] overflow-y-auto",
+                "full" => "max-h-[75vh] overflow-y-auto",
+                _ => "max-h-96 overflow-y-auto"
+            };
+
+            return $"{baseClass} {heightClass}";
+        }
     }
 }
