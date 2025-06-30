@@ -1,0 +1,430 @@
+﻿@page "/media/folders"
+@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interface
+@using Frontend.Interfaces
+@inject IFolderService FolderService
+@inject INotificationService NotificationService
+@inject IStyleService StyleService
+@inject NavigationManager Navigation
+
+<PageTitle>Folders - Media Library</PageTitle>
+
+<!-- Page Header -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 space-y-4 sm:space-y-0">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
+            <i class="fas fa-folder mr-3 text-blue-600 dark:text-blue-400"></i>
+            Folders
+        </h1>
+        <p class="text-gray-600 dark:text-gray-400 mt-1">Manage your folder structure</p>
+    </div>
+    <div class="flex items-center space-x-3">
+        <button @onclick="ShowCreateFolderDialog" class="@StyleService.GetButtonClass("primary")">
+            <i class="fas fa-folder-plus mr-2"></i>
+            New Folder
+        </button>
+    </div>
+</div>
+
+<!-- Breadcrumbs -->
+@if (breadcrumbs.Any())
+{
+    <div class="mb-6">
+        <nav class="flex items-center space-x-2 text-sm">
+            <button @onclick="() => NavigateToFolder(null)" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+                <i class="fas fa-home mr-1"></i>
+                Root
+            </button>
+            @foreach (var folder in breadcrumbs)
+            {
+                <i class="fas fa-chevron-right text-gray-400 mx-2"></i>
+                <button @onclick="() => NavigateToFolder(folder.Id)" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+                    @folder.Name
+                </button>
+            }
+        </nav>
+    </div>
+}
+
+<!-- Search and Filters -->
+<div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+    <div class="p-6">
+        <div class="flex flex-col lg:flex-row gap-4">
+            <!-- Search -->
+            <div class="flex-1">
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <i class="fas fa-search text-gray-400"></i>
+                    </div>
+                    <input @bind="searchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp"
+                           type="text"
+                           placeholder="Search folders..."
+                           class="@StyleService.GetFormInputClass() pl-10" />
+                </div>
+            </div>
+
+            <!-- View Mode Toggle -->
+            <div class="flex items-center space-x-3">
+                <div class="flex rounded-lg shadow-sm">
+                    <button @onclick="() => SetViewMode(ViewMode.Grid)"
+                            class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.Grid) rounded-r-none border-r-0">
+                        <i class="fas fa-th mr-1"></i>
+                        Grid
+                    </button>
+                    <button @onclick="() => SetViewMode(ViewMode.List)"
+                            class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.List) rounded-l-none">
+                        <i class="fas fa-list mr-1"></i>
+                        List
+                    </button>
+                </div>
+
+                <button @onclick="RefreshData"
+                        class="@StyleService.GetButtonClass("secondary")"
+                        title="Refresh"
+                        disabled="@isLoading">
+                    <i class="fas fa-refresh @(isLoading ? "fa-spin" : "")"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Content Area -->
+<div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+    @if (isLoading)
+    {
+        <div class="p-6">
+            <div class="flex items-center justify-center py-12">
+                <div class="text-center">
+                    <div class="@StyleService.GetLoadingSpinnerClass("large") mx-auto mb-4"></div>
+                    <p class="text-gray-500 dark:text-gray-400">Loading folders...</p>
+                </div>
+            </div>
+        </div>
+    }
+    else if (folders.Any())
+    {
+        @if (currentViewMode == ViewMode.Grid)
+        {
+            <!-- Grid View -->
+            <div class="p-6">
+                <FolderListView Folders="@folders"
+                                OnFolderClick="@NavigateToFolder"
+                                OnDeleteFolder="@ShowDeleteFolderConfirmation" />
+            </div>
+        }
+        else
+        {
+            <!-- List View -->
+            <div class="overflow-x-auto">
+                <FolderListView Folders="@folders"
+                                OnFolderClick="@NavigateToFolder"
+                                OnDeleteFolder="@ShowDeleteFolderConfirmation" />
+            </div>
+        }
+    }
+    else
+    {
+        <!-- Empty State -->
+        <div class="p-6">
+            <div class="text-center py-12">
+                <div class="mx-auto w-16 h-16 text-gray-400 dark:text-gray-500 mb-4">
+                    <i class="fas fa-folder-open text-4xl"></i>
+                </div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                    No folders
+                </h3>
+                <p class="text-gray-500 dark:text-gray-400 mb-6">
+                    Get started by creating your first folder.
+                </p>
+                <button @onclick="ShowCreateFolderDialog" class="@StyleService.GetButtonClass("primary")">
+                    <i class="fas fa-folder-plus mr-2"></i>
+                    Create Folder
+                </button>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Create/Edit Folder Dialog -->
+<FormDialog @ref="folderDialog"
+            Title="@folderDialogTitle"
+            Description="@folderDialogDescription"
+            HeaderIcon="@(isFolderEditMode ? "fas fa-edit" : "fas fa-folder-plus")"
+            IsVisible="@showFolderDialog"
+            IsSaving="@isSaving"
+            Size="large"
+            Model="@folderModel"
+            ValidationErrors="@folderValidationErrors"
+            IsEditMode="@isFolderEditMode"
+            OnClose="@CloseFolderDialog"
+            OnSave="@SaveFolder">
+
+    <FormContent Context="context">
+        <FolderForm Model="@((CreateFolderDto)context.Model)"
+                    ValidationErrors="@context.ValidationErrors"
+                    ParentFolderId="@currentFolderId" />
+    </FormContent>
+</FormDialog>
+
+<!-- Delete Confirmation -->
+<ConfirmationDialog @ref="deleteFolderDialog"
+                    Title="Delete Folder"
+                    Message="Are you sure you want to delete this folder? This action cannot be undone."
+                    ConfirmText="Delete"
+                    ConfirmClass="@StyleService.GetButtonClass("danger")"
+                    ConfirmIcon="fas fa-trash"
+                    OnConfirm="@DeleteFolder" />
+
+@code {
+    public enum ViewMode { Grid, List }
+
+    // Data
+    private List<FolderDto> folders = new();
+    private List<FolderDto> breadcrumbs = new();
+    private int? currentFolderId = null;
+
+    // Loading states
+    private bool isLoading = true;
+    private bool isSaving = false;
+
+    // Filters and search
+    private string searchTerm = string.Empty;
+    private Timer? searchTimer;
+    private ViewMode currentViewMode = ViewMode.Grid;
+
+    // Dialog states
+    private bool showFolderDialog = false;
+    private string folderDialogTitle = string.Empty;
+    private string folderDialogDescription = string.Empty;
+    private bool isFolderEditMode = false;
+    private int selectedFolderId = 0;
+
+    // Form models and validation
+    private CreateFolderDto folderModel = new();
+    private Dictionary<string, string> folderValidationErrors = new();
+
+    // Component references
+    private FormDialog? folderDialog;
+    private ConfirmationDialog? deleteFolderDialog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Check if we have a folder ID in the query string
+        var uri = new Uri(Navigation.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        if (int.TryParse(query["folderId"], out var folderId))
+        {
+            currentFolderId = folderId;
+        }
+
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            isLoading = true;
+            StateHasChanged();
+
+            // Load folders
+            var allFolders = await FolderService.GetFoldersAsync(currentFolderId);
+
+            // Apply search filter
+            if (!string.IsNullOrEmpty(searchTerm))
+            {
+                folders = allFolders.Where(f => f.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)).ToList();
+            }
+            else
+            {
+                folders = allFolders;
+            }
+
+            // Load breadcrumbs
+            if (currentFolderId.HasValue)
+            {
+                breadcrumbs = await FolderService.GetFolderBreadcrumbsAsync(currentFolderId.Value);
+            }
+            else
+            {
+                breadcrumbs.Clear();
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load folders: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        searchTimer?.Dispose();
+        searchTimer = new Timer(async _ =>
+        {
+            await InvokeAsync(LoadData);
+        }, null, 500, Timeout.Infinite);
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadData();
+    }
+
+    private void SetViewMode(ViewMode mode)
+    {
+        currentViewMode = mode;
+        StateHasChanged();
+    }
+
+    // Navigation
+    private async Task NavigateToFolder(int? folderId)
+    {
+        currentFolderId = folderId;
+
+        // Update URL
+        var url = "/media/folders";
+        if (folderId.HasValue)
+        {
+            url += $"?folderId={folderId}";
+        }
+        Navigation.NavigateTo(url, false);
+
+        await LoadData();
+    }
+
+    // Folder Management
+    private void ShowCreateFolderDialog()
+    {
+        isFolderEditMode = false;
+        folderDialogTitle = "Create New Folder";
+        folderDialogDescription = "Create a new folder in the current location";
+        folderModel = new CreateFolderDto
+        {
+            ParentFolderId = currentFolderId,
+            FolderType = FolderType.General,
+            Name = string.Empty,
+            Description = string.Empty
+        };
+        folderValidationErrors.Clear();
+        showFolderDialog = true;
+        StateHasChanged();
+    }
+
+    private async Task ShowEditFolderDialog(FolderDto folder)
+    {
+        isFolderEditMode = true;
+        selectedFolderId = folder.Id;
+        folderDialogTitle = "Edit Folder";
+        folderDialogDescription = "Update folder information";
+        folderModel = new CreateFolderDto
+        {
+            Name = folder.Name,
+            Description = folder.Description,
+            FolderType = folder.FolderType,
+            IsPublic = folder.IsPublic,
+            ParentFolderId = currentFolderId
+        };
+        folderValidationErrors.Clear();
+        showFolderDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseFolderDialog()
+    {
+        showFolderDialog = false;
+        folderModel = new CreateFolderDto();
+        folderValidationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private async Task SaveFolder()
+    {
+        if (isSaving) return;
+
+        try
+        {
+            isSaving = true;
+            StateHasChanged();
+
+            // Validate
+            folderValidationErrors = await ValidateFolder(folderModel);
+            if (folderValidationErrors.Any())
+            {
+                StateHasChanged();
+                return;
+            }
+
+            if (isFolderEditMode)
+            {
+                var updateDto = new UpdateFolderDto
+                {
+                    Name = folderModel.Name,
+                    Description = folderModel.Description,
+                    IsPublic = folderModel.IsPublic
+                };
+                await FolderService.UpdateFolderAsync(selectedFolderId, updateDto);
+                NotificationService.ShowSuccess("Folder updated successfully");
+            }
+            else
+            {
+                await FolderService.CreateFolderAsync(folderModel);
+                NotificationService.ShowSuccess("Folder created successfully");
+            }
+
+            CloseFolderDialog();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to save folder: {ex.Message}");
+        }
+        finally
+        {
+            isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowDeleteFolderConfirmation(FolderDto folder)
+    {
+        selectedFolderId = folder.Id;
+        deleteFolderDialog?.Show();
+    }
+
+    private async Task DeleteFolder()
+    {
+        try
+        {
+            await FolderService.DeleteFolderAsync(selectedFolderId);
+            NotificationService.ShowSuccess("Folder deleted successfully");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to delete folder: {ex.Message}");
+        }
+    }
+
+    // Validation
+    private async Task<Dictionary<string, string>> ValidateFolder(CreateFolderDto folder)
+    {
+        var errors = new Dictionary<string, string>();
+
+        if (string.IsNullOrWhiteSpace(folder.Name))
+            errors["Name"] = "Folder name is required";
+
+        return errors;
+    }
+
+    public void Dispose()
+    {
+        searchTimer?.Dispose();
+    }
+}
