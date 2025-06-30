@@ -589,6 +589,7 @@
 
             // Load data in parallel where possible
             await Task.WhenAll(
+                LoadFoldersAsync(),
                 LoadDataAsync()
             );
         }
@@ -597,7 +598,39 @@
             NotificationService.ShowError($"Failed to initialize page: {ex.Message}");
         }
     }
+    private async Task LoadFoldersAsync()
+    {
+        if (hasLoadedFolders) return;
 
+        try
+        {
+            allFolders = await GetAllFoldersFlat();
+            hasLoadedFolders = true;
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load folders: {ex.Message}");
+            allFolders = new List<FolderDto>();
+        }
+    }
+    private async Task<List<FolderDto>> GetAllFoldersFlat()
+    {
+        try
+        {
+            var folders = await FolderService.GetFoldersAsync(null);
+            var result = new List<FolderDto>();
+
+            // Build flat list with paths
+            BuildFlatFolderList(folders, result, "");
+
+            return result.OrderBy(f => f.Path).ToList();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load folder structure: {ex.Message}");
+            return new List<FolderDto>();
+        }
+    }
     
     private async Task LoadDataAsync()
     {
@@ -712,6 +745,7 @@
     {
         hasLoadedFolders = false; // Force folder reload
         await Task.WhenAll(
+            LoadFoldersAsync(),
             LoadDataAsync()
         );
     }

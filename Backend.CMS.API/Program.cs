@@ -485,6 +485,8 @@ static void RegisterRepositories(WebApplicationBuilder builder)
 
     // Specialized repositories
     builder.Services.AddScoped<IPageRepository, PageRepository>();
+    builder.Services.AddScoped<IFolderRepository, FolderRepository>();
+    builder.Services.AddScoped<IFileRepository, FileRepository>();
     builder.Services.AddScoped<IUserRepository, UserRepository>();
     builder.Services.AddScoped<ILocationRepository, LocationRepository>();
     builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();

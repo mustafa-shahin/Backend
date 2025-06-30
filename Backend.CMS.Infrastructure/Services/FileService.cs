@@ -18,7 +18,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class FileService : IFileService, IDisposable
     {
-        private readonly IRepository<FileEntity> _fileRepository;
+        private readonly IFileRepository _fileRepository;
         private readonly IRepository<Backend.CMS.Domain.Entities.FileAccess> _fileAccessRepository;
         private readonly IImageProcessingService _imageProcessingService;
         private readonly IFileValidationService _fileValidationService;
@@ -33,7 +33,7 @@ namespace Backend.CMS.Infrastructure.Services
         private bool _disposed = false;
 
         public FileService(
-            IRepository<FileEntity> fileRepository,
+            IFileRepository fileRepository,
             IRepository<Backend.CMS.Domain.Entities.FileAccess> fileAccessRepository,
             IImageProcessingService imageProcessingService,
             IFileValidationService fileValidationService,

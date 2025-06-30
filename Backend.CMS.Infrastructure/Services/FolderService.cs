@@ -14,7 +14,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class FolderService : IFolderService, IDisposable
     {
-        private readonly IRepository<Folder> _folderRepository;
+        private readonly IFolderRepository _folderRepository;
         private readonly IRepository<FileEntity> _fileRepository;
         private readonly IUserSessionService _userSessionService;
         private readonly IMapper _mapper;
@@ -26,7 +26,7 @@ namespace Backend.CMS.Infrastructure.Services
         private bool _disposed = false;
 
         public FolderService(
-            IRepository<Folder> folderRepository,
+            IFolderRepository folderRepository,
             IRepository<FileEntity> fileRepository,
             IUserSessionService userSessionService,
             IMapper mapper,
