@@ -38,11 +38,11 @@
                      Href="/pages"
                      IsCollapsed="@isCollapsed" />
 
-        <!-- Media Library -->
-        <SidebarItem Icon="fas fa-folder"
-                     Text="Media Library"
-                     Href="/media"
-                     IsCollapsed="@isCollapsed" />
+        <!-- Media Library Dropdown -->
+        <SidebarDropdown Icon="fas fa-folder"
+                         Text="Media Library"
+                         IsCollapsed="@isCollapsed"
+                         Items="@mediaItems" />
 
         <!-- Users -->
         <SidebarItem Icon="fas fa-users"
@@ -172,6 +172,15 @@
     private bool isCollapsed = false;
     private bool isMobileOpen = false;
     private Backend.CMS.Application.DTOs.UserDto? currentUser;
+
+    private List<SidebarDropdown.DropdownItem> mediaItems = new()
+    {
+        new SidebarDropdown.DropdownItem { Icon = "fas fa-folder", Text = "Folders", Href = "/media/folders" },
+        new SidebarDropdown.DropdownItem { Icon = "fas fa-images", Text = "Pictures", Href = "/media/pictures" },
+        new SidebarDropdown.DropdownItem { Icon = "fas fa-music", Text = "Audio", Href = "/media/audio" },
+        new SidebarDropdown.DropdownItem { Icon = "fas fa-file-alt", Text = "Documents", Href = "/media/documents" },
+        new SidebarDropdown.DropdownItem { Icon = "fas fa-video", Text = "Videos", Href = "/media/videos" }
+    };
 
     protected override async Task OnInitializedAsync()
     {

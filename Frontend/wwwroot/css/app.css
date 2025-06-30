@@ -224,3 +224,168 @@ code {
         opacity: 1;
     }
 }
+/* Sidebar dropdown styles */
+.sidebar-transition {
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Dropdown animations */
+.dropdown-enter {
+    opacity: 0;
+    transform: translateY(-10px);
+}
+
+.dropdown-enter-active {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+}
+
+.dropdown-exit {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.dropdown-exit-active {
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: opacity 0.2s ease-in, transform 0.2s ease-in;
+}
+
+/* Hover effects for sidebar items */
+.sidebar-item {
+    position: relative;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+    .sidebar-item:hover {
+        transform: translateX(2px);
+    }
+
+.sidebar-item-active {
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+/* Collapsed sidebar floating menu */
+.floating-menu {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(-10px) scale(0.95);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+}
+
+    .floating-menu.show {
+        opacity: 1;
+        visibility: visible;
+        transform: translateX(0) scale(1);
+        pointer-events: auto;
+    }
+
+/* Smooth transitions for all interactive elements */
+.transition-smooth {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Icon rotation animations */
+.rotate-90 {
+    transform: rotate(90deg);
+}
+
+.chevron-transition {
+    transition: transform 0.2s ease-in-out;
+}
+
+/* File path display enhancements */
+.file-path-display {
+    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+    border: 1px solid #d1d5db;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+}
+
+.dark .file-path-display {
+    background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+    border-color: #4b5563;
+}
+
+.file-path-code {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.875rem;
+    background: rgba(59, 130, 246, 0.1);
+    color: #1e40af;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.dark .file-path-code {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* Enhanced button hover effects */
+.btn-hover-lift {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+    .btn-hover-lift:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+/* Media overview card animations */
+.media-card {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+    .media-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+
+/* Loading animation for skeleton placeholders */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Responsive dropdown adjustments */
+@media (max-width: 1024px) {
+    .floating-menu {
+        position: fixed !important;
+        top: 0 !important;
+        left: 4rem !important;
+        right: 1rem !important;
+        max-width: none !important;
+        width: auto !important;
+        z-index: 100 !important;
+    }
+}
+
+/* Focus states for accessibility */
+.sidebar-item:focus,
+.dropdown-item:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+/* Dark mode specific adjustments */
+@media (prefers-color-scheme: dark) {
+    .floating-menu {
+        background: #1f2937;
+        border-color: #374151;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+    }
+}
