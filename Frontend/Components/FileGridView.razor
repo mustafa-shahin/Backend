@@ -2,16 +2,16 @@
 @using Backend.CMS.Domain.Enums
 @using Frontend.Interfaces
 @inject IStyleService StyleService
-
+@inject IFileService FileSerive
 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
     @foreach (var file in Files)
     {
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 overflow-hidden group cursor-pointer">
             <!-- File Preview/Thumbnail -->
             <div class="relative aspect-square bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden">
-                @if (file.FileType == FileType.Image && !string.IsNullOrEmpty(GetThumbnailUrl(file)))
+                @if (file.FileType == FileType.Image && !string.IsNullOrEmpty(FileSerive.GetThumbnailUrl(file.Id)))
                 {
-                    <img src="@GetThumbnailUrl(file)"
+                    <img src="@FileSerive.GetThumbnailUrl(file.Id)"
                          alt="@(file.Alt ?? file.OriginalFileName)"
                          class="w-full h-full object-cover"
                          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
@@ -220,14 +220,6 @@
         };
     }
 
-    private string GetThumbnailUrl(FileDto file)
-    {
-        if (file.FileType == FileType.Image)
-        {
-            return $"/api/file/{file.Id}/thumbnail";
-        }
-        return string.Empty;
-    }
 
     private string FormatFileSize(long bytes)
     {

@@ -12,7 +12,7 @@
 @inject IStyleService StyleService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
-
+@inject IFileService FileService
 <PageTitle>Pictures - Media Library</PageTitle>
 
 <!-- Page Header -->
@@ -152,7 +152,7 @@
                             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150">
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <div class="w-16 h-16 rounded-lg overflow-hidden">
-                                        <img src="@GetThumbnailUrl(file.Id)"
+                                        <img src="@FileService.GetThumbnailUrl(file.Id)"
                                              alt="@file.Alt"
                                              class="w-full h-full object-cover cursor-pointer"
                                              @onclick="() => PreviewFile(file)"

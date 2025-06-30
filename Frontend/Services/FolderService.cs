@@ -10,10 +10,12 @@ namespace Frontend.Services
     {
         private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonOptions;
+        private readonly string _baseUrl;
 
         public FolderService(HttpClient httpClient)
         {
             _httpClient = httpClient;
+            _baseUrl = httpClient.BaseAddress?.ToString().TrimEnd('/') ?? "";
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
@@ -21,11 +23,35 @@ namespace Frontend.Services
             };
         }
 
+        public async Task<PagedResult<FolderDto>> GetFoldersPagedAsync(int? parentFolderId = null, int page = 1, int pageSize = 20)
+        {
+            try
+            {
+                var query = $"api/folder?page={page}&pageSize={pageSize}";
+                if (parentFolderId.HasValue)
+                    query += $"&parentFolderId={parentFolderId}";
+
+                var response = await _httpClient.GetAsync(query);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<PagedResult<FolderDto>>(_jsonOptions);
+                    return result ?? new PagedResult<FolderDto>();
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get folders: {response.StatusCode} - {errorContent}");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error getting folders: {ex.Message}", ex);
+            }
+        }
+
         public async Task<List<FolderDto>> GetFoldersAsync(int? parentFolderId = null)
         {
             try
             {
-                var query = "/api/folder";
+                var query = "api/folder/all";
                 if (parentFolderId.HasValue)
                     query += $"?parentFolderId={parentFolderId}";
 
@@ -49,7 +75,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/folder/{id}");
+                var response = await _httpClient.GetAsync($"api/folder/{id}");
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
@@ -73,7 +99,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("/api/folder", createFolderDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("api/folder", createFolderDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
@@ -92,7 +118,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PutAsJsonAsync($"/api/folder/{id}", updateFolderDto, _jsonOptions);
+                var response = await _httpClient.PutAsJsonAsync($"api/folder/{id}", updateFolderDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
@@ -111,7 +137,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.DeleteAsync($"/api/folder/{id}?deleteFiles={deleteFiles}");
+                var response = await _httpClient.DeleteAsync($"api/folder/{id}?deleteFiles={deleteFiles}");
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -124,7 +150,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("/api/folder/move", moveFolderDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("api/folder/move", moveFolderDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
@@ -144,7 +170,7 @@ namespace Frontend.Services
             try
             {
                 var renameDto = new { NewName = newName };
-                var response = await _httpClient.PostAsJsonAsync($"/api/folder/{id}/rename", renameDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync($"api/folder/{id}/rename", renameDto, _jsonOptions);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -158,7 +184,7 @@ namespace Frontend.Services
             try
             {
                 var copyDto = new { FolderId = folderId, DestinationFolderId = destinationFolderId, NewName = newName };
-                var response = await _httpClient.PostAsJsonAsync("/api/folder/copy", copyDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("api/folder/copy", copyDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
@@ -177,7 +203,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/folder/{id}/path");
+                var response = await _httpClient.GetAsync($"api/folder/{id}/path");
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
@@ -202,7 +228,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/folder/{id}/breadcrumbs");
+                var response = await _httpClient.GetAsync($"api/folder/{id}/breadcrumbs");
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<List<FolderDto>>(_jsonOptions);
@@ -227,7 +253,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/folder/by-path?path={Uri.EscapeDataString(path)}");
+                var response = await _httpClient.GetAsync($"api/folder/by-path?path={Uri.EscapeDataString(path)}");
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
@@ -251,7 +277,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/folder/search?searchTerm={Uri.EscapeDataString(searchTerm)}");
+                var response = await _httpClient.GetAsync($"api/folder/search?searchTerm={Uri.EscapeDataString(searchTerm)}");
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<List<FolderDto>>(_jsonOptions);
@@ -271,7 +297,7 @@ namespace Frontend.Services
         {
             try
             {
-                var query = $"/api/folder/validate-name?name={Uri.EscapeDataString(name)}";
+                var query = $"api/folder/validate-name?name={Uri.EscapeDataString(name)}";
                 if (parentFolderId.HasValue) query += $"&parentFolderId={parentFolderId}";
                 if (excludeFolderId.HasValue) query += $"&excludeFolderId={excludeFolderId}";
 
@@ -293,7 +319,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/folder/{id}/statistics");
+                var response = await _httpClient.GetAsync($"api/folder/{id}/statistics");
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(_jsonOptions);
@@ -313,7 +339,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"/api/folder/system/{folderType}", null);
+                var response = await _httpClient.PostAsync($"api/folder/system/{folderType}", null);
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
@@ -332,7 +358,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/folder/user-avatars/{userId}");
+                var response = await _httpClient.GetAsync($"api/folder/user-avatars/{userId}");
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
@@ -351,7 +377,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync("/api/folder/company-assets");
+                var response = await _httpClient.GetAsync("api/folder/company-assets");
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
@@ -370,7 +396,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/folder/{id}/exists");
+                var response = await _httpClient.GetAsync($"api/folder/{id}/exists");
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
@@ -388,7 +414,7 @@ namespace Frontend.Services
         {
             try
             {
-                var query = "/api/folder/tree";
+                var query = "api/folder/tree";
                 if (rootFolderId.HasValue) query += $"?rootFolderId={rootFolderId}";
 
                 var response = await _httpClient.GetAsync(query);

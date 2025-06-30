@@ -13,11 +13,13 @@ namespace Frontend.Services
         private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonOptions;
         private readonly IJSRuntime _jsRuntime;
+        private readonly string _baseUrl;
 
         public FileService(HttpClient httpClient, IJSRuntime jsRuntime)
         {
             _httpClient = httpClient;
             _jsRuntime = jsRuntime;
+            _baseUrl = httpClient.BaseAddress?.ToString().TrimEnd('/') ?? "";
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
@@ -29,7 +31,7 @@ namespace Frontend.Services
         {
             try
             {
-                var query = $"/api/file?page={page}&pageSize={pageSize}";
+                var query = $"api/file?page={page}&pageSize={pageSize}";
                 if (folderId.HasValue) query += $"&folderId={folderId}";
                 if (!string.IsNullOrEmpty(search)) query += $"&search={Uri.EscapeDataString(search)}";
                 if (fileType.HasValue) query += $"&fileType={fileType}";
@@ -54,7 +56,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/file/{id}");
+                var response = await _httpClient.GetAsync($"api/file/{id}");
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
@@ -107,7 +109,7 @@ namespace Frontend.Services
                     }
                 }
 
-                var response = await _httpClient.PostAsync("/api/file/upload", content);
+                var response = await _httpClient.PostAsync("api/file/upload", content);
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
@@ -143,7 +145,7 @@ namespace Frontend.Services
                 content.Add(new StringContent(uploadDto.IsPublic.ToString().ToLower()), "IsPublic");
                 content.Add(new StringContent(uploadDto.GenerateThumbnails.ToString().ToLower()), "GenerateThumbnails");
 
-                var response = await _httpClient.PostAsync("/api/file/upload/multiple", content);
+                var response = await _httpClient.PostAsync("api/file/upload/multiple", content);
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<List<FileDto>>(_jsonOptions);
@@ -163,7 +165,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PutAsJsonAsync($"/api/file/{id}", updateDto, _jsonOptions);
+                var response = await _httpClient.PutAsJsonAsync($"api/file/{id}", updateDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
@@ -182,7 +184,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.DeleteAsync($"/api/file/{id}");
+                var response = await _httpClient.DeleteAsync($"api/file/{id}");
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -196,7 +198,7 @@ namespace Frontend.Services
             try
             {
                 var bulkDto = new { FileIds = fileIds };
-                var response = await _httpClient.PostAsJsonAsync("/api/file/bulk-delete", bulkDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("api/file/bulk-delete", bulkDto, _jsonOptions);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -209,7 +211,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("/api/file/move", moveDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("api/file/move", moveDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
@@ -226,7 +228,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("/api/file/copy", copyDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("api/file/copy", copyDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
                     return await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
@@ -243,7 +245,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/file/recent?count={count}");
+                var response = await _httpClient.GetAsync($"api/file/recent?count={count}");
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<List<FileDto>>(_jsonOptions);
@@ -261,7 +263,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync("/api/file/statistics");
+                var response = await _httpClient.GetAsync("api/file/statistics");
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(_jsonOptions);
@@ -279,7 +281,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"/api/file/{id}/generate-thumbnail", null);
+                var response = await _httpClient.PostAsync($"api/file/{id}/generate-thumbnail", null);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -292,7 +294,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"/api/file/{fileId}/download-token", null);
+                var response = await _httpClient.PostAsync($"api/file/{fileId}/download-token", null);
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
@@ -322,7 +324,7 @@ namespace Frontend.Services
                 if (fileInfo.IsPublic)
                 {
                     // For public files, use direct download
-                    var downloadUrl = $"{_httpClient.BaseAddress?.ToString().TrimEnd('/')}/api/file/{id}/download";
+                    var downloadUrl = $"{_baseUrl}/api/file/{id}/download";
                     await _jsRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, fileInfo.OriginalFileName);
                 }
                 else
@@ -331,7 +333,7 @@ namespace Frontend.Services
                     var token = await GenerateDownloadTokenAsync(id);
                     if (!string.IsNullOrEmpty(token))
                     {
-                        var downloadUrl = $"{_httpClient.BaseAddress?.ToString().TrimEnd('/')}/api/file/download/{token}";
+                        var downloadUrl = $"{_baseUrl}/api/file/download/{token}";
                         await _jsRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, fileInfo.OriginalFileName);
                     }
                     else
@@ -350,7 +352,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/file/{id}/download");
+                var response = await _httpClient.GetAsync($"api/file/{id}/download");
                 if (response.IsSuccessStatusCode)
                 {
                     var stream = await response.Content.ReadAsStreamAsync();
@@ -379,7 +381,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/file/{id}/thumbnail");
+                var response = await _httpClient.GetAsync($"api/file/{id}/thumbnail");
                 if (response.IsSuccessStatusCode)
                 {
                     var stream = await response.Content.ReadAsStreamAsync();
@@ -406,7 +408,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/file/{id}/preview");
+                var response = await _httpClient.GetAsync($"api/file/{id}/preview");
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<FilePreviewDto>(_jsonOptions);
@@ -426,7 +428,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("/api/file/search", searchDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("api/file/search", searchDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<List<FileDto>>(_jsonOptions);
@@ -445,7 +447,7 @@ namespace Frontend.Services
             try
             {
                 var bulkDto = new { FileIds = fileIds, UpdateDto = updateDto };
-                var response = await _httpClient.PostAsJsonAsync("/api/file/bulk-update", bulkDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("api/file/bulk-update", bulkDto, _jsonOptions);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -459,7 +461,7 @@ namespace Frontend.Services
             try
             {
                 var bulkDto = new { FileIds = fileIds, DestinationFolderId = destinationFolderId };
-                var response = await _httpClient.PostAsJsonAsync("/api/file/bulk-move", bulkDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("api/file/bulk-move", bulkDto, _jsonOptions);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -473,7 +475,7 @@ namespace Frontend.Services
             try
             {
                 var bulkDto = new { FileIds = fileIds, DestinationFolderId = destinationFolderId };
-                var response = await _httpClient.PostAsJsonAsync("/api/file/bulk-copy", bulkDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("api/file/bulk-copy", bulkDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<List<FileDto>>(_jsonOptions);
@@ -484,6 +486,56 @@ namespace Frontend.Services
             catch (Exception ex)
             {
                 throw new Exception($"Error bulk copying files: {ex.Message}", ex);
+            }
+        }
+
+        // Helper methods for URL generation
+        public string GetFileUrl(int fileId)
+        {
+            return $"{_baseUrl}/api/file/{fileId}/download";
+        }
+
+        public string GetThumbnailUrl(int fileId)
+        {
+            return $"{_baseUrl}/api/file/{fileId}/thumbnail";
+        }
+
+        public string GetPreviewUrl(int fileId)
+        {
+            return $"{_baseUrl}/api/file/{fileId}/preview";
+        }
+
+        // Additional methods to match backend functionality
+        public async Task<bool> VerifyFileIntegrityAsync(int fileId)
+        {
+            try
+            {
+                var response = await _httpClient.PostAsync($"api/file/{fileId}/verify-integrity", null);
+                return response.IsSuccessStatusCode;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error verifying file integrity {fileId}: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<object> GetFileDiagnosticInfoAsync(int fileId)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"api/file/{fileId}/diagnostic");
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<object>(_jsonOptions);
+                    return result ?? new object();
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get diagnostic info: {response.StatusCode} - {errorContent}");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error getting diagnostic info for file {fileId}: {ex.Message}", ex);
             }
         }
     }

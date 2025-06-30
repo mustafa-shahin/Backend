@@ -1,6 +1,8 @@
 ﻿@using Backend.CMS.Application.DTOs
 @using Backend.CMS.Domain.Enums
+@using Frontend.Interfaces
 @inject IJSRuntime JSRuntime
+@inject IFileService FileSerive
 
 @if (IsVisible && selectedFile != null)
 {
@@ -65,7 +67,7 @@
                     @if (selectedFile.FileType == FileType.Image)
                     {
                         <div class="flex justify-center bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
-                            <img src="@GetFileUrl(selectedFile.Id)"
+                            <img src="@FileSerive.GetFileUrl(selectedFile.Id)"
                                  alt="@(selectedFile.Alt ?? selectedFile.OriginalFileName)"
                                  class="max-w-full max-h-[60vh] object-contain rounded-lg shadow-lg"
                                  style="max-height: 60vh;"
@@ -88,7 +90,7 @@
                     {
                         <div class="flex justify-center bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
                             <video controls class="max-w-full max-h-[60vh] rounded-lg shadow-lg">
-                                <source src="@GetFileUrl(selectedFile.Id)" type="@selectedFile.ContentType">
+                                <source src="@FileSerive.GetFileUrl(selectedFile.Id)" type="@selectedFile.ContentType">
                                 Your browser does not support the video tag.
                             </video>
                         </div>
@@ -106,7 +108,7 @@
                                     }
                                 </div>
                                 <audio controls class="w-full">
-                                    <source src="@GetFileUrl(selectedFile.Id)" type="@selectedFile.ContentType">
+                                    <source src="@FileSerive.GetFileUrl(selectedFile.Id)" type="@selectedFile.ContentType">
                                     Your browser does not support the audio element.
                                 </audio>
                             </div>
@@ -226,27 +228,22 @@
 
     private async Task DownloadFile()
     {
+
         if (selectedFile != null)
         {
             if (OnDownloadFile.HasDelegate)
             {
-                await OnDownloadFile.InvokeAsync(selectedFile);
+               await FileSerive.DownloadFileAsync(selectedFile.Id);
             }
             else
             {
-                // Fallback download method using the improved JavaScript function
-                var downloadUrl = GetFileUrl(selectedFile.Id);
+                var downloadUrl = FileSerive.GetFileUrl(selectedFile.Id);
                 await JSRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, selectedFile.OriginalFileName);
             }
         }
     }
 
-    private string GetFileUrl(int fileId)
-    {
-        // Generate the correct file URL - this will work for both public and private files
-        // as the API will handle authentication appropriately
-        return $"/api/file/{fileId}/download";
-    }
+
 
     private string GetFileIcon(FileType fileType)
     {
