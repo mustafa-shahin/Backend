@@ -349,11 +349,9 @@
             CloseOnBackdrop="false">
 
     <FormContent Context="context">
-        <div @onclick:stopPropagation="true">
-            <FileEditForm Model="@((UpdateFileDto)context.Model)"
-                          ValidationErrors="@context.ValidationErrors"
-                          OriginalFile="@selectedFile" />
-        </div>
+        <FileEditForm Model="@((UpdateFileDto)context.Model)"
+                      ValidationErrors="@context.ValidationErrors"
+                      OriginalFile="@selectedFile" />
     </FormContent>
 </FormDialog>
 
