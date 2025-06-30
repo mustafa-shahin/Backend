@@ -32,20 +32,22 @@ namespace Frontend.Services
                     query += $"&parentFolderId={parentFolderId}";
 
                 var response = await _httpClient.GetAsync(query);
+                var content = await response.Content.ReadAsStringAsync();
+
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<FolderDto>>(_jsonOptions);
+                    var result = JsonSerializer.Deserialize<PagedResult<FolderDto>>(content, _jsonOptions);
                     return result ?? new PagedResult<FolderDto>();
                 }
 
-                var errorContent = await response.Content.ReadAsStringAsync();
-                throw new HttpRequestException($"Failed to get folders: {response.StatusCode} - {errorContent}");
+                throw new HttpRequestException($"Failed to get folders: {response.StatusCode} - {content}");
             }
             catch (Exception ex)
             {
                 throw new Exception($"Error getting folders: {ex.Message}", ex);
             }
         }
+
 
         public async Task<List<FolderDto>> GetFoldersAsync(int? parentFolderId = null)
         {
@@ -58,8 +60,8 @@ namespace Frontend.Services
                 var response = await _httpClient.GetAsync(query);
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<List<FolderDto>>(_jsonOptions);
-                    return result ?? new List<FolderDto>();
+                    var pagedResult = await response.Content.ReadFromJsonAsync<PagedResult<FolderDto>>(_jsonOptions);
+                    return pagedResult?.Items ?? [];
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
@@ -70,6 +72,7 @@ namespace Frontend.Services
                 throw new Exception($"Error getting folders: {ex.Message}", ex);
             }
         }
+
 
         public async Task<FolderDto?> GetFolderByIdAsync(int id)
         {
