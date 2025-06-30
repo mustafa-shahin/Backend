@@ -29,15 +29,17 @@
 @if (breadcrumbs.Any())
 {
     <div class="mb-6">
-        <nav class="flex items-center space-x-2 text-sm">
-            <button @onclick="() => NavigateToFolder(null)" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+        <nav class="flex items-center space-x-2 text-sm bg-white dark:bg-gray-800 rounded-lg px-4 py-3 border border-gray-200 dark:border-gray-700">
+            <button @onclick="() => NavigateToFolder(null)"
+                    class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center hover:bg-blue-50 dark:hover:bg-blue-900/20 px-2 py-1 rounded transition-colors">
                 <i class="fas fa-home mr-1"></i>
                 Root
             </button>
             @foreach (var folder in breadcrumbs)
             {
                 <i class="fas fa-chevron-right text-gray-400 mx-2"></i>
-                <button @onclick="() => NavigateToFolder(folder.Id)" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+                <button @onclick="() => NavigateToFolder(folder.Id)"
+                        class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 px-2 py-1 rounded transition-colors">
                     @folder.Name
                 </button>
             }
@@ -126,10 +128,24 @@
                     <i class="fas fa-folder-open text-4xl"></i>
                 </div>
                 <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
-                    No folders
+                    @if (string.IsNullOrEmpty(searchTerm))
+                    {
+                        <span>No folders in this location</span>
+                    }
+                    else
+                    {
+                        <span>No folders found matching "@searchTerm"</span>
+                    }
                 </h3>
                 <p class="text-gray-500 dark:text-gray-400 mb-6">
-                    Get started by creating your first folder.
+                    @if (string.IsNullOrEmpty(searchTerm))
+                    {
+                        <span>Get started by creating your first folder.</span>
+                    }
+                    else
+                    {
+                        <span>Try adjusting your search terms or create a new folder.</span>
+                    }
                 </p>
                 <button @onclick="ShowCreateFolderDialog" class="@StyleService.GetButtonClass("primary")">
                     <i class="fas fa-folder-plus mr-2"></i>
@@ -140,6 +156,7 @@
     }
 </div>
 
+<!-- Create/Edit Folder Dialog -->
 <FormDialog @ref="folderDialog"
             Title="@folderDialogTitle"
             Description="@folderDialogDescription"
@@ -151,7 +168,8 @@
             ValidationErrors="@folderValidationErrors"
             IsEditMode="@isFolderEditMode"
             OnClose="@CloseFolderDialog"
-            OnSave="@SaveFolder">
+            OnSave="@SaveFolder"
+            CloseOnBackdrop="false">
 
     <FormContent Context="context">
         <FolderForm Model="@((CreateFolderDto)context.Model)"
@@ -160,6 +178,7 @@
     </FormContent>
 </FormDialog>
 
+<!-- Delete Confirmation -->
 <ConfirmationDialog @ref="deleteFolderDialog"
                     Title="Delete Folder"
                     Message="Are you sure you want to delete this folder? This action cannot be undone."
@@ -220,23 +239,37 @@
             isLoading = true;
             StateHasChanged();
 
-            // Load folders
+            // Load folders for the current location
             var allFolders = await FolderService.GetFoldersAsync(currentFolderId);
 
-            // Apply search filter
+            // Apply search filter if needed
             if (!string.IsNullOrEmpty(searchTerm))
             {
-                folders = allFolders.Where(f => f.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)).ToList();
+                folders = allFolders.Where(f => f.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                                               (!string.IsNullOrEmpty(f.Description) && f.Description.Contains(searchTerm, StringComparison.OrdinalIgnoreCase)))
+                                  .ToList();
             }
             else
             {
                 folders = allFolders;
             }
 
-            // Load breadcrumbs
+            // Load breadcrumbs if we're in a specific folder
             if (currentFolderId.HasValue)
             {
-                breadcrumbs = await FolderService.GetFolderBreadcrumbsAsync(currentFolderId.Value);
+                try
+                {
+                    breadcrumbs = await FolderService.GetFolderBreadcrumbsAsync(currentFolderId.Value);
+                }
+                catch (Exception ex)
+                {
+                    // If we can't get breadcrumbs, it might mean the folder doesn't exist
+                    // Navigate back to root
+                    currentFolderId = null;
+                    breadcrumbs.Clear();
+                    Navigation.NavigateTo("/media/folders", false);
+                    NotificationService.ShowWarning("Folder not found, redirected to root");
+                }
             }
             else
             {
@@ -246,6 +279,8 @@
         catch (Exception ex)
         {
             NotificationService.ShowError($"Failed to load folders: {ex.Message}");
+            folders = new List<FolderDto>();
+            breadcrumbs = new List<FolderDto>();
         }
         finally
         {
@@ -277,17 +312,27 @@
     // Navigation
     private async Task NavigateToFolder(int? folderId)
     {
-        currentFolderId = folderId;
-
-        // Update URL
-        var url = "/media/folders";
-        if (folderId.HasValue)
+        try
         {
-            url += $"?folderId={folderId}";
-        }
-        Navigation.NavigateTo(url, false);
+            currentFolderId = folderId;
 
-        await LoadData();
+            // Update URL
+            var url = "/media/folders";
+            if (folderId.HasValue)
+            {
+                url += $"?folderId={folderId}";
+            }
+            Navigation.NavigateTo(url, false);
+
+            // Reset search when navigating
+            searchTerm = string.Empty;
+
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to navigate to folder: {ex.Message}");
+        }
     }
 
     // Folder Management
@@ -295,13 +340,18 @@
     {
         isFolderEditMode = false;
         folderDialogTitle = "Create New Folder";
-        folderDialogDescription = "Create a new folder in the current location";
+        folderDialogDescription = currentFolderId.HasValue
+            ? "Create a new folder in the current location"
+            : "Create a new folder in the root directory";
+
         folderModel = new CreateFolderDto
         {
             ParentFolderId = currentFolderId,
             FolderType = FolderType.General,
             Name = string.Empty,
-            Description = string.Empty
+            Description = string.Empty,
+            IsPublic = false,
+            Metadata = new Dictionary<string, object>()
         };
         folderValidationErrors.Clear();
         showFolderDialog = true;
@@ -310,21 +360,30 @@
 
     private async Task ShowEditFolderDialog(FolderDto folder)
     {
-        isFolderEditMode = true;
-        selectedFolderId = folder.Id;
-        folderDialogTitle = "Edit Folder";
-        folderDialogDescription = "Update folder information";
-        folderModel = new CreateFolderDto
+        try
         {
-            Name = folder.Name,
-            Description = folder.Description,
-            FolderType = folder.FolderType,
-            IsPublic = folder.IsPublic,
-            ParentFolderId = folder.ParentFolderId // Use folder's actual parent ID for editing
-        };
-        folderValidationErrors.Clear();
-        showFolderDialog = true;
-        StateHasChanged();
+            isFolderEditMode = true;
+            selectedFolderId = folder.Id;
+            folderDialogTitle = "Edit Folder";
+            folderDialogDescription = "Update folder information";
+
+            folderModel = new CreateFolderDto
+            {
+                Name = folder.Name,
+                Description = folder.Description,
+                FolderType = folder.FolderType,
+                IsPublic = folder.IsPublic,
+                ParentFolderId = folder.ParentFolderId,
+                Metadata = folder.Metadata ?? new Dictionary<string, object>()
+            };
+            folderValidationErrors.Clear();
+            showFolderDialog = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to prepare folder for editing: {ex.Message}");
+        }
     }
 
     private void CloseFolderDialog()
@@ -354,22 +413,44 @@
 
             if (isFolderEditMode)
             {
+                // Update existing folder
                 var updateDto = new UpdateFolderDto
                 {
                     Name = folderModel.Name,
                     Description = folderModel.Description,
-                    IsPublic = folderModel.IsPublic
+                    IsPublic = folderModel.IsPublic,
+                    Metadata = folderModel.Metadata
                 };
-                await FolderService.UpdateFolderAsync(selectedFolderId, updateDto);
-                NotificationService.ShowSuccess("Folder updated successfully");
+
+                var updatedFolder = await FolderService.UpdateFolderAsync(selectedFolderId, updateDto);
+                if (updatedFolder != null)
+                {
+                    NotificationService.ShowSuccess("Folder updated successfully");
+                }
+                else
+                {
+                    NotificationService.ShowError("Failed to update folder");
+                    return;
+                }
             }
             else
             {
-                await FolderService.CreateFolderAsync(folderModel);
-                NotificationService.ShowSuccess("Folder created successfully");
+                // Create new folder
+                var createdFolder = await FolderService.CreateFolderAsync(folderModel);
+                if (createdFolder != null)
+                {
+                    NotificationService.ShowSuccess($"Folder '{createdFolder.Name}' created successfully");
+                }
+                else
+                {
+                    NotificationService.ShowError("Failed to create folder");
+                    return;
+                }
             }
 
             CloseFolderDialog();
+
+            // Refresh the folder list to show the new/updated folder
             await LoadData();
         }
         catch (Exception ex)
@@ -393,9 +474,16 @@
     {
         try
         {
-            await FolderService.DeleteFolderAsync(selectedFolderId);
-            NotificationService.ShowSuccess("Folder deleted successfully");
-            await LoadData();
+            var success = await FolderService.DeleteFolderAsync(selectedFolderId, false);
+            if (success)
+            {
+                NotificationService.ShowSuccess("Folder deleted successfully");
+                await LoadData();
+            }
+            else
+            {
+                NotificationService.ShowError("Failed to delete folder");
+            }
         }
         catch (Exception ex)
         {
@@ -409,7 +497,43 @@
         var errors = new Dictionary<string, string>();
 
         if (string.IsNullOrWhiteSpace(folder.Name))
+        {
             errors["Name"] = "Folder name is required";
+            return errors;
+        }
+
+        // Trim and validate name
+        folder.Name = folder.Name.Trim();
+
+        if (folder.Name.Length > 255)
+        {
+            errors["Name"] = "Folder name must be less than 255 characters";
+        }
+
+        // Check for invalid characters
+        var invalidChars = Path.GetInvalidFileNameChars();
+        if (folder.Name.Any(c => invalidChars.Contains(c)))
+        {
+            errors["Name"] = "Folder name contains invalid characters";
+        }
+
+        // Check if name already exists (only for new folders or when name is changed)
+        try
+        {
+            var isValid = await FolderService.ValidateFolderNameAsync(
+                folder.Name,
+                folder.ParentFolderId,
+                isFolderEditMode ? selectedFolderId : null);
+
+            if (!isValid)
+            {
+                errors["Name"] = "A folder with this name already exists in this location";
+            }
+        }
+        catch (Exception)
+        {
+            // If validation service fails, we'll let the server handle validation
+        }
 
         return errors;
     }

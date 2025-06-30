@@ -25,7 +25,7 @@ namespace Frontend.Services
         {
             try
             {
-                var query = "/api/folder/all";
+                var query = "/api/folder";
                 if (parentFolderId.HasValue)
                     query += $"?parentFolderId={parentFolderId}";
 
@@ -35,7 +35,9 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<List<FolderDto>>(_jsonOptions);
                     return result ?? new List<FolderDto>();
                 }
-                return new List<FolderDto>();
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get folders: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -52,7 +54,14 @@ namespace Frontend.Services
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
                 }
-                return null;
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    return null;
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get folder: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -120,7 +129,9 @@ namespace Frontend.Services
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
                 }
-                return null;
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to move folder: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -152,7 +163,9 @@ namespace Frontend.Services
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
                 }
-                return null;
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to copy folder: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -170,7 +183,14 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
                     return result.GetProperty("path").GetString();
                 }
-                return null;
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    return null;
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get folder path: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -188,7 +208,14 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<List<FolderDto>>(_jsonOptions);
                     return result ?? new List<FolderDto>();
                 }
-                return new List<FolderDto>();
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    return new List<FolderDto>();
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get folder breadcrumbs: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -205,7 +232,14 @@ namespace Frontend.Services
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
                 }
-                return null;
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    return null;
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get folder by path: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -223,7 +257,9 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<List<FolderDto>>(_jsonOptions);
                     return result ?? new List<FolderDto>();
                 }
-                return new List<FolderDto>();
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to search folders: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -263,7 +299,9 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(_jsonOptions);
                     return result ?? new Dictionary<string, object>();
                 }
-                return new Dictionary<string, object>();
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get folder statistics: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -280,7 +318,9 @@ namespace Frontend.Services
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
                 }
-                return null;
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get/create system folder: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -297,7 +337,9 @@ namespace Frontend.Services
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
                 }
-                return null;
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get user avatar folder: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -314,7 +356,9 @@ namespace Frontend.Services
                 {
                     return await response.Content.ReadFromJsonAsync<FolderDto>(_jsonOptions);
                 }
-                return null;
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get company assets folder: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -353,7 +397,9 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<FolderTreeDto>(_jsonOptions);
                     return result ?? new FolderTreeDto();
                 }
-                return new FolderTreeDto();
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get folder tree: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {

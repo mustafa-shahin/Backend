@@ -327,7 +327,202 @@
             );
         }
     </script>
+    <script>
 
+        window.downloadFileWithAuth = async (url, filename) => {
+            try {
+                // Try fetch first to handle authentication
+                const response = await fetch(url, {
+                    method: 'GET',
+                    credentials: 'include', // Include cookies for authentication
+                    headers: {
+                        'Accept': '*/*'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // Get the blob data
+                const blob = await response.blob();
+
+                // Create blob URL and download
+                const blobUrl = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = filename || 'download';
+
+                // Add to DOM, click, and remove
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                // Clean up blob URL
+                window.URL.revokeObjectURL(blobUrl);
+
+                return true;
+            } catch (error) {
+                console.error('Download failed:', error);
+
+                // Fallback to simple link method
+                try {
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = filename || 'download';
+                    link.target = '_blank';
+
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+
+                    return true;
+                } catch (fallbackError) {
+                    console.error('Fallback download failed:', fallbackError);
+                    return false;
+                }
+            }
+        };
+
+
+
+        // copy to clipboard with better error handling
+        window.copyToClipboard = async (text) => {
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                    return true;
+                } else {
+                    // Fallback for older browsers
+                    return fallbackCopyToClipboard(text);
+                }
+            } catch (error) {
+                console.error('Failed to copy to clipboard:', error);
+                return fallbackCopyToClipboard(text);
+            }
+        };
+
+        function fallbackCopyToClipboard(text) {
+            try {
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.left = '-999999px';
+                textArea.style.top = '-999999px';
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+
+                const result = document.execCommand('copy');
+                document.body.removeChild(textArea);
+                return result;
+            } catch (err) {
+                console.error('Fallback copy failed:', err);
+                return false;
+            }
+        }
+
+        // Prevent modal backdrop issues
+        window.preventModalClose = (event) => {
+            event.stopPropagation();
+        };
+
+        // File preview helpers
+        window.previewFile = (url, contentType) => {
+            try {
+                if (contentType.startsWith('image/')) {
+                    // For images, open in new tab
+                    window.open(url, '_blank');
+                } else if (contentType.startsWith('video/') || contentType.startsWith('audio/')) {
+                    // For media files, open in new tab
+                    window.open(url, '_blank');
+                } else {
+                    // For other files, try to download
+                    window.downloadFileWithAuth(url, 'preview');
+                }
+            } catch (error) {
+                console.error('Preview failed:', error);
+                // Fallback to download
+                window.downloadFileWithAuth(url, 'preview');
+            }
+        };
+
+        // Utility to get file extension from filename
+        window.getFileExtension = (filename) => {
+            return filename.slice((filename.lastIndexOf('.') - 1 >>> 0) + 2);
+        };
+
+        // Utility to format file size
+        window.formatFileSize = (bytes) => {
+            if (bytes === 0) return '0 Bytes';
+
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        };
+
+        window.showNotification = (message, type = 'info', duration = 5000) => {
+            const notification = document.createElement('div');
+            notification.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transition-all duration-300 transform translate-x-full`;
+
+            // Set notification style based on type
+            switch (type) {
+                case 'success':
+                    notification.className += ' bg-green-500 text-white';
+                    break;
+                case 'error':
+                    notification.className += ' bg-red-500 text-white';
+                    break;
+                case 'warning':
+                    notification.className += ' bg-yellow-500 text-black';
+                    break;
+                default:
+                    notification.className += ' bg-blue-500 text-white';
+            }
+
+            notification.innerHTML = `
+        <div class="flex items-center space-x-2">
+            <span>${message}</span>
+            <button onclick="this.parentElement.parentElement.remove()" class="ml-2 text-current opacity-70 hover:opacity-100">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    `;
+
+            document.body.appendChild(notification);
+
+            // Animate in
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+            }, 100);
+
+            // Auto remove after duration
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, duration);
+        };
+
+        // Debug helpers for development
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            window.debugFileService = {
+                testDownload: (fileId) => {
+                    console.log('Testing download for file:', fileId);
+                    return window.downloadFileWithAuth(`/api/file/${fileId}/download`, `test-file-${fileId}`);
+                },
+                testPreview: (fileId) => {
+                    console.log('Testing preview for file:', fileId);
+                    return window.previewFile(`/api/file/${fileId}/download`, 'application/octet-stream');
+                }
+            };
+        }
+    </script>
     <script src="_framework/blazor.webassembly.js"></script>
 </body>
 

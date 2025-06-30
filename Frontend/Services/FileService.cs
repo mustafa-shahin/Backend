@@ -40,7 +40,9 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<PagedResult<FileDto>>(_jsonOptions);
                     return result ?? new PagedResult<FileDto>();
                 }
-                throw new HttpRequestException($"Failed to get files: {response.StatusCode}");
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get files: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -57,7 +59,14 @@ namespace Frontend.Services
                 {
                     return await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
                 }
-                return null;
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    return null;
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get file: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -88,6 +97,15 @@ namespace Frontend.Services
 
                 content.Add(new StringContent(uploadDto.IsPublic.ToString().ToLower()), "IsPublic");
                 content.Add(new StringContent(uploadDto.GenerateThumbnail.ToString().ToLower()), "GenerateThumbnail");
+
+                // Add tags if any
+                if (uploadDto.Tags?.Any() == true)
+                {
+                    foreach (var tag in uploadDto.Tags)
+                    {
+                        content.Add(new StringContent(tag.Value?.ToString() ?? ""), $"Tags[{tag.Key}]");
+                    }
+                }
 
                 var response = await _httpClient.PostAsync("/api/file/upload", content);
                 if (response.IsSuccessStatusCode)
@@ -280,7 +298,9 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
                     return result.GetProperty("token").GetString() ?? string.Empty;
                 }
-                return string.Empty;
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to generate download token: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -292,12 +312,18 @@ namespace Frontend.Services
         {
             try
             {
-                // For public files, use direct download
+                // Get file info first to check if it's public
                 var fileInfo = await GetFileByIdAsync(id);
-                if (fileInfo?.IsPublic == true)
+                if (fileInfo == null)
                 {
-                    var downloadUrl = $"/api/file/{id}/download";
-                    await _jsRuntime.InvokeVoidAsync("downloadFile", downloadUrl, fileInfo.OriginalFileName);
+                    throw new Exception("File not found");
+                }
+
+                if (fileInfo.IsPublic)
+                {
+                    // For public files, use direct download
+                    var downloadUrl = $"{_httpClient.BaseAddress?.ToString().TrimEnd('/')}/api/file/{id}/download";
+                    await _jsRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, fileInfo.OriginalFileName);
                 }
                 else
                 {
@@ -305,8 +331,12 @@ namespace Frontend.Services
                     var token = await GenerateDownloadTokenAsync(id);
                     if (!string.IsNullOrEmpty(token))
                     {
-                        var downloadUrl = $"/api/file/download/{token}";
-                        await _jsRuntime.InvokeVoidAsync("downloadFile", downloadUrl, fileInfo?.OriginalFileName ?? "file");
+                        var downloadUrl = $"{_httpClient.BaseAddress?.ToString().TrimEnd('/')}/api/file/download/{token}";
+                        await _jsRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, fileInfo.OriginalFileName);
+                    }
+                    else
+                    {
+                        throw new Exception("Failed to generate download token");
                     }
                 }
             }
@@ -325,10 +355,19 @@ namespace Frontend.Services
                 {
                     var stream = await response.Content.ReadAsStreamAsync();
                     var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
-                    var fileName = "file"; // Extract from headers if available
+
+                    // Try to get filename from Content-Disposition header
+                    var fileName = "file";
+                    if (response.Content.Headers.ContentDisposition?.FileName != null)
+                    {
+                        fileName = response.Content.Headers.ContentDisposition.FileName.Trim('"');
+                    }
+
                     return (stream, contentType, fileName);
                 }
-                throw new HttpRequestException($"Failed to get file stream: {response.StatusCode}");
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get file stream: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -348,7 +387,14 @@ namespace Frontend.Services
                     var fileName = $"thumbnail_{id}";
                     return (stream, contentType, fileName);
                 }
-                throw new HttpRequestException($"Failed to get thumbnail: {response.StatusCode}");
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    throw new FileNotFoundException("Thumbnail not found");
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get thumbnail: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
@@ -366,7 +412,9 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<FilePreviewDto>(_jsonOptions);
                     return result ?? new FilePreviewDto();
                 }
-                throw new HttpRequestException($"Failed to get file preview: {response.StatusCode}");
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get file preview: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
