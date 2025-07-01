@@ -1,9 +1,9 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
 

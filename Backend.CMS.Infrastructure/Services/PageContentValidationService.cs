@@ -1,5 +1,5 @@
 ﻿using Backend.CMS.Application.Components;
-using Backend.CMS.Application.Interfaces;
+using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 

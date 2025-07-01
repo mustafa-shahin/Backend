@@ -1,8 +1,8 @@
 using Backend.CMS.API.Authorization;
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Backend.CMS.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;

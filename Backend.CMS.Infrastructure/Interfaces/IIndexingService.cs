@@ -1,6 +1,6 @@
 ﻿using Backend.CMS.Domain.Entities;
 
-namespace Backend.CMS.Application.Interfaces
+namespace Backend.CMS.Infrastructure.Interfaces
 {
     public interface IIndexingService
     {

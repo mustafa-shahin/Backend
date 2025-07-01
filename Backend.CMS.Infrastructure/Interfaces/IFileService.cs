@@ -2,7 +2,7 @@
 using Backend.CMS.Domain.Enums;
 using Microsoft.AspNetCore.Http;
 
-namespace Backend.CMS.Application.Interfaces
+namespace Backend.CMS.Infrastructure.Interfaces
 {
     public interface IFileService
     {

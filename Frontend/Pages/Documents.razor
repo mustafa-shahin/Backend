@@ -431,11 +431,24 @@
         catch (Exception ex)
         {
             NotificationService.ShowError($"Failed to load documents: {ex.Message}");
+            files = new PagedResult<FileDto>();
+            breadcrumbs = new List<FolderDto>();
         }
         finally
         {
             isLoading = false;
             StateHasChanged();
+        }
+    }
+    private async Task ForceRefreshData()
+    {
+        try
+        {
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to refresh data: {ex.Message}");
         }
     }
 
@@ -565,7 +578,11 @@
             NotificationService.ShowSuccess("Document updated successfully");
 
             CloseFileDialog();
-            await LoadData();
+
+            // Force immediate refresh
+            isSaving = false;
+            StateHasChanged();
+            await ForceRefreshData();
         }
         catch (Exception ex)
         {
@@ -577,6 +594,7 @@
             StateHasChanged();
         }
     }
+
 
     private void ShowDeleteFileConfirmation(FileDto file)
     {
@@ -592,7 +610,9 @@
         {
             await FileService.DeleteFileAsync(selectedFile.Id);
             NotificationService.ShowSuccess("Document deleted successfully");
-            await LoadData();
+
+            // Force immediate refresh
+            await ForceRefreshData();
         }
         catch (Exception ex)
         {
@@ -634,39 +654,62 @@
     {
         if (!selectedFiles.Any() || isUploading) return;
 
+        var documentFiles = selectedFiles.Where(f => IsDocumentFile(f.ContentType)).ToList();
+        if (!documentFiles.Any())
+        {
+            NotificationService.ShowWarning("Please select at least one document file");
+            return;
+        }
+
         try
         {
             isUploading = true;
             StateHasChanged();
 
-            var uploadTasks = selectedFiles.Where(f => IsDocumentFile(f.ContentType)).Select(async file =>
+            var uploadTasks = documentFiles.Select(async file =>
             {
-                using var memoryStream = new MemoryStream();
-                await file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024).CopyToAsync(memoryStream); // 50MB limit
-                memoryStream.Position = 0;
-
-                var formFile = new FormFile(memoryStream, 0, memoryStream.Length, file.Name, file.Name)
+                try
                 {
-                    Headers = new HeaderDictionary(),
-                    ContentType = file.ContentType
-                };
+                    using var memoryStream = new MemoryStream();
+                    await file.OpenReadStream(maxAllowedSize: 50 * 1024 * 1024).CopyToAsync(memoryStream); // 50MB limit
+                    memoryStream.Position = 0;
 
-                var uploadDto = new FileUploadDto
+                    var formFile = new FormFile(memoryStream, 0, memoryStream.Length, file.Name, file.Name)
+                    {
+                        Headers = new HeaderDictionary(),
+                        ContentType = file.ContentType
+                    };
+
+                    var uploadDto = new FileUploadDto
+                    {
+                        File = formFile,
+                        FolderId = GetCurrentFolderId(),
+                        IsPublic = false,
+                        GenerateThumbnail = false
+                    };
+
+                    return await FileService.UploadFileAsync(uploadDto);
+                }
+                catch (Exception ex)
                 {
-                    File = formFile,
-                    FolderId = GetCurrentFolderId(),
-                    IsPublic = false,
-                    GenerateThumbnail = false
-                };
-
-                return await FileService.UploadFileAsync(uploadDto);
+                    NotificationService.ShowError($"Failed to upload {file.Name}: {ex.Message}");
+                    return null;
+                }
             });
 
-            await Task.WhenAll(uploadTasks);
+            var results = await Task.WhenAll(uploadTasks);
+            var successCount = results.Count(r => r != null);
 
-            NotificationService.ShowSuccess($"Successfully uploaded {selectedFiles.Count(f => IsDocumentFile(f.ContentType))} document(s)");
-            CloseUploadDialog();
-            await LoadData();
+            if (successCount > 0)
+            {
+                NotificationService.ShowSuccess($"Successfully uploaded {successCount} document(s)");
+                CloseUploadDialog();
+
+                // Force immediate refresh
+                isUploading = false;
+                StateHasChanged();
+                await ForceRefreshData();
+            }
         }
         catch (Exception ex)
         {

@@ -1,7 +1,7 @@
 ﻿using AutoMapper;
-using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Data;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Backend.CMS.Infrastructure.Mapping;
 using Backend.CMS.Infrastructure.Services;

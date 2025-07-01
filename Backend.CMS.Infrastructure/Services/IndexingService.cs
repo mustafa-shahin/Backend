@@ -1,11 +1,11 @@
-﻿using Backend.CMS.Application.Interfaces;
-using Backend.CMS.Domain.Entities;
+﻿using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Collections.Concurrent;
+using Backend.CMS.Infrastructure.Interfaces;
 
 namespace Backend.CMS.Infrastructure.Services
 {

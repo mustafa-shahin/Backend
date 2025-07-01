@@ -1,6 +1,6 @@
 ﻿using Backend.CMS.Application.Components;
 
-namespace Backend.CMS.Application.Interfaces
+namespace Backend.CMS.Infrastructure.Interfaces
 {
     public interface IPageContentValidationService
     {

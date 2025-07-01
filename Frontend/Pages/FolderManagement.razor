@@ -622,10 +622,8 @@
 
     private async Task LoadData()
     {
-        if (!await loadingSemaphore.WaitAsync(100))
-        {
-            return; // Skip if already loading
-        }
+        // Force reload - don't use semaphore timeout for critical updates
+        await loadingSemaphore.WaitAsync();
 
         try
         {
@@ -875,7 +873,11 @@
             }
 
             CloseFolderDialog();
-            await LoadData();
+
+            // Force immediate refresh
+            isSaving = false;
+            StateHasChanged();
+            await ForceRefreshData();
         }
         catch (Exception ex)
         {
@@ -885,6 +887,18 @@
         {
             isSaving = false;
             StateHasChanged();
+        }
+    }
+    private async Task ForceRefreshData()
+    {
+        try
+        {
+            // Force a complete data reload without timeout restrictions
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to refresh folder data: {ex.Message}");
         }
     }
 
@@ -917,7 +931,11 @@
             {
                 NotificationService.ShowSuccess("Folder renamed successfully");
                 CloseRenameDialog();
-                await LoadData();
+
+                // Force immediate refresh
+                isSaving = false;
+                StateHasChanged();
+                await ForceRefreshData();
             }
             else
             {
@@ -935,6 +953,7 @@
         }
     }
 
+
     private void ShowDeleteFolderConfirmation(FolderDto folder)
     {
         selectedFolderId = folder.Id;
@@ -950,7 +969,9 @@
             if (success)
             {
                 NotificationService.ShowSuccess("Folder deleted successfully");
-                await LoadData();
+
+                // Force immediate refresh
+                await ForceRefreshData();
             }
             else
             {

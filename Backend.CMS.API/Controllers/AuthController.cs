@@ -1,6 +1,6 @@
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Application.Interfaces.Services;
 using Backend.CMS.Domain.Entities;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;

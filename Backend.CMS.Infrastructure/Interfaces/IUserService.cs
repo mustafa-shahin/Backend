@@ -1,9 +1,6 @@
 ﻿using Backend.CMS.Application.DTOs;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
-namespace Backend.CMS.Application.Interfaces.Services
+namespace Backend.CMS.Infrastructure.Interfaces
 {
     public interface IUserService
     {

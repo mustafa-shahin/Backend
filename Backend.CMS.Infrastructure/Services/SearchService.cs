@@ -1,7 +1,7 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Domain.Entities;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;

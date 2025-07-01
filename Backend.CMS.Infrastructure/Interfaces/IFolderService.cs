@@ -2,7 +2,7 @@
 using Backend.CMS.Domain.Enums;
 
 
-namespace Backend.CMS.Application.Interfaces
+namespace Backend.CMS.Infrastructure.Interfaces
 {
     public interface IFolderService
     {

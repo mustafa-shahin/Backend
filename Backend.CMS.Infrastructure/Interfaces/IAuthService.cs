@@ -3,7 +3,7 @@ using Backend.CMS.Domain.Entities;
 using System;
 using System.Threading.Tasks;
 
-namespace Backend.CMS.Application.Interfaces.Services
+namespace Backend.CMS.Infrastructure.Interfaces
 {
     public interface IAuthService
     {

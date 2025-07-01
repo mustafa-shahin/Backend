@@ -634,10 +634,8 @@
     
     private async Task LoadDataAsync()
     {
-        if (!await loadingSemaphore.WaitAsync(100))
-        {
-            return; // Skip if already loading
-        }
+        // Force reload - don't use semaphore timeout for critical updates
+        await loadingSemaphore.WaitAsync();
 
         try
         {
@@ -678,7 +676,6 @@
             StateHasChanged();
         }
     }
-
     
 
     private void BuildFlatFolderList(List<FolderDto> folders, List<FolderDto> result, string parentPath)
@@ -810,7 +807,11 @@
             NotificationService.ShowSuccess("Picture updated successfully");
 
             CloseFileDialog();
-            await LoadDataAsync();
+
+            // Force immediate refresh
+            isSaving = false;
+            StateHasChanged();
+            await ForceRefreshData();
         }
         catch (Exception ex)
         {
@@ -837,7 +838,9 @@
         {
             await FileService.DeleteFileAsync(selectedFile.Id);
             NotificationService.ShowSuccess("Picture deleted successfully");
-            await LoadDataAsync();
+
+            // Force immediate refresh
+            await ForceRefreshData();
         }
         catch (Exception ex)
         {
@@ -934,7 +937,11 @@
             {
                 NotificationService.ShowSuccess($"Successfully uploaded {successCount} picture(s)");
                 CloseUploadDialog();
-                await LoadDataAsync();
+
+                // Force immediate refresh
+                isUploading = false;
+                StateHasChanged();
+                await ForceRefreshData();
             }
         }
         catch (Exception ex)
@@ -947,7 +954,22 @@
             StateHasChanged();
         }
     }
-
+    private async Task ForceRefreshData()
+    {
+        try
+        {
+            // Force a complete data reload
+            hasLoadedFolders = false;
+            await Task.WhenAll(
+                LoadFoldersAsync(),
+                LoadDataAsync()
+            );
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to refresh data: {ex.Message}");
+        }
+    }
     private Task OnFilesChanged(List<IBrowserFile> files)
     {
         selectedFiles = files;

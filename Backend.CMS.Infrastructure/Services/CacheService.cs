@@ -1,6 +1,6 @@
 ﻿using Backend.CMS.Application.Common;
-using Backend.CMS.Application.Interfaces;
 using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
@@ -288,6 +288,426 @@ namespace Backend.CMS.Infrastructure.Services
         #endregion
 
         #region Cache Invalidation Methods
+        public async Task InvalidateProductCacheAsync(int? productId = null)
+        {
+            try
+            {
+                if (productId.HasValue && productId.Value > 0)
+                {
+                    var keysToRemove = new List<string>
+                    {
+                        CacheKeys.ProductById(productId.Value),
+                        CacheKeys.ProductBySlug("*"), // Will be handled by pattern matching
+                        CacheKeys.ProductDefaultVariant(productId.Value)
+                    };
+
+                    await RemoveAsync(keysToRemove.Where(k => !k.Contains("*")));
+                    await RemoveByPatternAsync($"product:*:{productId.Value}");
+                    await RemoveByPatternAsync($"product-variants:product:{productId.Value}:*");
+                    await RemoveByPatternAsync($"products:related:{productId.Value}:*");
+                }
+                else
+                {
+                    await RemoveByPatternAsync(CacheKeys.ProductsPattern);
+                    await RemoveByPatternAsync("product:*");
+                    await RemoveByPatternAsync("products:*");
+                    await RemoveByPatternAsync("product-variants:*");
+                }
+
+                // Invalidate global product caches
+                var globalKeysToRemove = new List<string>
+                {
+                    CacheKeys.ProductsList(),
+                    CacheKeys.ProductStatistics,
+                    CacheKeys.ProductPriceRange,
+                    CacheKeys.ProductVendors,
+                    CacheKeys.ProductTags,
+                    CacheKeys.ProductsVariantsList()
+                };
+
+                await RemoveAsync(globalKeysToRemove);
+                await RemoveByPatternAsync("products:category:*");
+                await RemoveByPatternAsync("products:featured:*");
+                await RemoveByPatternAsync("products:recent:*");
+
+                _logger.LogInformation("Invalidated product cache {ProductId}",
+                    productId?.ToString() ?? "all");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating product cache for product {ProductId}", productId);
+            }
+        }
+
+        public async Task InvalidateProductVariantCacheAsync(int? variantId = null, int? productId = null)
+        {
+            try
+            {
+                if (variantId.HasValue && variantId.Value > 0)
+                {
+                    await RemoveAsync(CacheKeys.ProductVariantById(variantId.Value));
+                    await RemoveByPatternAsync($"product-variant:*:{variantId.Value}");
+                }
+
+                if (productId.HasValue && productId.Value > 0)
+                {
+                    await RemoveAsync(CacheKeys.ProductVariantsByProduct(productId.Value));
+                    await RemoveAsync(CacheKeys.ProductDefaultVariant(productId.Value));
+                    await RemoveByPatternAsync(CacheKeys.ProductVariantsPattern(productId.Value));
+                }
+
+                if (!variantId.HasValue && !productId.HasValue)
+                {
+                    await RemoveAsync(CacheKeys.ProductsVariantsList());
+                    await RemoveByPatternAsync("product-variant:*");
+                    await RemoveByPatternAsync("product-variants:*");
+                }
+
+                _logger.LogInformation("Invalidated product variant cache - Variant: {VariantId}, Product: {ProductId}",
+                    variantId, productId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating product variant cache - Variant: {VariantId}, Product: {ProductId}",
+                    variantId, productId);
+            }
+        }
+
+        public async Task InvalidateCategoryCacheAsync(int? categoryId = null)
+        {
+            try
+            {
+                if (categoryId.HasValue && categoryId.Value > 0)
+                {
+                    var keysToRemove = new List<string>
+                    {
+                        CacheKeys.CategoryById(categoryId.Value),
+                        CacheKeys.SubCategories(categoryId.Value)
+                    };
+
+                    await RemoveAsync(keysToRemove);
+                    await RemoveByPatternAsync($"category:*:{categoryId.Value}");
+                    await RemoveByPatternAsync($"products:category:{categoryId.Value}:*");
+                }
+
+                // Always invalidate global category caches when any category changes
+                var globalKeysToRemove = new List<string>
+                {
+                    CacheKeys.AllCategories,
+                    CacheKeys.CategoryTree,
+                    CacheKeys.RootCategories
+                };
+
+                await RemoveAsync(globalKeysToRemove);
+
+                if (!categoryId.HasValue)
+                {
+                    await RemoveByPatternAsync(CacheKeys.CategoriesPattern);
+                    await RemoveByPatternAsync("category:*");
+                }
+
+                _logger.LogInformation("Invalidated category cache {CategoryId}",
+                    categoryId?.ToString() ?? "all");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating category cache for category {CategoryId}", categoryId);
+            }
+        }
+
+        public async Task InvalidatePermissionCacheAsync(string? role = null)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(role))
+                {
+                    await RemoveAsync(CacheKeys.RolePermissions(role));
+                    await RemoveByPatternAsync($"permission:role:{role}:*");
+                }
+                else
+                {
+                    await RemoveByPatternAsync(CacheKeys.PermissionsPattern);
+                    await RemoveAsync(CacheKeys.AllPermissions);
+                }
+
+                // Invalidate user permissions since they depend on role permissions
+                await RemoveByPatternAsync($"user:permissions:*");
+
+                _logger.LogInformation("Invalidated permission cache {Role}", role ?? "all");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating permission cache for role {Role}", role);
+            }
+        }
+
+        public async Task InvalidateSessionCacheAsync(string? sessionId = null, int? userId = null)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(sessionId))
+                {
+                    var keysToRemove = new List<string>
+                    {
+                        CacheKeys.SessionById(sessionId),
+                        CacheKeys.SessionByToken(sessionId) // Assuming sessionId could be token
+                    };
+                    await RemoveAsync(keysToRemove);
+                }
+
+                if (userId.HasValue && userId.Value > 0)
+                {
+                    await RemoveAsync(CacheKeys.UserSessions(userId.Value));
+                    await RemoveByPatternAsync($"session:*:{userId.Value}");
+                }
+
+                if (sessionId == null && !userId.HasValue)
+                {
+                    await RemoveByPatternAsync(CacheKeys.SessionsPattern);
+                }
+
+                _logger.LogInformation("Invalidated session cache - Session: {SessionId}, User: {UserId}",
+                    sessionId, userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating session cache - Session: {SessionId}, User: {UserId}",
+                    sessionId, userId);
+            }
+        }
+
+        public async Task InvalidateSearchCacheAsync(string? searchTerm = null)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(searchTerm))
+                {
+                    await RemoveByPatternAsync($"search:{searchTerm.ToLowerInvariant()}:*");
+                    await RemoveByPatternAsync($"suggestions:{searchTerm.ToLowerInvariant()}:*");
+                }
+                else
+                {
+                    await RemoveByPatternAsync(CacheKeys.SearchPattern);
+                    await RemoveByPatternAsync("suggestions:*");
+                    await RemoveAsync(CacheKeys.IndexingStatus);
+                }
+
+                _logger.LogInformation("Invalidated search cache {SearchTerm}", searchTerm ?? "all");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating search cache for term {SearchTerm}", searchTerm);
+            }
+        }
+
+        public async Task InvalidateComponentCacheAsync(int? componentId = null, int? pageId = null)
+        {
+            try
+            {
+                if (componentId.HasValue && componentId.Value > 0)
+                {
+                    await RemoveByPatternAsync($"component:*:{componentId.Value}");
+                    await RemoveByPatternAsync($"{CacheKeys.COMPONENT_PREFIX}:*:{componentId.Value}");
+                }
+
+                if (pageId.HasValue && pageId.Value > 0)
+                {
+                    await RemoveAsync(CacheKeys.PageWithComponents(pageId.Value));
+                    await RemoveByPatternAsync($"page:components:{pageId.Value}:*");
+                }
+
+                if (!componentId.HasValue && !pageId.HasValue)
+                {
+                    await RemoveByPatternAsync($"{CacheKeys.COMPONENT_PREFIX}:*");
+                    await RemoveByPatternAsync("component:*");
+                }
+
+                _logger.LogInformation("Invalidated component cache - Component: {ComponentId}, Page: {PageId}",
+                    componentId, pageId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating component cache - Component: {ComponentId}, Page: {PageId}",
+                    componentId, pageId);
+            }
+        }
+
+        public async Task InvalidateMultipleAsync(params CacheInvalidationRequest[] requests)
+        {
+            if (requests?.Any() != true) return;
+
+            try
+            {
+                var tasks = new List<Task>();
+
+                foreach (var request in requests)
+                {
+                    var task = request.EntityType switch
+                    {
+                        CacheEntityType.User => InvalidateUserCacheAsync(request.EntityId ?? 0),
+                        CacheEntityType.Page => InvalidatePageCacheAsync(request.EntityId ?? 0),
+                        CacheEntityType.File => InvalidateFileCacheAsync(request.EntityId),
+                        CacheEntityType.Folder => InvalidateFolderCacheAsync(request.EntityId),
+                        CacheEntityType.Product => InvalidateProductCacheAsync(request.EntityId),
+                        CacheEntityType.ProductVariant => InvalidateProductVariantCacheAsync(request.EntityId),
+                        CacheEntityType.Category => InvalidateCategoryCacheAsync(request.EntityId),
+                        CacheEntityType.Permission => InvalidatePermissionCacheAsync(request.EntityKey),
+                        CacheEntityType.Session => InvalidateSessionCacheAsync(request.EntityKey, request.EntityId),
+                        CacheEntityType.Component => InvalidateComponentCacheAsync(request.EntityId),
+                        CacheEntityType.Search => InvalidateSearchCacheAsync(request.EntityKey),
+                        CacheEntityType.Company => InvalidateCompanyCacheAsync(),
+                        CacheEntityType.Location => InvalidateLocationCacheAsync(request.EntityId),
+                        CacheEntityType.All => InvalidateAllCacheAsync(),
+                        _ => Task.CompletedTask
+                    };
+
+                    tasks.Add(task);
+
+                    // Handle related entity invalidation
+                    if (request.InvalidateRelated)
+                    {
+                        var relatedTasks = await GetRelatedInvalidationTasksAsync(request);
+                        tasks.AddRange(relatedTasks);
+                    }
+                }
+
+                await Task.WhenAll(tasks);
+
+                _logger.LogInformation("Completed multiple cache invalidation for {Count} requests", requests.Length);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during multiple cache invalidation");
+            }
+        }
+
+        public async Task InvalidateRelatedEntitiesAsync(CacheInvalidationContext context)
+        {
+            try
+            {
+                var relatedInvalidations = new List<Task>();
+
+                switch (context.EntityType)
+                {
+                    case CacheEntityType.User:
+                        relatedInvalidations.Add(InvalidateSessionCacheAsync(null, context.EntityId));
+                        relatedInvalidations.Add(InvalidatePermissionCacheAsync()); // User role might have changed
+                        break;
+
+                    case CacheEntityType.Page:
+                        relatedInvalidations.Add(InvalidateComponentCacheAsync(null, context.EntityId));
+                        relatedInvalidations.Add(InvalidateSearchCacheAsync()); // Page content affects search
+                        if (context.OperationType == CacheOperationType.Delete)
+                        {
+                            // If page deleted, invalidate child pages
+                            await RemoveByPatternAsync($"page:parent:{context.EntityId}:*");
+                        }
+                        break;
+
+                    case CacheEntityType.Product:
+                        relatedInvalidations.Add(InvalidateProductVariantCacheAsync(null, context.EntityId));
+                        relatedInvalidations.Add(InvalidateSearchCacheAsync());
+                        if (context.Metadata?.ContainsKey("CategoryId") == true)
+                        {
+                            var categoryId = Convert.ToInt32(context.Metadata["CategoryId"]);
+                            relatedInvalidations.Add(InvalidateCategoryCacheAsync(categoryId));
+                        }
+                        break;
+
+                    case CacheEntityType.Category:
+                        relatedInvalidations.Add(InvalidateProductCacheAsync()); // Products in category affected
+                        relatedInvalidations.Add(InvalidateSearchCacheAsync());
+                        if (context.OperationType == CacheOperationType.Delete)
+                        {
+                            // If category deleted, invalidate child categories
+                            await RemoveByPatternAsync($"category:sub:{context.EntityId}:*");
+                        }
+                        break;
+
+                    case CacheEntityType.File:
+                        if (context.Metadata?.ContainsKey("FolderId") == true)
+                        {
+                            var folderId = Convert.ToInt32(context.Metadata["FolderId"]);
+                            relatedInvalidations.Add(InvalidateFolderCacheAsync(folderId));
+                        }
+                        break;
+
+                    case CacheEntityType.Folder:
+                        relatedInvalidations.Add(InvalidateFileCacheAsync()); // Files in folder affected
+                        if (context.OperationType == CacheOperationType.Delete)
+                        {
+                            // If folder deleted, invalidate child folders
+                            await RemoveByPatternAsync($"folder:parent:{context.EntityId}:*");
+                        }
+                        break;
+
+                    case CacheEntityType.Permission:
+                        relatedInvalidations.Add(InvalidateUserCacheAsync(0)); // All user permissions affected
+                        break;
+
+                    case CacheEntityType.Company:
+                        relatedInvalidations.Add(InvalidateLocationCacheAsync());
+                        relatedInvalidations.Add(InvalidateUserCacheAsync(0)); // Company settings might affect users
+                        break;
+                }
+
+                if (relatedInvalidations.Any())
+                {
+                    await Task.WhenAll(relatedInvalidations);
+                }
+
+                _logger.LogDebug("Invalidated related entities for {EntityType}:{EntityId} operation {OperationType}",
+                    context.EntityType, context.EntityId, context.OperationType);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating related entities for {EntityType}:{EntityId}",
+                    context.EntityType, context.EntityId);
+            }
+        }
+
+        #endregion
+
+        #region Helper Methods for Related Invalidation
+
+        private async Task<List<Task>> GetRelatedInvalidationTasksAsync(CacheInvalidationRequest request)
+        {
+            var tasks = new List<Task>();
+
+            try
+            {
+                switch (request.EntityType)
+                {
+                    case CacheEntityType.User when request.EntityId.HasValue:
+                        tasks.Add(InvalidateSessionCacheAsync(null, request.EntityId.Value));
+                        break;
+
+                    case CacheEntityType.Page when request.EntityId.HasValue:
+                        tasks.Add(InvalidateComponentCacheAsync(null, request.EntityId.Value));
+                        break;
+
+                    case CacheEntityType.Product when request.EntityId.HasValue:
+                        tasks.Add(InvalidateProductVariantCacheAsync(null, request.EntityId.Value));
+                        break;
+
+                    case CacheEntityType.Category:
+                        tasks.Add(InvalidateProductCacheAsync()); // Products in category
+                        break;
+
+                    case CacheEntityType.Folder when request.EntityId.HasValue:
+                        // Invalidate files in folder
+                        await RemoveByPatternAsync($"file:folder:{request.EntityId.Value}:*");
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error getting related invalidation tasks for {EntityType}:{EntityId}",
+                    request.EntityType, request.EntityId);
+            }
+
+            return tasks;
+        }
 
         public async Task InvalidateUserCacheAsync(int userId)
         {

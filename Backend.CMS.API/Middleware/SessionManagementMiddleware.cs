@@ -1,5 +1,4 @@
-﻿using Backend.CMS.Application.Interfaces;
-using Backend.CMS.Application.Interfaces.Services;
+﻿using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.Extensions.Logging;
 
 namespace Backend.CMS.API.Middleware

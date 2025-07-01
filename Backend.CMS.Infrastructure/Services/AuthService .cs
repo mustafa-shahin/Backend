@@ -1,9 +1,8 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Application.Interfaces;
-using Backend.CMS.Application.Interfaces.Services;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using BCrypt.Net;
 using Microsoft.AspNetCore.Http;

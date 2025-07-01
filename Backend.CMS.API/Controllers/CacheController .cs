@@ -1,5 +1,5 @@
 using Backend.CMS.API.Authorization;
-using Backend.CMS.Application.Interfaces;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 

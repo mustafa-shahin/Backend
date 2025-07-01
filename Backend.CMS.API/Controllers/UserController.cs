@@ -1,6 +1,6 @@
 using Backend.CMS.API.Authorization;
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Application.Interfaces.Services;
+using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Backend.CMS.API.Controllers

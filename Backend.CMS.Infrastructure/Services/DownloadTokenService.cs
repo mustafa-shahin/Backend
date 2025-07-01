@@ -1,4 +1,4 @@
-﻿using Backend.CMS.Application.Interfaces;
+﻿using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.Extensions.Caching.Memory;
 using System.Security.Cryptography;
 

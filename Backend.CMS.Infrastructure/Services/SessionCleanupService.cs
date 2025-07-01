@@ -1,11 +1,11 @@
-﻿using Backend.CMS.Application.Interfaces;
-using Backend.CMS.Infrastructure.Caching;
+﻿using Backend.CMS.Infrastructure.Caching;
 using Backend.CMS.Infrastructure.IRepositories;
 using Backend.CMS.Domain.Entities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Backend.CMS.Infrastructure.Interfaces;
 
 namespace Backend.CMS.Infrastructure.Services
 {

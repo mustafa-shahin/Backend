@@ -624,7 +624,11 @@
             NotificationService.ShowSuccess("Video updated successfully");
 
             CloseFileDialog();
-            await LoadData();
+
+            // Force immediate refresh
+            isSaving = false;
+            StateHasChanged();
+            await ForceRefreshData();
         }
         catch (Exception ex)
         {
@@ -651,7 +655,9 @@
         {
             await FileService.DeleteFileAsync(selectedFile.Id);
             NotificationService.ShowSuccess("Video deleted successfully");
-            await LoadData();
+
+            // Force immediate refresh
+            await ForceRefreshData();
         }
         catch (Exception ex)
         {
@@ -698,39 +704,62 @@
     {
         if (!selectedFiles.Any() || isUploading) return;
 
+        var videoFiles = selectedFiles.Where(f => f.ContentType.StartsWith("video/")).ToList();
+        if (!videoFiles.Any())
+        {
+            NotificationService.ShowWarning("Please select at least one video file");
+            return;
+        }
+
         try
         {
             isUploading = true;
             StateHasChanged();
 
-            var uploadTasks = selectedFiles.Where(f => f.ContentType.StartsWith("video/")).Select(async file =>
+            var uploadTasks = videoFiles.Select(async file =>
             {
-                using var memoryStream = new MemoryStream();
-                await file.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024).CopyToAsync(memoryStream); // 100MB limit
-                memoryStream.Position = 0;
-
-                var formFile = new FormFile(memoryStream, 0, memoryStream.Length, file.Name, file.Name)
+                try
                 {
-                    Headers = new HeaderDictionary(),
-                    ContentType = file.ContentType
-                };
+                    using var memoryStream = new MemoryStream();
+                    await file.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024).CopyToAsync(memoryStream); // 100MB limit
+                    memoryStream.Position = 0;
 
-                var uploadDto = new FileUploadDto
+                    var formFile = new FormFile(memoryStream, 0, memoryStream.Length, file.Name, file.Name)
+                    {
+                        Headers = new HeaderDictionary(),
+                        ContentType = file.ContentType
+                    };
+
+                    var uploadDto = new FileUploadDto
+                    {
+                        File = formFile,
+                        FolderId = GetCurrentFolderId(),
+                        IsPublic = false,
+                        GenerateThumbnail = false // Videos don't need thumbnails for now
+                    };
+
+                    return await FileService.UploadFileAsync(uploadDto);
+                }
+                catch (Exception ex)
                 {
-                    File = formFile,
-                    FolderId = GetCurrentFolderId(),
-                    IsPublic = false,
-                    GenerateThumbnail = false // Videos don't need thumbnails for now
-                };
-
-                return await FileService.UploadFileAsync(uploadDto);
+                    NotificationService.ShowError($"Failed to upload {file.Name}: {ex.Message}");
+                    return null;
+                }
             });
 
-            await Task.WhenAll(uploadTasks);
+            var results = await Task.WhenAll(uploadTasks);
+            var successCount = results.Count(r => r != null);
 
-            NotificationService.ShowSuccess($"Successfully uploaded {selectedFiles.Count(f => f.ContentType.StartsWith("video/"))} video(s)");
-            CloseUploadDialog();
-            await LoadData();
+            if (successCount > 0)
+            {
+                NotificationService.ShowSuccess($"Successfully uploaded {successCount} video(s)");
+                CloseUploadDialog();
+
+                // Force immediate refresh
+                isUploading = false;
+                StateHasChanged();
+                await ForceRefreshData();
+            }
         }
         catch (Exception ex)
         {
@@ -742,7 +771,17 @@
             StateHasChanged();
         }
     }
-
+    private async Task ForceRefreshData()
+    {
+        try
+        {
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to refresh data: {ex.Message}");
+        }
+    }
     private Task OnFilesChanged(List<IBrowserFile> files)
     {
         selectedFiles = files;
