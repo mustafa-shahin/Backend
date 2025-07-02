@@ -9,20 +9,22 @@ using Microsoft.Extensions.Logging;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class CompanyService : ICompanyService
+    public class CompanyService : BaseCacheAwareService<Company, CompanyDto>, ICompanyService
     {
         private readonly ICompanyRepository _companyRepository;
         private readonly ApplicationDbContext _context;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
-        private readonly ILogger<CompanyService> _logger;
+        private new readonly ILogger<CompanyService> _logger;
 
         public CompanyService(
             ICompanyRepository companyRepository,
             ApplicationDbContext context,
             IUserSessionService userSessionService,
+            ICacheService cacheService,
             IMapper mapper,
             ILogger<CompanyService> logger)
+            : base(companyRepository, cacheService, logger)
         {
             _companyRepository = companyRepository ?? throw new ArgumentNullException(nameof(companyRepository));
             _context = context ?? throw new ArgumentNullException(nameof(context));
@@ -30,20 +32,51 @@ namespace Backend.CMS.Infrastructure.Services
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
+        protected override string GetEntityCacheKey(int id)
+        {
+            return $"company:id:{id}";
+        }
 
+        protected override string[] GetEntityCachePatterns(int id)
+        {
+            return new[]
+            {
+            $"company:*:{id}",
+            $"company:id:{id}",
+            "company:main"
+        };
+        }
+
+        protected override string[] GetAllEntitiesCachePatterns()
+        {
+            return
+            ["company:*"];
+        }
+
+        protected override async Task<CompanyDto> MapToDto(Company entity)
+        {
+            return _mapper.Map<CompanyDto>(entity);
+        }
+
+        protected override async Task<List<CompanyDto>> MapToDtos(IEnumerable<Company> entities)
+        {
+            return _mapper.Map<List<CompanyDto>>(entities);
+        }
         public async Task<CompanyDto> GetCompanyAsync()
         {
             try
             {
-                var company = await _companyRepository.GetCompanyWithDetailsAsync();
+                var companies = await GetAllAsync();
+                var company = companies.FirstOrDefault();
 
                 if (company == null)
                 {
                     _logger.LogInformation("No company found, creating default company");
-                    company = await CreateDefaultCompanyAsync();
+                    var newCompany = await CreateDefaultCompanyAsync();
+                    return _mapper.Map<CompanyDto>(newCompany);
                 }
 
-                return _mapper.Map<CompanyDto>(company);
+                return company;
             }
             catch (Exception ex)
             {
@@ -60,7 +93,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var companies = await _companyRepository.GetAllAsync();
+                var companies = await _repository.GetAllAsync();
                 var company = companies.FirstOrDefault();
 
                 if (company == null)
@@ -75,9 +108,6 @@ namespace Backend.CMS.Infrastructure.Services
                 _mapper.Map(updateCompanyDto, company);
                 company.UpdatedAt = DateTime.UtcNow;
                 company.UpdatedByUserId = currentUserId;
-
-                _companyRepository.Update(company);
-                await _companyRepository.SaveChangesAsync();
 
                 // Handle related data updates in parallel
                 var tasks = new List<Task>();
@@ -99,6 +129,9 @@ namespace Backend.CMS.Infrastructure.Services
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                // Use base class for cache invalidation
+                await InvalidateEntityCaches(company.Id);
 
                 _logger.LogInformation("Company {CompanyId} updated by user {UserId}", company.Id, currentUserId);
 
