@@ -2,12 +2,15 @@
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Caching.Interfaces;
+using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using BCrypt.Net;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
@@ -21,6 +24,7 @@ namespace Backend.CMS.Infrastructure.Services
     public class TokenValidationResult
     {
         public bool IsValid { get; set; }
+        public DateTime ValidatedAt { get; set; } = DateTime.UtcNow;
     }
 
     public class AuthService : IAuthService, IDisposable
@@ -33,7 +37,10 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IEmailService _emailService;
         private readonly ICacheService _cacheService;
+        private readonly ICacheInvalidationService _cacheInvalidationService;
+        private readonly ICacheKeyService _cacheKeyService;
         private readonly ILogger<AuthService> _logger;
+        private readonly CacheOptions _cacheOptions;
 
         // Security settings
         private readonly int _maxFailedAttempts;
@@ -47,9 +54,6 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly Timer _cleanupTimer;
         private bool _disposed = false;
 
-        // Cache settings
-        private readonly TimeSpan _tokenValidationCacheExpiry = TimeSpan.FromMinutes(5);
-
         public AuthService(
             IUserRepository userRepository,
             IRepository<UserSession> sessionRepository,
@@ -59,6 +63,9 @@ namespace Backend.CMS.Infrastructure.Services
             IHttpContextAccessor httpContextAccessor,
             IEmailService emailService,
             ICacheService cacheService,
+            ICacheInvalidationService cacheInvalidationService,
+            ICacheKeyService cacheKeyService,
+            IOptions<CacheOptions> cacheOptions,
             ILogger<AuthService> logger)
         {
             _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
@@ -69,7 +76,10 @@ namespace Backend.CMS.Infrastructure.Services
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+            _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
+            _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _cacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
 
             // Load security settings
             _maxFailedAttempts = _configuration.GetValue("Security:MaxFailedLoginAttempts", 5);
@@ -142,6 +152,9 @@ namespace Backend.CMS.Infrastructure.Services
                     User = userDto,
                 };
 
+                // Cache user data and session for faster subsequent access
+                await CacheUserLoginDataAsync(user, session);
+
                 _logger.LogInformation("User {UserId} ({Email}) logged in successfully from IP {ClientIP}",
                     user.Id, user.Email, clientIp);
 
@@ -171,10 +184,29 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var session = await _sessionRepository.FirstOrDefaultAsync(s =>
-                    s.RefreshToken == refreshTokenDto.RefreshToken &&
-                    !s.IsRevoked &&
-                    s.ExpiresAt > DateTime.UtcNow);
+                // Try to get session from cache first
+                var sessionCacheKey = CacheKeys.SessionByToken(refreshTokenDto.RefreshToken);
+                var cachedSession = await _cacheService.GetAsync<UserSession>(sessionCacheKey);
+
+                UserSession? session = null;
+                if (cachedSession != null && !cachedSession.IsRevoked && cachedSession.ExpiresAt > DateTime.UtcNow)
+                {
+                    session = cachedSession;
+                }
+                else
+                {
+                    // Cache miss or expired - load from database
+                    session = await _sessionRepository.FirstOrDefaultAsync(s =>
+                        s.RefreshToken == refreshTokenDto.RefreshToken &&
+                        !s.IsRevoked &&
+                        s.ExpiresAt > DateTime.UtcNow);
+
+                    if (session != null)
+                    {
+                        // Cache the valid session
+                        await _cacheService.SetAsync(sessionCacheKey, session, _cacheOptions.DefaultExpiration);
+                    }
+                }
 
                 if (session == null)
                 {
@@ -182,7 +214,19 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new UnauthorizedAccessException("Invalid or expired refresh token");
                 }
 
-                var user = await _userRepository.GetByIdAsync(session.UserId);
+                // Try to get user from cache first
+                var userCacheKey = CacheKeys.UserById(session.UserId);
+                var user = await _cacheService.GetAsync<User>(userCacheKey);
+
+                if (user == null)
+                {
+                    user = await _userRepository.GetByIdAsync(session.UserId);
+                    if (user != null)
+                    {
+                        await _cacheService.SetAsync(userCacheKey, user, _cacheOptions.DefaultExpiration);
+                    }
+                }
+
                 if (user == null || !user.IsActive)
                 {
                     // Revoke invalid session
@@ -190,6 +234,10 @@ namespace Backend.CMS.Infrastructure.Services
                     session.UpdatedAt = DateTime.UtcNow;
                     _sessionRepository.Update(session);
                     await _sessionRepository.SaveChangesAsync();
+
+                    // Remove from cache
+                    await _cacheService.RemoveAsync(sessionCacheKey);
+                    await _cacheService.RemoveAsync(userCacheKey);
 
                     _logger.LogWarning("Refresh token used for invalid/inactive user {UserId} from IP {ClientIP}",
                         session.UserId, clientIp);
@@ -219,6 +267,11 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _sessionRepository.Update(session);
                 await _sessionRepository.SaveChangesAsync();
+
+                // Update cache with new session data
+                await _cacheService.RemoveAsync(sessionCacheKey); // Remove old token cache
+                var newSessionCacheKey = CacheKeys.SessionByToken(newRefreshToken);
+                await _cacheService.SetAsync(newSessionCacheKey, session, _cacheOptions.DefaultExpiration);
 
                 var userDto = _mapper.Map<UserDto>(user);
 
@@ -262,6 +315,13 @@ namespace Backend.CMS.Infrastructure.Services
                     _sessionRepository.Update(session);
                     await _sessionRepository.SaveChangesAsync();
 
+                    // Remove session from cache
+                    var sessionCacheKey = CacheKeys.SessionByToken(refreshToken);
+                    await _cacheService.RemoveAsync(sessionCacheKey);
+
+                    // Invalidate user sessions cache
+                    await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.UserSessions(session.UserId));
+
                     _logger.LogInformation("User {UserId} logged out successfully", session.UserId);
                     return true;
                 }
@@ -288,8 +348,15 @@ namespace Backend.CMS.Infrastructure.Services
                     session.UpdatedAt = DateTime.UtcNow;
                     session.UpdatedByUserId = userId;
                     _sessionRepository.Update(session);
+
+                    // Remove individual session from cache
+                    var sessionCacheKey = CacheKeys.SessionByToken(session.RefreshToken);
+                    await _cacheService.RemoveAsync(sessionCacheKey);
                 }
                 await _sessionRepository.SaveChangesAsync();
+
+                // Invalidate all user-related session caches
+                await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.UserSessions(userId));
 
                 _logger.LogInformation("All sessions revoked for user {UserId}", userId);
                 return true;
@@ -308,12 +375,19 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
+                // Create cache key for token validation
+                var tokenHash = ComputeHash(token);
+                var cacheKey = _cacheKeyService.GetCustomKey("token_validation", tokenHash);
+
                 // Check cache first
-                var cacheKey = $"token_validation:{ComputeHash(token)}";
                 var cachedResult = await _cacheService.GetAsync<TokenValidationResult>(cacheKey);
                 if (cachedResult != null)
                 {
-                    return cachedResult.IsValid;
+                    // Check if cached result is still fresh (not older than 1 minute for security)
+                    if (DateTime.UtcNow - cachedResult.ValidatedAt < TimeSpan.FromMinutes(1))
+                    {
+                        return cachedResult.IsValid;
+                    }
                 }
 
                 var tokenHandler = new JwtSecurityTokenHandler();
@@ -333,9 +407,9 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var isValid = validationResult.IsValid;
 
-                // Cache the result
-                var resultWrapper = new TokenValidationResult { IsValid = isValid };
-                await _cacheService.SetAsync(cacheKey, resultWrapper, _tokenValidationCacheExpiry);
+                // Cache the result with short expiration for security
+                var resultWrapper = new TokenValidationResult { IsValid = isValid, ValidatedAt = DateTime.UtcNow };
+                await _cacheService.SetAsync(cacheKey, resultWrapper, _cacheOptions.ShortExpiration);
 
                 return isValid;
             }
@@ -354,7 +428,23 @@ namespace Backend.CMS.Infrastructure.Services
                 if (!userId.HasValue)
                     throw new UnauthorizedAccessException("No authenticated user found");
 
-                var user = await _userRepository.GetByIdAsync(userId.Value);
+                // Try cache first
+                var userCacheKey = CacheKeys.UserById(userId.Value);
+                var cachedUser = await _cacheService.GetAsync<User>(userCacheKey);
+
+                User? user = null;
+                if (cachedUser != null)
+                {
+                    user = cachedUser;
+                }
+                else
+                {
+                    user = await _userRepository.GetByIdAsync(userId.Value);
+                    if (user != null)
+                    {
+                        await _cacheService.SetAsync(userCacheKey, user, _cacheOptions.DefaultExpiration);
+                    }
+                }
 
                 if (user == null)
                 {
@@ -395,7 +485,19 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var user = await _userRepository.GetByEmailAsync(normalizedEmail);
+                // Try cache first
+                var userCacheKey = CacheKeys.UserByEmail(normalizedEmail);
+                var user = await _cacheService.GetAsync<User>(userCacheKey);
+
+                if (user == null)
+                {
+                    user = await _userRepository.GetByEmailAsync(normalizedEmail);
+                    if (user != null)
+                    {
+                        await _cacheService.SetAsync(userCacheKey, user, _cacheOptions.DefaultExpiration);
+                    }
+                }
+
                 if (user == null)
                 {
                     _logger.LogInformation("Password reset requested for non-existent email {Email} from IP {ClientIP}",
@@ -433,6 +535,10 @@ namespace Backend.CMS.Infrastructure.Services
                 await _passwordResetRepository.AddAsync(passwordResetToken);
                 await _passwordResetRepository.SaveChangesAsync();
 
+                // Cache the reset token for faster lookup
+                var tokenCacheKey = _cacheKeyService.GetCustomKey("password_reset_token", resetToken);
+                await _cacheService.SetAsync(tokenCacheKey, passwordResetToken, _passwordResetTokenExpiry);
+
                 // Send password reset email
                 var resetUrl = _configuration["AppSettings:FrontendUrl"] + "/reset-password";
                 await _emailService.SendPasswordResetEmailAsync(user.Email, resetToken, resetUrl);
@@ -459,12 +565,24 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var passwordResetToken = await _passwordResetRepository.FirstOrDefaultAsync(t =>
-                    t.Token == token &&
-                    !t.IsUsed &&
-                    t.ExpiresAt > DateTime.UtcNow);
+                // Try cache first
+                var tokenCacheKey = _cacheKeyService.GetCustomKey("password_reset_token", token);
+                var passwordResetToken = await _cacheService.GetAsync<PasswordResetToken>(tokenCacheKey);
 
                 if (passwordResetToken == null)
+                {
+                    passwordResetToken = await _passwordResetRepository.FirstOrDefaultAsync(t =>
+                        t.Token == token &&
+                        !t.IsUsed &&
+                        t.ExpiresAt > DateTime.UtcNow);
+
+                    if (passwordResetToken != null)
+                    {
+                        await _cacheService.SetAsync(tokenCacheKey, passwordResetToken, TimeSpan.FromMinutes(5));
+                    }
+                }
+
+                if (passwordResetToken == null || passwordResetToken.IsUsed || passwordResetToken.ExpiresAt <= DateTime.UtcNow)
                 {
                     _logger.LogWarning("Invalid or expired password reset token used from IP {ClientIP}", clientIp);
                     return false;
@@ -499,6 +617,12 @@ namespace Backend.CMS.Infrastructure.Services
                 _userRepository.Update(user);
                 _passwordResetRepository.Update(passwordResetToken);
                 await _passwordResetRepository.SaveChangesAsync();
+
+                // Update user in cache
+                await _cacheInvalidationService.InvalidateEntityAsync<User>(user.Id);
+
+                // Remove used token from cache
+                await _cacheService.RemoveAsync(tokenCacheKey);
 
                 // Revoke all existing sessions for security
                 await RevokeAllSessionsAsync(user.Id);
@@ -542,6 +666,9 @@ namespace Backend.CMS.Infrastructure.Services
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
 
+                // Update user in cache
+                await _cacheInvalidationService.InvalidateEntityAsync<User>(userId);
+
                 _logger.LogInformation("Recovery codes generated for user {UserId}", userId);
 
                 return recoveryCodes;
@@ -577,6 +704,9 @@ namespace Backend.CMS.Infrastructure.Services
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
 
+                // Update user in cache
+                await _cacheInvalidationService.InvalidateEntityAsync<User>(userId);
+
                 _logger.LogInformation("Recovery code used for user {UserId}", userId);
 
                 return true;
@@ -602,6 +732,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var refreshToken = GenerateRefreshToken();
 
                 var session = await CreateUserSessionAsync(user, refreshToken, GetClientIpAddress());
+                await CacheUserLoginDataAsync(user, session);
 
                 var userDto = _mapper.Map<UserDto>(user);
 
@@ -621,6 +752,28 @@ namespace Backend.CMS.Infrastructure.Services
         }
 
         #region Private Helper Methods
+
+        private async Task CacheUserLoginDataAsync(User user, UserSession session)
+        {
+            try
+            {
+                // Cache user data
+                var userCacheKey = CacheKeys.UserById(user.Id);
+                await _cacheService.SetAsync(userCacheKey, user, _cacheOptions.DefaultExpiration);
+
+                // Cache session
+                var sessionCacheKey = CacheKeys.SessionByToken(session.RefreshToken);
+                await _cacheService.SetAsync(sessionCacheKey, session, _cacheOptions.DefaultExpiration);
+
+                // Cache user by email for faster lookups
+                var emailCacheKey = CacheKeys.UserByEmail(user.Email);
+                await _cacheService.SetAsync(emailCacheKey, user, _cacheOptions.DefaultExpiration);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to cache user login data for user {UserId}", user.Id);
+            }
+        }
 
         private async Task HandleFailedLoginAttemptAsync(User? user, string clientIp)
         {
@@ -650,6 +803,9 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
+
+                // Invalidate user cache
+                await _cacheInvalidationService.InvalidateEntityAsync<User>(user.Id);
             }
         }
 
@@ -688,6 +844,9 @@ namespace Backend.CMS.Infrastructure.Services
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
 
+                // Update user in cache
+                await _cacheInvalidationService.InvalidateEntityAsync<User>(user.Id);
+
                 _logger.LogInformation("User {UserId} automatically unlocked after lockout period expired", user.Id);
             }
         }
@@ -701,6 +860,9 @@ namespace Backend.CMS.Infrastructure.Services
 
             _userRepository.Update(user);
             await _userRepository.SaveChangesAsync();
+
+            // Update user in cache
+            await _cacheInvalidationService.InvalidateEntityAsync<User>(user.Id);
 
             // Clear IP-based attempts on successful login
             if (_enableBruteForceProtection)
@@ -751,6 +913,10 @@ namespace Backend.CMS.Infrastructure.Services
                     session.IsRevoked = true;
                     session.UpdatedAt = DateTime.UtcNow;
                     _sessionRepository.Update(session);
+
+                    // Remove from cache
+                    var sessionCacheKey = CacheKeys.SessionByToken(session.RefreshToken);
+                    await _cacheService.RemoveAsync(sessionCacheKey);
                 }
 
                 await _sessionRepository.SaveChangesAsync();
@@ -770,6 +936,10 @@ namespace Backend.CMS.Infrastructure.Services
                 existingToken.UpdatedAt = DateTime.UtcNow;
                 existingToken.UpdatedByUserId = userId;
                 _passwordResetRepository.Update(existingToken);
+
+                // Remove from cache
+                var tokenCacheKey = _cacheKeyService.GetCustomKey("password_reset_token", existingToken.Token);
+                await _cacheService.RemoveAsync(tokenCacheKey);
             }
 
             if (existingTokens.Any())

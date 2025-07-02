@@ -2,12 +2,15 @@
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Caching.Interfaces;
+using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
 using System.Security.Claims;
 
@@ -20,6 +23,8 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ILogger<UserSessionService> _logger;
         private readonly IServiceProvider _serviceProvider;
         private readonly ICacheService _cacheService;
+        private readonly ICacheKeyService _cacheKeyService;
+        private readonly CacheOptions _cacheOptions;
         private readonly TimeSpan _sessionTimeout;
         private readonly TimeSpan _memoryCacheTimeout;
         private readonly int _maxConcurrentSessions;
@@ -34,13 +39,17 @@ namespace Backend.CMS.Infrastructure.Services
             IConfiguration configuration,
             ILogger<UserSessionService> logger,
             IServiceProvider serviceProvider,
-            ICacheService cacheService)
+            ICacheService cacheService,
+            ICacheKeyService cacheKeyService,
+            IOptions<CacheOptions> cacheOptions)
         {
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+            _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
+            _cacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
 
             var timeoutMinutes = _configuration.GetValue("SessionSettings:TimeoutMinutes", 30);
             _sessionTimeout = TimeSpan.FromMinutes(timeoutMinutes);
@@ -238,8 +247,9 @@ namespace Backend.CMS.Infrastructure.Services
                 // Remove from memory cache
                 _memorySessionCache.TryRemove(sessionId, out _);
 
-                // Remove from distributed cache
-                await _cacheService.RemoveAsync(CacheKeys.SessionById(sessionId));
+                // Remove from distributed cache using new cache key service
+                var sessionCacheKey = CacheKeys.SessionById(sessionId);
+                await _cacheService.RemoveAsync(sessionCacheKey);
 
                 _logger.LogDebug("Session {SessionId} cleared", sessionId);
             }
@@ -403,8 +413,8 @@ namespace Backend.CMS.Infrastructure.Services
                 LastActivity = DateTime.UtcNow,
                 Permissions = GetBasicPermissionsForRole(role),
                 Claims = user.Claims
-    .GroupBy(c => c.Type)
-    .ToDictionary(g => g.Key, g => (object)g.First().Value)
+                    .GroupBy(c => c.Type)
+                    .ToDictionary(g => g.Key, g => (object)g.First().Value)
             };
 
             return session;
@@ -414,11 +424,29 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                // Use scoped service to ensure proper DbContext handling
-                using var scope = _serviceProvider.CreateScope();
-                var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                // Try to get user from cache first using the new cache service
+                var cachedUser = await _cacheService.GetEntityAsync<User>(userId);
+                User? user = null;
 
-                var user = await userRepository.GetByIdAsync(userId);
+                if (cachedUser != null)
+                {
+                    user = cachedUser;
+                    _logger.LogDebug("Retrieved user {UserId} from cache for session creation", userId);
+                }
+                else
+                {
+                    // Use scoped service to ensure proper DbContext handling
+                    using var scope = _serviceProvider.CreateScope();
+                    var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+
+                    user = await userRepository.GetByIdAsync(userId);
+                    if (user != null)
+                    {
+                        // Cache the user for future use
+                        await _cacheService.SetEntityAsync(userId, user, _cacheOptions.DefaultExpiration);
+                    }
+                }
+
                 if (user == null || !user.IsActive || user.IsLocked)
                 {
                     _logger.LogWarning("User {UserId} not found, deactivated, or locked", userId);
@@ -447,17 +475,38 @@ namespace Backend.CMS.Infrastructure.Services
             // Load permissions using scoped service
             try
             {
-                using var scope = _serviceProvider.CreateScope();
-                var permissionResolver = scope.ServiceProvider.GetService<IPermissionResolver>();
-                if (permissionResolver != null)
+                // Try to get permissions from cache first
+                var permissionsCacheKey = CacheKeys.UserPermissions(user.Id);
+                var cachedPermissions = await _cacheService.GetAsync<UserPermissions>(permissionsCacheKey);
+
+                if (cachedPermissions != null && DateTime.UtcNow - cachedPermissions.CachedAt < TimeSpan.FromMinutes(30))
                 {
-                    var rolePermissions = await permissionResolver.GetRolePermissionsAsync(user.Role);
-                    var userPermissions = await permissionResolver.GetUserPermissionsAsync(user.Id);
-                    session.Permissions = rolePermissions.Union(userPermissions).Distinct().ToList();
+                    session.Permissions = cachedPermissions.Permissions;
+                    _logger.LogDebug("Retrieved permissions for user {UserId} from cache", user.Id);
                 }
                 else
                 {
-                    session.Permissions = GetBasicPermissionsForRole(user.Role);
+                    // Load permissions from service
+                    using var scope = _serviceProvider.CreateScope();
+                    var permissionResolver = scope.ServiceProvider.GetService<IPermissionResolver>();
+                    if (permissionResolver != null)
+                    {
+                        var rolePermissions = await permissionResolver.GetRolePermissionsAsync(user.Role);
+                        var userPermissions = await permissionResolver.GetUserPermissionsAsync(user.Id);
+                        session.Permissions = rolePermissions.Union(userPermissions).Distinct().ToList();
+
+                        // Cache the permissions
+                        var permissionsWrapper = new UserPermissions
+                        {
+                            Permissions = session.Permissions,
+                            CachedAt = DateTime.UtcNow
+                        };
+                        await _cacheService.SetAsync(permissionsCacheKey, permissionsWrapper, _cacheOptions.DefaultExpiration);
+                    }
+                    else
+                    {
+                        session.Permissions = GetBasicPermissionsForRole(user.Role);
+                    }
                 }
             }
             catch (Exception ex)
@@ -480,6 +529,9 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 CacheSessionInMemory(sessionId, session);
                 await CacheSessionInDistributedCacheAsync(sessionId, session);
+
+                // Also refresh the user cache
+                await _cacheService.SetEntityAsync(user.Id, user, _cacheOptions.DefaultExpiration);
             }
         }
 
@@ -525,8 +577,8 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 if (!string.IsNullOrEmpty(sessionId))
                 {
-                    var cacheKey = CacheKeys.SessionById(sessionId);
-                    await _cacheService.SetAsync(cacheKey, session, _sessionTimeout);
+                    var sessionCacheKey = CacheKeys.SessionById(sessionId);
+                    await _cacheService.SetAsync(sessionCacheKey, session, _sessionTimeout);
                 }
             }
             catch (Exception ex)
@@ -541,8 +593,8 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 if (string.IsNullOrEmpty(sessionId)) return null;
 
-                var cacheKey = CacheKeys.SessionById(sessionId);
-                return await _cacheService.GetAsync<UserSessionContext>(cacheKey);
+                var sessionCacheKey = CacheKeys.SessionById(sessionId);
+                return await _cacheService.GetAsync<UserSessionContext>(sessionCacheKey);
             }
             catch (Exception ex)
             {

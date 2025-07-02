@@ -3,20 +3,29 @@ using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Caching.Interfaces;
+using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Data;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    // Wrapper classes for caching value types
+    // Wrapper classes for caching complex results
     public class UserSearchResult
     {
         public List<UserDto> Users { get; set; } = new();
         public int TotalCount { get; set; }
+    }
+
+    public class UserPermissions
+    {
+        public List<string> Permissions { get; set; } = new();
+        public DateTime CachedAt { get; set; } = DateTime.UtcNow;
     }
 
     public class UserService : IUserService
@@ -29,11 +38,9 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IUserSessionService _userSessionService;
         private readonly ICacheService _cacheService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
+        private readonly ICacheKeyService _cacheKeyService;
         private readonly ApplicationDbContext _context;
-
-        // Cache settings
-        private readonly TimeSpan _userCacheExpiration = TimeSpan.FromMinutes(15);
-        private readonly TimeSpan _searchCacheExpiration = TimeSpan.FromMinutes(5);
+        private readonly CacheOptions _cacheOptions;
 
         public UserService(
             IUserRepository userRepository,
@@ -42,9 +49,11 @@ namespace Backend.CMS.Infrastructure.Services
             IUserSessionService userSessionService,
             ICacheService cacheService,
             ICacheInvalidationService cacheInvalidationService,
+            ICacheKeyService cacheKeyService,
             IMapper mapper,
             ILogger<UserService> logger,
-            ApplicationDbContext context)
+            ApplicationDbContext context,
+            IOptions<CacheOptions> cacheOptions)
         {
             _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
             _addressRepository = addressRepository ?? throw new ArgumentNullException(nameof(addressRepository));
@@ -52,9 +61,11 @@ namespace Backend.CMS.Infrastructure.Services
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
             _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
+            _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _context = context ?? throw new ArgumentNullException(nameof(context));
+            _cacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
         }
 
         public async Task<UserDto> GetUserByIdAsync(int userId)
@@ -64,13 +75,12 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Try cache first
-                var cacheKey = CacheKeys.UserById(userId);
-                var cachedUser = await _cacheService.GetAsync<UserDto>(cacheKey);
+                // Use cache extension for entities
+                var cachedUser = await _cacheService.GetEntityAsync<User>(userId);
                 if (cachedUser != null)
                 {
                     _logger.LogDebug("Retrieved user {UserId} from cache", userId);
-                    return cachedUser;
+                    return _mapper.Map<UserDto>(cachedUser);
                 }
 
                 // Load from database
@@ -81,13 +91,15 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new KeyNotFoundException($"User with ID {userId} not found");
                 }
 
-                var userDto = _mapper.Map<UserDto>(user);
+                // Cache the entity
+                await _cacheService.SetEntityAsync(userId, user, _cacheOptions.DefaultExpiration);
 
-                // Cache the result
-                await _cacheService.SetAsync(cacheKey, userDto, _userCacheExpiration);
-                _logger.LogDebug("Cached user {UserId} for {CacheExpiration}", userId, _userCacheExpiration);
+                // Also cache by email and username for faster lookups
+                await CacheUserByAlternateKeysAsync(user);
 
-                return userDto;
+                _logger.LogDebug("Cached user {UserId} for {CacheExpiration}", userId, _cacheOptions.DefaultExpiration);
+
+                return _mapper.Map<UserDto>(user);
             }
             catch (Exception ex) when (!(ex is KeyNotFoundException))
             {
@@ -107,11 +119,11 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 // Try cache first
                 var cacheKey = CacheKeys.UserByEmail(normalizedEmail);
-                var cachedUser = await _cacheService.GetAsync<UserDto>(cacheKey);
+                var cachedUser = await _cacheService.GetAsync<User>(cacheKey);
                 if (cachedUser != null)
                 {
                     _logger.LogDebug("Retrieved user by email {Email} from cache", normalizedEmail);
-                    return cachedUser;
+                    return _mapper.Map<UserDto>(cachedUser);
                 }
 
                 // Load from database
@@ -122,13 +134,12 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new KeyNotFoundException($"User with email {normalizedEmail} not found");
                 }
 
-                var userDto = _mapper.Map<UserDto>(user);
+                // Cache by email and other keys
+                await CacheUserByAllKeysAsync(user);
 
-                // Cache the result
-                await _cacheService.SetAsync(cacheKey, userDto, _userCacheExpiration);
-                _logger.LogDebug("Cached user by email {Email} for {CacheExpiration}", normalizedEmail, _userCacheExpiration);
+                _logger.LogDebug("Cached user by email {Email} for {CacheExpiration}", normalizedEmail, _cacheOptions.DefaultExpiration);
 
-                return userDto;
+                return _mapper.Map<UserDto>(user);
             }
             catch (Exception ex) when (!(ex is KeyNotFoundException))
             {
@@ -148,11 +159,11 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 // Try cache first
                 var cacheKey = CacheKeys.UserByUsername(normalizedUsername);
-                var cachedUser = await _cacheService.GetAsync<UserDto>(cacheKey);
+                var cachedUser = await _cacheService.GetAsync<User>(cacheKey);
                 if (cachedUser != null)
                 {
                     _logger.LogDebug("Retrieved user by username {Username} from cache", normalizedUsername);
-                    return cachedUser;
+                    return _mapper.Map<UserDto>(cachedUser);
                 }
 
                 // Load from database
@@ -163,13 +174,12 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new KeyNotFoundException($"User with username {normalizedUsername} not found");
                 }
 
-                var userDto = _mapper.Map<UserDto>(user);
+                // Cache by username and other keys
+                await CacheUserByAllKeysAsync(user);
 
-                // Cache the result
-                await _cacheService.SetAsync(cacheKey, userDto, _userCacheExpiration);
-                _logger.LogDebug("Cached user by username {Username} for {CacheExpiration}", normalizedUsername, _userCacheExpiration);
+                _logger.LogDebug("Cached user by username {Username} for {CacheExpiration}", normalizedUsername, _cacheOptions.DefaultExpiration);
 
-                return userDto;
+                return _mapper.Map<UserDto>(user);
             }
             catch (Exception ex) when (!(ex is KeyNotFoundException))
             {
@@ -190,8 +200,12 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Try cache first for search results
-                var cacheKey = CacheKeys.PagesSearch(normalizedSearch ?? "", page, pageSize);
+                // Create cache key for search results
+                var cacheKey = string.IsNullOrEmpty(normalizedSearch)
+                    ? CacheKeys.UserList(page, pageSize)
+                    : CacheKeys.UserSearch(normalizedSearch, page, pageSize);
+
+                // Try cache first
                 var cachedResult = await _cacheService.GetAsync<UserSearchResult>(cacheKey);
                 if (cachedResult != null)
                 {
@@ -213,9 +227,12 @@ namespace Backend.CMS.Infrastructure.Services
                 var result = new UserSearchResult { Users = userDtos, TotalCount = totalCount };
 
                 // Cache the result
-                await _cacheService.SetAsync(cacheKey, result, _searchCacheExpiration);
+                await _cacheService.SetAsync(cacheKey, result, _cacheOptions.ShortExpiration);
                 _logger.LogDebug("Cached users search results for page {Page}, size {PageSize}, search '{Search}'",
                     page, pageSize, normalizedSearch);
+
+                // Also cache individual users for faster access
+                await CacheIndividualUsersAsync(users);
 
                 return (userDtos, totalCount);
             }
@@ -269,8 +286,11 @@ namespace Backend.CMS.Infrastructure.Services
 
                     await transaction.CommitAsync();
 
-                    // Invalidate relevant caches
-                    await InvalidateUserCachesAsync(user.Id);
+                    // Cache the new user by all keys
+                    await CacheUserByAllKeysAsync(user);
+
+                    // Invalidate relevant list caches
+                    await InvalidateUserListCaches();
 
                     // Return the created user with all related data
                     var createdUser = await _userRepository.GetByIdAsync(user.Id);
@@ -316,8 +336,9 @@ namespace Backend.CMS.Infrastructure.Services
                         throw new KeyNotFoundException($"User with ID {userId} not found");
                     }
 
-                    // Store original email for logging
+                    // Store original values for cache invalidation
                     var originalEmail = user.Email;
+                    var originalUsername = user.Username;
 
                     // Update user properties
                     _mapper.Map(updateUserDto, user);
@@ -344,8 +365,27 @@ namespace Backend.CMS.Infrastructure.Services
                     _logger.LogInformation("User {UserId} updated (email: {OriginalEmail} -> {NewEmail}) by user {CurrentUserId}",
                         userId, originalEmail, user.Email, currentUserId);
 
-                    // Invalidate relevant caches
-                    await InvalidateUserCachesAsync(userId);
+                    // Invalidate old cache entries if email or username changed
+                    if (originalEmail != user.Email)
+                    {
+                        await _cacheService.RemoveAsync(CacheKeys.UserByEmail(originalEmail));
+                    }
+                    if (originalUsername != user.Username)
+                    {
+                        await _cacheService.RemoveAsync(CacheKeys.UserByUsername(originalUsername));
+                    }
+
+                    // Cache updated user by all keys
+                    await CacheUserByAllKeysAsync(user);
+
+                    // Invalidate user permissions and sessions if role changed
+                    if (originalEmail != user.Email || user.UpdatedAt > DateTime.UtcNow.AddMinutes(-1))
+                    {
+                        await InvalidateUserRelatedCaches(userId);
+                    }
+
+                    // Invalidate list caches
+                    await InvalidateUserListCaches();
 
                     // If current user updated their own profile, refresh session
                     await RefreshSessionIfCurrentUser(userId);
@@ -390,11 +430,20 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 var userEmail = user.Email;
+                var username = user.Username;
                 var result = await _userRepository.SoftDeleteAsync(userId, currentUserId);
 
                 if (result)
                 {
-                    await InvalidateUserCachesAsync(userId);
+                    // Invalidate all caches for this user
+                    await _cacheInvalidationService.InvalidateEntityAsync<User>(userId);
+                    await _cacheService.RemoveAsync(CacheKeys.UserByEmail(userEmail));
+                    await _cacheService.RemoveAsync(CacheKeys.UserByUsername(username));
+
+                    // Invalidate related caches
+                    await InvalidateUserRelatedCaches(userId);
+                    await InvalidateUserListCaches();
+
                     _logger.LogInformation("User {UserId} ({Email}) soft deleted by user {CurrentUserId}",
                         userId, userEmail, currentUserId);
                 }
@@ -494,7 +543,11 @@ namespace Backend.CMS.Infrastructure.Services
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
 
-                await InvalidateUserCachesAsync(userId);
+                // Update user in cache
+                await CacheUserByAllKeysAsync(user);
+
+                // Invalidate sessions for security
+                await InvalidateUserRelatedCaches(userId);
 
                 _logger.LogInformation("Password changed successfully for user {UserId}", userId);
                 return true;
@@ -515,7 +568,19 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var user = await _userRepository.GetByEmailAsync(normalizedEmail);
+                // Try cache first
+                var cacheKey = CacheKeys.UserByEmail(normalizedEmail);
+                var user = await _cacheService.GetAsync<User>(cacheKey);
+
+                if (user == null)
+                {
+                    user = await _userRepository.GetByEmailAsync(normalizedEmail);
+                    if (user != null)
+                    {
+                        await _cacheService.SetAsync(cacheKey, user, _cacheOptions.DefaultExpiration);
+                    }
+                }
+
                 if (user == null)
                 {
                     _logger.LogInformation("Password reset requested for non-existent email {Email}", normalizedEmail);
@@ -540,7 +605,21 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var user = await _userRepository.GetByEmailAsync(email.Trim().ToLowerInvariant());
+                var normalizedEmail = email.Trim().ToLowerInvariant();
+
+                // Try cache first
+                var cacheKey = CacheKeys.UserByEmail(normalizedEmail);
+                var user = await _cacheService.GetAsync<User>(cacheKey);
+
+                if (user == null)
+                {
+                    user = await _userRepository.GetByEmailAsync(normalizedEmail);
+                    if (user != null)
+                    {
+                        await _cacheService.SetAsync(cacheKey, user, _cacheOptions.DefaultExpiration);
+                    }
+                }
+
                 if (user == null)
                     return false;
 
@@ -583,7 +662,8 @@ namespace Backend.CMS.Infrastructure.Services
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
 
-                await InvalidateUserCachesAsync(userId);
+                // Update user in cache
+                await CacheUserByAllKeysAsync(user);
                 await RefreshSessionIfCurrentUser(userId);
 
                 _logger.LogInformation("Preferences updated for user {UserId}", userId);
@@ -621,7 +701,8 @@ namespace Backend.CMS.Infrastructure.Services
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
 
-                await InvalidateUserCachesAsync(user.Id);
+                // Update user in cache
+                await CacheUserByAllKeysAsync(user);
 
                 _logger.LogInformation("Email verified successfully for user {UserId}", user.Id);
                 return true;
@@ -640,7 +721,10 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var user = await _userRepository.GetByIdAsync(userId);
+                // Try cache first
+                var cachedUser = await _cacheService.GetEntityAsync<User>(userId);
+                User? user = cachedUser ?? await _userRepository.GetByIdAsync(userId);
+
                 if (user == null)
                 {
                     _logger.LogWarning("Email verification requested for non-existent user {UserId}", userId);
@@ -680,6 +764,84 @@ namespace Backend.CMS.Infrastructure.Services
 
         #region Private Helper Methods
 
+        private async Task CacheUserByAllKeysAsync(User user)
+        {
+            try
+            {
+                // Cache by ID (entity cache)
+                await _cacheService.SetEntityAsync(user.Id, user, _cacheOptions.DefaultExpiration);
+
+                // Cache by email
+                await _cacheService.SetAsync(CacheKeys.UserByEmail(user.Email), user, _cacheOptions.DefaultExpiration);
+
+                // Cache by username
+                await _cacheService.SetAsync(CacheKeys.UserByUsername(user.Username), user, _cacheOptions.DefaultExpiration);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to cache user {UserId} by all keys", user.Id);
+            }
+        }
+
+        private async Task CacheUserByAlternateKeysAsync(User user)
+        {
+            try
+            {
+                // Cache by email
+                await _cacheService.SetAsync(CacheKeys.UserByEmail(user.Email), user, _cacheOptions.DefaultExpiration);
+
+                // Cache by username
+                await _cacheService.SetAsync(CacheKeys.UserByUsername(user.Username), user, _cacheOptions.DefaultExpiration);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to cache user {UserId} by alternate keys", user.Id);
+            }
+        }
+
+        private async Task CacheIndividualUsersAsync(IEnumerable<User> users)
+        {
+            try
+            {
+                var tasks = users.Select(user => CacheUserByAllKeysAsync(user));
+                await Task.WhenAll(tasks);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to cache individual users from list");
+            }
+        }
+
+        private async Task InvalidateUserListCaches()
+        {
+            try
+            {
+                // Invalidate user list caches
+                await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.Pattern("user:list"));
+                await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.Pattern("user:search"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to invalidate user list caches");
+            }
+        }
+
+        private async Task InvalidateUserRelatedCaches(int userId)
+        {
+            try
+            {
+                // Invalidate user permissions
+                await _cacheService.RemoveAsync(CacheKeys.UserPermissions(userId));
+
+                // Invalidate user sessions
+                await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.UserSessions(userId));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to invalidate user related caches for user {UserId}", userId);
+            }
+        }
+
         private async Task<bool> UpdateUserStatusAsync(int userId, Func<User, string> updateAction)
         {
             if (userId <= 0)
@@ -709,7 +871,11 @@ namespace Backend.CMS.Infrastructure.Services
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
 
-                await InvalidateUserCachesAsync(userId);
+                // Update user in cache
+                await CacheUserByAllKeysAsync(user);
+
+                // Invalidate related caches for status changes
+                await InvalidateUserRelatedCaches(userId);
 
                 _logger.LogInformation("User {UserId} {Action} by user {CurrentUserId}", userId, action, currentUserId);
                 return true;
@@ -749,7 +915,8 @@ namespace Backend.CMS.Infrastructure.Services
                 _userRepository.Update(user);
                 await _userRepository.SaveChangesAsync();
 
-                await InvalidateUserCachesAsync(userId);
+                // Update user in cache
+                await CacheUserByAllKeysAsync(user);
 
                 _logger.LogInformation("User {UserId} {ActionDescription}", userId, actionDescription);
 
@@ -953,18 +1120,6 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _logger.LogWarning(ex, "Could not determine current user ID, using null");
                 return null;
-            }
-        }
-
-        private async Task InvalidateUserCachesAsync(int userId)
-        {
-            try
-            {
-                await _cacheInvalidationService.InvalidateUserCacheAsync(userId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to invalidate user cache for user {UserId}", userId);
             }
         }
 

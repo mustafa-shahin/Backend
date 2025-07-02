@@ -1,71 +1,96 @@
 ﻿using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Enums;
+using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace Backend.CMS.Infrastructure.Services
 {
     public class CachedFileService : IFileService, IDisposable
     {
-        private readonly IFileService _baseFileService;
-        private readonly IFileCachingService _cachingService;
+        private readonly FileService _baseFileService;
+        private readonly ICacheService _cacheService;
+        private readonly ICacheKeyService _cacheKeyService;
+        private readonly ICacheInvalidationService _cacheInvalidationService;
         private readonly ILogger<CachedFileService> _logger;
+        private readonly IConfiguration _configuration;
+
+        // Semaphore management for concurrent operations
         private readonly SemaphoreSlim _streamSemaphore;
         private readonly ConcurrentDictionary<int, SemaphoreSlim> _fileSemaphores;
         private readonly Timer _semaphoreCleanupTimer;
         private readonly Lock _semaphoreLock = new();
+
+        // Cache TTL configurations
+        private readonly TimeSpan _fileMetadataCacheTTL;
+        private readonly TimeSpan _fileContentCacheTTL;
+        private readonly TimeSpan _fileListCacheTTL;
+        private readonly TimeSpan _searchResultsCacheTTL;
+        private readonly TimeSpan _statisticsCacheTTL;
+        private readonly TimeSpan _existenceCheckCacheTTL;
+        private readonly TimeSpan _previewCacheTTL;
+        private readonly TimeSpan _verificationCacheTTL;
+
+        // Performance settings
+        private readonly int _maxConcurrentStreams;
+        private readonly long _maxCacheableFileSize;
+        private readonly bool _enableAggressiveCaching;
+
         private bool _disposed = false;
 
-        // Cache TTL configurations for metadata caching using IFileCachingService
-        private static readonly TimeSpan FileMetadataCacheTTL = TimeSpan.FromMinutes(30);
-        private static readonly TimeSpan FileListCacheTTL = TimeSpan.FromMinutes(10);
-        private static readonly TimeSpan SearchResultsCacheTTL = TimeSpan.FromMinutes(5);
-        private static readonly TimeSpan StatisticsCacheTTL = TimeSpan.FromHours(1);
-        private static readonly TimeSpan ExistenceCheckCacheTTL = TimeSpan.FromMinutes(5);
-        private static readonly TimeSpan PreviewCacheTTL = TimeSpan.FromMinutes(15);
-
-        // Internal classes for caching non-binary data
-        private class FileIntegrityResult
-        {
-            public int FileId { get; set; }
-            public bool IsValid { get; set; }
-            public DateTime VerifiedAt { get; set; }
-        }
-
-        private class BooleanCacheWrapper
-        {
-            public bool Value { get; set; }
-        }
-
-        private class LongCacheWrapper
-        {
-            public long Value { get; set; }
-        }
-
         public CachedFileService(
-            IFileService baseFileService,
-            IFileCachingService cachingService,
-            ILogger<CachedFileService> logger)
+            FileService baseFileService,
+            ICacheService cacheService,
+            ICacheKeyService cacheKeyService,
+            ICacheInvalidationService cacheInvalidationService,
+            ILogger<CachedFileService> logger,
+            IConfiguration configuration)
         {
             _baseFileService = baseFileService ?? throw new ArgumentNullException(nameof(baseFileService));
-            _cachingService = cachingService ?? throw new ArgumentNullException(nameof(cachingService));
+            _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+            _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
+            _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _streamSemaphore = new SemaphoreSlim(Environment.ProcessorCount * 2, Environment.ProcessorCount * 2);
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+
+            // Load cache TTL configurations
+            _fileMetadataCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FileStorage:CacheTTL:MetadataMinutes", 30));
+            _fileContentCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FileStorage:CacheTTL:ContentMinutes", 60));
+            _fileListCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FileStorage:CacheTTL:ListMinutes", 10));
+            _searchResultsCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FileStorage:CacheTTL:SearchMinutes", 5));
+            _statisticsCacheTTL = TimeSpan.FromHours(_configuration.GetValue("FileStorage:CacheTTL:StatisticsHours", 1));
+            _existenceCheckCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FileStorage:CacheTTL:ExistenceMinutes", 5));
+            _previewCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FileStorage:CacheTTL:PreviewMinutes", 15));
+            _verificationCacheTTL = TimeSpan.FromHours(_configuration.GetValue("FileStorage:CacheTTL:VerificationHours", 2));
+
+            // Load performance settings
+            _maxConcurrentStreams = _configuration.GetValue("FileStorage:Performance:MaxConcurrentStreams", Environment.ProcessorCount * 2);
+            _maxCacheableFileSize = _configuration.GetValue("FileStorage:Performance:MaxCacheableFileSizeMB", 50) * 1024 * 1024;
+            _enableAggressiveCaching = _configuration.GetValue("FileStorage:Performance:EnableAggressiveCaching", true);
+
+            // Initialize semaphores and cleanup
+            _streamSemaphore = new SemaphoreSlim(_maxConcurrentStreams, _maxConcurrentStreams);
             _fileSemaphores = new ConcurrentDictionary<int, SemaphoreSlim>();
 
             // Cleanup unused semaphores every 5 minutes
             _semaphoreCleanupTimer = new Timer(CleanupUnusedSemaphores, null,
                 TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+
+            _logger.LogInformation("EnterpriseCachedFileService initialized with {MaxStreams} max concurrent streams, {MaxFileSize}MB max cacheable file size",
+                _maxConcurrentStreams, _maxCacheableFileSize / 1024 / 1024);
         }
 
-        #region Upload Operations (No caching needed, but invalidate cache)
+        #region Upload Operations (Invalidate cache after upload)
 
         public async Task<FileDto> UploadFileAsync(FileUploadDto uploadDto)
         {
             var result = await _baseFileService.UploadFileAsync(uploadDto);
-            await InvalidateRelevantCacheAsync(result.Id);
+            await InvalidateFileRelatedCacheAsync(result.Id, result.FolderId);
             return result;
         }
 
@@ -73,9 +98,9 @@ namespace Backend.CMS.Infrastructure.Services
         {
             var results = await _baseFileService.UploadMultipleFilesAsync(uploadDto);
 
-            // Invalidate metadata cache for uploaded files
-            var tasks = results.Select(file => InvalidateFileMetadataCacheAsync(file.Id));
-            await Task.WhenAll(tasks);
+            // Invalidate cache for all uploaded files
+            var invalidationTasks = results.Select(file => InvalidateFileRelatedCacheAsync(file.Id, file.FolderId));
+            await Task.WhenAll(invalidationTasks);
 
             return results;
         }
@@ -83,125 +108,105 @@ namespace Backend.CMS.Infrastructure.Services
         public async Task<FileDto> UploadFileFromUrlAsync(string url, int? folderId = null, string? description = null)
         {
             var result = await _baseFileService.UploadFileFromUrlAsync(url, folderId, description);
-            await InvalidateRelevantCacheAsync(result.Id);
+            await InvalidateFileRelatedCacheAsync(result.Id, result.FolderId);
             return result;
         }
 
         #endregion
 
-        #region File Retrieval Operations (With caching)
+        #region Cached File Retrieval Operations
 
         public async Task<FileDto> GetFileByIdAsync(int fileId)
         {
-
             if (fileId <= 0)
                 throw new ArgumentException("File ID must be greater than 0", nameof(fileId));
 
-            var cacheKey = $"file_metadata_{fileId}";
+            var cacheKey = _cacheKeyService.GetEntityKey<FileDto>(fileId);
 
-            var cachedFile = await _cachingService.GetFileMetadataAsync<FileDto>(cacheKey);
-
-            if (cachedFile is not null)
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-
-                return cachedFile;
-
-            }
-
-            var file = await CacheAndReturn(cacheKey, async () =>
-            {
-
                 _logger.LogDebug("Cache miss for file metadata: {FileId}", fileId);
-
                 return await _baseFileService.GetFileByIdAsync(fileId);
-
-            }, FileMetadataCacheTTL);
-
-            return file ?? throw new InvalidOperationException($"File with ID {fileId} could not be retrieved.");
+            }, _fileMetadataCacheTTL) ?? throw new InvalidOperationException($"File with ID {fileId} could not be retrieved.");
         }
 
         public async Task<List<FileDto>> GetFilesAsync(int page = 1, int pageSize = 20)
         {
-            var cacheKey = $"file_list_{page}_{pageSize}";
+            var cacheKey = _cacheKeyService.GetCollectionKey<FileDto>("paged", page, pageSize);
 
-            var cachedFiles = await _cachingService.GetFileMetadataAsync<List<FileDto>>(cacheKey);
-            if (cachedFiles is not null)
-            {
-                return cachedFiles;
-            }
-
-            var files = await CacheAndReturn(cacheKey, async () =>
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 _logger.LogDebug("Cache miss for file list: page {Page}, size {PageSize}", page, pageSize);
-                var retrievedFiles = await _baseFileService.GetFilesAsync(page, pageSize);
+                var files = await _baseFileService.GetFilesAsync(page, pageSize);
 
-                // Also cache individual file metadata
-                await CacheFileMetadataAsync(retrievedFiles);
+                // Cache individual file metadata for future single file requests
+                if (_enableAggressiveCaching)
+                {
+                    await CacheFileMetadataListAsync(files);
+                }
 
-                return retrievedFiles;
-            }, FileListCacheTTL);
-
-            return files ?? [];
+                return files;
+            }, _fileListCacheTTL) ?? new List<FileDto>();
         }
 
         public async Task<List<FileDto>> GetFilesByFolderAsync(int? folderId, int page = 1, int pageSize = 20)
         {
-            var cacheKey = $"file_folder_list_{folderId ?? 0}_{page}_{pageSize}";
+            var cacheKey = _cacheKeyService.GetCollectionKey<FileDto>("folder", folderId ?? 0, page, pageSize);
 
-            var cachedFiles = await _cachingService.GetFileMetadataAsync<List<FileDto>>(cacheKey);
-            if (cachedFiles is not null)
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                return cachedFiles;
-            }
+                _logger.LogDebug("Cache miss for folder file list: folder {FolderId}, page {Page}, size {PageSize}",
+                    folderId, page, pageSize);
 
-            _logger.LogDebug("Cache miss for folder file list: folder {FolderId}, page {Page}, size {PageSize}",
-                folderId, page, pageSize);
+                var files = await _baseFileService.GetFilesByFolderAsync(folderId, page, pageSize);
 
-            var files = await _baseFileService.GetFilesByFolderAsync(folderId, page, pageSize) ?? new List<FileDto>();
+                // Cache individual file metadata
+                if (_enableAggressiveCaching && files.Any())
+                {
+                    await CacheFileMetadataListAsync(files);
+                }
 
-            // Also cache individual file metadata
-            await CacheFileMetadataAsync(files);
-
-            await CacheAndReturn(cacheKey, () => Task.FromResult(files), FileListCacheTTL);
-
-            return files;
+                return files;
+            }, _fileListCacheTTL) ?? new List<FileDto>();
         }
-
 
         public async Task<List<FileDto>> SearchFilesAsync(FileSearchDto searchDto)
         {
-            // Create a cache key based on search parameters
-            var searchKey = CreateSearchCacheKey(searchDto);
-            var cacheKey = $"file_search_{searchKey}";
+            // Create deterministic cache key based on search parameters
+            var searchHash = GenerateSearchHash(searchDto);
+            var cacheKey = _cacheKeyService.GetQueryKey<FileDto>("search", new { Hash = searchHash });
 
-            return await _cachingService.GetFileMetadataAsync<List<FileDto>>(cacheKey) ??
-                   await CacheAndReturn(cacheKey, async () =>
-                   {
-                       _logger.LogDebug("Cache miss for file search: {SearchKey}", searchKey);
-                       var files = await _baseFileService.SearchFilesAsync(searchDto);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                _logger.LogDebug("Cache miss for file search: {SearchHash}", searchHash);
+                var files = await _baseFileService.SearchFilesAsync(searchDto);
 
-                       // Cache individual file metadata for short term
-                       await CacheFileMetadataAsync(files, TimeSpan.FromMinutes(10));
+                // Cache individual file metadata for shorter TTL during search
+                if (_enableAggressiveCaching && files.Any())
+                {
+                    await CacheFileMetadataListAsync(files, TimeSpan.FromMinutes(10));
+                }
 
-                       return files;
-                   }, SearchResultsCacheTTL);
+                return files;
+            }, _searchResultsCacheTTL) ?? new List<FileDto>();
         }
 
         public async Task<List<FileDto>> GetRecentFilesAsync(int count = 10)
         {
-            var cacheKey = $"file_recent_{count}";
+            var cacheKey = _cacheKeyService.GetCollectionKey<FileDto>("recent", count);
 
-            return await _cachingService.GetFileMetadataAsync<List<FileDto>>(cacheKey) ??
-                   await CacheAndReturn(cacheKey, async () =>
-                   {
-                       _logger.LogDebug("Cache miss for recent files: count {Count}", count);
-                       var files = await _baseFileService.GetRecentFilesAsync(count);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                _logger.LogDebug("Cache miss for recent files: count {Count}", count);
+                var files = await _baseFileService.GetRecentFilesAsync(count);
 
-                       // Also cache individual file metadata
-                       await CacheFileMetadataAsync(files);
+                if (_enableAggressiveCaching && files.Any())
+                {
+                    await CacheFileMetadataListAsync(files);
+                }
 
-                       return files;
-                   }, FileListCacheTTL);
+                return files;
+            }, _fileListCacheTTL) ?? new List<FileDto>();
         }
 
         public async Task<FilePreviewDto> GetFilePreviewAsync(int fileId)
@@ -209,26 +214,24 @@ namespace Backend.CMS.Infrastructure.Services
             if (fileId <= 0)
                 throw new ArgumentException("File ID must be greater than 0", nameof(fileId));
 
-            var cacheKey = $"file_preview_{fileId}";
+            var cacheKey = _cacheKeyService.GetCustomKey("file_preview", fileId);
 
-            return await _cachingService.GetFileMetadataAsync<FilePreviewDto>(cacheKey) ??
-                   await CacheAndReturn(cacheKey, async () =>
-                   {
-                       _logger.LogDebug("Cache miss for file preview: {FileId}", fileId);
-                       return await _baseFileService.GetFilePreviewAsync(fileId);
-                   }, PreviewCacheTTL);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                _logger.LogDebug("Cache miss for file preview: {FileId}", fileId);
+                return await _baseFileService.GetFilePreviewAsync(fileId);
+            }, _previewCacheTTL) ?? throw new InvalidOperationException($"Preview for file {fileId} could not be generated.");
         }
 
         public async Task<Dictionary<string, object>> GetFileStatisticsAsync()
         {
-            var cacheKey = "file_statistics";
+            var cacheKey = _cacheKeyService.GetCustomKey("file_statistics");
 
-            return await _cachingService.GetFileMetadataAsync<Dictionary<string, object>>(cacheKey) ??
-                   await CacheAndReturn(cacheKey, async () =>
-                   {
-                       _logger.LogDebug("Cache miss for file statistics");
-                       return await _baseFileService.GetFileStatisticsAsync();
-                   }, StatisticsCacheTTL);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                _logger.LogDebug("Cache miss for file statistics");
+                return await _baseFileService.GetFileStatisticsAsync();
+            }, _statisticsCacheTTL) ?? new Dictionary<string, object>();
         }
 
         public async Task<bool> FileExistsAsync(int fileId)
@@ -236,43 +239,40 @@ namespace Backend.CMS.Infrastructure.Services
             if (fileId <= 0)
                 return false;
 
-            var cacheKey = $"file_exists_{fileId}";
+            var cacheKey = _cacheKeyService.GetCustomKey("file_exists", fileId);
 
-            var cachedResult = await _cachingService.GetFileMetadataAsync<BooleanCacheWrapper>(cacheKey);
-            if (cachedResult != null)
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                _logger.LogDebug("Cache hit for file existence: {FileId} = {Exists}", fileId, cachedResult.Value);
-                return cachedResult.Value;
-            }
+                var exists = await _baseFileService.FileExistsAsync(fileId);
+                return new { Exists = exists };
+            }, _existenceCheckCacheTTL);
 
-            var exists = await _baseFileService.FileExistsAsync(fileId);
-            await _cachingService.SetFileMetadataAsync(cacheKey, new BooleanCacheWrapper { Value = exists }, ExistenceCheckCacheTTL);
+            var exists = result?.Exists ?? false;
+            _logger.LogDebug("File existence check for {FileId}: {Exists} (cached: {IsCached})",
+                fileId, exists, result != null);
 
-            _logger.LogDebug("Cache miss for file existence: {FileId} = {Exists}", fileId, exists);
             return exists;
         }
 
         public async Task<long> GetTotalFileSizeAsync(int? folderId = null)
         {
-            var cacheKey = $"file_total_size_{folderId ?? 0}";
+            var cacheKey = _cacheKeyService.GetCustomKey("file_total_size", folderId ?? 0);
 
-            var cachedResult = await _cachingService.GetFileMetadataAsync<LongCacheWrapper>(cacheKey);
-            if (cachedResult != null)
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                _logger.LogDebug("Cache hit for total file size: folder {FolderId} = {Size}", folderId, cachedResult.Value);
-                return cachedResult.Value;
-            }
+                var totalSize = await _baseFileService.GetTotalFileSizeAsync(folderId);
+                return new { TotalSize = totalSize };
+            }, _fileListCacheTTL);
 
-            var totalSize = await _baseFileService.GetTotalFileSizeAsync(folderId);
-            await _cachingService.SetFileMetadataAsync(cacheKey, new LongCacheWrapper { Value = totalSize }, FileListCacheTTL);
+            var size = result?.TotalSize ?? 0;
+            _logger.LogDebug("Total file size for folder {FolderId}: {Size} bytes", folderId, size);
 
-            _logger.LogDebug("Cache miss for total file size: folder {FolderId} = {Size}", folderId, totalSize);
-            return totalSize;
+            return size;
         }
 
         #endregion
 
-        #region Stream Operations (With content caching)
+        #region Cached Stream Operations
 
         public async Task<(Stream stream, string contentType, string fileName)> GetFileStreamAsync(int fileId)
         {
@@ -287,23 +287,31 @@ namespace Backend.CMS.Infrastructure.Services
                 await fileSemaphore.WaitAsync();
                 try
                 {
-                    // Try to get from cache first
-                    var cachedContent = await _cachingService.GetFileContentAsync(fileId);
-                    if (cachedContent != null)
-                    {
-                        _logger.LogDebug("File {FileId} served from cache, size: {Size} bytes", fileId, cachedContent.Length);
+                    // Check if we should cache file content
+                    var fileInfo = await GetFileByIdAsync(fileId);
+                    var shouldCacheContent = fileInfo.FileSize <= _maxCacheableFileSize;
 
-                        // Get file metadata to return correct content type and filename
-                        var fileInfo = await GetFileByIdAsync(fileId);
-                        var cachedStream = new MemoryStream(cachedContent, false); // Read-only stream
-                        return (cachedStream, fileInfo.ContentType, fileInfo.OriginalFileName);
+                    if (shouldCacheContent)
+                    {
+                        var contentCacheKey = _cacheKeyService.GetCustomKey("file_content", fileId);
+
+                        // Try to get cached content
+                        var cachedContent = await _cacheService.GetAsync<FileContentCache>(contentCacheKey);
+                        if (cachedContent != null)
+                        {
+                            _logger.LogDebug("File {FileId} served from cache, size: {Size} bytes",
+                                fileId, cachedContent.Content.Length);
+
+                            var cachedStream = new MemoryStream(cachedContent.Content, false);
+                            return (cachedStream, cachedContent.ContentType, cachedContent.FileName);
+                        }
                     }
 
-                    // Get from database
+                    // Get from database and optionally cache
                     var (stream, contentType, fileName) = await _baseFileService.GetFileStreamAsync(fileId);
 
-                    // Read content from stream for caching (only if stream supports seeking)
-                    if (stream.CanSeek && stream.CanRead)
+                    // Cache content if it's small enough and stream supports seeking
+                    if (shouldCacheContent && stream.CanSeek && stream.CanRead)
                     {
                         var originalPosition = stream.Position;
                         stream.Position = 0;
@@ -312,21 +320,19 @@ namespace Backend.CMS.Infrastructure.Services
                         await stream.CopyToAsync(memoryStream);
                         var content = memoryStream.ToArray();
 
-                        // Dispose the original stream since we have the content
+                        // Dispose the original stream
                         await stream.DisposeAsync();
 
-                        // Cache content asynchronously (don't wait)
-                        _ = CacheContentAsync(fileId, content, "file content");
+                        // Cache content asynchronously
+                        _ = CacheFileContentAsync(fileId, content, contentType, fileName);
 
                         // Return new stream with cached content
                         return (new MemoryStream(content, false), contentType, fileName);
                     }
-                    else
-                    {
-                        // Stream doesn't support seeking, return as-is without caching
-                        _logger.LogDebug("File {FileId} stream doesn't support seeking, not caching", fileId);
-                        return (stream, contentType, fileName);
-                    }
+
+                    _logger.LogDebug("File {FileId} served directly (not cached), size: {Size} bytes",
+                        fileId, fileInfo.FileSize);
+                    return (stream, contentType, fileName);
                 }
                 finally
                 {
@@ -357,21 +363,23 @@ namespace Backend.CMS.Infrastructure.Services
                 await fileSemaphore.WaitAsync();
                 try
                 {
-                    // Try to get from cache first
-                    var cachedThumbnail = await _cachingService.GetThumbnailContentAsync(fileId);
+                    var thumbnailCacheKey = _cacheKeyService.GetCustomKey("file_thumbnail", fileId);
+
+                    // Try to get cached thumbnail
+                    var cachedThumbnail = await _cacheService.GetAsync<FileContentCache>(thumbnailCacheKey);
                     if (cachedThumbnail != null)
                     {
                         _logger.LogDebug("Thumbnail for file {FileId} served from cache, size: {Size} bytes",
-                            fileId, cachedThumbnail.Length);
+                            fileId, cachedThumbnail.Content.Length);
 
-                        var cachedStream = new MemoryStream(cachedThumbnail, false);
-                        return (cachedStream, "image/jpeg", $"thumb_file_{fileId}.jpg");
+                        var cachedStream = new MemoryStream(cachedThumbnail.Content, false);
+                        return (cachedStream, cachedThumbnail.ContentType, cachedThumbnail.FileName);
                     }
 
                     // Get from database
                     var (stream, contentType, fileName) = await _baseFileService.GetThumbnailStreamAsync(fileId);
 
-                    // Read content from stream for caching
+                    // Cache thumbnail if stream supports seeking
                     if (stream.CanSeek && stream.CanRead)
                     {
                         var originalPosition = stream.Position;
@@ -385,16 +393,13 @@ namespace Backend.CMS.Infrastructure.Services
                         await stream.DisposeAsync();
 
                         // Cache thumbnail asynchronously
-                        _ = CacheThumbnailAsync(fileId, content);
+                        _ = CacheThumbnailAsync(fileId, content, contentType, fileName);
 
                         // Return new stream with cached content
                         return (new MemoryStream(content, false), contentType, fileName);
                     }
-                    else
-                    {
-                        _logger.LogDebug("Thumbnail stream for file {FileId} doesn't support seeking, not caching", fileId);
-                        return (stream, contentType, fileName);
-                    }
+
+                    return (stream, contentType, fileName);
                 }
                 finally
                 {
@@ -419,17 +424,28 @@ namespace Backend.CMS.Infrastructure.Services
         public async Task<FileDto> UpdateFileAsync(int fileId, UpdateFileDto updateDto)
         {
             var result = await _baseFileService.UpdateFileAsync(fileId, updateDto);
-            await InvalidateRelevantCacheAsync(fileId);
+            await InvalidateFileRelatedCacheAsync(fileId, updateDto.FolderId);
             return result;
         }
 
         public async Task<bool> DeleteFileAsync(int fileId)
         {
+            // Get file info before deletion for cache invalidation
+            FileDto? fileInfo = null;
+            try
+            {
+                fileInfo = await GetFileByIdAsync(fileId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not get file info before deletion for cache invalidation: {FileId}", fileId);
+            }
+
             var result = await _baseFileService.DeleteFileAsync(fileId);
             if (result)
             {
-                await InvalidateRelevantCacheAsync(fileId);
-                await InvalidateVerificationCacheAsync(fileId);
+                await InvalidateFileRelatedCacheAsync(fileId, fileInfo?.FolderId);
+                await InvalidateFileVerificationCacheAsync(fileId);
             }
             return result;
         }
@@ -442,24 +458,45 @@ namespace Backend.CMS.Infrastructure.Services
             var result = await _baseFileService.DeleteMultipleFilesAsync(fileIds);
             if (result)
             {
-                await InvalidateRelevantCacheAsync(fileIds);
-                await InvalidateVerificationCacheAsync(fileIds);
+                var invalidationTasks = fileIds.Select(fileId =>
+                    Task.WhenAll(
+                        InvalidateFileRelatedCacheAsync(fileId, null),
+                        InvalidateFileVerificationCacheAsync(fileId)
+                    ));
+                await Task.WhenAll(invalidationTasks);
             }
             return result;
         }
 
         public async Task<FileDto> MoveFileAsync(MoveFileDto moveDto)
         {
+            // Get original folder info for cache invalidation
+            FileDto? originalFile = null;
+            try
+            {
+                originalFile = await GetFileByIdAsync(moveDto.FileId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not get original file info before move: {FileId}", moveDto.FileId);
+            }
+
             var result = await _baseFileService.MoveFileAsync(moveDto);
-            await InvalidateRelevantCacheAsync(moveDto.FileId);
-            await InvalidateVerificationCacheAsync(moveDto.FileId);
+
+            // Invalidate cache for both old and new folders
+            await Task.WhenAll(
+                InvalidateFileRelatedCacheAsync(moveDto.FileId, originalFile?.FolderId),
+                InvalidateFileRelatedCacheAsync(moveDto.FileId, moveDto.NewFolderId),
+                InvalidateFileVerificationCacheAsync(moveDto.FileId)
+            );
+
             return result;
         }
 
         public async Task<FileDto> CopyFileAsync(CopyFileDto copyDto)
         {
             var result = await _baseFileService.CopyFileAsync(copyDto);
-            await InvalidateRelevantCacheAsync(result.Id);
+            await InvalidateFileRelatedCacheAsync(result.Id, result.FolderId);
             return result;
         }
 
@@ -468,8 +505,10 @@ namespace Backend.CMS.Infrastructure.Services
             var result = await _baseFileService.RenameFileAsync(fileId, newName);
             if (result)
             {
-                await InvalidateFileMetadataCacheAsync(fileId);
-                await InvalidateVerificationCacheAsync(fileId);
+                await Task.WhenAll(
+                    InvalidateFileMetadataCacheAsync(fileId),
+                    InvalidateFileVerificationCacheAsync(fileId)
+                );
             }
             return result;
         }
@@ -482,8 +521,12 @@ namespace Backend.CMS.Infrastructure.Services
             var result = await _baseFileService.BulkUpdateFilesAsync(fileIds, updateDto);
             if (result)
             {
-                await InvalidateRelevantCacheAsync(fileIds);
-                await InvalidateVerificationCacheAsync(fileIds);
+                var invalidationTasks = fileIds.Select(fileId =>
+                    Task.WhenAll(
+                        InvalidateFileRelatedCacheAsync(fileId, updateDto.FolderId),
+                        InvalidateFileVerificationCacheAsync(fileId)
+                    ));
+                await Task.WhenAll(invalidationTasks);
             }
             return result;
         }
@@ -496,8 +539,12 @@ namespace Backend.CMS.Infrastructure.Services
             var result = await _baseFileService.BulkMoveFilesAsync(fileIds, destinationFolderId);
             if (result)
             {
-                await InvalidateRelevantCacheAsync(fileIds);
-                await InvalidateVerificationCacheAsync(fileIds);
+                var invalidationTasks = fileIds.Select(fileId =>
+                    Task.WhenAll(
+                        InvalidateFileRelatedCacheAsync(fileId, destinationFolderId),
+                        InvalidateFileVerificationCacheAsync(fileId)
+                    ));
+                await Task.WhenAll(invalidationTasks);
             }
             return result;
         }
@@ -507,8 +554,8 @@ namespace Backend.CMS.Infrastructure.Services
             var results = await _baseFileService.BulkCopyFilesAsync(fileIds, destinationFolderId);
 
             // Invalidate cache for copied files
-            var tasks = results.Select(file => InvalidateFileMetadataCacheAsync(file.Id));
-            await Task.WhenAll(tasks);
+            var invalidationTasks = results.Select(file => InvalidateFileRelatedCacheAsync(file.Id, file.FolderId));
+            await Task.WhenAll(invalidationTasks);
 
             return results;
         }
@@ -518,8 +565,10 @@ namespace Backend.CMS.Infrastructure.Services
             var result = await _baseFileService.GenerateThumbnailAsync(fileId);
             if (result)
             {
-                await InvalidateRelevantCacheAsync(fileId);
-                await InvalidateVerificationCacheAsync(fileId);
+                await Task.WhenAll(
+                    InvalidateFileRelatedCacheAsync(fileId, null),
+                    InvalidateFileVerificationCacheAsync(fileId)
+                );
             }
             return result;
         }
@@ -529,15 +578,17 @@ namespace Backend.CMS.Infrastructure.Services
             var result = await _baseFileService.ProcessFileAsync(fileId);
             if (result)
             {
-                await InvalidateRelevantCacheAsync(fileId);
-                await InvalidateVerificationCacheAsync(fileId);
+                await Task.WhenAll(
+                    InvalidateFileRelatedCacheAsync(fileId, null),
+                    InvalidateFileVerificationCacheAsync(fileId)
+                );
             }
             return result;
         }
 
         #endregion
 
-        #region Verification (With caching)
+        #region Cached Verification
 
         public async Task<bool> VerifyFileIntegrityAsync(int fileId)
         {
@@ -549,53 +600,49 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Create cache key for verification result
-                var cacheKey = $"file_integrity_{fileId}";
+                var cacheKey = _cacheKeyService.GetCustomKey("file_integrity", fileId);
 
-                // Try to get cached verification result
-                var cachedResult = await _cachingService.GetFileMetadataAsync<FileIntegrityResult>(cacheKey);
-
-                if (cachedResult != null)
+                var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
-                    // Get file info to check if it was modified after verification
-                    var fileInfo = await GetFileByIdAsync(fileId);
+                    _logger.LogDebug("Performing file integrity verification for file {FileId}", fileId);
 
-                    // If file hasn't been modified since verification, return cached result
-                    if (fileInfo.UpdatedAt <= cachedResult.VerifiedAt)
+                    // Get file info to check if it was modified
+                    var fileInfo = await GetFileByIdAsync(fileId);
+                    var isValid = await _baseFileService.VerifyFileIntegrityAsync(fileId);
+
+                    return new FileIntegrityResult
                     {
-                        _logger.LogDebug("File integrity verification served from cache for file {FileId}: {IsValid}",
-                            fileId, cachedResult.IsValid);
-                        return cachedResult.IsValid;
+                        FileId = fileId,
+                        IsValid = isValid,
+                        VerifiedAt = DateTime.UtcNow,
+                        LastModified = fileInfo.UpdatedAt
+                    };
+                }, _verificationCacheTTL);
+
+                if (result != null)
+                {
+                    // Check if file was modified after verification
+                    var currentFileInfo = await GetFileByIdAsync(fileId);
+                    if (currentFileInfo.UpdatedAt > result.LastModified)
+                    {
+                        _logger.LogDebug("File {FileId} was modified after verification, re-verifying", fileId);
+
+                        // Invalidate cache and re-verify
+                        await _cacheService.RemoveAsync(cacheKey);
+                        return await VerifyFileIntegrityAsync(fileId);
                     }
 
-                    _logger.LogDebug("File {FileId} was modified after verification, re-verifying", fileId);
+                    _logger.LogDebug("File integrity verification served from cache for file {FileId}: {IsValid}",
+                        fileId, result.IsValid);
+                    return result.IsValid;
                 }
 
-                // Perform actual verification
-                _logger.LogDebug("Performing file integrity verification for file {FileId}", fileId);
-                var isValid = await _baseFileService.VerifyFileIntegrityAsync(fileId);
-
-                // Cache the result with timestamp
-                var verificationResult = new FileIntegrityResult
-                {
-                    FileId = fileId,
-                    IsValid = isValid,
-                    VerifiedAt = DateTime.UtcNow
-                };
-
-                // Cache for 1 hour - verification is expensive but files don't change often
-                await _cachingService.SetFileMetadataAsync(cacheKey, verificationResult, TimeSpan.FromHours(1));
-
-                _logger.LogDebug("File integrity verification completed for file {FileId}: {IsValid} (cached)",
-                    fileId, isValid);
-
-                return isValid;
+                // Fallback
+                return await _baseFileService.VerifyFileIntegrityAsync(fileId);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during cached file integrity verification for file {FileId}", fileId);
-
-                // Fall back to base service on error
                 return await _baseFileService.VerifyFileIntegrityAsync(fileId);
             }
             finally
@@ -624,25 +671,18 @@ namespace Backend.CMS.Infrastructure.Services
 
         #region Cache Helper Methods
 
-        private async Task<T?> CacheAndReturn<T>(string cacheKey, Func<Task<T>> getItem, TimeSpan? expiration = null) where T : class
+        private async Task CacheFileMetadataListAsync(IEnumerable<FileDto> files, TimeSpan? customTtl = null)
         {
-            var item = await getItem();
-            if (item != null)
-            {
-                await _cachingService.SetFileMetadataAsync(cacheKey, item, expiration);
-            }
-            return item;
-        }
+            if (!_enableAggressiveCaching || !files.Any())
+                return;
 
-        private async Task CacheFileMetadataAsync(IEnumerable<FileDto> files, TimeSpan? customTtl = null)
-        {
-            var ttl = customTtl ?? FileMetadataCacheTTL;
-            var tasks = files.Select(async file =>
+            var ttl = customTtl ?? _fileMetadataCacheTTL;
+            var cachingTasks = files.Select(async file =>
             {
                 try
                 {
-                    var cacheKey = $"file_metadata_{file.Id}";
-                    await _cachingService.SetFileMetadataAsync(cacheKey, file, ttl);
+                    var cacheKey = _cacheKeyService.GetEntityKey<FileDto>(file.Id);
+                    await _cacheService.SetAsync(cacheKey, file, ttl);
                 }
                 catch (Exception ex)
                 {
@@ -650,52 +690,59 @@ namespace Backend.CMS.Infrastructure.Services
                 }
             });
 
-            await Task.WhenAll(tasks);
+            await Task.WhenAll(cachingTasks);
             _logger.LogDebug("Cached metadata for {Count} files", files.Count());
         }
 
-        private string CreateSearchCacheKey(FileSearchDto searchDto)
+        private string GenerateSearchHash(FileSearchDto searchDto)
         {
-            var keyComponents = new List<string>
+            // Create a consistent hash based on search parameters
+            var searchData = new
             {
-                searchDto.SearchTerm?.ToLowerInvariant() ?? "null",
-                searchDto.FileType?.ToString() ?? "null",
-                searchDto.FolderId?.ToString() ?? "null",
-                searchDto.IsPublic?.ToString() ?? "null",
-                searchDto.CreatedFrom?.ToString("yyyyMMdd") ?? "null",
-                searchDto.CreatedTo?.ToString("yyyyMMdd") ?? "null",
-                searchDto.MinSize?.ToString() ?? "null",
-                searchDto.MaxSize?.ToString() ?? "null",
-                searchDto.SortBy ?? "null",
-                searchDto.SortDirection ?? "null",
-                searchDto.Page.ToString(),
-                searchDto.PageSize.ToString()
+                SearchTerm = searchDto.SearchTerm?.ToLowerInvariant(), 
+                searchDto.FileType,
+                searchDto.FolderId,
+                searchDto.IsPublic,
+                CreatedFrom = searchDto.CreatedFrom?.ToString("yyyyMMdd"),
+                CreatedTo = searchDto.CreatedTo?.ToString("yyyyMMdd"),
+                searchDto.MinSize,
+                searchDto.MaxSize,
+                SortBy = searchDto.SortBy?.ToLowerInvariant(), 
+                SortDirection = searchDto.SortDirection?.ToLowerInvariant(),
+                searchDto.Page,
+                searchDto.PageSize
             };
 
-            return string.Join("_", keyComponents);
+            var json = JsonSerializer.Serialize(searchData);
+            using var sha256 = SHA256.Create();
+            var hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(json));
+            return Convert.ToBase64String(hashBytes).Replace("/", "_").Replace("+", "-").TrimEnd('=')[..16];
         }
 
-        private async Task InvalidateRelevantCacheAsync(int fileId)
+        private async Task InvalidateFileRelatedCacheAsync(int fileId, int? folderId)
         {
-            await Task.WhenAll(
-                InvalidateFileMetadataCacheAsync(fileId),
-                InvalidateFileExistenceCacheAsync(fileId),
-                _cachingService.InvalidateFileAsync(fileId)
-            );
-        }
-
-        private async Task InvalidateRelevantCacheAsync(List<int> fileIds)
-        {
-            var tasks = new List<Task>();
-
-            foreach (var fileId in fileIds)
+            try
             {
-                tasks.Add(InvalidateFileMetadataCacheAsync(fileId));
-                tasks.Add(InvalidateFileExistenceCacheAsync(fileId));
-                tasks.Add(_cachingService.InvalidateFileAsync(fileId));
-            }
+                var invalidationTasks = new List<Task>
+                {
+                    InvalidateFileMetadataCacheAsync(fileId),
+                    InvalidateFileContentCacheAsync(fileId),
+                    InvalidateFileExistenceCacheAsync(fileId),
+                    InvalidateGlobalFileCacheAsync(),
+                    InvalidateSearchCacheAsync()
+                };
 
-            await Task.WhenAll(tasks);
+                if (folderId.HasValue)
+                {
+                    invalidationTasks.Add(InvalidateFolderRelatedCacheAsync(folderId.Value));
+                }
+
+                await Task.WhenAll(invalidationTasks);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating cache for file {FileId}", fileId);
+            }
         }
 
         private async Task InvalidateFileMetadataCacheAsync(int fileId)
@@ -704,13 +751,11 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var cacheKeys = new[]
                 {
-                    $"file_metadata_{fileId}",
-                    $"file_preview_{fileId}"
+                    _cacheKeyService.GetEntityKey<FileDto>(fileId),
+                    _cacheKeyService.GetCustomKey("file_preview", fileId)
                 };
 
-                var tasks = cacheKeys.Select(key => _cachingService.InvalidateFileMetadataAsync(key));
-                await Task.WhenAll(tasks);
-
+                await _cacheService.RemoveAsync(cacheKeys);
                 _logger.LogDebug("Invalidated metadata cache for file {FileId}", fileId);
             }
             catch (Exception ex)
@@ -719,11 +764,31 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
+        private async Task InvalidateFileContentCacheAsync(int fileId)
+        {
+            try
+            {
+                var cacheKeys = new[]
+                {
+                    _cacheKeyService.GetCustomKey("file_content", fileId),
+                    _cacheKeyService.GetCustomKey("file_thumbnail", fileId)
+                };
+
+                await _cacheService.RemoveAsync(cacheKeys);
+                _logger.LogDebug("Invalidated content cache for file {FileId}", fileId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to invalidate content cache for file {FileId}", fileId);
+            }
+        }
+
         private async Task InvalidateFileExistenceCacheAsync(int fileId)
         {
             try
             {
-                await _cachingService.InvalidateFileMetadataAsync($"file_exists_{fileId}");
+                var cacheKey = _cacheKeyService.GetCustomKey("file_exists", fileId);
+                await _cacheService.RemoveAsync(cacheKey);
                 _logger.LogDebug("Invalidated existence cache for file {FileId}", fileId);
             }
             catch (Exception ex)
@@ -732,11 +797,12 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private async Task InvalidateVerificationCacheAsync(int fileId)
+        private async Task InvalidateFileVerificationCacheAsync(int fileId)
         {
             try
             {
-                await _cachingService.InvalidateFileMetadataAsync($"file_integrity_{fileId}");
+                var cacheKey = _cacheKeyService.GetCustomKey("file_integrity", fileId);
+                await _cacheService.RemoveAsync(cacheKey);
                 _logger.LogDebug("Verification cache invalidated for file {FileId}", fileId);
             }
             catch (Exception ex)
@@ -745,16 +811,49 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private async Task InvalidateVerificationCacheAsync(List<int> fileIds)
+        private async Task InvalidateGlobalFileCacheAsync()
         {
             try
             {
-                var tasks = fileIds.Select(InvalidateVerificationCacheAsync);
-                await Task.WhenAll(tasks);
+                var patterns = new[]
+                {
+                    "file:list:*",
+                    "file:recent:*",
+                    "file_statistics",
+                    "file_total_size:*"
+                };
+
+                var invalidationTasks = patterns.Select(pattern => _cacheService.RemoveByPatternAsync(pattern));
+                await Task.WhenAll(invalidationTasks);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to invalidate verification cache for some files");
+                _logger.LogWarning(ex, "Failed to invalidate global file cache");
+            }
+        }
+
+        private async Task InvalidateSearchCacheAsync()
+        {
+            try
+            {
+                await _cacheService.RemoveByPatternAsync("file:query:search:*");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to invalidate search cache");
+            }
+        }
+
+        private async Task InvalidateFolderRelatedCacheAsync(int folderId)
+        {
+            try
+            {
+                await _cacheService.RemoveByPatternAsync($"file:*:folder:{folderId}:*");
+                await _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("file_total_size", folderId));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to invalidate folder-related cache for folder {FolderId}", folderId);
             }
         }
 
@@ -763,25 +862,42 @@ namespace Backend.CMS.Infrastructure.Services
             return _fileSemaphores.GetOrAdd(fileId, _ => new SemaphoreSlim(1, 1));
         }
 
-        private async Task CacheContentAsync(int fileId, byte[] content, string contentType)
+        private async Task CacheFileContentAsync(int fileId, byte[] content, string contentType, string fileName)
         {
             try
             {
-                await _cachingService.SetFileContentAsync(fileId, content);
-                _logger.LogDebug("Cached {ContentType} for file {FileId}, size: {Size} bytes",
-                    contentType, fileId, content.Length);
+                var cacheKey = _cacheKeyService.GetCustomKey("file_content", fileId);
+                var cacheData = new FileContentCache
+                {
+                    Content = content,
+                    ContentType = contentType,
+                    FileName = fileName,
+                    CachedAt = DateTime.UtcNow
+                };
+
+                await _cacheService.SetAsync(cacheKey, cacheData, _fileContentCacheTTL);
+                _logger.LogDebug("Cached file content for file {FileId}, size: {Size} bytes", fileId, content.Length);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to cache {ContentType} for file {FileId}", contentType, fileId);
+                _logger.LogWarning(ex, "Failed to cache file content for file {FileId}", fileId);
             }
         }
 
-        private async Task CacheThumbnailAsync(int fileId, byte[] content)
+        private async Task CacheThumbnailAsync(int fileId, byte[] content, string contentType, string fileName)
         {
             try
             {
-                await _cachingService.SetThumbnailContentAsync(fileId, content);
+                var cacheKey = _cacheKeyService.GetCustomKey("file_thumbnail", fileId);
+                var cacheData = new FileContentCache
+                {
+                    Content = content,
+                    ContentType = contentType,
+                    FileName = fileName,
+                    CachedAt = DateTime.UtcNow
+                };
+
+                await _cacheService.SetAsync(cacheKey, cacheData, _fileContentCacheTTL);
                 _logger.LogDebug("Cached thumbnail for file {FileId}, size: {Size} bytes", fileId, content.Length);
             }
             catch (Exception ex)
@@ -808,7 +924,7 @@ namespace Backend.CMS.Infrastructure.Services
                         }
                     }
 
-                    foreach (var key in keysToRemove.Take(100)) // Limit cleanup to prevent blocking
+                    foreach (var key in keysToRemove.Take(100)) // Limit cleanup
                     {
                         if (_fileSemaphores.TryRemove(key, out var semaphore))
                         {
@@ -827,6 +943,26 @@ namespace Backend.CMS.Infrastructure.Services
                     _logger.LogWarning(ex, "Error during semaphore cleanup");
                 }
             }
+        }
+
+        #endregion
+
+        #region Supporting Classes
+
+        private class FileContentCache
+        {
+            public byte[] Content { get; set; } = Array.Empty<byte>();
+            public string ContentType { get; set; } = string.Empty;
+            public string FileName { get; set; } = string.Empty;
+            public DateTime CachedAt { get; set; }
+        }
+
+        private class FileIntegrityResult
+        {
+            public int FileId { get; set; }
+            public bool IsValid { get; set; }
+            public DateTime VerifiedAt { get; set; }
+            public DateTime LastModified { get; set; }
         }
 
         #endregion
@@ -857,12 +993,6 @@ namespace Backend.CMS.Infrastructure.Services
                 if (_baseFileService is IDisposable disposableService)
                 {
                     disposableService.Dispose();
-                }
-
-                // Dispose caching service if it implements IDisposable
-                if (_cachingService is IDisposable disposableCachingService)
-                {
-                    disposableCachingService.Dispose();
                 }
 
                 _disposed = true;

@@ -4,6 +4,9 @@ using Backend.CMS.Application.Common;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Caching.Extensions;
+using Backend.CMS.Infrastructure.Caching.Interfaces;
+using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.Events;
 using Backend.CMS.Infrastructure.Interfaces;
@@ -20,6 +23,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
@@ -46,7 +50,7 @@ ConfigureBasicServices(builder);
 ConfigureDatabases(builder);
 
 // Configure Redis caching
-ConfigureRedis(builder);
+ConfigureCachingSystem(builder);
 
 // Configure Hangfire
 ConfigureHangfire(builder);
@@ -167,11 +171,11 @@ static void ConfigureDatabases(WebApplicationBuilder builder)
     builder.Services.AddScoped<IDatabaseInitializer, DatabaseInitializer>();
 }
 
-static void ConfigureRedis(WebApplicationBuilder builder)
+static void ConfigureCachingSystem(WebApplicationBuilder builder)
 {
     var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
 
-    // Configure Redis cache using the new enterprise cache service
+    // Configure Redis 
     if (builder.Environment.IsDevelopment())
     {
         builder.Services.AddDevelopmentCaching(redisConnectionString);
@@ -186,14 +190,7 @@ static void ConfigureRedis(WebApplicationBuilder builder)
         builder.Services.AddHighPerformanceCaching(redisConnectionString);
     }
 
-    // Alternative: environment-based configuration
-    // builder.Services.AddEnvironmentBasedCaching(builder.Configuration, builder.Environment.EnvironmentName);
-
-    // Alternative: configuration-based profiles
-    // builder.Services.AddConfiguredCaching(builder.Configuration, "CustomProfile");
-
-    // Keep the existing Redis connection multiplexer for backward compatibility
-    // (This is now handled automatically by the cache service extensions)
+    // Register Redis connection multiplexer
     builder.Services.AddSingleton<IConnectionMultiplexer>(provider =>
     {
         var configuration = provider.GetService<IConfiguration>();
@@ -204,11 +201,41 @@ static void ConfigureRedis(WebApplicationBuilder builder)
         configurationOptions.ConnectRetry = 3;
         configurationOptions.ConnectTimeout = 5000;
         configurationOptions.SyncTimeout = 5000;
-        //configurationOptions.AllowAdmin = true; 
 
         return ConnectionMultiplexer.Connect(configurationOptions);
     });
+
+    // Register distributed cache for compatibility
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnectionString;
+        options.InstanceName = "BackendCMS";
+    });
+
+    // Register cache key service
+    builder.Services.AddScoped<ICacheKeyService, CacheKeyService>();
+
+    // Register the main cache service (this registers all interfaces)
+    builder.Services.AddScoped<RedisCacheService>();
+
+    // Register interface implementations pointing to RedisCacheService
+    builder.Services.AddScoped<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheService>(provider =>
+        provider.GetRequiredService<RedisCacheService>());
+
+    builder.Services.AddScoped<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheInvalidationService>(provider =>
+        provider.GetRequiredService<RedisCacheService>());
+
+    builder.Services.AddScoped<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheMonitoringService>(provider =>
+        provider.GetRequiredService<RedisCacheService>());
+
+    // Register background services for cache management
+    builder.Services.AddHostedService<CacheHealthCheckService>();
+    builder.Services.AddHostedService<CacheStatisticsService>();
+
+    // Register cache event handler for automatic invalidation
+    builder.Services.AddScoped<ICacheEventHandler, CacheEventHandler>();
 }
+
 static void ConfigureHangfire(WebApplicationBuilder builder)
 {
     var hangfireConnectionString = builder.Configuration.GetConnectionString("HangfireConnection")
@@ -484,14 +511,12 @@ static void RegisterServices(WebApplicationBuilder builder)
 {
     RegisterRepositories(builder);
     RegisterCoreServices(builder);
-    RegisterCachingServices(builder);
     RegisterBusinessServices(builder);
     RegisterSearchServices(builder);
     RegisterFileServices(builder);
     RegisterBackgroundJobs(builder);
     RegisterSocialAuthServices(builder);
     RegisterProductServices(builder);
-    RegisterBackgroundServices(builder);
 }
 
 static void RegisterRepositories(WebApplicationBuilder builder)
@@ -542,19 +567,6 @@ static void RegisterCoreServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IContactDetailsService, ContactDetailsService>();
 }
 
-static void RegisterCachingServices(WebApplicationBuilder builder)
-{
-    // The new cache service is already registered by the ConfigureRedis method above
-    // No additional registration needed
-
-    // If you want to register the old cache service alongside for migration:
-    builder.Services.AddScoped<Backend.CMS.Infrastructure.Services.CacheService>();
-    builder.Services.AddScoped<Backend.CMS.Infrastructure.Interfaces.ICacheService>(provider =>
-        provider.GetRequiredService<Backend.CMS.Infrastructure.Services.CacheService>());
-    builder.Services.AddScoped<Backend.CMS.Infrastructure.Interfaces.ICacheInvalidationService>(provider =>
-        provider.GetRequiredService<Backend.CMS.Infrastructure.Services.CacheService>());
-}
-
 static void RegisterBusinessServices(WebApplicationBuilder builder)
 {
     // Business services
@@ -579,28 +591,18 @@ static void RegisterSearchServices(WebApplicationBuilder builder)
 
 static void RegisterFileServices(WebApplicationBuilder builder)
 {
-    // Register file caching service
-    builder.Services.AddScoped<IFileCachingService, FileCachingService>();
-
-    // Register base file service
+    // Register base services
     builder.Services.AddScoped<FileService>();
+    builder.Services.AddScoped<FolderService>();
 
     // Register additional file services
     builder.Services.AddScoped<IImageProcessingService, ImageProcessingService>();
     builder.Services.AddScoped<IFileValidationService, FileValidationService>();
-    builder.Services.AddScoped<IFolderService, FolderService>();
     builder.Services.AddScoped<DatabaseFilePerformanceService>();
     builder.Services.AddScoped<IDownloadTokenService, DownloadTokenService>();
 
-    // Register the cached file service as the main IFileService implementation
-    builder.Services.AddScoped<IFileService>(provider =>
-    {
-        var baseService = provider.GetRequiredService<FileService>();
-        var cachingService = provider.GetRequiredService<IFileCachingService>();
-        var logger = provider.GetRequiredService<ILogger<CachedFileService>>();
-
-        return new CachedFileService(baseService, cachingService, logger);
-    });
+    builder.Services.AddScoped<IFileService, CachedFileService>();
+    builder.Services.AddScoped<IFolderService, FolderService>();
 }
 
 static void RegisterBackgroundJobs(WebApplicationBuilder builder)
@@ -625,11 +627,6 @@ static void RegisterProductServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IRepository<ProductImage>, Repository<ProductImage>>();
     builder.Services.AddScoped<IRepository<ProductOption>, Repository<ProductOption>>();
     builder.Services.AddScoped<IRepository<ProductOptionValue>, Repository<ProductOptionValue>>();
-}
-
-static void RegisterBackgroundServices(WebApplicationBuilder builder)
-{
-    builder.Services.AddHostedService<CacheManagementService>();
 }
 
 static void ConfigureSwagger(WebApplicationBuilder builder)

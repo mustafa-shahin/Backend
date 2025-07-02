@@ -6,13 +6,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
-
 namespace Backend.CMS.Infrastructure.Data
 {
     public class ApplicationDbContextWithCacheInvalidation : ApplicationDbContext
     {
         private readonly IServiceProvider _serviceProvider;
         private readonly ConcurrentBag<(string EntityType, int EntityId, string Operation)> _changedEntities;
+        private readonly ILogger<ApplicationDbContextWithCacheInvalidation>? _logger;
 
         public ApplicationDbContextWithCacheInvalidation(
             DbContextOptions options,
@@ -22,6 +22,17 @@ namespace Backend.CMS.Infrastructure.Data
         {
             _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
             _changedEntities = new ConcurrentBag<(string, int, string)>();
+
+            // Get logger safely
+            try
+            {
+                _logger = _serviceProvider.GetService<ILogger<ApplicationDbContextWithCacheInvalidation>>();
+            }
+            catch
+            {
+                // Logger may not be available during initialization
+                _logger = null;
+            }
         }
 
         public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
@@ -72,12 +83,14 @@ namespace Backend.CMS.Infrastructure.Data
                     var operation = entry.State.ToString();
 
                     _changedEntities.Add((entityType, entity.Id, operation));
+
+                    _logger?.LogDebug("Captured entity change: {EntityType} {EntityId} - {Operation}",
+                        entityType, entity.Id, operation);
                 }
                 catch (Exception ex)
                 {
                     // Log but don't fail the save operation
-                    var logger = _serviceProvider.GetService<ILogger<ApplicationDbContextWithCacheInvalidation>>();
-                    logger?.LogWarning(ex, "Error capturing entity change for cache invalidation");
+                    _logger?.LogWarning(ex, "Error capturing entity change for cache invalidation");
                 }
             }
         }
@@ -97,13 +110,18 @@ namespace Backend.CMS.Infrastructure.Data
                 {
                     var changes = _changedEntities.ToList();
                     await cacheEventHandler.HandleBatchEntityChangesAsync(changes);
+
+                    _logger?.LogDebug("Processed cache invalidation for {Count} entity changes", changes.Count);
+                }
+                else
+                {
+                    _logger?.LogWarning("ICacheEventHandler not available for cache invalidation");
                 }
             }
             catch (Exception ex)
             {
                 // Log error but don't throw - cache invalidation failure shouldn't break the application
-                var logger = _serviceProvider.GetService<ILogger<ApplicationDbContextWithCacheInvalidation>>();
-                logger?.LogError(ex, "Error during automatic cache invalidation");
+                _logger?.LogError(ex, "Error during automatic cache invalidation");
             }
             finally
             {
