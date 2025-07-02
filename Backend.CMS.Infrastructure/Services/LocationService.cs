@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class LocationService : ILocationService
+    public class LocationService : BaseCacheAwareService<Location, LocationDto>, ILocationService
     {
         private readonly ILocationRepository _locationRepository;
         private readonly IRepository<Company> _companyRepository;
@@ -17,7 +17,6 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ApplicationDbContext _context;
         private readonly IUserSessionService _userSessionService;
         private readonly IMapper _mapper;
-        private readonly ILogger<LocationService> _logger;
 
         public LocationService(
             ILocationRepository locationRepository,
@@ -25,8 +24,10 @@ namespace Backend.CMS.Infrastructure.Services
             IRepository<LocationOpeningHour> openingHourRepository,
             ApplicationDbContext context,
             IUserSessionService userSessionService,
+            ICacheService cacheService,
             IMapper mapper,
             ILogger<LocationService> logger)
+            : base(locationRepository, cacheService, logger)
         {
             _locationRepository = locationRepository ?? throw new ArgumentNullException(nameof(locationRepository));
             _companyRepository = companyRepository ?? throw new ArgumentNullException(nameof(companyRepository));
@@ -34,14 +35,33 @@ namespace Backend.CMS.Infrastructure.Services
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        }
+        protected override string GetEntityCacheKey(int id) => $"location:{id}";
+
+        protected override string[] GetEntityCachePatterns(int id) => new[]
+        {
+        $"location:{id}",
+        "locations:*",
+        "location:main"
+    };
+
+        protected override string[] GetAllEntitiesCachePatterns() => new[]
+        {
+        "locations:*",
+        "location:main"
+    };
+
+        protected override async Task<LocationDto> MapToDto(Location entity)
+        {
+            return _mapper.Map<LocationDto>(entity);
         }
 
-        public async Task<LocationDto> GetLocationByIdAsync(int locationId)
+        protected override async Task<List<LocationDto>> MapToDtos(IEnumerable<Location> entities)
         {
-            if (locationId <= 0)
-                throw new ArgumentException("Location ID must be greater than 0", nameof(locationId));
-
+            return _mapper.Map<List<LocationDto>>(entities);
+        }
+        public  async Task<LocationDto> GetLocationByIdAsync(int locationId)
+        {
             try
             {
                 var location = await _locationRepository.GetWithAddressesAndContactsAsync(locationId);
@@ -53,7 +73,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 return _mapper.Map<LocationDto>(location);
             }
-            catch (Exception ex) when (!(ex is ArgumentException))
+            catch (Exception ex) when (ex is not ArgumentException)
             {
                 _logger.LogError(ex, "Error retrieving location {LocationId}", locationId);
                 throw;
@@ -99,8 +119,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<LocationDto> CreateLocationAsync(CreateLocationDto createLocationDto)
         {
-            if (createLocationDto == null)
-                throw new ArgumentNullException(nameof(createLocationDto));
+            ArgumentNullException.ThrowIfNull(createLocationDto);
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
@@ -114,7 +133,6 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new ArgumentException("Company not found. Please create a company first.");
                 }
 
-                // Validate location code uniqueness
                 if (!string.IsNullOrEmpty(createLocationDto.LocationCode) &&
                     await _locationRepository.LocationCodeExistsAsync(createLocationDto.LocationCode))
                 {
@@ -130,8 +148,7 @@ namespace Backend.CMS.Infrastructure.Services
                 location.CreatedAt = DateTime.UtcNow;
                 location.UpdatedAt = DateTime.UtcNow;
 
-                await _locationRepository.AddAsync(location);
-                await _locationRepository.SaveChangesAsync();
+                var result = await CreateAsync(location);
 
                 // Handle related data creation in parallel
                 var tasks = new List<Task>();
@@ -151,7 +168,7 @@ namespace Backend.CMS.Infrastructure.Services
                     tasks.Add(CreateLocationContactDetailsAsync(location.Id, createLocationDto.ContactDetails, currentUserId));
                 }
 
-                if (tasks.Any())
+                if (tasks.Count != 0)
                 {
                     await Task.WhenAll(tasks);
                 }
@@ -174,23 +191,18 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<LocationDto> UpdateLocationAsync(int locationId, UpdateLocationDto updateLocationDto)
         {
-            if (locationId <= 0)
-                throw new ArgumentException("Location ID must be greater than 0", nameof(locationId));
-
-            if (updateLocationDto == null)
-                throw new ArgumentNullException(nameof(updateLocationDto));
+            ArgumentNullException.ThrowIfNull(updateLocationDto);
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var location = await _locationRepository.GetByIdAsync(locationId);
+                var location = await _repository.GetByIdAsync(locationId);
                 if (location == null)
                 {
                     _logger.LogWarning("Location {LocationId} not found for update", locationId);
                     throw new ArgumentException("Location not found");
                 }
 
-                // Validate location code uniqueness
                 if (!string.IsNullOrEmpty(updateLocationDto.LocationCode) &&
                     await _locationRepository.LocationCodeExistsAsync(updateLocationDto.LocationCode, locationId))
                 {
@@ -199,11 +211,11 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
 
-                // Update location properties
                 _mapper.Map(updateLocationDto, location);
                 location.UpdatedAt = DateTime.UtcNow;
                 location.UpdatedByUserId = currentUserId;
-                _locationRepository.Update(location);
+
+                var result = await UpdateAsync(location);
 
                 // Handle related data updates in parallel
                 var tasks = new List<Task>();
@@ -246,13 +258,10 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> DeleteLocationAsync(int locationId)
         {
-            if (locationId <= 0)
-                throw new ArgumentException("Location ID must be greater than 0", nameof(locationId));
-
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var result = await _locationRepository.SoftDeleteAsync(locationId, currentUserId);
+                var result = await DeleteAsync(locationId, currentUserId);
 
                 if (result)
                 {
@@ -271,6 +280,7 @@ namespace Backend.CMS.Infrastructure.Services
                 throw;
             }
         }
+
 
         public async Task<bool> SetMainLocationAsync(int locationId)
         {
