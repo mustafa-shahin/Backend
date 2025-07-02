@@ -10,13 +10,15 @@ using Backend.CMS.Infrastructure.Interfaces;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class PageService : BaseCacheAwareService<Page, PageDto>, IPageService
+    public class PageService : IPageService
     {
         private readonly IPageRepository _pageRepository;
         private readonly IRepository<PageVersion> _versionRepository;
+        private readonly ICacheService _cacheService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
+        private readonly ILogger<PageService> _logger;
         private readonly JsonSerializerOptions _jsonOptions;
 
         public PageService(
@@ -27,13 +29,14 @@ namespace Backend.CMS.Infrastructure.Services
             IUserSessionService userSessionService,
             IMapper mapper,
             ILogger<PageService> logger)
-            : base(pageRepository, cacheService, logger)
         {
             _pageRepository = pageRepository ?? throw new ArgumentNullException(nameof(pageRepository));
             _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
+            _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
             _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
             _jsonOptions = new JsonSerializerOptions
             {
@@ -42,32 +45,7 @@ namespace Backend.CMS.Infrastructure.Services
                 PropertyNameCaseInsensitive = true
             };
         }
-        protected override string GetEntityCacheKey(int id) => $"page:{id}";
 
-        protected override string[] GetEntityCachePatterns(int id) => new[]
-        {
-        $"page:{id}",
-        "pages:*",
-        "page-hierarchy:*",
-        "published-pages:*"
-    };
-
-        protected override string[] GetAllEntitiesCachePatterns() => new[]
-        {
-        "pages:*",
-        "page-hierarchy:*",
-        "published-pages:*"
-    };
-
-        protected override async Task<PageDto> MapToDto(Page entity)
-        {
-            return _mapper.Map<PageDto>(entity);
-        }
-
-        protected override async Task<List<PageDto>> MapToDtos(IEnumerable<Page> entities)
-        {
-            return _mapper.Map<List<PageDto>>(entities);
-        }
         public async Task<PageDto> GetPageByIdAsync(int pageId)
         {
             if (pageId <= 0)
@@ -75,8 +53,15 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var dto = await GetByIdAsync(pageId);
-                return dto ?? throw new ArgumentException("Page not found");
+                var cacheKey = CacheKeys.PageById(pageId);
+                return await _cacheService.GetAsync(cacheKey, async () =>
+                {
+                    var page = await _pageRepository.GetByIdAsync(pageId);
+                    if (page == null)
+                        throw new ArgumentException("Page not found");
+
+                    return _mapper.Map<PageDto>(page);
+                }, cacheEmptyCollections: false);
             }
             catch (Exception ex)
             {
@@ -202,7 +187,9 @@ namespace Backend.CMS.Infrastructure.Services
 
                 if (createPageDto.ParentPageId.HasValue)
                 {
-                    var parentPage = await _repository.GetByIdAsync(createPageDto.ParentPageId.Value) ?? throw new ArgumentException("Parent page not found");
+                    var parentPage = await _pageRepository.GetByIdAsync(createPageDto.ParentPageId.Value);
+                    if (parentPage == null)
+                        throw new ArgumentException("Parent page not found");
                 }
 
                 var page = _mapper.Map<Page>(createPageDto);
@@ -214,9 +201,11 @@ namespace Backend.CMS.Infrastructure.Services
                 page.CreatedAt = DateTime.UtcNow;
                 page.UpdatedAt = DateTime.UtcNow;
 
+                // Validate content
                 ValidatePageContent(page);
 
-                var result = await CreateAsync(page);
+                await _pageRepository.AddAsync(page);
+                await _pageRepository.SaveChangesAsync();
 
                 // Create initial version
                 await CreatePageVersionAsync(page.Id, "Initial page creation");
@@ -225,7 +214,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _logger.LogInformation("Created page {PageId} with slug {Slug}", page.Id, page.Slug);
 
-                return result;
+                return _mapper.Map<PageDto>(page);
             }
             catch (Exception ex)
             {
@@ -240,7 +229,10 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var page = await _repository.GetByIdAsync(pageId) ?? throw new ArgumentException("Page not found");
+                var page = await _pageRepository.GetByIdAsync(pageId);
+                if (page == null)
+                    throw new ArgumentException("Page not found");
+
                 var normalizedSlug = NormalizeSlug(updatePageDto.Slug);
                 if (await _pageRepository.SlugExistsAsync(normalizedSlug, pageId))
                     throw new ArgumentException("A page with this slug already exists");
@@ -250,7 +242,10 @@ namespace Backend.CMS.Infrastructure.Services
                     if (updatePageDto.ParentPageId == pageId)
                         throw new ArgumentException("A page cannot be its own parent");
 
-                    var parentPage = await _repository.GetByIdAsync(updatePageDto.ParentPageId.Value) ?? throw new ArgumentException("Parent page not found");
+                    var parentPage = await _pageRepository.GetByIdAsync(updatePageDto.ParentPageId.Value);
+                    if (parentPage == null)
+                        throw new ArgumentException("Parent page not found");
+
                     if (await WouldCreateCircularReferenceAsync(pageId, updatePageDto.ParentPageId.Value))
                         throw new ArgumentException("Setting this parent would create a circular reference");
                 }
@@ -260,20 +255,23 @@ namespace Backend.CMS.Infrastructure.Services
                 // Create version before updating
                 await CreatePageVersionAsync(pageId, "Page updated");
 
+                // Update page properties
                 _mapper.Map(updatePageDto, page);
                 page.Slug = normalizedSlug;
                 page.UpdatedByUserId = currentUserId;
                 page.UpdatedAt = DateTime.UtcNow;
 
+                // Validate content
                 ValidatePageContent(page);
 
-                var result = await UpdateAsync(page);
+                _pageRepository.Update(page);
+                await _pageRepository.SaveChangesAsync();
 
                 await _cacheInvalidationService.InvalidatePageCacheAsync(pageId);
 
                 _logger.LogInformation("Updated page {PageId}", pageId);
 
-                return result;
+                return _mapper.Map<PageDto>(page);
             }
             catch (Exception ex)
             {
@@ -341,7 +339,7 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new InvalidOperationException("Cannot delete a page that has child pages. Delete or move child pages first.");
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var success = await DeleteAsync(pageId, currentUserId);
+                var success = await _pageRepository.SoftDeleteAsync(pageId, currentUserId);
 
                 if (success)
                 {

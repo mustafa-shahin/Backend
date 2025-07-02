@@ -4,75 +4,37 @@ using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
-using Backend.CMS.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
-public class FolderService : BaseCacheAwareService<Folder, FolderDto>, IFolderService, IDisposable
+public class FolderService : IFolderService, IDisposable
 {
     private readonly IFolderRepository _folderRepository;
     private readonly IRepository<FileEntity> _fileRepository;
     private readonly IUserSessionService _userSessionService;
     private readonly IMapper _mapper;
+    private readonly ILogger<FolderService> _logger;
     private readonly SemaphoreSlim _operationSemaphore;
     private bool _disposed = false;
 
+
     public FolderService(
-        IFolderRepository folderRepository,
-        IRepository<FileEntity> fileRepository,
-        IUserSessionService userSessionService,
-        ICacheService cacheService,
-        IMapper mapper,
-        ILogger<FolderService> logger)
-        : base(folderRepository, cacheService, logger)
+    IFolderRepository folderRepository,
+    IRepository<FileEntity> fileRepository,
+    IUserSessionService userSessionService,
+    IMapper mapper,
+    ILogger<FolderService> logger)
     {
         _folderRepository = folderRepository ?? throw new ArgumentNullException(nameof(folderRepository));
         _fileRepository = fileRepository ?? throw new ArgumentNullException(nameof(fileRepository));
         _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
         _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _operationSemaphore = new SemaphoreSlim(1, 1);
     }
-    protected override string GetEntityCacheKey(int id) => $"folder:{id}";
 
-    protected override string[] GetEntityCachePatterns(int id) => new[]
-    {
-        $"folder:{id}",
-        "folders:*",
-        "folder-tree:*"
-    };
-
-    protected override string[] GetAllEntitiesCachePatterns() => new[]
-    {
-        "folders:*",
-        "folder-tree:*",
-        "files:*"
-    };
-
-    protected override async Task<FolderDto> MapToDto(Folder entity)
-    {
-        return await MapFolderToDto(entity);
-    }
-
-    protected override async Task<List<FolderDto>> MapToDtos(IEnumerable<Folder> entities)
-    {
-        var folderDtos = new List<FolderDto>();
-        foreach (var folder in entities)
-        {
-            try
-            {
-                var folderDto = await MapFolderToDto(folder);
-                folderDtos.Add(folderDto);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error mapping folder {FolderId} to DTO", folder.Id);
-                folderDtos.Add(CreateBasicFolderDto(folder));
-            }
-        }
-        return folderDtos;
-    }
     public async Task<FolderDto> CreateFolderAsync(CreateFolderDto createDto)
     {
         if (string.IsNullOrWhiteSpace(createDto.Name))
@@ -83,13 +45,15 @@ public class FolderService : BaseCacheAwareService<Folder, FolderDto>, IFolderSe
         await _operationSemaphore.WaitAsync();
         try
         {
+            // Validate parent folder exists if specified
             if (createDto.ParentFolderId.HasValue)
             {
-                var parentFolder = await _repository.GetByIdAsync(createDto.ParentFolderId.Value);
+                var parentFolder = await _folderRepository.GetByIdAsync(createDto.ParentFolderId.Value);
                 if (parentFolder == null)
                     throw new ArgumentException("Parent folder not found");
             }
 
+            // Check for duplicate names in the same parent
             if (!await ValidateFolderNameAsync(sanitizedName, createDto.ParentFolderId))
                 throw new ArgumentException("A folder with this name already exists in the specified location");
 
@@ -111,19 +75,27 @@ public class FolderService : BaseCacheAwareService<Folder, FolderDto>, IFolderSe
                 UpdatedByUserId = currentUserId
             };
 
-            return await CreateAsync(folder);
+            await _folderRepository.AddAsync(folder);
+            await _folderRepository.SaveChangesAsync();
+
+            _logger.LogInformation("Folder created: {FolderName} (ID: {FolderId}) by user {UserId}",
+                folder.Name, folder.Id, currentUserId);
+
+            return await MapFolderToDto(folder);
         }
         finally
         {
             _operationSemaphore.Release();
         }
     }
-    public  async Task<FolderDto> GetFolderByIdAsync(int folderId)
+    public async Task<FolderDto> GetFolderByIdAsync(int folderId)
     {
-        var dto = await GetByIdAsync(folderId);
-        return dto ?? throw new ArgumentException("Folder not found");
-    }
+        var folder = await _folderRepository.GetByIdAsync(folderId);
+        if (folder == null)
+            throw new ArgumentException("Folder not found");
 
+        return await MapFolderToDto(folder);
+    }
     public async Task<List<FolderDto>> GetFoldersAsync(int? parentFolderId = null)
     {
         try
@@ -213,10 +185,11 @@ public class FolderService : BaseCacheAwareService<Folder, FolderDto>, IFolderSe
         await _operationSemaphore.WaitAsync();
         try
         {
-            var folder = await _repository.GetByIdAsync(folderId);
+            var folder = await _folderRepository.GetByIdAsync(folderId);
             if (folder == null)
                 throw new ArgumentException("Folder not found");
 
+            // Check for duplicate names if name is changing
             if (folder.Name != sanitizedName)
             {
                 if (!await ValidateFolderNameAsync(sanitizedName, folder.ParentFolderId, folderId))
@@ -234,13 +207,22 @@ public class FolderService : BaseCacheAwareService<Folder, FolderDto>, IFolderSe
             folder.UpdatedAt = DateTime.UtcNow;
             folder.UpdatedByUserId = currentUserId;
 
+            // Update path if name changed
             if (nameChanged)
             {
                 folder.Path = await GenerateFolderPathAsync(folder.Name, folder.ParentFolderId);
+
+                // Update paths of all subfolders in batch
                 await UpdateSubfolderPathsAsync(folder, oldPath);
             }
 
-            return await UpdateAsync(folder);
+            _folderRepository.Update(folder);
+            await _folderRepository.SaveChangesAsync();
+
+            _logger.LogInformation("Folder updated: {FolderName} (ID: {FolderId}) by user {UserId}",
+                folder.Name, folder.Id, currentUserId);
+
+            return await MapFolderToDto(folder);
         }
         finally
         {
@@ -252,22 +234,25 @@ public class FolderService : BaseCacheAwareService<Folder, FolderDto>, IFolderSe
         await _operationSemaphore.WaitAsync();
         try
         {
-            var folder = await _repository.GetByIdAsync(folderId);
+            var folder = await _folderRepository.GetByIdAsync(folderId);
             if (folder == null)
                 return false;
 
             var currentUserId = _userSessionService.GetCurrentUserId();
 
+            // Check if folder has subfolders
             var subfolders = await _folderRepository.FindAsync(f => f.ParentFolderId == folderId);
             if (subfolders.Any())
                 throw new InvalidOperationException("Cannot delete folder that contains subfolders. Delete or move subfolders first.");
 
+            // Handle files in the folder
             var files = await _fileRepository.FindAsync(f => f.FolderId == folderId);
             if (files.Any())
             {
                 if (!deleteFiles)
                     throw new InvalidOperationException("Cannot delete folder that contains files. Set deleteFiles=true to delete files or move them first.");
 
+                // Delete all files sequentially
                 foreach (var file in files)
                 {
                     try
@@ -281,7 +266,15 @@ public class FolderService : BaseCacheAwareService<Folder, FolderDto>, IFolderSe
                 }
             }
 
-            return await DeleteAsync(folderId, currentUserId);
+            var success = await _folderRepository.SoftDeleteAsync(folderId, currentUserId);
+
+            if (success)
+            {
+                _logger.LogInformation("Folder deleted: {FolderName} (ID: {FolderId}) by user {UserId}",
+                    folder.Name, folder.Id, currentUserId);
+            }
+
+            return success;
         }
         finally
         {

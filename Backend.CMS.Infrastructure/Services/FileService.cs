@@ -15,7 +15,7 @@ using System.Text.RegularExpressions;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class FileService : BaseCacheAwareService<FileEntity, FileDto>, IFileService, IDisposable
+    public class FileService : IFileService, IDisposable
     {
         private readonly IFileRepository _fileRepository;
         private readonly IRepository<Backend.CMS.Domain.Entities.FileAccess> _fileAccessRepository;
@@ -23,6 +23,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IFileValidationService _fileValidationService;
         private readonly IUserSessionService _userSessionService;
         private readonly IMapper _mapper;
+        private readonly ILogger<FileService> _logger;
         private readonly IConfiguration _configuration;
         private readonly string _baseUrl;
         private readonly SemaphoreSlim _uploadSemaphore;
@@ -36,11 +37,9 @@ namespace Backend.CMS.Infrastructure.Services
             IImageProcessingService imageProcessingService,
             IFileValidationService fileValidationService,
             IUserSessionService userSessionService,
-            ICacheService cacheService,
             IMapper mapper,
             ILogger<FileService> logger,
             IConfiguration configuration)
-            : base(fileRepository, cacheService, logger)
         {
             _fileRepository = fileRepository ?? throw new ArgumentNullException(nameof(fileRepository));
             _fileAccessRepository = fileAccessRepository ?? throw new ArgumentNullException(nameof(fileAccessRepository));
@@ -48,39 +47,18 @@ namespace Backend.CMS.Infrastructure.Services
             _fileValidationService = fileValidationService ?? throw new ArgumentNullException(nameof(fileValidationService));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
 
             _baseUrl = configuration["FileStorage:BaseUrl"] ?? "/api/files";
             _uploadSemaphore = new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount);
             _hashSemaphores = new ConcurrentDictionary<string, SemaphoreSlim>();
 
+            // Cleanup semaphores every 10 minutes
             _semaphoreCleanupTimer = new Timer(CleanupHashSemaphores, null,
                 TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
         }
-        protected override string GetEntityCacheKey(int id) => $"file:{id}";
 
-        protected override string[] GetEntityCachePatterns(int id) => new[]
-        {
-        $"file:{id}",
-        $"files:folder:*",
-        "files:*"
-    };
-
-        protected override string[] GetAllEntitiesCachePatterns() => new[]
-        {
-        "files:*",
-        "folders:*"
-    };
-
-        protected override async Task<FileDto> MapToDto(FileEntity entity)
-        {
-            return await MapFileToDto(entity);
-        }
-
-        protected override async Task<List<FileDto>> MapToDtos(IEnumerable<FileEntity> entities)
-        {
-            return await MapFilesToDtos(entities);
-        }
         public async Task<FileDto> UploadFileAsync(FileUploadDto uploadDto)
         {
             if (uploadDto.File == null || uploadDto.File.Length == 0)
@@ -303,15 +281,18 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FileDto> GetFileByIdAsync(int fileId)
         {
-            var dto = await GetByIdAsync(fileId);
-            return dto ?? throw new ArgumentException("File not found");
+            var file = await _fileRepository.GetByIdAsync(fileId);
+            if (file == null)
+                throw new ArgumentException("File not found");
+
+            return await MapFileToDto(file);
         }
 
         public async Task<List<FileDto>> GetFilesAsync(int page = 1, int pageSize = 20)
         {
-            return await GetPagedAsync(page, pageSize);
+            var files = await _fileRepository.GetPagedAsync(page, pageSize);
+            return await MapFilesToDtos(files);
         }
-
 
         public async Task<List<FileDto>> GetFilesByFolderAsync(int? folderId, int page = 1, int pageSize = 20)
         {
@@ -409,12 +390,13 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FileDto> UpdateFileAsync(int fileId, UpdateFileDto updateDto)
         {
-            var file = await _repository.GetByIdAsync(fileId);
+            var file = await _fileRepository.GetByIdAsync(fileId);
             if (file == null)
                 throw new ArgumentException("File not found");
 
             var currentUserId = _userSessionService.GetCurrentUserId();
 
+            // Apply updates
             file.Description = updateDto.Description;
             file.Alt = updateDto.Alt;
             file.IsPublic = updateDto.IsPublic;
@@ -422,6 +404,7 @@ namespace Backend.CMS.Infrastructure.Services
             file.UpdatedAt = DateTime.UtcNow;
             file.UpdatedByUserId = currentUserId;
 
+            // Merge tags efficiently
             if (updateDto.Tags?.Any() == true)
             {
                 foreach (var tag in updateDto.Tags)
@@ -430,13 +413,20 @@ namespace Backend.CMS.Infrastructure.Services
                 }
             }
 
-            return await UpdateAsync(file);
+            _fileRepository.Update(file);
+            await _fileRepository.SaveChangesAsync();
+
+            return await MapFileToDto(file);
         }
 
         public async Task<bool> DeleteFileAsync(int fileId)
         {
+            var file = await _fileRepository.GetByIdAsync(fileId);
+            if (file == null)
+                return false;
+
             var currentUserId = _userSessionService.GetCurrentUserId();
-            return await DeleteAsync(fileId, currentUserId);
+            return await _fileRepository.SoftDeleteAsync(fileId, currentUserId);
         }
 
         public async Task<bool> DeleteMultipleFilesAsync(List<int> fileIds)

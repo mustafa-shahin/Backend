@@ -9,14 +9,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class ProductService : BaseCacheAwareService<Product, ProductDto>, IProductService
+    public class ProductService : IProductService
     {
         private readonly IProductRepository _productRepository;
         private readonly IProductVariantRepository _variantRepository;
         private readonly ICategoryRepository _categoryRepository;
         private readonly IRepository<ProductImage> _productImageRepository;
         private readonly IRepository<FileEntity> _fileRepository;
+        private readonly ICacheService _cacheService;
         private readonly IMapper _mapper;
+        private readonly ILogger<ProductService> _logger;
 
         public ProductService(
             IProductRepository productRepository,
@@ -27,57 +29,59 @@ namespace Backend.CMS.Infrastructure.Services
             ICacheService cacheService,
             IMapper mapper,
             ILogger<ProductService> logger)
-            : base(productRepository, cacheService, logger)
         {
             _productRepository = productRepository;
             _variantRepository = variantRepository;
             _categoryRepository = categoryRepository;
             _productImageRepository = productImageRepository;
             _fileRepository = fileRepository;
+            _cacheService = cacheService;
             _mapper = mapper;
-        }
-        protected override string GetEntityCacheKey(int id) => $"product:{id}";
-
-        protected override string[] GetEntityCachePatterns(int id) => new[]
-        {
-        $"product:{id}",
-        "products:*",
-        "featured-products:*",
-        "related-products:*"
-    };
-
-        protected override string[] GetAllEntitiesCachePatterns() => new[]
-        {
-        "products:*",
-        "featured-products:*",
-        "recent-products:*"
-    };
-
-        protected override async Task<ProductDto> MapToDto(Product entity)
-        {
-            return _mapper.Map<ProductDto>(entity);
+            _logger = logger;
         }
 
-        protected override async Task<List<ProductDto>> MapToDtos(IEnumerable<Product> entities)
-        {
-            return _mapper.Map<List<ProductDto>>(entities);
-        }
         public async Task<ProductDto?> GetProductByIdAsync(int productId)
         {
-            try
+            var cacheKey = CacheKeys.ProductById(productId);
+            async Task<ProductDto?> FetchAndMapProductFromRepositoryAsync()
             {
-                var product = await _productRepository.GetWithDetailsAsync(productId);
-                if (product == null)
-                    return null;
+                try
+                {
+                    var product = await _productRepository.GetWithDetailsAsync(productId);
 
-                return _mapper.Map<ProductDto>(product);
+                    if (product == null)
+                    {
+                        return null;
+                    }
+                    var productDto = _mapper.Map<ProductDto>(product);
+
+                    if (productDto == null)
+                    {
+                        return null;
+                    }
+                    return productDto;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError($"[ERROR] Exception during product fetch/map for ID '{productId}': {ex.GetType().Name} - {ex.Message}");
+                    throw;
+                }
             }
-            catch (Exception ex)
+
+            var productDto = await _cacheService.GetAsync(cacheKey, FetchAndMapProductFromRepositoryAsync);
+
+            if (productDto == null)
             {
-                _logger.LogError(ex, "Exception during product fetch/map for ID '{ProductId}'", productId);
-                throw;
+                _logger.LogError($"[DEBUG] GetProductByIdAsync for ID '{productId}' completed. Product not found (or factory returned null).");
             }
+            else
+            {
+                _logger.LogError($"[DEBUG] GetProductByIdAsync for ID '{productId}' completed. Product found (from cache or repository).");
+            }
+
+            return productDto;
         }
+
         public async Task<ProductDto?> GetProductBySlugAsync(string slug)
         {
             var cacheKey = CacheKeys.ProductBySlug(slug);
@@ -111,12 +115,15 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<ProductDto> CreateProductAsync(CreateProductDto createProductDto)
         {
+            // Validate slug uniqueness
             if (await _productRepository.SlugExistsAsync(createProductDto.Slug))
                 throw new ArgumentException($"Product with slug '{createProductDto.Slug}' already exists");
 
+            // Validate SKU uniqueness
             if (await _productRepository.SKUExistsAsync(createProductDto.SKU))
                 throw new ArgumentException($"Product with SKU '{createProductDto.SKU}' already exists");
 
+            // Validate categories
             if (createProductDto.CategoryIds.Any())
             {
                 foreach (var categoryId in createProductDto.CategoryIds)
@@ -127,6 +134,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
             }
 
+            // Validate images
             if (createProductDto.Images.Any())
             {
                 await ValidateImagesAsync(createProductDto.Images.Select(i => i.FileId).ToList());
@@ -134,10 +142,12 @@ namespace Backend.CMS.Infrastructure.Services
 
             var product = _mapper.Map<Product>(createProductDto);
 
+            // Set published date if status is active
             if (product.Status == ProductStatus.Active)
                 product.PublishedAt = DateTime.UtcNow;
 
-            var result = await CreateAsync(product);
+            await _productRepository.AddAsync(product);
+            await _productRepository.SaveChangesAsync();
 
             // Add category associations
             if (createProductDto.CategoryIds.Any())
@@ -174,23 +184,31 @@ namespace Backend.CMS.Infrastructure.Services
                 await _variantRepository.SaveChangesAsync();
             }
 
+            await InvalidateProductCache();
+
             _logger.LogInformation("Created product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
 
+            // Return the complete product with all relations
             var createdProduct = await _productRepository.GetWithDetailsAsync(product.Id);
             return _mapper.Map<ProductDto>(createdProduct!);
         }
 
-
         public async Task<ProductDto> UpdateProductAsync(int productId, UpdateProductDto updateProductDto)
         {
-            var product = await _repository.GetByIdAsync(productId) ?? throw new ArgumentException($"Product with ID {productId} not found");
+            var product = await _productRepository.GetWithDetailsAsync(productId);
+            if (product == null)
+                throw new ArgumentException($"Product with ID {productId} not found");
+
+            // Validate slug uniqueness
             if (await _productRepository.SlugExistsAsync(updateProductDto.Slug, productId))
                 throw new ArgumentException($"Product with slug '{updateProductDto.Slug}' already exists");
 
+            // Validate SKU uniqueness
             if (await _productRepository.SKUExistsAsync(updateProductDto.SKU, productId))
                 throw new ArgumentException($"Product with SKU '{updateProductDto.SKU}' already exists");
 
-            if (updateProductDto.Images.Count != 0)
+            // Validate images
+            if (updateProductDto.Images.Any())
             {
                 await ValidateImagesAsync(updateProductDto.Images.Select(i => i.FileId).ToList());
             }
@@ -198,17 +216,18 @@ namespace Backend.CMS.Infrastructure.Services
             var oldStatus = product.Status;
             _mapper.Map(updateProductDto, product);
 
+            // Set published date if status changed to active
             if (oldStatus != ProductStatus.Active && product.Status == ProductStatus.Active)
                 product.PublishedAt = DateTime.UtcNow;
             else if (product.Status != ProductStatus.Active)
                 product.PublishedAt = null;
 
-            var result = await UpdateAsync(product);
+            _productRepository.Update(product);
 
             // Update category associations
             await _productRepository.RemoveProductCategoriesAsync(product.Id);
 
-            if (updateProductDto.CategoryIds.Count != 0)
+            if (updateProductDto.CategoryIds.Any())
             {
                 var productCategories = updateProductDto.CategoryIds.Select((categoryId, index) => new ProductCategory
                 {
@@ -228,8 +247,11 @@ namespace Backend.CMS.Infrastructure.Services
 
             await _productRepository.SaveChangesAsync();
 
+            await InvalidateProductCache();
+
             _logger.LogInformation("Updated product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
 
+            // Return the complete updated product
             var updatedProduct = await _productRepository.GetWithDetailsAsync(product.Id);
             return _mapper.Map<ProductDto>(updatedProduct!);
         }
