@@ -1,4 +1,4 @@
-﻿using Backend.CMS.Infrastructure.Caching.Abstractions;
+﻿using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,6 +8,9 @@ using System.Text.Json;
 
 namespace Backend.CMS.Infrastructure.Caching.Services
 {
+    /// <summary>
+    /// Redis-based cache service implementation with comprehensive features
+    /// </summary>
     public class RedisCacheService : ICacheService, ICacheInvalidationService, ICacheMonitoringService, IDisposable
     {
         private readonly IDistributedCache _distributedCache;
@@ -481,12 +484,7 @@ namespace Backend.CMS.Infrastructure.Caching.Services
 
         public Task ResetStatisticsAsync()
         {
-            _statistics.HitCount = 0;
-            _statistics.MissCount = 0;
-            _statistics.ErrorCount = 0;
-            _statistics.LastResetTime = DateTime.UtcNow;
-            _statistics.OperationCounts.Clear();
-
+            _statistics.Reset();
             _logger.LogInformation("Cache statistics reset");
             return Task.CompletedTask;
         }
@@ -718,25 +716,20 @@ namespace Backend.CMS.Infrastructure.Caching.Services
 
         private void RecordHit()
         {
-            Interlocked.Increment(ref _statistics.HitCount);
-            IncrementOperationCount("hit");
+            _statistics.IncrementHits();
+            _statistics.IncrementOperation("hit");
         }
 
         private void RecordMiss()
         {
-            Interlocked.Increment(ref _statistics.MissCount);
-            IncrementOperationCount("miss");
+            _statistics.IncrementMisses();
+            _statistics.IncrementOperation("miss");
         }
 
         private void RecordError()
         {
-            Interlocked.Increment(ref _statistics.ErrorCount);
-            IncrementOperationCount("error");
-        }
-
-        private void IncrementOperationCount(string operation)
-        {
-            _statistics.OperationCounts.AddOrUpdate(operation, 1, (_, count) => count + 1);
+            _statistics.IncrementErrors();
+            _statistics.IncrementOperation("error");
         }
 
         #endregion

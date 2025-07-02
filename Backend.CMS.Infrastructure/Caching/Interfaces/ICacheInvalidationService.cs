@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Backend.CMS.Infrastructure.Caching.Abstractions
+namespace Backend.CMS.Infrastructure.Caching.Interfaces
 {
     /// <summary>
     /// Cache invalidation service for managing cache lifecycles

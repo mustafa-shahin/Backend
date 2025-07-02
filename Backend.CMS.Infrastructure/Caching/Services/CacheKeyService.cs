@@ -1,4 +1,4 @@
-﻿using Backend.CMS.Infrastructure.Caching.Abstractions;
+﻿using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Text;

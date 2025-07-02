@@ -1,4 +1,4 @@
-﻿namespace Backend.CMS.Infrastructure.Caching.Abstractions
+﻿namespace Backend.CMS.Infrastructure.Caching.Interfaces
 {
     /// <summary>
     /// Cache monitoring service

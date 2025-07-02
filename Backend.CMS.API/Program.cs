@@ -3,6 +3,7 @@ using Backend.CMS.API.Middleware;
 using Backend.CMS.Application.Common;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
+using Backend.CMS.Infrastructure.Caching;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.Events;
 using Backend.CMS.Infrastructure.Interfaces;
@@ -170,12 +171,29 @@ static void ConfigureRedis(WebApplicationBuilder builder)
 {
     var redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
 
-    builder.Services.AddStackExchangeRedisCache(options =>
+    // Configure Redis cache using the new enterprise cache service
+    if (builder.Environment.IsDevelopment())
     {
-        options.Configuration = redisConnectionString;
-        options.InstanceName = "BackendCMS";
-    });
+        builder.Services.AddDevelopmentCaching(redisConnectionString);
+    }
+    else if (builder.Environment.IsProduction())
+    {
+        builder.Services.AddProductionCaching(redisConnectionString);
+    }
+    else
+    {
+        // Staging or other environments
+        builder.Services.AddHighPerformanceCaching(redisConnectionString);
+    }
 
+    // Alternative: environment-based configuration
+    // builder.Services.AddEnvironmentBasedCaching(builder.Configuration, builder.Environment.EnvironmentName);
+
+    // Alternative: configuration-based profiles
+    // builder.Services.AddConfiguredCaching(builder.Configuration, "CustomProfile");
+
+    // Keep the existing Redis connection multiplexer for backward compatibility
+    // (This is now handled automatically by the cache service extensions)
     builder.Services.AddSingleton<IConnectionMultiplexer>(provider =>
     {
         var configuration = provider.GetService<IConfiguration>();
@@ -191,7 +209,6 @@ static void ConfigureRedis(WebApplicationBuilder builder)
         return ConnectionMultiplexer.Connect(configurationOptions);
     });
 }
-
 static void ConfigureHangfire(WebApplicationBuilder builder)
 {
     var hangfireConnectionString = builder.Configuration.GetConnectionString("HangfireConnection")
@@ -527,13 +544,15 @@ static void RegisterCoreServices(WebApplicationBuilder builder)
 
 static void RegisterCachingServices(WebApplicationBuilder builder)
 {
-    // Register cache event handler for automatic cache invalidation
-    builder.Services.AddScoped<ICacheEventHandler, CacheEventHandler>();
+    // The new cache service is already registered by the ConfigureRedis method above
+    // No additional registration needed
 
-    // Register the single CacheService that implements both interfaces
-    builder.Services.AddScoped<CacheService>();
-    builder.Services.AddScoped<ICacheService>(provider => provider.GetRequiredService<CacheService>());
-    builder.Services.AddScoped<ICacheInvalidationService>(provider => provider.GetRequiredService<CacheService>());
+    // If you want to register the old cache service alongside for migration:
+    builder.Services.AddScoped<Backend.CMS.Infrastructure.Services.CacheService>();
+    builder.Services.AddScoped<Backend.CMS.Infrastructure.Interfaces.ICacheService>(provider =>
+        provider.GetRequiredService<Backend.CMS.Infrastructure.Services.CacheService>());
+    builder.Services.AddScoped<Backend.CMS.Infrastructure.Interfaces.ICacheInvalidationService>(provider =>
+        provider.GetRequiredService<Backend.CMS.Infrastructure.Services.CacheService>());
 }
 
 static void RegisterBusinessServices(WebApplicationBuilder builder)

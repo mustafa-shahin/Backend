@@ -1,7 +1,4 @@
-﻿// Core caching interfaces
-using System.Text.Json;
-
-namespace Backend.CMS.Infrastructure.Caching.Abstractions
+﻿namespace Backend.CMS.Infrastructure.Caching.Interfaces
 {
     /// <summary>
     /// Main caching service interface providing generic cache operations
