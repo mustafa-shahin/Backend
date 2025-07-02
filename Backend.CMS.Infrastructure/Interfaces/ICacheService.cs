@@ -1,7 +1,9 @@
-﻿namespace Backend.CMS.Infrastructure.Interfaces
+﻿
+
+namespace Backend.CMS.Infrastructure.Interfaces
 {
     /// <summary>
-    /// Enhanced service for cache operations with cache-aware patterns
+    /// Service for basic cache operations
     /// </summary>
     public interface ICacheService
     {
@@ -49,36 +51,5 @@
         /// Generate cache key from prefix and identifiers
         /// </summary>
         string GenerateKey(string prefix, params object[] identifiers);
-
-        // New cache-aware operations
-        /// <summary>
-        /// Get or add with automatic cache refresh after factory execution
-        /// </summary>
-        Task<T?> GetOrAddAsync<T>(string key, Func<Task<T?>> factory, TimeSpan? expiration = null) where T : class;
-
-        /// <summary>
-        /// Execute operation and refresh cache with result
-        /// </summary>
-        Task<T> RefreshCacheAsync<T>(string key, Func<Task<T>> operation, TimeSpan? expiration = null) where T : class;
-
-        /// <summary>
-        /// Execute operation and invalidate related cache patterns
-        /// </summary>
-        Task<T> InvalidateAndRefreshAsync<T>(Func<Task<T>> operation, params string[] cachePatterns) where T : class;
-
-        /// <summary>
-        /// Invalidate cache patterns without executing an operation
-        /// </summary>
-        Task InvalidatePatternsAsync(params string[] cachePatterns);
-
-        /// <summary>
-        /// Batch cache operations for multiple entities
-        /// </summary>
-        Task SetBatchAsync<T>(Dictionary<string, T> keyValuePairs, TimeSpan? expiration = null) where T : class;
-
-        /// <summary>
-        /// Get multiple cached items by keys
-        /// </summary>
-        Task<Dictionary<string, T?>> GetBatchAsync<T>(IEnumerable<string> keys) where T : class;
     }
 }
