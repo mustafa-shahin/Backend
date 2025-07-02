@@ -9,8 +9,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class AddressService : BaseCacheAwareService<Address, AddressDto>, IAddressService
+    public class AddressService : IAddressService
     {
+        private readonly IRepository<Address> _addressRepository;
         private readonly ApplicationDbContext _context;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
@@ -25,61 +26,37 @@ namespace Backend.CMS.Infrastructure.Services
             IRepository<Address> addressRepository,
             ApplicationDbContext context,
             IUserSessionService userSessionService,
-            ICacheService cacheService,
             IMapper mapper,
             ILogger<AddressService> logger)
-            : base(addressRepository, cacheService, logger)
         {
+            _addressRepository = addressRepository ?? throw new ArgumentNullException(nameof(addressRepository));
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
-        protected override string GetEntityCacheKey(int id)
-        {
-            return $"address:id:{id}";
-        }
 
-        protected override string[] GetEntityCachePatterns(int id)
-        {
-            return new[]
-            {
-            $"address:*:{id}",
-            $"address:id:{id}"
-        };
-        }
-
-        protected override string[] GetAllEntitiesCachePatterns()
-        {
-            return new[]
-            {
-            "address:*",
-            "address:entity:*"
-        };
-        }
-
-        protected override async Task<AddressDto> MapToDto(Address entity)
-        {
-            return _mapper.Map<AddressDto>(entity);
-        }
-
-        protected override async Task<List<AddressDto>> MapToDtos(IEnumerable<Address> entities)
-        {
-            return _mapper.Map<List<AddressDto>>(entities);
-        }
         public async Task<AddressDto> GetAddressByIdAsync(int addressId)
         {
             if (addressId <= 0)
                 throw new ArgumentException("Address ID must be greater than 0", nameof(addressId));
 
-            var address = await GetByIdAsync(addressId);
-            if (address == null)
+            try
             {
-                _logger.LogWarning("Address {AddressId} not found", addressId);
-                throw new ArgumentException("Address not found");
-            }
+                var address = await _addressRepository.GetByIdAsync(addressId);
+                if (address == null)
+                {
+                    _logger.LogWarning("Address {AddressId} not found", addressId);
+                    throw new ArgumentException("Address not found");
+                }
 
-            return address;
+                return _mapper.Map<AddressDto>(address);
+            }
+            catch (Exception ex) when (ex is not ArgumentException)
+            {
+                _logger.LogError(ex, "Error retrieving address {AddressId}", addressId);
+                throw;
+            }
         }
 
         public async Task<List<AddressDto>> GetAddressesByEntityAsync(string entityType, int entityId)
@@ -133,6 +110,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
+                // Validate that the entity exists
                 await ValidateEntityExistsAsync(entityType, entityId);
 
                 var address = _mapper.Map<Address>(createAddressDto);
@@ -143,8 +121,10 @@ namespace Backend.CMS.Infrastructure.Services
                 address.CreatedAt = DateTime.UtcNow;
                 address.UpdatedAt = DateTime.UtcNow;
 
+                // Add to context first
                 _context.Addresses.Add(address);
 
+                // Set the foreign key using shadow property AFTER adding to context
                 var normalizedEntityType = entityType.ToLowerInvariant();
                 var propertyName = GetEntityIdPropertyName(normalizedEntityType);
                 _context.Entry(address).Property(propertyName).CurrentValue = entityId;
@@ -152,13 +132,10 @@ namespace Backend.CMS.Infrastructure.Services
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                // Use base class cache invalidation
-                await InvalidateRelatedCaches();
-
                 _logger.LogInformation("Address {AddressId} created for {EntityType} {EntityId} by user {UserId}",
                     address.Id, entityType, entityId, currentUserId);
 
-                return await MapToDto(address);
+                return _mapper.Map<AddressDto>(address);
             }
             catch (Exception ex)
             {
@@ -175,24 +152,36 @@ namespace Backend.CMS.Infrastructure.Services
 
             ArgumentNullException.ThrowIfNull(updateAddressDto);
 
-            var address = await _repository.GetByIdAsync(addressId);
-            if (address == null)
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
             {
-                _logger.LogWarning("Address {AddressId} not found for update", addressId);
-                throw new ArgumentException("Address not found");
+                var address = await _addressRepository.GetByIdAsync(addressId);
+                if (address == null)
+                {
+                    _logger.LogWarning("Address {AddressId} not found for update", addressId);
+                    throw new ArgumentException("Address not found");
+                }
+
+                var currentUserId = _userSessionService.GetCurrentUserId();
+
+                _mapper.Map(updateAddressDto, address);
+                address.UpdatedAt = DateTime.UtcNow;
+                address.UpdatedByUserId = currentUserId;
+
+                _addressRepository.Update(address);
+                await _addressRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _logger.LogInformation("Address {AddressId} updated by user {UserId}", addressId, currentUserId);
+
+                return _mapper.Map<AddressDto>(address);
             }
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            _mapper.Map(updateAddressDto, address);
-            address.UpdatedAt = DateTime.UtcNow;
-            address.UpdatedByUserId = currentUserId;
-
-            var result = await UpdateAsync(address);
-
-            _logger.LogInformation("Address {AddressId} updated by user {UserId}", addressId, currentUserId);
-
-            return result;
+            catch (Exception ex) when (!(ex is ArgumentException))
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error updating address {AddressId}", addressId);
+                throw;
+            }
         }
 
         public async Task<bool> DeleteAddressAsync(int addressId)
@@ -200,28 +189,47 @@ namespace Backend.CMS.Infrastructure.Services
             if (addressId <= 0)
                 throw new ArgumentException("Address ID must be greater than 0", nameof(addressId));
 
-            var currentUserId = _userSessionService.GetCurrentUserId();
-            var result = await DeleteAsync(addressId, currentUserId);
-
-            if (result)
+            try
             {
-                _logger.LogInformation("Address {AddressId} deleted by user {UserId}", addressId, currentUserId);
-            }
-            else
-            {
-                _logger.LogWarning("Failed to delete address {AddressId} - not found", addressId);
-            }
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var result = await _addressRepository.SoftDeleteAsync(addressId, currentUserId);
 
-            return result;
+                if (result)
+                {
+                    _logger.LogInformation("Address {AddressId} deleted by user {UserId}", addressId, currentUserId);
+                }
+                else
+                {
+                    _logger.LogWarning("Failed to delete address {AddressId} - not found", addressId);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting address {AddressId}", addressId);
+                throw;
+            }
         }
 
         public async Task<bool> SetDefaultAddressAsync(int addressId, string entityType, int entityId)
         {
+            if (addressId <= 0)
+                throw new ArgumentException("Address ID must be greater than 0", nameof(addressId));
+
+            if (string.IsNullOrWhiteSpace(entityType))
+                throw new ArgumentException("Entity type cannot be null or empty", nameof(entityType));
+
+            if (entityId <= 0)
+                throw new ArgumentException("Entity ID must be greater than 0", nameof(entityId));
+
+            if (!IsValidEntityType(entityType))
+                throw new ArgumentException($"Invalid entity type: {entityType}");
 
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var address = await _repository.GetByIdAsync(addressId);
+                var address = await _addressRepository.GetByIdAsync(addressId);
                 if (address == null)
                 {
                     _logger.LogWarning("Address {AddressId} not found for setting default", addressId);
@@ -265,9 +273,6 @@ namespace Backend.CMS.Infrastructure.Services
 
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
-
-                // Invalidate cache for all affected addresses
-                await InvalidateRelatedCaches();
 
                 _logger.LogInformation("Default address set to {AddressId} for {EntityType} {EntityId} by user {UserId}",
                     addressId, entityType, entityId, currentUserId);

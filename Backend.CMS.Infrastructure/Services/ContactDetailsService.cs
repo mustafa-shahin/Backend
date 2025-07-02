@@ -9,63 +9,31 @@ using Microsoft.Extensions.Logging;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    public class ContactDetailsService : BaseCacheAwareService<ContactDetails, ContactDetailsDto>, IContactDetailsService
+    public class ContactDetailsService : IContactDetailsService
     {
+        private readonly IRepository<ContactDetails> _contactDetailsRepository;
         private readonly ApplicationDbContext _context;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
         private readonly ILogger<ContactDetailsService> _logger;
 
         private static readonly HashSet<string> ValidEntityTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "user", "company", "location"
-    };
+        {
+            "user", "company", "location"
+        };
 
         public ContactDetailsService(
             IRepository<ContactDetails> contactDetailsRepository,
             ApplicationDbContext context,
             IUserSessionService userSessionService,
-            ICacheService cacheService,
             IMapper mapper,
             ILogger<ContactDetailsService> logger)
-            : base(contactDetailsRepository, cacheService, logger)
         {
+            _contactDetailsRepository = contactDetailsRepository ?? throw new ArgumentNullException(nameof(contactDetailsRepository));
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        }
-        protected override string GetEntityCacheKey(int id)
-        {
-            return $"contact:id:{id}";
-        }
-
-        protected override string[] GetEntityCachePatterns(int id)
-        {
-            return new[]
-            {
-            $"contact:*:{id}",
-            $"contact:id:{id}"
-        };
-        }
-
-        protected override string[] GetAllEntitiesCachePatterns()
-        {
-            return new[]
-            {
-            "contact:*",
-            "contact:entity:*"
-        };
-        }
-
-        protected override async Task<ContactDetailsDto> MapToDto(ContactDetails entity)
-        {
-            return _mapper.Map<ContactDetailsDto>(entity);
-        }
-
-        protected override async Task<List<ContactDetailsDto>> MapToDtos(IEnumerable<ContactDetails> entities)
-        {
-            return _mapper.Map<List<ContactDetailsDto>>(entities);
         }
 
         public async Task<ContactDetailsDto> GetContactDetailsByIdAsync(int contactId)
@@ -73,13 +41,22 @@ namespace Backend.CMS.Infrastructure.Services
             if (contactId <= 0)
                 throw new ArgumentException("Contact ID must be greater than 0", nameof(contactId));
 
-            var contactDetails = await  GetByIdAsync(contactId);
-            if (contactDetails == null)
+            try
             {
-                _logger.LogWarning("Contact details {ContactId} not found", contactId);
-                throw new ArgumentException("Contact details not found");
+                var contactDetails = await _contactDetailsRepository.GetByIdAsync(contactId);
+                if (contactDetails == null)
+                {
+                    _logger.LogWarning("Contact details {ContactId} not found", contactId);
+                    throw new ArgumentException("Contact details not found");
+                }
+
+                return _mapper.Map<ContactDetailsDto>(contactDetails);
             }
-            return contactDetails;
+            catch (Exception ex) when (!(ex is ArgumentException))
+            {
+                _logger.LogError(ex, "Error retrieving contact details {ContactId}", contactId);
+                throw;
+            }
         }
 
         public async Task<List<ContactDetailsDto>> GetContactDetailsByEntityAsync(string entityType, int entityId)
@@ -179,7 +156,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var contactDetails = await _repository.GetByIdAsync(contactId);
+                var contactDetails = await _contactDetailsRepository.GetByIdAsync(contactId);
                 if (contactDetails == null)
                 {
                     _logger.LogWarning("Contact details {ContactId} not found for update", contactId);
@@ -192,8 +169,8 @@ namespace Backend.CMS.Infrastructure.Services
                 contactDetails.UpdatedAt = DateTime.UtcNow;
                 contactDetails.UpdatedByUserId = currentUserId;
 
-                _repository.Update(contactDetails);
-                await _repository.SaveChangesAsync();
+                _contactDetailsRepository.Update(contactDetails);
+                await _contactDetailsRepository.SaveChangesAsync();
                 await transaction.CommitAsync();
 
                 _logger.LogInformation("Contact details {ContactId} updated by user {UserId}", contactId, currentUserId);
@@ -216,7 +193,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var result = await _repository.SoftDeleteAsync(contactId, currentUserId);
+                var result = await _contactDetailsRepository.SoftDeleteAsync(contactId, currentUserId);
 
                 if (result)
                 {
@@ -253,7 +230,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var contactDetails = await _repository.GetByIdAsync(contactId);
+                var contactDetails = await _contactDetailsRepository.GetByIdAsync(contactId);
                 if (contactDetails == null)
                 {
                     _logger.LogWarning("Contact details {ContactId} not found for setting default", contactId);
