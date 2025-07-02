@@ -306,7 +306,7 @@ namespace Backend.CMS.Infrastructure.Services
             _categoryRepository.Update(category);
             await _categoryRepository.SaveChangesAsync();
 
-            await InvalidateCategoryCache();
+            await InvalidateRelatedCaches();
 
             return _mapper.Map<CategoryDto>(category);
         }
@@ -325,7 +325,7 @@ namespace Backend.CMS.Infrastructure.Services
             _categoryRepository.UpdateRange(categories);
             await _categoryRepository.SaveChangesAsync();
 
-            await InvalidateCategoryCache();
+            await InvalidateRelatedCaches();
 
             return _mapper.Map<List<CategoryDto>>(categories);
         }
@@ -351,7 +351,7 @@ namespace Backend.CMS.Infrastructure.Services
             await _categoryImageRepository.AddAsync(categoryImage);
             await _categoryImageRepository.SaveChangesAsync();
 
-            await InvalidateCategoryCache();
+            await InvalidateRelatedCaches();
 
             _logger.LogInformation("Added image to category {CategoryId}: FileId {FileId}", categoryId, createImageDto.FileId);
             return _mapper.Map<CategoryImageDto>(categoryImage);
@@ -377,7 +377,7 @@ namespace Backend.CMS.Infrastructure.Services
             _categoryImageRepository.Update(categoryImage);
             await _categoryImageRepository.SaveChangesAsync();
 
-            await InvalidateCategoryCache();
+            await InvalidateRelatedCaches();
 
             _logger.LogInformation("Updated category image {ImageId}", imageId);
             return _mapper.Map<CategoryImageDto>(categoryImage);
@@ -391,7 +391,7 @@ namespace Backend.CMS.Infrastructure.Services
             var categoryId = categoryImage.CategoryId;
             await _categoryImageRepository.SoftDeleteAsync(categoryImage);
 
-            await InvalidateCategoryCache();
+            await InvalidateRelatedCaches();
 
             _logger.LogInformation("Deleted category image {ImageId} from category {CategoryId}", imageId, categoryId);
             return true;
@@ -411,7 +411,7 @@ namespace Backend.CMS.Infrastructure.Services
             _categoryImageRepository.UpdateRange(images);
             await _categoryImageRepository.SaveChangesAsync();
 
-            await InvalidateCategoryCache();
+            await InvalidateRelatedCaches();
 
             return _mapper.Map<List<CategoryImageDto>>(images.OrderBy(i => i.Position));
         }
