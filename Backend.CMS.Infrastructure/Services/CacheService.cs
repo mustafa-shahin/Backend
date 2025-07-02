@@ -287,6 +287,198 @@ namespace Backend.CMS.Infrastructure.Services
 
         #endregion
 
+
+        #region  Cache-Aware Operations
+
+        public async Task<T?> GetOrAddAsync<T>(string key, Func<Task<T?>> factory, TimeSpan? expiration = null) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("Cache key cannot be null or empty", nameof(key));
+
+            // Try to get from cache first
+            var cachedItem = await GetAsync<T>(key);
+            if (cachedItem != null)
+                return cachedItem;
+
+            // Use semaphore to prevent cache stampede
+            var semaphore = GetKeySemaphore(key);
+            try
+            {
+                await semaphore.WaitAsync();
+
+                // Double-check pattern
+                cachedItem = await GetAsync<T>(key);
+                if (cachedItem != null)
+                    return cachedItem;
+
+                // Execute factory and cache result
+                var item = await factory();
+                if (item != null)
+                {
+                    await SetAsync(key, item, expiration);
+                }
+
+                return item;
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }
+
+        public async Task<T> RefreshCacheAsync<T>(string key, Func<Task<T>> operation, TimeSpan? expiration = null) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("Cache key cannot be null or empty", nameof(key));
+
+            try
+            {
+                // Execute the operation to get fresh data
+                var result = await operation();
+
+                // Update cache with fresh data
+                if (result != null)
+                {
+                    await SetAsync(key, result, expiration);
+                    _logger.LogDebug("Cache refreshed for key: {Key}", key);
+                }
+                else
+                {
+                    // Remove from cache if result is null
+                    await RemoveAsync(key);
+                    _logger.LogDebug("Cache removed for key: {Key} (null result)", key);
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing cache for key: {Key}", key);
+
+                // Remove potentially stale cache on error
+                await RemoveAsync(key);
+                throw;
+            }
+        }
+
+        public async Task<T> InvalidateAndRefreshAsync<T>(Func<Task<T>> operation, params string[] cachePatterns) where T : class
+        {
+            try
+            {
+                // Execute the operation first
+                var result = await operation();
+
+                // Invalidate cache patterns asynchronously (don't wait)
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var invalidationTasks = cachePatterns.Select(RemoveByPatternAsync);
+                        await Task.WhenAll(invalidationTasks);
+
+                        _logger.LogDebug("Cache patterns invalidated: {Patterns}", string.Join(", ", cachePatterns));
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error invalidating cache patterns: {Patterns}", string.Join(", ", cachePatterns));
+                    }
+                });
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in invalidate and refresh operation");
+                throw;
+            }
+        }
+
+        public async Task InvalidatePatternsAsync(params string[] cachePatterns)
+        {
+            if (cachePatterns?.Any() != true) return;
+
+            try
+            {
+                var invalidationTasks = cachePatterns.Select(RemoveByPatternAsync);
+                await Task.WhenAll(invalidationTasks);
+
+                _logger.LogDebug("Cache patterns invalidated: {Patterns}", string.Join(", ", cachePatterns));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating cache patterns: {Patterns}", string.Join(", ", cachePatterns));
+            }
+        }
+
+        public async Task SetBatchAsync<T>(Dictionary<string, T> keyValuePairs, TimeSpan? expiration = null) where T : class
+        {
+            if (keyValuePairs?.Any() != true) return;
+
+            try
+            {
+                var tasks = keyValuePairs.Select(async kvp =>
+                {
+                    try
+                    {
+                        await SetAsync(kvp.Key, kvp.Value, expiration);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to cache item with key: {Key}", kvp.Key);
+                    }
+                });
+
+                await Task.WhenAll(tasks);
+                _logger.LogDebug("Batch cached {Count} items", keyValuePairs.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in batch cache operation");
+            }
+        }
+
+        public async Task<Dictionary<string, T?>> GetBatchAsync<T>(IEnumerable<string> keys) where T : class
+        {
+            if (keys?.Any() != true)
+                return new Dictionary<string, T?>();
+
+            var result = new Dictionary<string, T?>();
+            var keysList = keys.ToList();
+
+            try
+            {
+                var tasks = keysList.Select(async key =>
+                {
+                    try
+                    {
+                        var value = await GetAsync<T>(key);
+                        return new KeyValuePair<string, T?>(key, value);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to get cached item with key: {Key}", key);
+                        return new KeyValuePair<string, T?>(key, null);
+                    }
+                });
+
+                var results = await Task.WhenAll(tasks);
+                foreach (var kvp in results)
+                {
+                    result[kvp.Key] = kvp.Value;
+                }
+
+                _logger.LogDebug("Batch retrieved {Count} items from cache", keysList.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in batch get operation");
+            }
+
+            return result;
+        }
+
+        #endregion
+
         #region Cache Invalidation Methods
         public async Task InvalidateProductCacheAsync(int? productId = null)
         {
