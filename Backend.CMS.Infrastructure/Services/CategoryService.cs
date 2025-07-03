@@ -1,9 +1,11 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
-using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Caching.Interfaces;
+using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
+using Backend.CMS.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
 
 namespace Backend.CMS.Infrastructure.Services
@@ -14,6 +16,8 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IRepository<CategoryImage> _categoryImageRepository;
         private readonly IRepository<FileEntity> _fileRepository;
         private readonly ICacheService _cacheService;
+        private readonly ICacheInvalidationService _cacheInvalidationService;
+        private readonly ICacheKeyService _cacheKeyService;
         private readonly IMapper _mapper;
         private readonly ILogger<CategoryService> _logger;
 
@@ -22,6 +26,8 @@ namespace Backend.CMS.Infrastructure.Services
             IRepository<CategoryImage> categoryImageRepository,
             IRepository<FileEntity> fileRepository,
             ICacheService cacheService,
+            ICacheInvalidationService cacheInvalidationService,
+            ICacheKeyService cacheKeyService,
             IMapper mapper,
             ILogger<CategoryService> logger)
         {
@@ -29,6 +35,8 @@ namespace Backend.CMS.Infrastructure.Services
             _categoryImageRepository = categoryImageRepository;
             _fileRepository = fileRepository;
             _cacheService = cacheService;
+            _cacheInvalidationService = cacheInvalidationService;
+            _cacheKeyService = cacheKeyService;
             _mapper = mapper;
             _logger = logger;
         }
@@ -36,39 +44,50 @@ namespace Backend.CMS.Infrastructure.Services
         public async Task<CategoryDto> GetCategoryByIdAsync(int categoryId)
         {
             var cacheKey = CacheKeys.CategoryById(categoryId);
-            return await _cacheService.GetAsync(cacheKey, async () =>
+
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var category = await _categoryRepository.GetWithSubCategoriesAsync(categoryId);
                 if (category == null)
-                    throw new ArgumentException($"Category with ID {categoryId} not found");
+                    return null;
 
                 var categoryDto = _mapper.Map<CategoryDto>(category);
                 categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(categoryId, true);
                 return categoryDto;
-            },cacheEmptyCollections: false) ?? new CategoryDto();
+            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
+
+            if (result == null)
+                throw new ArgumentException($"Category with ID {categoryId} not found");
+
+            return result;
         }
 
         public async Task<CategoryDto?> GetCategoryBySlugAsync(string slug)
         {
             var cacheKey = CacheKeys.CategoryBySlug(slug);
-            return await _cacheService.GetAsync(cacheKey, async () =>
+
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var category = await _categoryRepository.GetBySlugAsync(slug);
-                if (category == null) return null;
+                if (category == null)
+                    return null;
 
                 var categoryDto = _mapper.Map<CategoryDto>(category);
                 categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(category.Id, true);
                 return categoryDto;
-            } ,cacheEmptyCollections: false);
+            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
         }
+
         public async Task<List<CategoryDto>> GetCategoriesAsync()
         {
             var cacheKey = CacheKeys.AllCategories;
 
-            // Don't cache empty collections for categories
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var categories = await _categoryRepository.GetAllAsync();
+                if (!categories.Any())
+                    return null; // Don't cache empty collections
+
                 var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
 
                 foreach (var categoryDto in categoryDtos)
@@ -77,26 +96,37 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 return categoryDtos.OrderBy(c => c.SortOrder).ThenBy(c => c.Name).ToList();
-            }, cacheEmptyCollections: false) ?? new List<CategoryDto>();
+            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
+
+            return result ?? new List<CategoryDto>();
         }
 
         public async Task<List<CategoryTreeDto>> GetCategoryTreeAsync()
         {
             var cacheKey = CacheKeys.CategoryTree;
-            return await _cacheService.GetAsync(cacheKey, async () =>
+
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var rootCategories = await _categoryRepository.GetCategoryTreeAsync();
-                return await BuildCategoryTreeAsync(rootCategories);
-            }, cacheEmptyCollections: false) ?? new List<CategoryTreeDto>();
-        }
+                if (!rootCategories.Any())
+                    return null; // Don't cache empty collections
 
+                return await BuildCategoryTreeAsync(rootCategories);
+            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
+
+            return result ?? new List<CategoryTreeDto>();
+        }
 
         public async Task<List<CategoryDto>> GetRootCategoriesAsync()
         {
             var cacheKey = CacheKeys.RootCategories;
-            return await _cacheService.GetAsync(cacheKey, async () =>
+
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var categories = await _categoryRepository.GetRootCategoriesAsync();
+                if (!categories.Any())
+                    return null; // Don't cache empty collections
+
                 var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
 
                 foreach (var categoryDto in categoryDtos)
@@ -105,15 +135,21 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 return categoryDtos;
-            }, cacheEmptyCollections: false) ?? new List<CategoryDto>();
+            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
+
+            return result ?? new List<CategoryDto>();
         }
 
         public async Task<List<CategoryDto>> GetSubCategoriesAsync(int parentCategoryId)
         {
             var cacheKey = CacheKeys.SubCategories(parentCategoryId);
-            return await _cacheService.GetAsync(cacheKey, async () =>
+
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var categories = await _categoryRepository.GetSubCategoriesAsync(parentCategoryId);
+                if (!categories.Any())
+                    return null; // Don't cache empty collections
+
                 var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
 
                 foreach (var categoryDto in categoryDtos)
@@ -122,7 +158,9 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 return categoryDtos;
-            }, cacheEmptyCollections: false) ?? new List<CategoryDto>();
+            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
+
+            return result ?? new List<CategoryDto>();
         }
 
         public async Task<CategoryDto> CreateCategoryAsync(CreateCategoryDto createCategoryDto)
@@ -155,7 +193,7 @@ namespace Backend.CMS.Infrastructure.Services
                 await AddCategoryImagesAsync(category.Id, createCategoryDto.Images);
             }
 
-            await InvalidateCategoryCache();
+            await InvalidateCategoryCacheAsync();
 
             _logger.LogInformation("Created category: {CategoryName} (ID: {CategoryId})", category.Name, category.Id);
 
@@ -202,7 +240,7 @@ namespace Backend.CMS.Infrastructure.Services
             await UpdateCategoryImagesAsync(categoryId, updateCategoryDto.Images);
 
             await _categoryRepository.SaveChangesAsync();
-            await InvalidateCategoryCache();
+            await InvalidateCategoryCacheAsync();
 
             _logger.LogInformation("Updated category: {CategoryName} (ID: {CategoryId})", category.Name, category.Id);
 
@@ -220,7 +258,7 @@ namespace Backend.CMS.Infrastructure.Services
                 throw new InvalidOperationException("Cannot delete category that has products or subcategories");
 
             await _categoryRepository.SoftDeleteAsync(category);
-            await InvalidateCategoryCache();
+            await InvalidateCategoryCacheAsync();
 
             _logger.LogInformation("Deleted category: {CategoryName} (ID: {CategoryId})", category.Name, category.Id);
             return true;
@@ -228,39 +266,81 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<CategoryDto>> SearchCategoriesAsync(CategorySearchDto searchDto)
         {
-            var categories = await _categoryRepository.SearchCategoriesAsync(
-                searchDto.SearchTerm ?? string.Empty,
-                searchDto.Page,
-                searchDto.PageSize);
-
-            var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
-
-            foreach (var categoryDto in categoryDtos)
+            // Create cache key for search results
+            var searchKey = _cacheKeyService.GetQueryKey<Category>("search", new
             {
-                categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(categoryDto.Id, true);
-            }
+                searchDto.SearchTerm,
+                searchDto.Page,
+                searchDto.PageSize
+            });
 
-            return categoryDtos;
+            var result = await _cacheService.GetOrAddAsync(searchKey, async () =>
+            {
+                var categories = await _categoryRepository.SearchCategoriesAsync(
+                    searchDto.SearchTerm ?? string.Empty,
+                    searchDto.Page,
+                    searchDto.PageSize);
+
+                if (!categories.Any())
+                    return null; // Don't cache empty search results
+
+                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
+
+                foreach (var categoryDto in categoryDtos)
+                {
+                    categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(categoryDto.Id, true);
+                }
+
+                return categoryDtos;
+            }, CacheExpiration.ForDataType(CacheDataVolatility.Volatile));
+
+            return result ?? new List<CategoryDto>();
         }
 
         public async Task<int> GetSearchCountAsync(CategorySearchDto searchDto)
         {
-            var categories = await _categoryRepository.SearchCategoriesAsync(
-                searchDto.SearchTerm ?? string.Empty,
-                1,
-                int.MaxValue);
+            var countKey = _cacheKeyService.GetQueryKey<Category>("search_count", new
+            {
+                searchDto.SearchTerm
+            });
 
-            return categories.Count();
+            var result = await _cacheService.GetOrAddAsync(countKey, async () =>
+            {
+                var categories = await _categoryRepository.SearchCategoriesAsync(
+                    searchDto.SearchTerm ?? string.Empty,
+                    1,
+                    int.MaxValue);
+
+                return new CountWrapper(categories.Count());
+            }, CacheExpiration.ForDataType(CacheDataVolatility.Volatile));
+
+            return result?.Value ?? 0;
         }
 
         public async Task<bool> ValidateSlugAsync(string slug, int? excludeCategoryId = null)
         {
-            return !await _categoryRepository.SlugExistsAsync(slug, excludeCategoryId);
+            var validationKey = _cacheKeyService.GetCustomKey("category_slug_validation", slug, excludeCategoryId?.ToString() ?? "null");
+
+            var result = await _cacheService.GetOrAddAsync(validationKey, async () =>
+            {
+                var exists = await _categoryRepository.SlugExistsAsync(slug, excludeCategoryId);
+                return new BoolWrapper(!exists);
+            }, CacheExpiration.ForDataType(CacheDataVolatility.HighlyVolatile));
+
+            return result?.Value ?? false;
         }
 
         public async Task<bool> CanDeleteAsync(int categoryId)
         {
-            return await _categoryRepository.CanDeleteAsync(categoryId);
+            var deleteValidationKey = _cacheKeyService.GetCustomKey("category_can_delete", categoryId.ToString());
+
+            var result = await _cacheService.GetOrAddAsync(deleteValidationKey, async () =>
+            {
+                var canDelete = await _categoryRepository.CanDeleteAsync(categoryId);
+                return new BoolWrapper(canDelete);
+            }, CacheExpiration.ForDataType(CacheDataVolatility.HighlyVolatile));
+
+            return result?.Value ?? false;
         }
 
         public async Task<CategoryDto> MoveCategoryAsync(int categoryId, int? newParentCategoryId)
@@ -286,7 +366,7 @@ namespace Backend.CMS.Infrastructure.Services
             _categoryRepository.Update(category);
             await _categoryRepository.SaveChangesAsync();
 
-            await InvalidateCategoryCache();
+            await InvalidateCategoryCacheAsync();
 
             return _mapper.Map<CategoryDto>(category);
         }
@@ -305,7 +385,7 @@ namespace Backend.CMS.Infrastructure.Services
             _categoryRepository.UpdateRange(categories);
             await _categoryRepository.SaveChangesAsync();
 
-            await InvalidateCategoryCache();
+            await InvalidateCategoryCacheAsync();
 
             return _mapper.Map<List<CategoryDto>>(categories);
         }
@@ -331,7 +411,7 @@ namespace Backend.CMS.Infrastructure.Services
             await _categoryImageRepository.AddAsync(categoryImage);
             await _categoryImageRepository.SaveChangesAsync();
 
-            await InvalidateCategoryCache();
+            await InvalidateCategoryCacheAsync();
 
             _logger.LogInformation("Added image to category {CategoryId}: FileId {FileId}", categoryId, createImageDto.FileId);
             return _mapper.Map<CategoryImageDto>(categoryImage);
@@ -357,7 +437,7 @@ namespace Backend.CMS.Infrastructure.Services
             _categoryImageRepository.Update(categoryImage);
             await _categoryImageRepository.SaveChangesAsync();
 
-            await InvalidateCategoryCache();
+            await InvalidateCategoryCacheAsync();
 
             _logger.LogInformation("Updated category image {ImageId}", imageId);
             return _mapper.Map<CategoryImageDto>(categoryImage);
@@ -371,7 +451,7 @@ namespace Backend.CMS.Infrastructure.Services
             var categoryId = categoryImage.CategoryId;
             await _categoryImageRepository.SoftDeleteAsync(categoryImage);
 
-            await InvalidateCategoryCache();
+            await InvalidateCategoryCacheAsync();
 
             _logger.LogInformation("Deleted category image {ImageId} from category {CategoryId}", imageId, categoryId);
             return true;
@@ -391,7 +471,7 @@ namespace Backend.CMS.Infrastructure.Services
             _categoryImageRepository.UpdateRange(images);
             await _categoryImageRepository.SaveChangesAsync();
 
-            await InvalidateCategoryCache();
+            await InvalidateCategoryCacheAsync();
 
             return _mapper.Map<List<CategoryImageDto>>(images.OrderBy(i => i.Position));
         }
@@ -424,17 +504,24 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task<bool> WouldCreateCircularReferenceAsync(int categoryId, int potentialParentId)
         {
-            var currentCategory = await _categoryRepository.GetByIdAsync(potentialParentId);
+            var circularCheckKey = _cacheKeyService.GetCustomKey("category_circular_check", categoryId.ToString(), potentialParentId.ToString());
 
-            while (currentCategory?.ParentCategoryId.HasValue == true)
+            var result = await _cacheService.GetOrAddAsync(circularCheckKey, async () =>
             {
-                if (currentCategory.ParentCategoryId.Value == categoryId)
-                    return true;
+                var currentCategory = await _categoryRepository.GetByIdAsync(potentialParentId);
 
-                currentCategory = await _categoryRepository.GetByIdAsync(currentCategory.ParentCategoryId.Value);
-            }
+                while (currentCategory?.ParentCategoryId.HasValue == true)
+                {
+                    if (currentCategory.ParentCategoryId.Value == categoryId)
+                        return new BoolWrapper(true);
 
-            return false;
+                    currentCategory = await _categoryRepository.GetByIdAsync(currentCategory.ParentCategoryId.Value);
+                }
+
+                return new BoolWrapper(false);
+            }, CacheExpiration.ForDataType(CacheDataVolatility.HighlyVolatile));
+
+            return result?.Value ?? false;
         }
 
         private async Task ValidateImagesAsync(List<int> fileIds)
@@ -447,12 +534,22 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task ValidateImageAsync(int fileId)
         {
-            var file = await _fileRepository.GetByIdAsync(fileId);
-            if (file == null)
-                throw new ArgumentException($"File with ID {fileId} not found");
+            var validationKey = _cacheKeyService.GetCustomKey("file_image_validation", fileId.ToString());
 
-            if (file.FileType != Domain.Enums.FileType.Image)
-                throw new ArgumentException($"File with ID {fileId} is not an image");
+            var result = await _cacheService.GetOrAddAsync(validationKey, async () =>
+            {
+                var file = await _fileRepository.GetByIdAsync(fileId);
+                if (file == null)
+                    throw new ArgumentException($"File with ID {fileId} not found");
+
+                if (file.FileType != Domain.Enums.FileType.Image)
+                    throw new ArgumentException($"File with ID {fileId} is not an image");
+
+                return new BoolWrapper(true);
+            }, CacheExpiration.ForDataType(CacheDataVolatility.Static));
+
+            if (result?.Value != true)
+                throw new ArgumentException($"File validation failed for ID {fileId}");
         }
 
         private async Task AddCategoryImagesAsync(int categoryId, List<CreateCategoryImageDto> images)
@@ -538,9 +635,17 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private async Task InvalidateCategoryCache()
+        private async Task InvalidateCategoryCacheAsync()
         {
-            await _cacheService.RemoveByPatternAsync(CacheKeys.CategoriesPattern);
+            // Invalidate all category-related cache entries using the new invalidation service
+            await _cacheInvalidationService.InvalidateEntityTypeAsync<Category>();
+
+            // Also invalidate specific patterns that might be affected
+            await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.CategoryPattern);
+
+            // Invalidate search results and other related cache entries
+            await _cacheInvalidationService.InvalidateByPatternAsync("category_*");
+            await _cacheInvalidationService.InvalidateByPatternAsync("*category*");
         }
     }
 }
