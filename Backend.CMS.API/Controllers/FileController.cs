@@ -579,25 +579,8 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
-                var fileService = _fileService as FileService;
-                if (fileService == null)
-                {
-                    // If using cached service, get the base service
-                    var cachedService = _fileService as CachedFileService;
-                    if (cachedService != null)
-                    {
-                        var fieldInfo = cachedService.GetType().GetField("_baseFileService",
-                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                        fileService = fieldInfo?.GetValue(cachedService) as FileService;
-                    }
-                }
-
-                if (fileService == null)
-                {
-                    return StatusCode(500, new { Message = "Unable to access file service for integrity check" });
-                }
-
-                var isValid = await fileService.VerifyFileIntegrityAsync(id);
+          
+                var isValid = await _fileService.VerifyFileIntegrityAsync(id);
 
                 var file = await _fileService.GetFileByIdAsync(id);
 

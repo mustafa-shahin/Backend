@@ -589,7 +589,7 @@ static void RegisterSearchServices(WebApplicationBuilder builder)
 static void RegisterFileServices(WebApplicationBuilder builder)
 {
     // Register base services
-    builder.Services.AddScoped<FileService>();
+    //builder.Services.AddScoped<FileService>();
 
     // Register additional file services
     builder.Services.AddScoped<IImageProcessingService, ImageProcessingService>();
@@ -598,7 +598,7 @@ static void RegisterFileServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IDownloadTokenService, DownloadTokenService>();
 
     // Register file and folder services with their interfaces
-    builder.Services.AddScoped<IFileService, CachedFileService>();
+    builder.Services.AddScoped<IFileService, FileService>();
     builder.Services.AddScoped<IFolderService, FolderService>();
 }
 
