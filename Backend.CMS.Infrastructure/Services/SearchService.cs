@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
+using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
@@ -14,6 +15,8 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IRepository<IndexingJob> _indexingJobRepository;
         private readonly IIndexingService _indexingService;
         private readonly ICacheService _cacheService;
+        private readonly ICacheInvalidationService _cacheInvalidationService;
+        private readonly ICacheKeyService _cacheKeyService;
         private readonly IMapper _mapper;
         private readonly ILogger<SearchService> _logger;
 
@@ -22,6 +25,8 @@ namespace Backend.CMS.Infrastructure.Services
             IRepository<IndexingJob> indexingJobRepository,
             IIndexingService indexingService,
             ICacheService cacheService,
+            ICacheInvalidationService cacheInvalidationService,
+            ICacheKeyService cacheKeyService,
             IMapper mapper,
             ILogger<SearchService> logger)
         {
@@ -29,6 +34,8 @@ namespace Backend.CMS.Infrastructure.Services
             _indexingJobRepository = indexingJobRepository;
             _indexingService = indexingService;
             _cacheService = cacheService;
+            _cacheInvalidationService = cacheInvalidationService;
+            _cacheKeyService = cacheKeyService;
             _mapper = mapper;
             _logger = logger;
         }
@@ -153,7 +160,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (string.IsNullOrWhiteSpace(query) || query.Length < 2)
                     return new List<SearchResultDto>();
 
-                var cacheKey = $"suggestions:{query.ToLowerInvariant()}:{maxSuggestions}";
+                var cacheKey = _cacheKeyService.GetCustomKey("search", "suggestions", GetSearchHash(query), maxSuggestions);
 
                 var cachedSuggestions = await _cacheService.GetAsync<List<SearchResultDto>>(cacheKey);
                 if (cachedSuggestions != null)
@@ -191,33 +198,38 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var jobs = await _indexingJobRepository.GetAllAsync();
-                var recentJobs = jobs.OrderByDescending(j => j.StartedAt)
-                                   .Take(10)
-                                   .ToList();
+                var cacheKey = _cacheKeyService.GetCustomKey("search", "indexing_status");
 
-                var lastFullIndex = jobs.Where(j => j.JobType == "Full" && j.Status == "Completed")
-                                       .OrderByDescending(j => j.CompletedAt)
-                                       .FirstOrDefault()?.CompletedAt;
-
-                var lastIncrementalIndex = jobs.Where(j => j.JobType == "Incremental" && j.Status == "Completed")
-                                              .OrderByDescending(j => j.CompletedAt)
-                                              .FirstOrDefault()?.CompletedAt;
-
-                var totalIndexedEntities = await _searchIndexRepository.CountAsync();
-
-                var runningJob = jobs.FirstOrDefault(j => j.Status == "Running");
-                var status = runningJob != null ? "Running" : "Idle";
-
-                return new IndexingStatusDto
+                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
-                    Status = status,
-                    LastFullIndex = lastFullIndex,
-                    LastIncrementalIndex = lastIncrementalIndex,
-                    TotalIndexedEntities = totalIndexedEntities,
-                    NextScheduledIndex = null, // This would depend on scheduling implementation
-                    RecentJobs = _mapper.Map<List<IndexingJobDto>>(recentJobs)
-                };
+                    var jobs = await _indexingJobRepository.GetAllAsync();
+                    var recentJobs = jobs.OrderByDescending(j => j.StartedAt)
+                                       .Take(10)
+                                       .ToList();
+
+                    var lastFullIndex = jobs.Where(j => j.JobType == "Full" && j.Status == "Completed")
+                                           .OrderByDescending(j => j.CompletedAt)
+                                           .FirstOrDefault()?.CompletedAt;
+
+                    var lastIncrementalIndex = jobs.Where(j => j.JobType == "Incremental" && j.Status == "Completed")
+                                                  .OrderByDescending(j => j.CompletedAt)
+                                                  .FirstOrDefault()?.CompletedAt;
+
+                    var totalIndexedEntities = await _searchIndexRepository.CountAsync();
+
+                    var runningJob = jobs.FirstOrDefault(j => j.Status == "Running");
+                    var status = runningJob != null ? "Running" : "Idle";
+
+                    return new IndexingStatusDto
+                    {
+                        Status = status,
+                        LastFullIndex = lastFullIndex,
+                        LastIncrementalIndex = lastIncrementalIndex,
+                        TotalIndexedEntities = totalIndexedEntities,
+                        NextScheduledIndex = null, // This would depend on scheduling implementation
+                        RecentJobs = _mapper.Map<List<IndexingJobDto>>(recentJobs)
+                    };
+                }, TimeSpan.FromMinutes(2)) ?? new IndexingStatusDto { Status = "Error" };
             }
             catch (Exception ex)
             {
@@ -238,7 +250,15 @@ namespace Backend.CMS.Infrastructure.Services
                     return false;
                 }
 
-                return await _indexingService.FullReindexAsync();
+                var result = await _indexingService.FullReindexAsync();
+
+                if (result)
+                {
+                    // Invalidate search-related cache
+                    await InvalidateSearchCacheAsync();
+                }
+
+                return result;
             }
             catch (Exception ex)
             {
@@ -259,7 +279,15 @@ namespace Backend.CMS.Infrastructure.Services
                     return false;
                 }
 
-                return await _indexingService.IncrementalIndexAsync();
+                var result = await _indexingService.IncrementalIndexAsync();
+
+                if (result)
+                {
+                    // Invalidate search-related cache
+                    await InvalidateSearchCacheAsync();
+                }
+
+                return result;
             }
             catch (Exception ex)
             {
@@ -272,13 +300,23 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                return entityType.ToLowerInvariant() switch
+                var result = entityType.ToLowerInvariant() switch
                 {
                     "page" => await _indexingService.IndexPagesAsync(new[] { entityId }),
                     "file" => await _indexingService.IndexFilesAsync(new[] { entityId }),
                     "user" => await _indexingService.IndexUsersAsync(new[] { entityId }),
                     _ => false
                 };
+
+                if (result)
+                {
+                    // Invalidate relevant cache patterns
+                    await InvalidateSearchCacheAsync();
+                    var entityCacheKey = _cacheKeyService.GetCustomKey("search", "entity", entityType, entityId);
+                    await _cacheInvalidationService.InvalidateByPatternAsync(entityCacheKey);
+                }
+
+                return result;
             }
             catch (Exception ex)
             {
@@ -291,7 +329,17 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                return await _indexingService.RemoveFromIndexAsync(entityType, entityId);
+                var result = await _indexingService.RemoveFromIndexAsync(entityType, entityId);
+
+                if (result)
+                {
+                    // Invalidate relevant cache patterns
+                    await InvalidateSearchCacheAsync();
+                    var entityCacheKey = _cacheKeyService.GetCustomKey("search", "entity", entityType, entityId);
+                    await _cacheInvalidationService.InvalidateByPatternAsync(entityCacheKey);
+                }
+
+                return result;
             }
             catch (Exception ex)
             {
@@ -303,10 +351,10 @@ namespace Backend.CMS.Infrastructure.Services
         // Private helper methods
         private string GenerateSearchCacheKey(SearchRequestDto searchRequest)
         {
-            var keyParts = new List<string>
+            var keyParts = new List<object>
             {
-                "search",
-                searchRequest.Query?.ToLowerInvariant() ?? "empty",
+                "results",
+                GetSearchHash(searchRequest.Query ?? "empty"),
                 string.Join(",", searchRequest.EntityTypes.OrderBy(et => et)),
                 searchRequest.PublicOnly.ToString(),
                 searchRequest.Page.ToString(),
@@ -319,7 +367,21 @@ namespace Backend.CMS.Infrastructure.Services
                 keyParts.Add(filterString);
             }
 
-            return string.Join(":", keyParts);
+            return _cacheKeyService.GetCustomKey("search", keyParts.ToArray());
+        }
+
+        private string GetSearchHash(string? searchTerm)
+        {
+            if (string.IsNullOrWhiteSpace(searchTerm))
+                return "empty";
+
+            // Simple hash for search terms to keep cache keys manageable
+            var normalized = searchTerm.ToLowerInvariant().Trim();
+            if (normalized.Length <= 20)
+                return normalized.Replace(" ", "_");
+
+            // For longer queries, use a hash
+            return $"hash_{normalized.GetHashCode():x8}";
         }
 
         private float CalculateRelevanceScore(SearchIndex searchIndex, string query)
@@ -403,6 +465,24 @@ namespace Backend.CMS.Infrastructure.Services
                 "componenttemplate" => $"/components/{entityId}",
                 _ => $"/{entityType.ToLowerInvariant()}/{entityId}"
             };
+        }
+
+        private async Task InvalidateSearchCacheAsync()
+        {
+            try
+            {
+                // Invalidate all search-related cache
+                await _cacheInvalidationService.InvalidateByPatternAsync(_cacheKeyService.GetCustomKey("search", "*"));
+
+                // Invalidate indexing status cache
+                await _cacheInvalidationService.InvalidateByPatternAsync(_cacheKeyService.GetCustomKey("indexing", "*"));
+
+                _logger.LogDebug("Search cache invalidated successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating search cache");
+            }
         }
     }
 }

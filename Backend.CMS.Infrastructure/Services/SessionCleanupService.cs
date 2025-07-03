@@ -1,4 +1,4 @@
-﻿using Backend.CMS.Infrastructure.Caching;
+﻿using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Backend.CMS.Domain.Entities;
 using Microsoft.Extensions.Configuration;
@@ -167,6 +167,9 @@ namespace Backend.CMS.Infrastructure.Services
 
                 await sessionRepository.SaveChangesAsync();
 
+                // Invalidate cache for cleaned sessions
+                await InvalidateSessionCacheAsync(scope, sessionsList, cancellationToken);
+
                 _logger.LogDebug("Cleaned up {Count} expired database sessions", sessionsList.Count);
                 return sessionsList.Count;
             }
@@ -181,18 +184,30 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var cacheService = scope.ServiceProvider.GetService<ICacheService>();
-                if (cacheService == null)
+                var cacheInvalidationService = scope.ServiceProvider.GetService<ICacheInvalidationService>();
+                if (cacheInvalidationService == null)
                 {
-                    _logger.LogWarning("Cache service not available for session cleanup");
+                    _logger.LogWarning("Cache invalidation service not available for session cleanup");
                     return 0;
                 }
 
-                // Clean up session cache entries
-                await cacheService.RemoveByPatternAsync(CacheKeys.SessionsPattern);
+                var cacheKeyService = scope.ServiceProvider.GetService<ICacheKeyService>();
+                if (cacheKeyService == null)
+                {
+                    _logger.LogWarning("Cache key service not available for session cleanup");
+                    return 0;
+                }
 
-                // Estimated count since we can't get exact numbers without Redis admin mode
-                var estimatedCount = 10;
+                // Clean up session cache entries using the new pattern-based invalidation
+                var sessionPattern = cacheKeyService.GetEntityPattern<UserSession>();
+                await cacheInvalidationService.InvalidateByPatternAsync(sessionPattern, cancellationToken);
+
+                // Also clean up user session cache entries
+                var userSessionPattern = cacheKeyService.GetCustomKey("user", "sessions", "*");
+                await cacheInvalidationService.InvalidateByPatternAsync(userSessionPattern, cancellationToken);
+
+                // Estimated count since we can't get exact numbers without detailed cache inspection
+                var estimatedCount = 25; // Conservative estimate
 
                 _logger.LogDebug("Cleaned up approximately {Count} cached session entries", estimatedCount);
                 return estimatedCount;
@@ -204,9 +219,72 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
+        private async Task InvalidateSessionCacheAsync(IServiceScope scope, List<UserSession> cleanedSessions, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var cacheInvalidationService = scope.ServiceProvider.GetService<ICacheInvalidationService>();
+                var cacheKeyService = scope.ServiceProvider.GetService<ICacheKeyService>();
+
+                if (cacheInvalidationService == null || cacheKeyService == null)
+                {
+                    _logger.LogDebug("Cache services not available for session invalidation");
+                    return;
+                }
+
+                // Invalidate specific session caches
+                foreach (var session in cleanedSessions)
+                {
+                    // Invalidate session by ID
+                    var sessionKey = cacheKeyService.GetEntityKey<UserSession>(session.Id);
+                    await cacheInvalidationService.InvalidateByPatternAsync(sessionKey, cancellationToken);
+
+                    // Invalidate session by refresh token if available
+                    if (!string.IsNullOrEmpty(session.RefreshToken))
+                    {
+                        var tokenKey = cacheKeyService.GetCustomKey("session", "refresh_token", GetTokenHash(session.RefreshToken));
+                        await cacheInvalidationService.InvalidateByPatternAsync(tokenKey, cancellationToken);
+                    }
+
+                    // Invalidate user sessions cache
+                    var userSessionsKey = cacheKeyService.GetCustomKey("user", "sessions", session.UserId);
+                    await cacheInvalidationService.InvalidateByPatternAsync(userSessionsKey, cancellationToken);
+                }
+
+                _logger.LogDebug("Invalidated cache for {Count} cleaned sessions", cleanedSessions.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating session cache");
+            }
+        }
+
+        private static string GetTokenHash(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                return "empty";
+
+            // Use last 8 characters for token identification (safe for logs)
+            return token.Length <= 8 ? token : token[^8..];
+        }
+
         public override async Task StopAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("Session cleanup service stopping...");
+
+            try
+            {
+                // Perform final cleanup before stopping if enabled
+                if (_enableCleanup)
+                {
+                    await PerformSessionCleanupAsync(cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error during final session cleanup");
+            }
+
             await base.StopAsync(cancellationToken);
             _logger.LogInformation("Session cleanup service stopped");
         }

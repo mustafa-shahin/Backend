@@ -3,10 +3,10 @@ using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.IRepositories;
-using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Caching.Interfaces;
+using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using Backend.CMS.Infrastructure.Interfaces;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -15,6 +15,8 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IPageRepository _pageRepository;
         private readonly IRepository<PageVersion> _versionRepository;
         private readonly ICacheService _cacheService;
+        private readonly ICacheInvalidationService _cacheInvalidationService;
+        private readonly ICacheKeyService _cacheKeyService;
         private readonly IPageContentValidationService _contentValidationService;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
@@ -25,6 +27,8 @@ namespace Backend.CMS.Infrastructure.Services
             IPageRepository pageRepository,
             IRepository<PageVersion> versionRepository,
             ICacheService cacheService,
+            ICacheInvalidationService cacheInvalidationService,
+            ICacheKeyService cacheKeyService,
             IPageContentValidationService contentValidationService,
             IMapper mapper,
             IUserSessionService userSessionService,
@@ -33,6 +37,8 @@ namespace Backend.CMS.Infrastructure.Services
             _pageRepository = pageRepository ?? throw new ArgumentNullException(nameof(pageRepository));
             _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+            _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
+            _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
             _contentValidationService = contentValidationService ?? throw new ArgumentNullException(nameof(contentValidationService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
@@ -50,8 +56,8 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var cacheKey = CacheKeys.DesignerPage(pageId);
-                return await _cacheService.GetAsync(cacheKey, async () =>
+                var cacheKey = _cacheKeyService.GetCustomKey("designer", "page", pageId);
+                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
                     var page = await _pageRepository.GetByIdAsync(pageId);
                     if (page == null)
@@ -103,7 +109,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _pageRepository.Update(page);
                 await _pageRepository.SaveChangesAsync();
 
-                // Clear cache
+                // Invalidate related cache
                 await InvalidatePageCacheAsync(saveDto.PageId);
 
                 _logger.LogInformation("Saved designer page {PageId} by user {UserId}", saveDto.PageId, currentUserId);
@@ -168,7 +174,7 @@ namespace Backend.CMS.Infrastructure.Services
                     ExpiresAt = expiresAt
                 };
 
-                var cacheKey = CacheKeys.PreviewToken(previewToken);
+                var cacheKey = _cacheKeyService.GetCustomKey("preview", "token", previewToken);
                 await _cacheService.SetAsync(cacheKey, previewData, TimeSpan.FromHours(2));
 
                 return new DesignerPreviewDto
@@ -194,7 +200,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (string.IsNullOrWhiteSpace(previewToken))
                     throw new ArgumentException("Preview token is required");
 
-                var cacheKey = CacheKeys.PreviewToken(previewToken);
+                var cacheKey = _cacheKeyService.GetCustomKey("preview", "token", previewToken);
                 var previewData = await _cacheService.GetAsync<object>(cacheKey);
 
                 if (previewData == null)
@@ -316,6 +322,10 @@ namespace Backend.CMS.Infrastructure.Services
                 await _versionRepository.AddAsync(version);
                 await _versionRepository.SaveChangesAsync();
 
+                // Invalidate page versions cache
+                var versionsKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
+                await _cacheService.RemoveAsync(versionsKey);
+
                 _logger.LogInformation("Created version {VersionNumber} for page {PageId}", nextVersionNumber, pageId);
 
                 return version;
@@ -331,10 +341,14 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var versions = await _versionRepository.FindAsync(v => v.PageId == pageId);
-                return versions.OrderByDescending(v => v.VersionNumber)
-                              .Select(v => _mapper.Map<PageVersionDto>(v))
-                              .ToList();
+                var cacheKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
+                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+                {
+                    var versions = await _versionRepository.FindAsync(v => v.PageId == pageId);
+                    return versions.OrderByDescending(v => v.VersionNumber)
+                                  .Select(v => _mapper.Map<PageVersionDto>(v))
+                                  .ToList();
+                }, TimeSpan.FromMinutes(30));
             }
             catch (Exception ex)
             {
@@ -387,7 +401,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (!userId.HasValue)
                     return new DesignerStateDto { PageId = pageId };
 
-                var cacheKey = CacheKeys.DesignerState(pageId, userId.Value);
+                var cacheKey = _cacheKeyService.GetCustomKey("designer", "state", pageId, userId.Value);
                 var state = await _cacheService.GetAsync<DesignerStateDto>(cacheKey);
 
                 return state ?? new DesignerStateDto { PageId = pageId };
@@ -408,7 +422,7 @@ namespace Backend.CMS.Infrastructure.Services
                     return stateDto;
 
                 stateDto.LastModified = DateTime.UtcNow;
-                var cacheKey = CacheKeys.DesignerState(stateDto.PageId, userId.Value);
+                var cacheKey = _cacheKeyService.GetCustomKey("designer", "state", stateDto.PageId, userId.Value);
 
                 await _cacheService.SetAsync(cacheKey, stateDto, TimeSpan.FromDays(7));
                 return stateDto;
@@ -427,7 +441,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var userId = _userSessionService.GetCurrentUserId();
                 if (!userId.HasValue) return;
 
-                var cacheKey = CacheKeys.DesignerState(pageId, userId.Value);
+                var cacheKey = _cacheKeyService.GetCustomKey("designer", "state", pageId, userId.Value);
                 await _cacheService.RemoveAsync(cacheKey);
             }
             catch (Exception ex)
@@ -475,6 +489,8 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogWarning("Page validation failed for page {PageId}: {Errors}", saveDto.PageId, errorMessage);
                 throw new ArgumentException(errorMessage);
             }
+
+            await Task.CompletedTask;
         }
 
         private Dictionary<string, object> CreatePageSnapshot(Page page)
@@ -550,16 +566,20 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task InvalidatePageCacheAsync(int pageId)
         {
-            var keysToRemove = new[]
-            {
-                CacheKeys.DesignerPage(pageId),
-                CacheKeys.PageById(pageId),
-                CacheKeys.PublishedPages,
-                CacheKeys.PageHierarchy
-            };
+            // Invalidate specific page caches
+            await _cacheInvalidationService.InvalidateEntityAsync<Page>(pageId);
 
-            await _cacheService.RemoveAsync(keysToRemove);
-            await _cacheService.RemoveByPatternAsync($"preview:*");
+            // Invalidate designer-specific caches
+            var designerKey = _cacheKeyService.GetCustomKey("designer", "page", pageId);
+            await _cacheService.RemoveAsync(designerKey);
+
+            // Invalidate related page list caches
+            await _cacheInvalidationService.InvalidateByPatternAsync("page:list:*");
+            await _cacheInvalidationService.InvalidateByPatternAsync("page:hierarchy*");
+            await _cacheInvalidationService.InvalidateByPatternAsync("page:published*");
+
+            // Invalidate preview caches
+            await _cacheInvalidationService.InvalidateByPatternAsync("preview:*");
         }
 
         private static string GeneratePreviewToken()
@@ -569,12 +589,12 @@ namespace Backend.CMS.Infrastructure.Services
 
         private string GetUserAgent()
         {
-            return "Designer";
+            return "";
         }
 
         private string GetClientIpAddress()
         {
-            return "127.0.0.1";
+            return "";
         }
     }
 }

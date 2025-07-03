@@ -1,7 +1,7 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
-using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
@@ -15,15 +15,20 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IRepository<ProductVariantImage> _variantImageRepository;
         private readonly IRepository<FileEntity> _fileRepository;
         private readonly ICacheService _cacheService;
+        private readonly ICacheInvalidationService _cacheInvalidationService;
+        private readonly ICacheKeyService _cacheKeyService;
         private readonly IMapper _mapper;
         private readonly ILogger<ProductVariantService> _logger;
         private readonly IRepository<ProductImage> _productImageRepository;
+
         public ProductVariantService(
             IProductVariantRepository variantRepository,
             IProductRepository productRepository,
             IRepository<ProductVariantImage> variantImageRepository,
             IRepository<FileEntity> fileRepository,
             ICacheService cacheService,
+            ICacheInvalidationService cacheInvalidationService,
+            ICacheKeyService cacheKeyService,
             IMapper mapper,
             ILogger<ProductVariantService> logger,
             IRepository<ProductImage> productImageRepository)
@@ -33,6 +38,8 @@ namespace Backend.CMS.Infrastructure.Services
             _variantImageRepository = variantImageRepository;
             _fileRepository = fileRepository;
             _cacheService = cacheService;
+            _cacheInvalidationService = cacheInvalidationService;
+            _cacheKeyService = cacheKeyService;
             _mapper = mapper;
             _logger = logger;
             _productImageRepository = productImageRepository;
@@ -40,8 +47,8 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<ProductVariantDto> GetVariantByIdAsync(int variantId)
         {
-            var cacheKey = CacheKeys.ProductVariantById(variantId);
-            var variant = await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetEntityKey<ProductVariant>(variantId);
+            var variant = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var dbVariant = await _variantRepository.GetByIdAsync(variantId);
                 if (dbVariant == null)
@@ -55,20 +62,21 @@ namespace Backend.CMS.Infrastructure.Services
 
             return variant;
         }
+
         public async Task<List<ProductVariantDto>> GetVariantsAsync()
         {
-            var cacheKey = CacheKeys.ProductsVariantsList();
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCollectionKey<ProductVariant>("all");
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var variants = await _variantRepository.GetAllAsync();
                 return _mapper.Map<List<ProductVariantDto>>(variants);
-            }, cacheEmptyCollections: false) ?? [];
+            }) ?? [];
         }
 
         public async Task<ProductVariantDto?> GetVariantBySKUAsync(string sku)
         {
-            var cacheKey = CacheKeys.ProductVariantBySKU(sku);
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "sku", sku.ToLowerInvariant());
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var variant = await _variantRepository.GetBySKUAsync(sku);
                 return variant != null ? _mapper.Map<ProductVariantDto>(variant) : null;
@@ -77,8 +85,8 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<ProductVariantDto>> GetVariantsByProductIdAsync(int productId)
         {
-            var cacheKey = CacheKeys.ProductVariantsByProduct(productId);
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCollectionKey<ProductVariant>("by_product", productId);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var variants = await _variantRepository.GetByProductIdAsync(productId);
                 return _mapper.Map<List<ProductVariantDto>>(variants);
@@ -87,8 +95,8 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<ProductVariantDto?> GetDefaultVariantAsync(int productId)
         {
-            var cacheKey = CacheKeys.ProductDefaultVariant(productId);
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "default", productId);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var variant = await _variantRepository.GetDefaultVariantAsync(productId);
                 return variant != null ? _mapper.Map<ProductVariantDto>(variant) : null;
@@ -139,7 +147,7 @@ namespace Backend.CMS.Infrastructure.Services
                 await _productRepository.SaveChangesAsync();
             }
 
-            await InvalidateVariantCache(productId);
+            await InvalidateVariantCacheAsync(productId);
 
             _logger.LogInformation("Created variant: {VariantTitle} for product {ProductId}", variant.Title, productId);
 
@@ -172,7 +180,8 @@ namespace Backend.CMS.Infrastructure.Services
             _variantRepository.Update(variant);
             await _variantRepository.SaveChangesAsync();
 
-            await InvalidateVariantCache(variant.ProductId);
+            await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
+            await InvalidateVariantCacheAsync(variant.ProductId);
 
             _logger.LogInformation("Updated variant: {VariantTitle} (ID: {VariantId})", variant.Title, variant.Id);
             return _mapper.Map<ProductVariantDto>(variant);
@@ -211,7 +220,8 @@ namespace Backend.CMS.Infrastructure.Services
                 await _variantRepository.SaveChangesAsync();
             }
 
-            await InvalidateVariantCache(productId);
+            await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
+            await InvalidateVariantCacheAsync(productId);
 
             _logger.LogInformation("Deleted variant: {VariantTitle} (ID: {VariantId})", variant.Title, variant.Id);
             return true;
@@ -238,7 +248,8 @@ namespace Backend.CMS.Infrastructure.Services
             _variantRepository.UpdateRange(allVariants);
             await _variantRepository.SaveChangesAsync();
 
-            await InvalidateVariantCache(variant.ProductId);
+            await _cacheInvalidationService.InvalidateEntitiesAsync<ProductVariant>(allVariants.Select(v => (object)v.Id));
+            await InvalidateVariantCacheAsync(variant.ProductId);
 
             _logger.LogInformation("Set default variant: {VariantTitle} (ID: {VariantId})", variant.Title, variant.Id);
             return _mapper.Map<ProductVariantDto>(variant);
@@ -261,9 +272,11 @@ namespace Backend.CMS.Infrastructure.Services
             _variantRepository.UpdateRange(variants);
             await _variantRepository.SaveChangesAsync();
 
+            await _cacheInvalidationService.InvalidateEntitiesAsync<ProductVariant>(variantIds.Cast<object>());
+
             foreach (var productId in productIds)
             {
-                await InvalidateVariantCache(productId);
+                await InvalidateVariantCacheAsync(productId);
             }
 
             return _mapper.Map<List<ProductVariantDto>>(variants);
@@ -279,7 +292,8 @@ namespace Backend.CMS.Infrastructure.Services
             _variantRepository.Update(variant);
             await _variantRepository.SaveChangesAsync();
 
-            await InvalidateVariantCache(variant.ProductId);
+            await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
+            await InvalidateVariantCacheAsync(variant.ProductId);
 
             _logger.LogInformation("Updated stock for variant {VariantId}: {NewQuantity}", variantId, newQuantity);
             return _mapper.Map<ProductVariantDto>(variant);
@@ -287,19 +301,34 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<ProductVariantDto>> GetLowStockVariantsAsync(int threshold = 5)
         {
-            var variants = await _variantRepository.GetLowStockVariantsAsync(threshold);
-            return _mapper.Map<List<ProductVariantDto>>(variants);
+            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "low_stock", threshold);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                var variants = await _variantRepository.GetLowStockVariantsAsync(threshold);
+                return _mapper.Map<List<ProductVariantDto>>(variants);
+            }) ?? [];
         }
 
         public async Task<List<ProductVariantDto>> GetOutOfStockVariantsAsync()
         {
-            var variants = await _variantRepository.GetOutOfStockVariantsAsync();
-            return _mapper.Map<List<ProductVariantDto>>(variants);
+            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "out_of_stock");
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                var variants = await _variantRepository.GetOutOfStockVariantsAsync();
+                return _mapper.Map<List<ProductVariantDto>>(variants);
+            }) ?? [];
         }
 
         public async Task<int> GetTotalStockAsync(int productId)
         {
-            return await _variantRepository.GetTotalStockAsync(productId);
+            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "total_stock", productId);
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                var total = await _variantRepository.GetTotalStockAsync(productId);
+                return new CountWrapper { Value = total };
+            });
+
+            return result?.Value ?? 0;
         }
 
         // Image management methods
@@ -323,7 +352,8 @@ namespace Backend.CMS.Infrastructure.Services
             await _variantImageRepository.AddAsync(variantImage);
             await _variantImageRepository.SaveChangesAsync();
 
-            await InvalidateVariantCache(variant.ProductId);
+            await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
+            await InvalidateVariantCacheAsync(variant.ProductId);
 
             _logger.LogInformation("Added image to variant {VariantId}: FileId {FileId}", variantId, createImageDto.FileId);
             return _mapper.Map<ProductVariantImageDto>(variantImage);
@@ -350,7 +380,11 @@ namespace Backend.CMS.Infrastructure.Services
             await _variantImageRepository.SaveChangesAsync();
 
             var variant = await _variantRepository.GetByIdAsync(variantImage.ProductVariantId);
-            await InvalidateVariantCache(variant!.ProductId);
+            if (variant != null)
+            {
+                await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variant.Id);
+                await InvalidateVariantCacheAsync(variant.ProductId);
+            }
 
             _logger.LogInformation("Updated variant image {ImageId}", imageId);
             return _mapper.Map<ProductVariantImageDto>(variantImage);
@@ -368,7 +402,8 @@ namespace Backend.CMS.Infrastructure.Services
 
             if (variant != null)
             {
-                await InvalidateVariantCache(variant.ProductId);
+                await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
+                await InvalidateVariantCacheAsync(variant.ProductId);
             }
 
             _logger.LogInformation("Deleted variant image {ImageId} from variant {VariantId}", imageId, variantId);
@@ -392,7 +427,8 @@ namespace Backend.CMS.Infrastructure.Services
             var variant = await _variantRepository.GetByIdAsync(variantId);
             if (variant != null)
             {
-                await InvalidateVariantCache(variant.ProductId);
+                await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
+                await InvalidateVariantCacheAsync(variant.ProductId);
             }
 
             return _mapper.Map<List<ProductVariantImageDto>>(images.OrderBy(i => i.Position));
@@ -505,95 +541,22 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private async Task AddProductImagesAsync(int productId, List<CreateProductImageDto> images)
-        {
-            foreach (var imageDto in images)
-            {
-                var productImage = _mapper.Map<ProductImage>(imageDto);
-                productImage.ProductId = productId;
-                productImage.CreatedAt = DateTime.UtcNow;
-                productImage.UpdatedAt = DateTime.UtcNow;
-
-                await _productImageRepository.AddAsync(productImage);
-            }
-
-            await EnsureSingleFeaturedProductImageAsync(productId);
-            await _productImageRepository.SaveChangesAsync();
-        }
-        private async Task UpdateProductImagesAsync(int productId, List<UpdateProductImageDto> images)
-        {
-            // Remove existing images (soft delete)
-            var existingImages = await _productImageRepository.FindAsync(i => i.Id == productId);
-            await _productImageRepository.SoftDeleteRangeAsync(existingImages);
-
-            // Add new images
-            foreach (var imageDto in images)
-            {
-                var productImage = new ProductImage
-                {
-                    ProductId = productId,
-                    FileId = imageDto.FileId,
-                    Alt = imageDto.Alt,
-                    Caption = imageDto.Caption,
-                    Position = imageDto.Position,
-                    IsFeatured = imageDto.IsFeatured,
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                await _productImageRepository.AddAsync(productImage);
-            }
-
-            // Ensure only one image is marked as featured
-            await EnsureSingleFeaturedProductImageAsync(productId);
-            await _productImageRepository.SaveChangesAsync();
-        }
-
-        private async Task EnsureSingleFeaturedProductImageAsync(int productId)
-        {
-            var featuredImages = await _productImageRepository.FindAsync(i => i.Id == productId && i.IsFeatured);
-            var featuredImagesList = featuredImages.ToList();
-
-            if (featuredImagesList.Count > 1)
-            {
-                // Keep only the first one as featured
-                for (int i = 1; i < featuredImagesList.Count; i++)
-                {
-                    featuredImagesList[i].IsFeatured = false;
-                }
-
-                _productImageRepository.UpdateRange(featuredImagesList.Skip(1));
-            }
-            else if (!featuredImagesList.Any())
-            {
-                // If no featured image, make the first one featured
-                var firstImage = await _productImageRepository.FirstOrDefaultAsync(i => i.ProductId == productId);
-                if (firstImage != null)
-                {
-                    firstImage.IsFeatured = true;
-                    _productImageRepository.Update(firstImage);
-                }
-            }
-        }
-        private async Task InvalidateVariantCache(int productId)
+        private async Task InvalidateVariantCacheAsync(int productId)
         {
             try
             {
-                // Remove specific known cache keys
-                var keysToRemove = new List<string>
-        {
-            CacheKeys.ProductsVariantsList(),
-            CacheKeys.ProductVariantsByProduct(productId),
-            CacheKeys.ProductDefaultVariant(productId)
-        };
+                // Invalidate specific cache patterns
+                await _cacheInvalidationService.InvalidateEntityTypeAsync<ProductVariant>();
+                await _cacheInvalidationService.InvalidateByPatternAsync(_cacheKeyService.GetEntityPattern<ProductVariant>());
 
-                await _cacheService.RemoveAsync(keysToRemove);
+                // Invalidate product-specific variant caches
+                var productVariantPattern = _cacheKeyService.GetCustomKey("product_variant", "*", productId);
+                await _cacheInvalidationService.InvalidateByPatternAsync(productVariantPattern);
 
-                // Remove by patterns
-                await _cacheService.RemoveByPatternAsync(CacheKeys.ProductVariantsPattern(productId));
-                await _cacheService.RemoveByPatternAsync(CacheKeys.ProductsPattern);
+                // Also invalidate related product cache since variants affect product data
+                await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
 
-                _logger.LogInformation("Variant cache invalidated successfully for product {ProductId}", productId);
+                _logger.LogDebug("Variant cache invalidated successfully for product {ProductId}", productId);
             }
             catch (Exception ex)
             {

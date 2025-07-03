@@ -3,10 +3,10 @@ using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.IRepositories;
-using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Caching.Interfaces;
+using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using Backend.CMS.Infrastructure.Interfaces;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -16,6 +16,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IRepository<PageVersion> _versionRepository;
         private readonly ICacheService _cacheService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
+        private readonly ICacheKeyService _cacheKeyService;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
         private readonly ILogger<PageService> _logger;
@@ -26,6 +27,7 @@ namespace Backend.CMS.Infrastructure.Services
             IRepository<PageVersion> versionRepository,
             ICacheService cacheService,
             ICacheInvalidationService cacheInvalidationService,
+            ICacheKeyService cacheKeyService,
             IUserSessionService userSessionService,
             IMapper mapper,
             ILogger<PageService> logger)
@@ -34,6 +36,7 @@ namespace Backend.CMS.Infrastructure.Services
             _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
             _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
+            _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -53,15 +56,15 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var cacheKey = CacheKeys.PageById(pageId);
-                return await _cacheService.GetAsync(cacheKey, async () =>
+                var cacheKey = _cacheKeyService.GetEntityKey<Page>(pageId);
+                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
                     var page = await _pageRepository.GetByIdAsync(pageId);
                     if (page == null)
                         throw new ArgumentException("Page not found");
 
                     return _mapper.Map<PageDto>(page);
-                }, cacheEmptyCollections: false);
+                });
             }
             catch (Exception ex)
             {
@@ -78,9 +81,9 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var normalizedSlug = NormalizeSlug(slug);
-                var cacheKey = CacheKeys.PageBySlug(normalizedSlug);
+                var cacheKey = _cacheKeyService.GetCustomKey("page", "slug", normalizedSlug);
 
-                return await _cacheService.GetAsync(cacheKey, async () =>
+                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
                     // For public access, only get published pages
                     var page = await _pageRepository.GetPublishedBySlugAsync(normalizedSlug);
@@ -88,7 +91,7 @@ namespace Backend.CMS.Infrastructure.Services
                         throw new ArgumentException("Page not found");
 
                     return _mapper.Map<PageDto>(page);
-                }, cacheEmptyCollections: false);
+                });
             }
             catch (Exception ex)
             {
@@ -104,12 +107,14 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var cacheKey = CacheKeys.PagesSearch(search ?? "", page, pageSize);
-                return await _cacheService.GetAsync(cacheKey, async () =>
+                var searchTerm = search?.Trim() ?? "";
+                var cacheKey = _cacheKeyService.GetQueryKey<Page>("search", new { searchTerm, page, pageSize });
+
+                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
-                    var pages = string.IsNullOrWhiteSpace(search)
+                    var pages = string.IsNullOrWhiteSpace(searchTerm)
                         ? await _pageRepository.GetPagedAsync(page, pageSize)
-                        : await _pageRepository.SearchPagesAsync(search.Trim(), page, pageSize);
+                        : await _pageRepository.SearchPagesAsync(searchTerm, page, pageSize);
 
                     var pageList = pages.ToList();
                     var pageDtos = _mapper.Map<List<PageListDto>>(pageList);
@@ -129,7 +134,7 @@ namespace Backend.CMS.Infrastructure.Services
                     }
 
                     return pageDtos;
-                }, cacheEmptyCollections: false);
+                }, TimeSpan.FromMinutes(15));
             }
             catch (Exception ex)
             {
@@ -142,12 +147,12 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var cacheKey = CacheKeys.PageHierarchy;
-                return await _cacheService.GetAsync(cacheKey, async () =>
+                var cacheKey = _cacheKeyService.GetCollectionKey<Page>("hierarchy");
+                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
                     var pages = await _pageRepository.GetPageHierarchyAsync();
                     return _mapper.Map<List<PageDto>>(pages);
-                }, cacheEmptyCollections: false);
+                }, TimeSpan.FromMinutes(30));
             }
             catch (Exception ex)
             {
@@ -160,12 +165,12 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var cacheKey = CacheKeys.PublishedPages;
-                return await _cacheService.GetAsync(cacheKey, async () =>
+                var cacheKey = _cacheKeyService.GetCollectionKey<Page>("published");
+                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
                     var pages = await _pageRepository.GetPublishedPagesAsync();
                     return _mapper.Map<List<PageDto>>(pages);
-                }, cacheEmptyCollections: false);
+                }, TimeSpan.FromMinutes(20));
             }
             catch (Exception ex)
             {
@@ -210,7 +215,7 @@ namespace Backend.CMS.Infrastructure.Services
                 // Create initial version
                 await CreatePageVersionAsync(page.Id, "Initial page creation");
 
-                await _cacheInvalidationService.InvalidatePageCacheAsync(page.Id);
+                await InvalidatePageCacheAsync(page.Id);
 
                 _logger.LogInformation("Created page {PageId} with slug {Slug}", page.Id, page.Slug);
 
@@ -267,7 +272,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _pageRepository.Update(page);
                 await _pageRepository.SaveChangesAsync();
 
-                await _cacheInvalidationService.InvalidatePageCacheAsync(pageId);
+                await InvalidatePageCacheAsync(pageId);
 
                 _logger.LogInformation("Updated page {PageId}", pageId);
 
@@ -314,7 +319,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _pageRepository.Update(page);
                 await _pageRepository.SaveChangesAsync();
 
-                await _cacheInvalidationService.InvalidatePageCacheAsync(savePageStructureDto.PageId);
+                await InvalidatePageCacheAsync(savePageStructureDto.PageId);
 
                 _logger.LogInformation("Saved page structure for {PageId}", savePageStructureDto.PageId);
 
@@ -343,7 +348,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 if (success)
                 {
-                    await _cacheInvalidationService.InvalidatePageCacheAsync(pageId);
+                    await InvalidatePageCacheAsync(pageId);
                     _logger.LogInformation("Deleted page {PageId}", pageId);
                 }
 
@@ -386,7 +391,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _pageRepository.Update(page);
                 await _pageRepository.SaveChangesAsync();
 
-                await _cacheInvalidationService.InvalidatePageCacheAsync(pageId);
+                await InvalidatePageCacheAsync(pageId);
 
                 _logger.LogInformation("Published page {PageId}", pageId);
 
@@ -422,7 +427,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _pageRepository.Update(page);
                 await _pageRepository.SaveChangesAsync();
 
-                await _cacheInvalidationService.InvalidatePageCacheAsync(pageId);
+                await InvalidatePageCacheAsync(pageId);
 
                 _logger.LogInformation("Unpublished page {PageId}", pageId);
 
@@ -488,7 +493,8 @@ namespace Backend.CMS.Infrastructure.Services
                 // Create initial version for duplicated page
                 await CreatePageVersionAsync(duplicatedPage.Id, $"Duplicated from page {originalPage.Name}");
 
-                await _cacheInvalidationService.InvalidatePageCacheAsync(pageId);
+                await InvalidatePageCacheAsync(pageId);
+                await InvalidatePageCacheAsync(duplicatedPage.Id);
 
                 _logger.LogInformation("Duplicated page {OriginalPageId} to new page {NewPageId}", pageId, duplicatedPage.Id);
 
@@ -508,12 +514,12 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var cacheKey = CacheKeys.PagesByParent(parentPageId);
-                return await _cacheService.GetAsync(cacheKey, async () =>
+                var cacheKey = _cacheKeyService.GetCustomKey("page", "children", parentPageId);
+                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
                     var pages = await _pageRepository.GetChildPagesAsync(parentPageId);
                     return _mapper.Map<List<PageDto>>(pages);
-                }, cacheEmptyCollections: false);
+                }, TimeSpan.FromMinutes(20));
             }
             catch (Exception ex)
             {
@@ -596,7 +602,8 @@ namespace Backend.CMS.Infrastructure.Services
                 await _versionRepository.SaveChangesAsync();
 
                 // Clear version cache
-                await _cacheService.RemoveAsync(CacheKeys.PageVersions(pageId));
+                var versionsKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
+                await _cacheService.RemoveAsync(versionsKey);
 
                 return version;
             }
@@ -614,14 +621,14 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var cacheKey = CacheKeys.PageVersions(pageId);
-                return await _cacheService.GetAsync(cacheKey, async () =>
+                var cacheKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
+                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
                     var versions = await _versionRepository.FindAsync(v => v.PageId == pageId);
                     return versions.OrderByDescending(v => v.VersionNumber)
                                   .Select(v => _mapper.Map<PageVersionDto>(v))
                                   .ToList();
-                }, cacheEmptyCollections: false);
+                }, TimeSpan.FromMinutes(30));
             }
             catch (Exception ex)
             {
@@ -663,7 +670,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _pageRepository.Update(page);
                 await _pageRepository.SaveChangesAsync();
 
-                await _cacheInvalidationService.InvalidatePageCacheAsync(pageId);
+                await InvalidatePageCacheAsync(pageId);
 
                 _logger.LogInformation("Restored page {PageId} to version {VersionNumber}", pageId, version.VersionNumber);
 
@@ -857,6 +864,45 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _logger.LogWarning(ex, "Failed to deep copy dictionary, returning empty dictionary");
                 return new Dictionary<string, object>();
+            }
+        }
+
+        private async Task InvalidatePageCacheAsync(int pageId)
+        {
+            try
+            {
+                // Invalidate the specific page entity
+                await _cacheInvalidationService.InvalidateEntityAsync<Page>(pageId);
+
+                // Invalidate related page collections and patterns
+                await _cacheInvalidationService.InvalidateByPatternAsync("page:list:*");
+                await _cacheInvalidationService.InvalidateByPatternAsync("page:query:*");
+                await _cacheInvalidationService.InvalidateByPatternAsync("page:slug:*");
+                await _cacheInvalidationService.InvalidateByPatternAsync("page:children:*");
+
+                // Invalidate page collections
+                var hierarchyKey = _cacheKeyService.GetCollectionKey<Page>("hierarchy");
+                var publishedKey = _cacheKeyService.GetCollectionKey<Page>("published");
+
+                await _cacheService.RemoveAsync(new[] { hierarchyKey, publishedKey });
+
+                // Invalidate designer-specific caches
+                var designerKey = _cacheKeyService.GetCustomKey("designer", "page", pageId);
+                await _cacheService.RemoveAsync(designerKey);
+
+                // Invalidate preview caches
+                await _cacheInvalidationService.InvalidateByPatternAsync("preview:*");
+
+                // Invalidate version caches
+                var versionsKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
+                await _cacheService.RemoveAsync(versionsKey);
+
+                _logger.LogDebug("Invalidated cache for page {PageId}", pageId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating cache for page {PageId}", pageId);
+                throw;
             }
         }
     }

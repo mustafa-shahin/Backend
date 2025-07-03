@@ -2,7 +2,7 @@
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
-using Backend.CMS.Infrastructure.Caching;
+using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
@@ -17,6 +17,8 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IRepository<ProductImage> _productImageRepository;
         private readonly IRepository<FileEntity> _fileRepository;
         private readonly ICacheService _cacheService;
+        private readonly ICacheInvalidationService _cacheInvalidationService;
+        private readonly ICacheKeyService _cacheKeyService;
         private readonly IMapper _mapper;
         private readonly ILogger<ProductService> _logger;
 
@@ -27,6 +29,8 @@ namespace Backend.CMS.Infrastructure.Services
             IRepository<ProductImage> productImageRepository,
             IRepository<FileEntity> fileRepository,
             ICacheService cacheService,
+            ICacheInvalidationService cacheInvalidationService,
+            ICacheKeyService cacheKeyService,
             IMapper mapper,
             ILogger<ProductService> logger)
         {
@@ -36,81 +40,67 @@ namespace Backend.CMS.Infrastructure.Services
             _productImageRepository = productImageRepository;
             _fileRepository = fileRepository;
             _cacheService = cacheService;
+            _cacheInvalidationService = cacheInvalidationService;
+            _cacheKeyService = cacheKeyService;
             _mapper = mapper;
             _logger = logger;
         }
 
         public async Task<ProductDto?> GetProductByIdAsync(int productId)
         {
-            var cacheKey = CacheKeys.ProductById(productId);
-            async Task<ProductDto?> FetchAndMapProductFromRepositoryAsync()
+            var cacheKey = _cacheKeyService.GetEntityKey<Product>(productId);
+
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 try
                 {
                     var product = await _productRepository.GetWithDetailsAsync(productId);
-
                     if (product == null)
                     {
+                        _logger.LogDebug("GetProductByIdAsync for ID '{ProductId}' completed. Product not found", productId);
                         return null;
                     }
-                    var productDto = _mapper.Map<ProductDto>(product);
 
-                    if (productDto == null)
-                    {
-                        return null;
-                    }
+                    var productDto = _mapper.Map<ProductDto>(product);
+                    _logger.LogDebug("GetProductByIdAsync for ID '{ProductId}' completed. Product found", productId);
                     return productDto;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError($"[ERROR] Exception during product fetch/map for ID '{productId}': {ex.GetType().Name} - {ex.Message}");
+                    _logger.LogError(ex, "Exception during product fetch/map for ID '{ProductId}'", productId);
                     throw;
                 }
-            }
-
-            var productDto = await _cacheService.GetAsync(cacheKey, FetchAndMapProductFromRepositoryAsync);
-
-            if (productDto == null)
-            {
-                _logger.LogError($"[DEBUG] GetProductByIdAsync for ID '{productId}' completed. Product not found (or factory returned null).");
-            }
-            else
-            {
-                _logger.LogError($"[DEBUG] GetProductByIdAsync for ID '{productId}' completed. Product found (from cache or repository).");
-            }
-
-            return productDto;
+            });
         }
 
         public async Task<ProductDto?> GetProductBySlugAsync(string slug)
         {
-            var cacheKey = CacheKeys.ProductBySlug(slug);
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "slug", slug.ToLowerInvariant());
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var product = await _productRepository.GetBySlugAsync(slug);
                 return product != null ? _mapper.Map<ProductDto>(product) : null;
-            }, cacheEmptyCollections: false);
+            });
         }
 
         public async Task<List<ProductDto>> GetProductsAsync()
         {
-            var cacheKey = CacheKeys.ProductsList();
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("all");
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var products = await _productRepository.GetAllAsync();
                 return _mapper.Map<List<ProductDto>>(products);
-            }, cacheEmptyCollections: false) ?? [];
+            }) ?? [];
         }
-
 
         public async Task<List<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 20)
         {
-            var cacheKey = CacheKeys.ProductsByCategory(categoryId, page, pageSize);
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("by_category", categoryId, page, pageSize);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var products = await _productRepository.GetByCategoryAsync(categoryId, page, pageSize);
                 return _mapper.Map<List<ProductDto>>(products);
-            }, cacheEmptyCollections: false) ?? [];
+            }) ?? [];
         }
 
         public async Task<ProductDto> CreateProductAsync(CreateProductDto createProductDto)
@@ -184,7 +174,7 @@ namespace Backend.CMS.Infrastructure.Services
                 await _variantRepository.SaveChangesAsync();
             }
 
-            await InvalidateProductCache();
+            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Created product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
 
@@ -247,7 +237,8 @@ namespace Backend.CMS.Infrastructure.Services
 
             await _productRepository.SaveChangesAsync();
 
-            await InvalidateProductCache();
+            await InvalidateProductCacheAsync();
+            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
 
             _logger.LogInformation("Updated product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
 
@@ -262,7 +253,8 @@ namespace Backend.CMS.Infrastructure.Services
             if (product == null) return false;
 
             await _productRepository.SoftDeleteAsync(product);
-            await InvalidateProductCache();
+            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
+            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Deleted product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
             return true;
@@ -270,13 +262,25 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<ProductDto>> SearchProductsAsync(ProductSearchDto searchDto)
         {
-            var products = await _productRepository.SearchProductsAsync(searchDto);
-            return _mapper.Map<List<ProductDto>>(products);
+            var cacheKey = _cacheKeyService.GetQueryKey<Product>("search", searchDto);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                var products = await _productRepository.SearchProductsAsync(searchDto);
+                return _mapper.Map<List<ProductDto>>(products);
+            }) ?? [];
         }
 
         public async Task<int> GetSearchCountAsync(ProductSearchDto searchDto)
         {
-            return await _productRepository.GetSearchCountAsync(searchDto);
+            // For primitive return types, we need to wrap in a class
+            var cacheKey = _cacheKeyService.GetQueryKey<Product>("search_count", searchDto);
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                var count = await _productRepository.GetSearchCountAsync(searchDto);
+                return new CountWrapper { Value = count };
+            });
+
+            return result?.Value ?? 0;
         }
 
         public async Task<bool> ValidateSlugAsync(string slug, int? excludeProductId = null)
@@ -300,7 +304,8 @@ namespace Backend.CMS.Infrastructure.Services
             _productRepository.Update(product);
             await _productRepository.SaveChangesAsync();
 
-            await InvalidateProductCache();
+            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
+            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Published product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
             return _mapper.Map<ProductDto>(product);
@@ -317,7 +322,8 @@ namespace Backend.CMS.Infrastructure.Services
             _productRepository.Update(product);
             await _productRepository.SaveChangesAsync();
 
-            await InvalidateProductCache();
+            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
+            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Unpublished product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
             return _mapper.Map<ProductDto>(product);
@@ -333,7 +339,8 @@ namespace Backend.CMS.Infrastructure.Services
             _productRepository.Update(product);
             await _productRepository.SaveChangesAsync();
 
-            await InvalidateProductCache();
+            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
+            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Archived product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
             return _mapper.Map<ProductDto>(product);
@@ -408,7 +415,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
 
             await _productRepository.SaveChangesAsync();
-            await InvalidateProductCache();
+            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Duplicated product: {OriginalProductName} -> {NewProductName} (ID: {ProductId})",
                 originalProduct.Name, newName, duplicatedProduct.Id);
@@ -419,8 +426,9 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<ProductDto>> GetFeaturedProductsAsync(int count = 10)
         {
-            var cacheKey = CacheKeys.FeaturedProducts(count);
-            async Task<List<ProductDto>> GetProductsFromRepositoryAndMapAsync()
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("featured", count);
+
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 try
                 {
@@ -430,38 +438,36 @@ namespace Backend.CMS.Infrastructure.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError($"[ERROR] Error fetching or mapping featured products: {ex.Message}");
+                    _logger.LogError(ex, "Error fetching or mapping featured products");
                     throw;
                 }
-            }
-            var featuredProducts = await _cacheService.GetAsync(cacheKey, async () => await GetProductsFromRepositoryAndMapAsync());
-            return featuredProducts ?? [];
+            }) ?? [];
         }
 
         public async Task<List<ProductDto>> GetRelatedProductsAsync(int productId, int count = 4)
         {
-            var cacheKey = CacheKeys.RelatedProducts(productId, count);
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("related", productId, count);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var products = await _productRepository.GetRelatedProductsAsync(productId, count);
                 return products != null ? _mapper.Map<List<ProductDto>>(products) : new List<ProductDto>();
-            }, cacheEmptyCollections: false) ?? [];
+            }) ?? [];
         }
 
         public async Task<List<ProductDto>> GetRecentProductsAsync(int count = 10)
         {
-            var cacheKey = CacheKeys.RecentProducts(count);
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("recent", count);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var products = await _productRepository.GetRecentProductsAsync(count);
                 return _mapper.Map<List<ProductDto>>(products);
-            }, cacheEmptyCollections: false) ?? [];
+            }) ?? [];
         }
 
         public async Task<Dictionary<string, object>> GetProductStatisticsAsync()
         {
-            var cacheKey = CacheKeys.ProductStatistics;
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "statistics");
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var totalProducts = await _productRepository.CountAsync();
                 var activeProducts = await _productRepository.CountAsync(p => p.Status == ProductStatus.Active);
@@ -475,43 +481,43 @@ namespace Backend.CMS.Infrastructure.Services
                     ["DraftProducts"] = draftProducts,
                     ["ArchivedProducts"] = archivedProducts,
                     ["LastUpdated"] = DateTime.UtcNow
-                } ?? [];
-            }, cacheEmptyCollections: false) ?? [];
+                };
+            }) ?? new Dictionary<string, object>();
         }
 
         public async Task<(decimal min, decimal max)> GetPriceRangeAsync()
         {
-            var cacheKey = CacheKeys.ProductPriceRange;
-            var priceRange = await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "price_range");
+            var priceRange = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var min = await _productRepository.GetMinPriceAsync();
                 var max = await _productRepository.GetMaxPriceAsync();
                 return new PriceRange { Min = min, Max = max };
-            }, cacheEmptyCollections: false);
+            });
 
             return priceRange == null
                 ? throw new InvalidOperationException("Price range data could not be retrieved.")
-                : ((decimal min, decimal max))(priceRange.Min, priceRange.Max);
+                : (priceRange.Min, priceRange.Max);
         }
 
         public async Task<List<string>> GetVendorsAsync()
         {
-            var cacheKey = CacheKeys.ProductVendors;
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "vendors");
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var vendors = await _productRepository.GetVendorsAsync();
                 return vendors.ToList();
-            }, cacheEmptyCollections: false) ?? [];
+            }) ?? [];
         }
 
         public async Task<List<string>> GetTagsAsync()
         {
-            var cacheKey = CacheKeys.ProductTags;
-            return await _cacheService.GetAsync(cacheKey, async () =>
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "tags");
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var tags = await _productRepository.GetTagsAsync();
                 return tags.ToList();
-            }, cacheEmptyCollections: false) ?? [];
+            }) ?? [];
         }
 
         public async Task UpdateStockAsync(int productId, int? variantId, int newQuantity)
@@ -531,21 +537,30 @@ namespace Backend.CMS.Infrastructure.Services
                 }
             }
 
-            await InvalidateProductCache();
+            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
+            await InvalidateProductCacheAsync();
         }
 
         public async Task<List<ProductDto>> GetLowStockProductsAsync(int threshold = 5)
         {
-            var products = await _productRepository.FindAsync(p =>
-                p.TrackQuantity && p.Quantity <= threshold && p.Quantity > 0);
-            return _mapper.Map<List<ProductDto>>(products);
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "low_stock", threshold);
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                var products = await _productRepository.FindAsync(p =>
+                    p.TrackQuantity && p.Quantity <= threshold && p.Quantity > 0);
+                return _mapper.Map<List<ProductDto>>(products);
+            }) ?? [];
         }
 
         public async Task<List<ProductDto>> GetOutOfStockProductsAsync()
         {
-            var products = await _productRepository.FindAsync(p =>
-                p.TrackQuantity && p.Quantity <= 0);
-            return _mapper.Map<List<ProductDto>>(products);
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "out_of_stock");
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                var products = await _productRepository.FindAsync(p =>
+                    p.TrackQuantity && p.Quantity <= 0);
+                return _mapper.Map<List<ProductDto>>(products);
+            }) ?? [];
         }
 
         // Image management methods
@@ -569,7 +584,8 @@ namespace Backend.CMS.Infrastructure.Services
             await _productImageRepository.AddAsync(productImage);
             await _productImageRepository.SaveChangesAsync();
 
-            await InvalidateProductCache();
+            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
+            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Added image to product {ProductId}: FileId {FileId}", productId, createImageDto.FileId);
             return _mapper.Map<ProductImageDto>(productImage);
@@ -595,7 +611,8 @@ namespace Backend.CMS.Infrastructure.Services
             _productImageRepository.Update(productImage);
             await _productImageRepository.SaveChangesAsync();
 
-            await InvalidateProductCache();
+            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productImage.ProductId);
+            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Updated product image {ImageId}", imageId);
             return _mapper.Map<ProductImageDto>(productImage);
@@ -609,7 +626,8 @@ namespace Backend.CMS.Infrastructure.Services
             var productId = productImage.ProductId;
             await _productImageRepository.SoftDeleteAsync(productImage);
 
-            await InvalidateProductCache();
+            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
+            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Deleted product image {ImageId} from product {ProductId}", imageId, productId);
             return true;
@@ -629,7 +647,8 @@ namespace Backend.CMS.Infrastructure.Services
             _productImageRepository.UpdateRange(images);
             await _productImageRepository.SaveChangesAsync();
 
-            await InvalidateProductCache();
+            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
+            await InvalidateProductCacheAsync();
 
             return _mapper.Map<List<ProductImageDto>>(images.OrderBy(i => i.Position));
         }
@@ -768,17 +787,19 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private async Task InvalidateProductCache()
+        private async Task InvalidateProductCacheAsync()
         {
-            await _cacheService.RemoveByPatternAsync(CacheKeys.ProductsPattern);
+            try
+            {
+                await _cacheInvalidationService.InvalidateEntityTypeAsync<Product>();
+                await _cacheInvalidationService.InvalidateByPatternAsync(_cacheKeyService.GetEntityPattern<Product>());
+
+                _logger.LogDebug("Product cache invalidated successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error invalidating product cache");
+            }
         }
-
-    }
-
-    // Helper class for caching price range
-    public class PriceRange
-    {
-        public decimal Min { get; set; }
-        public decimal Max { get; set; }
     }
 }
