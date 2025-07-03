@@ -212,20 +212,17 @@ static void ConfigureCachingSystem(WebApplicationBuilder builder)
         options.InstanceName = "BackendCMS";
     });
 
-    // Register cache key service
-    builder.Services.AddScoped<ICacheKeyService, CacheKeyService>();
+    builder.Services.AddSingleton<ICacheKeyService, CacheKeyService>();
 
-    // Register the main cache service (this registers all interfaces)
-    builder.Services.AddScoped<RedisCacheService>();
+    builder.Services.AddSingleton<RedisCacheService>();
 
-    // Register interface implementations pointing to RedisCacheService
-    builder.Services.AddScoped<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheService>(provider =>
+    builder.Services.AddSingleton<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheService>(provider =>
         provider.GetRequiredService<RedisCacheService>());
 
-    builder.Services.AddScoped<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheInvalidationService>(provider =>
+    builder.Services.AddSingleton<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheInvalidationService>(provider =>
         provider.GetRequiredService<RedisCacheService>());
 
-    builder.Services.AddScoped<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheMonitoringService>(provider =>
+    builder.Services.AddSingleton<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheMonitoringService>(provider =>
         provider.GetRequiredService<RedisCacheService>());
 
     // Register background services for cache management
@@ -593,7 +590,6 @@ static void RegisterFileServices(WebApplicationBuilder builder)
 {
     // Register base services
     builder.Services.AddScoped<FileService>();
-    builder.Services.AddScoped<FolderService>();
 
     // Register additional file services
     builder.Services.AddScoped<IImageProcessingService, ImageProcessingService>();
@@ -601,6 +597,7 @@ static void RegisterFileServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<DatabaseFilePerformanceService>();
     builder.Services.AddScoped<IDownloadTokenService, DownloadTokenService>();
 
+    // Register file and folder services with their interfaces
     builder.Services.AddScoped<IFileService, CachedFileService>();
     builder.Services.AddScoped<IFolderService, FolderService>();
 }

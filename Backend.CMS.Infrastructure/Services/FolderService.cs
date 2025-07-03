@@ -12,7 +12,6 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class FolderService : IFolderService, IDisposable
     {
-        private readonly FolderService _baseFolderService;
         private readonly ICacheService _cacheService;
         private readonly ICacheKeyService _cacheKeyService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
@@ -41,14 +40,12 @@ namespace Backend.CMS.Infrastructure.Services
         private bool _disposed = false;
 
         public FolderService(
-            FolderService baseFolderService,
             ICacheService cacheService,
             ICacheKeyService cacheKeyService,
             ICacheInvalidationService cacheInvalidationService,
             ILogger<FolderService> logger,
             IConfiguration configuration)
         {
-            _baseFolderService = baseFolderService ?? throw new ArgumentNullException(nameof(baseFolderService));
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
             _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
             _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
@@ -84,7 +81,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FolderDto> CreateFolderAsync(CreateFolderDto createDto)
         {
-            var result = await _baseFolderService.CreateFolderAsync(createDto);
+            var result = await CreateFolderAsync(createDto);
             await InvalidateFolderRelatedCacheAsync(result.Id, result.ParentFolderId);
             await InvalidateGlobalFolderCacheAsync();
             return result;
@@ -103,7 +100,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogWarning(ex, "Could not get original folder info before update: {FolderId}", folderId);
             }
 
-            var result = await _baseFolderService.UpdateFolderAsync(folderId, updateDto);
+            var result = await UpdateFolderAsync(folderId, updateDto);
 
             await Task.WhenAll(
                 InvalidateFolderRelatedCacheAsync(folderId, originalFolder?.ParentFolderId),
@@ -128,7 +125,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogWarning(ex, "Could not get folder info before deletion: {FolderId}", folderId);
             }
 
-            var result = await _baseFolderService.DeleteFolderAsync(folderId, deleteFiles);
+            var result = await DeleteFolderAsync(folderId, deleteFiles);
             if (result)
             {
                 await Task.WhenAll(
@@ -153,7 +150,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogWarning(ex, "Could not get original folder info before move: {FolderId}", moveDto.FolderId);
             }
 
-            var result = await _baseFolderService.MoveFolderAsync(moveDto);
+            var result = await MoveFolderAsync(moveDto);
 
             // Invalidate cache for both old and new parent folders
             await Task.WhenAll(
@@ -168,7 +165,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> RenameFolderAsync(int folderId, string newName)
         {
-            var result = await _baseFolderService.RenameFolderAsync(folderId, newName);
+            var result = await RenameFolderAsync(folderId, newName);
             if (result)
             {
                 await Task.WhenAll(
@@ -182,7 +179,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FolderDto> CopyFolderAsync(int folderId, int? destinationFolderId, string? newName = null)
         {
-            var result = await _baseFolderService.CopyFolderAsync(folderId, destinationFolderId, newName);
+            var result = await CopyFolderAsync(folderId, destinationFolderId, newName);
             await Task.WhenAll(
                 InvalidateFolderRelatedCacheAsync(result.Id, destinationFolderId),
                 InvalidateGlobalFolderCacheAsync()
@@ -204,7 +201,7 @@ namespace Backend.CMS.Infrastructure.Services
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 _logger.LogDebug("Cache miss for folder metadata: {FolderId}", folderId);
-                return await _baseFolderService.GetFolderByIdAsync(folderId);
+                return await GetFolderByIdAsync(folderId);
             }, _folderMetadataCacheTTL) ?? throw new InvalidOperationException($"Folder with ID {folderId} could not be retrieved.");
         }
 
@@ -215,7 +212,7 @@ namespace Backend.CMS.Infrastructure.Services
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 _logger.LogDebug("Cache miss for folder list: parent {ParentFolderId}", parentFolderId);
-                var folders = await _baseFolderService.GetFoldersAsync(parentFolderId);
+                var folders = await GetFoldersAsync(parentFolderId);
 
                 // Cache individual folder metadata for future single folder requests
                 if (_enableAggressiveCaching && folders.Any())
@@ -234,7 +231,7 @@ namespace Backend.CMS.Infrastructure.Services
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 _logger.LogDebug("Cache miss for folder tree: root {RootFolderId}", rootFolderId);
-                return await _baseFolderService.GetFolderTreeAsync(rootFolderId);
+                return await GetFolderTreeAsync(rootFolderId);
             }, _folderTreeCacheTTL) ?? new FolderTreeDto();
         }
 
@@ -249,7 +246,7 @@ namespace Backend.CMS.Infrastructure.Services
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 _logger.LogDebug("Cache miss for folder search: {SearchTerm}", searchTerm);
-                var folders = await _baseFolderService.SearchFoldersAsync(searchTerm);
+                var folders = await SearchFoldersAsync(searchTerm);
 
                 // Cache individual folder metadata
                 if (_enableAggressiveCaching && folders.Any())
@@ -267,7 +264,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var path = await _baseFolderService.GetFolderPathAsync(folderId);
+                var path = await GetFolderPathAsync(folderId);
                 return new { Path = path };
             }, _folderMetadataCacheTTL);
 
@@ -281,7 +278,7 @@ namespace Backend.CMS.Infrastructure.Services
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 _logger.LogDebug("Cache miss for folder breadcrumbs: {FolderId}", folderId);
-                return await _baseFolderService.GetFolderBreadcrumbsAsync(folderId);
+                return await GetFolderBreadcrumbsAsync(folderId);
             }, _breadcrumbsCacheTTL) ?? new List<FolderDto>();
         }
 
@@ -295,7 +292,7 @@ namespace Backend.CMS.Infrastructure.Services
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 _logger.LogDebug("Cache miss for folder by path: {Path}", path);
-                return await _baseFolderService.GetFolderByPathAsync(path);
+                return await GetFolderByPathAsync(path);
             }, _folderMetadataCacheTTL);
         }
 
@@ -306,7 +303,7 @@ namespace Backend.CMS.Infrastructure.Services
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 _logger.LogDebug("Cache miss for folder statistics: {FolderId}", folderId);
-                return await _baseFolderService.GetFolderStatisticsAsync(folderId);
+                return await GetFolderStatisticsAsync(folderId);
             }, _folderStatisticsCacheTTL) ?? new Dictionary<string, object>();
         }
 
@@ -323,7 +320,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var exists = await _baseFolderService.FolderExistsAsync(folderId);
+                var exists = await FolderExistsAsync(folderId);
                 return new { Exists = exists };
             }, _folderValidationCacheTTL);
 
@@ -343,7 +340,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var isValid = await _baseFolderService.ValidateFolderNameAsync(name, parentFolderId, excludeFolderId);
+                var isValid = await ValidateFolderNameAsync(name, parentFolderId, excludeFolderId);
                 return new { IsValid = isValid };
             }, _folderValidationCacheTTL);
 
@@ -360,7 +357,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var isSubFolder = await _baseFolderService.IsSubFolderOfAsync(childFolderId, parentFolderId);
+                var isSubFolder = await IsSubFolderOfAsync(childFolderId, parentFolderId);
                 return new { IsSubFolder = isSubFolder };
             }, _folderValidationCacheTTL);
 
@@ -378,7 +375,7 @@ namespace Backend.CMS.Infrastructure.Services
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 _logger.LogDebug("Cache miss for system folder: {FolderType}", folderType);
-                return await _baseFolderService.GetOrCreateSystemFolderAsync(folderType);
+                return await GetOrCreateSystemFolderAsync(folderType);
             }, _folderMetadataCacheTTL) ?? throw new InvalidOperationException($"System folder {folderType} could not be created.");
         }
 
@@ -389,7 +386,7 @@ namespace Backend.CMS.Infrastructure.Services
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 _logger.LogDebug("Cache miss for user avatar folder: {UserId}", userId);
-                return await _baseFolderService.GetUserAvatarFolderAsync(userId);
+                return await GetUserAvatarFolderAsync(userId);
             }, _folderMetadataCacheTTL) ?? throw new InvalidOperationException($"User avatar folder for user {userId} could not be created.");
         }
 
@@ -400,7 +397,7 @@ namespace Backend.CMS.Infrastructure.Services
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 _logger.LogDebug("Cache miss for company assets folder");
-                return await _baseFolderService.GetCompanyAssetsFolderAsync();
+                return await GetCompanyAssetsFolderAsync();
             }, _folderMetadataCacheTTL) ?? throw new InvalidOperationException("Company assets folder could not be created.");
         }
 
@@ -630,12 +627,6 @@ namespace Backend.CMS.Infrastructure.Services
                     semaphore.Dispose();
                 }
                 _folderSemaphores.Clear();
-
-                // Dispose base service if it implements IDisposable
-                if (_baseFolderService is IDisposable disposableService)
-                {
-                    disposableService.Dispose();
-                }
 
                 _disposed = true;
             }

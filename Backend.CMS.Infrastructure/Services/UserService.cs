@@ -76,7 +76,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 // Use cache extension for entities
-                var cachedUser = await _cacheService.GetEntityAsync<User>(userId);
+                var cachedUser = await _cacheService.GetEntityAsync<User>(_cacheKeyService, userId);
                 if (cachedUser != null)
                 {
                     _logger.LogDebug("Retrieved user {UserId} from cache", userId);
@@ -92,8 +92,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 // Cache the entity
-                await _cacheService.SetEntityAsync(userId, user, _cacheOptions.DefaultExpiration);
-
+                await _cacheService.SetEntityAsync(_cacheKeyService, userId, user, _cacheOptions.DefaultExpiration);
                 // Also cache by email and username for faster lookups
                 await CacheUserByAlternateKeysAsync(user);
 
@@ -722,7 +721,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 // Try cache first
-                var cachedUser = await _cacheService.GetEntityAsync<User>(userId);
+                var cachedUser = await _cacheService.GetEntityAsync<User>(_cacheKeyService, userId);
                 User? user = cachedUser ?? await _userRepository.GetByIdAsync(userId);
 
                 if (user == null)
@@ -769,7 +768,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 // Cache by ID (entity cache)
-                await _cacheService.SetEntityAsync(user.Id, user, _cacheOptions.DefaultExpiration);
+                await _cacheService.SetEntityAsync(_cacheKeyService, user.Id, user, _cacheOptions.DefaultExpiration);
 
                 // Cache by email
                 await _cacheService.SetAsync(CacheKeys.UserByEmail(user.Email), user, _cacheOptions.DefaultExpiration);

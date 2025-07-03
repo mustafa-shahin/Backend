@@ -319,9 +319,8 @@ namespace Backend.CMS.Infrastructure.Caching.Services
         /// <summary>
         /// Get entity by ID with automatic key generation
         /// </summary>
-        public static Task<T?> GetEntityAsync<T>(this ICacheService cache, object entityId, CancellationToken cancellationToken = default) where T : class
+        public static Task<T?> GetEntityAsync<T>(this ICacheService cache, ICacheKeyService keyService, object entityId, CancellationToken cancellationToken = default) where T : class
         {
-            var keyService = new CacheKeyService(Microsoft.Extensions.Options.Options.Create(new CacheOptions()));
             var key = keyService.GetEntityKey<T>(entityId);
             return cache.GetAsync<T>(key, cancellationToken);
         }
@@ -329,9 +328,8 @@ namespace Backend.CMS.Infrastructure.Caching.Services
         /// <summary>
         /// Set entity by ID with automatic key generation
         /// </summary>
-        public static Task SetEntityAsync<T>(this ICacheService cache, object entityId, T entity, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class
+        public static Task SetEntityAsync<T>(this ICacheService cache, ICacheKeyService keyService, object entityId, T entity, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class
         {
-            var keyService = new CacheKeyService(Microsoft.Extensions.Options.Options.Create(new CacheOptions()));
             var key = keyService.GetEntityKey<T>(entityId);
             return cache.SetAsync(key, entity, expiration, cancellationToken);
         }
@@ -339,9 +337,8 @@ namespace Backend.CMS.Infrastructure.Caching.Services
         /// <summary>
         /// Remove entity by ID with automatic key generation
         /// </summary>
-        public static Task RemoveEntityAsync<T>(this ICacheService cache, object entityId, CancellationToken cancellationToken = default)
+        public static Task RemoveEntityAsync<T>(this ICacheService cache, ICacheKeyService keyService, object entityId, CancellationToken cancellationToken = default)
         {
-            var keyService = new CacheKeyService(Microsoft.Extensions.Options.Options.Create(new CacheOptions()));
             var key = keyService.GetEntityKey<T>(entityId);
             return cache.RemoveAsync(key, cancellationToken);
         }
@@ -349,9 +346,8 @@ namespace Backend.CMS.Infrastructure.Caching.Services
         /// <summary>
         /// Get or add entity with automatic key generation
         /// </summary>
-        public static Task<T?> GetOrAddEntityAsync<T>(this ICacheService cache, object entityId, Func<Task<T?>> factory, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class
+        public static Task<T?> GetOrAddEntityAsync<T>(this ICacheService cache, ICacheKeyService keyService, object entityId, Func<Task<T?>> factory, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class
         {
-            var keyService = new CacheKeyService(Microsoft.Extensions.Options.Options.Create(new CacheOptions()));
             var key = keyService.GetEntityKey<T>(entityId);
             return cache.GetOrAddAsync(key, factory, expiration, cancellationToken);
         }
@@ -359,9 +355,8 @@ namespace Backend.CMS.Infrastructure.Caching.Services
         /// <summary>
         /// Get collection with automatic key generation
         /// </summary>
-        public static Task<T?> GetCollectionAsync<T>(this ICacheService cache, string operation, object[] parameters, CancellationToken cancellationToken = default) where T : class
+        public static Task<T?> GetCollectionAsync<T>(this ICacheService cache, ICacheKeyService keyService, string operation, object[] parameters, CancellationToken cancellationToken = default) where T : class
         {
-            var keyService = new CacheKeyService(Microsoft.Extensions.Options.Options.Create(new CacheOptions()));
             var key = keyService.GetCollectionKey<T>(operation, parameters);
             return cache.GetAsync<T>(key, cancellationToken);
         }
@@ -369,9 +364,8 @@ namespace Backend.CMS.Infrastructure.Caching.Services
         /// <summary>
         /// Get or add collection with automatic key generation
         /// </summary>
-        public static Task<T?> GetOrAddCollectionAsync<T>(this ICacheService cache, string operation, object[] parameters, Func<Task<T?>> factory, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class
+        public static Task<T?> GetOrAddCollectionAsync<T>(this ICacheService cache, ICacheKeyService keyService, string operation, object[] parameters, Func<Task<T?>> factory, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class
         {
-            var keyService = new CacheKeyService(Microsoft.Extensions.Options.Options.Create(new CacheOptions()));
             var key = keyService.GetCollectionKey<T>(operation, parameters);
             return cache.GetOrAddAsync(key, factory, expiration, cancellationToken);
         }

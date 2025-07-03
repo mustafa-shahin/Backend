@@ -39,15 +39,14 @@ namespace Backend.CMS.Infrastructure.Caching.Extensions
                 }
             });
 
-            // Register core services
             services.AddSingleton<ICacheKeyService, CacheKeyService>();
-            services.AddSingleton<ICacheService, RedisCacheService>();
+            services.AddSingleton<RedisCacheService>();
+            services.AddSingleton<ICacheService>(provider =>
+                provider.GetRequiredService<RedisCacheService>());
             services.AddSingleton<ICacheInvalidationService>(provider =>
-                provider.GetRequiredService<ICacheService>() as ICacheInvalidationService ??
-                throw new InvalidOperationException("Cache service must implement ICacheInvalidationService"));
+                provider.GetRequiredService<RedisCacheService>());
             services.AddSingleton<ICacheMonitoringService>(provider =>
-                provider.GetRequiredService<ICacheService>() as ICacheMonitoringService ??
-                throw new InvalidOperationException("Cache service must implement ICacheMonitoringService"));
+                provider.GetRequiredService<RedisCacheService>());
 
             // Add Redis distributed cache
             var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
@@ -83,15 +82,14 @@ namespace Backend.CMS.Infrastructure.Caching.Extensions
         {
             services.Configure(configureOptions);
 
-            // Register core services
             services.AddSingleton<ICacheKeyService, CacheKeyService>();
-            services.AddSingleton<ICacheService, RedisCacheService>();
+            services.AddSingleton<RedisCacheService>();
+            services.AddSingleton<ICacheService>(provider =>
+                provider.GetRequiredService<RedisCacheService>());
             services.AddSingleton<ICacheInvalidationService>(provider =>
-                provider.GetRequiredService<ICacheService>() as ICacheInvalidationService ??
-                throw new InvalidOperationException("Cache service must implement ICacheInvalidationService"));
+                provider.GetRequiredService<RedisCacheService>());
             services.AddSingleton<ICacheMonitoringService>(provider =>
-                provider.GetRequiredService<ICacheService>() as ICacheMonitoringService ??
-                throw new InvalidOperationException("Cache service must implement ICacheMonitoringService"));
+                provider.GetRequiredService<RedisCacheService>());
 
             // Add Redis distributed cache
             var redisConnectionString = configuration.GetConnectionString("Redis") ?? "localhost:6379";
@@ -145,15 +143,14 @@ namespace Backend.CMS.Infrastructure.Caching.Extensions
                 });
             }
 
-            // Register core services
             services.AddSingleton<ICacheKeyService, CacheKeyService>();
-            services.AddSingleton<ICacheService, RedisCacheService>();
+            services.AddSingleton<RedisCacheService>();
+            services.AddSingleton<ICacheService>(provider =>
+                provider.GetRequiredService<RedisCacheService>());
             services.AddSingleton<ICacheInvalidationService>(provider =>
-                provider.GetRequiredService<ICacheService>() as ICacheInvalidationService ??
-                throw new InvalidOperationException("Cache service must implement ICacheInvalidationService"));
+                provider.GetRequiredService<RedisCacheService>());
             services.AddSingleton<ICacheMonitoringService>(provider =>
-                provider.GetRequiredService<ICacheService>() as ICacheMonitoringService ??
-                throw new InvalidOperationException("Cache service must implement ICacheMonitoringService"));
+                provider.GetRequiredService<RedisCacheService>());
 
             // Add Redis distributed cache
             services.AddStackExchangeRedisCache(options =>

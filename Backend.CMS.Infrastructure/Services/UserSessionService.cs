@@ -425,7 +425,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 // Try to get user from cache first using the new cache service
-                var cachedUser = await _cacheService.GetEntityAsync<User>(userId);
+                var cachedUser = await _cacheService.GetEntityAsync<User>(_cacheKeyService, userId);
                 User? user = null;
 
                 if (cachedUser != null)
@@ -443,7 +443,7 @@ namespace Backend.CMS.Infrastructure.Services
                     if (user != null)
                     {
                         // Cache the user for future use
-                        await _cacheService.SetEntityAsync(userId, user, _cacheOptions.DefaultExpiration);
+                        await _cacheService.SetEntityAsync(_cacheKeyService, userId, user, _cacheOptions.DefaultExpiration);
                     }
                 }
 
@@ -531,7 +531,7 @@ namespace Backend.CMS.Infrastructure.Services
                 await CacheSessionInDistributedCacheAsync(sessionId, session);
 
                 // Also refresh the user cache
-                await _cacheService.SetEntityAsync(user.Id, user, _cacheOptions.DefaultExpiration);
+                await _cacheService.SetEntityAsync(_cacheKeyService, user.Id, user, _cacheOptions.DefaultExpiration);
             }
         }
 
