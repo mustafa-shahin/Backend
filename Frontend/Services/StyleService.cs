@@ -428,6 +428,18 @@ namespace Frontend.Services
                 _ => "fas fa-file"
             };
         }
+        public string GetFileIconColor(FileType fileType)
+        {
+            return fileType switch
+            {
+                FileType.Image => "text-green-600 dark:text-green-400",
+                FileType.Video => "text-blue-600 dark:text-blue-400",
+                FileType.Audio => "text-purple-600 dark:text-purple-400",
+                FileType.Document => "text-red-600 dark:text-red-400",
+                FileType.Archive => "text-yellow-600 dark:text-yellow-400",
+                _ => "text-gray-600 dark:text-gray-400"
+            };
+        }
         public string GetFileTypeColor(FileType fileType)
         {
             return fileType switch

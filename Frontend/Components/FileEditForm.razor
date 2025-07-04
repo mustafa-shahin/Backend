@@ -25,7 +25,7 @@
                     else
                     {
                         <div class="w-24 h-24 bg-white dark:bg-gray-700 rounded-lg flex items-center justify-center border border-gray-300 dark:border-gray-600 shadow-sm">
-                            <i class="@GetFileIcon(OriginalFile.FileType) text-2xl @GetFileIconColor(OriginalFile.FileType)"></i>
+                            <i class="@StyleService.GetFileIcon(OriginalFile.FileType) text-2xl @StyleService.GetFileIconColor(OriginalFile.FileType)"></i>
                         </div>
                     }
                 </div>
@@ -76,97 +76,6 @@
         </div>
     }
 
-    <!-- Full File Path Display -->
-    @if (OriginalFile != null)
-    {
-        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <div class="flex items-start">
-                <div class="flex-shrink-0 mt-0.5">
-                    <i class="fas fa-map-marker-alt text-blue-500"></i>
-                </div>
-                <div class="ml-3 flex-1">
-                    <h4 class="text-sm font-medium text-blue-800 dark:text-blue-200 mb-3">
-                        File Location & Access
-                    </h4>
-                    <div class="space-y-3">
-                        <!-- Full Path -->
-                        <div>
-                            <label class="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Full Path:</label>
-                            <div class="flex items-center bg-white dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700 rounded-md p-2">
-                                <code class="flex-1 text-sm font-mono text-blue-800 dark:text-blue-200 break-all">
-                                    @GetFullPath()
-                                </code>
-                                <button type="button"
-                                        @onclick="() => CopyToClipboard(GetFullPath())"
-                                        class="ml-2 p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-800 rounded transition-colors"
-                                        title="Copy full path">
-                                    <i class="fas fa-copy text-xs"></i>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Directory Info -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Directory:</label>
-                                <div class="flex items-center">
-                                    <i class="fas fa-folder text-blue-500 mr-2"></i>
-                                    <span class="text-sm text-blue-600 dark:text-blue-400">
-                                        @GetFolderDisplayName()
-                                    </span>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Folder ID:</label>
-                                <div class="flex items-center">
-                                    <i class="fas fa-hashtag text-blue-500 mr-2"></i>
-                                    <span class="text-sm text-blue-600 dark:text-blue-400">
-                                        @(Model.FolderId?.ToString() ?? "Root")
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- File URLs -->
-                        <div class="space-y-2">
-                            <div>
-                                <label class="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Direct Access URL:</label>
-                                <div class="flex items-center bg-white dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700 rounded-md p-2">
-                                    <code class="flex-1 text-sm font-mono text-blue-800 dark:text-blue-200 break-all">
-                                        /api/file/@OriginalFile.Id/download
-                                    </code>
-                                    <button type="button"
-                                            @onclick="@(() => CopyToClipboard($"/api/file/{OriginalFile.Id}/download"))"
-                                            class="ml-2 p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-800 rounded transition-colors"
-                                            title="Copy download URL">
-                                        <i class="fas fa-copy text-xs"></i>
-                                    </button>
-                                </div>
-                            </div>
-
-                            @if (OriginalFile.FileType == FileType.Image)
-                            {
-                                <div>
-                                    <label class="block text-xs font-medium text-blue-700 dark:text-blue-300 mb-1">Thumbnail URL:</label>
-                                    <div class="flex items-center bg-white dark:bg-blue-900/40 border border-blue-200 dark:border-blue-700 rounded-md p-2">
-                                        <code class="flex-1 text-sm font-mono text-blue-800 dark:text-blue-200 break-all">
-                                            /api/file/@OriginalFile.Id/thumbnail
-                                        </code>
-                                        <button type="button"
-                                                @onclick="@(() => CopyToClipboard($"/api/file/{OriginalFile.Id}/thumbnail"))"
-                                                class="ml-2 p-1 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-200 hover:bg-blue-100 dark:hover:bg-blue-800 rounded transition-colors"
-                                                title="Copy thumbnail URL">
-                                            <i class="fas fa-copy text-xs"></i>
-                                        </button>
-                                    </div>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    }
 
     <!-- Edit Form -->
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
@@ -425,33 +334,6 @@
             // Handle silently
         }
     }
-
-    private string GetFileIcon(FileType fileType)
-    {
-        return fileType switch
-        {
-            FileType.Image => "fas fa-image",
-            FileType.Video => "fas fa-video",
-            FileType.Audio => "fas fa-music",
-            FileType.Document => "fas fa-file-alt",
-            FileType.Archive => "fas fa-file-archive",
-            _ => "fas fa-file"
-        };
-    }
-
-    private string GetFileIconColor(FileType fileType)
-    {
-        return fileType switch
-        {
-            FileType.Image => "text-green-600 dark:text-green-400",
-            FileType.Video => "text-blue-600 dark:text-blue-400",
-            FileType.Audio => "text-purple-600 dark:text-purple-400",
-            FileType.Document => "text-red-600 dark:text-red-400",
-            FileType.Archive => "text-yellow-600 dark:text-yellow-400",
-            _ => "text-gray-600 dark:text-gray-400"
-        };
-    }
-
     private string FormatFileSize(long bytes)
     {
         string[] sizes = { "B", "KB", "MB", "GB", "TB" };
