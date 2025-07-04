@@ -685,8 +685,6 @@ namespace Backend.CMS.Infrastructure.Validation
     {
         public FileSearchDtoValidator()
         {
-            RuleFor(x => x.Page)
-                .GreaterThan(0).WithMessage("Page must be greater than 0");
 
             RuleFor(x => x.PageSize)
                 .GreaterThan(0).WithMessage("Page size must be greater than 0")

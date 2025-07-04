@@ -42,6 +42,11 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ApplicationDbContext _context;
         private readonly CacheOptions _cacheOptions;
 
+        // Pagination constants
+        private const int DEFAULT_PAGE_SIZE = 10;
+        private const int MAX_PAGE_SIZE = 100;
+        private const int MIN_PAGE_SIZE = 1;
+
         public UserService(
             IUserRepository userRepository,
             IRepository<Address> addressRepository,
@@ -187,60 +192,270 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<(List<UserDto> users, int totalCount)> GetUsersAsync(int page = 1, int pageSize = 10, string? search = null)
+        /// <summary>
+        /// Get paginated list of users with optional search implementation
+        /// ALL pagination logic is handled in the service layer
+        /// </summary>
+        /// <param name="pageNumber">Page number (1-based, auto-corrected if invalid)</param>
+        /// <param name="pageSize">Page size (auto-corrected to valid range)</param>
+        /// <param name="search">Optional search term</param>
+        /// <returns>Paginated result with all metadata calculated in service</returns>
+        public async Task<PagedResult<UserDto>> GetUsersPagedAsync(int pageNumber = 1, int pageSize = DEFAULT_PAGE_SIZE, string? search = null)
         {
-            if (page <= 0)
-                throw new ArgumentException("Page must be greater than 0", nameof(page));
-
-            if (pageSize <= 0 || pageSize > 100)
-                throw new ArgumentException("Page size must be between 1 and 100", nameof(pageSize));
-
+            var validatedPageNumber = Math.Max(1, pageNumber);
+            var validatedPageSize = Math.Clamp(pageSize, MIN_PAGE_SIZE, MAX_PAGE_SIZE);
             var normalizedSearch = search?.Trim();
 
             try
             {
-                // Create cache key for search results
-                var cacheKey = string.IsNullOrEmpty(normalizedSearch)
-                    ? CacheKeys.UserList(page, pageSize)
-                    : CacheKeys.UserSearch(normalizedSearch, page, pageSize);
+                _logger.LogDebug("Getting paginated users: page {PageNumber}, size {PageSize}, search '{Search}'",
+                    validatedPageNumber, validatedPageSize, normalizedSearch);
 
-                // Try cache first
-                var cachedResult = await _cacheService.GetAsync<UserSearchResult>(cacheKey);
+                // Create cache key including all parameters
+                var cacheKey = string.IsNullOrEmpty(normalizedSearch)
+                    ? CacheKeys.UserList(validatedPageNumber, validatedPageSize)
+                    : CacheKeys.UserSearch(normalizedSearch, validatedPageNumber, validatedPageSize);
+
+                // Try cache first for performance
+                var cachedResult = await _cacheService.GetAsync<PagedResult<UserDto>>(cacheKey);
                 if (cachedResult != null)
                 {
-                    _logger.LogDebug("Retrieved users search results from cache for page {Page}, size {PageSize}, search '{Search}'",
-                        page, pageSize, normalizedSearch);
-                    return (cachedResult.Users, cachedResult.TotalCount);
+                    _logger.LogDebug("Retrieved paginated users from cache for page {Page}, size {PageSize}, search '{Search}'",
+                        validatedPageNumber, validatedPageSize, normalizedSearch);
+                    return cachedResult;
                 }
 
-                // Load from database
+                // Get total count - this will be used for pagination metadata
                 var totalCount = string.IsNullOrEmpty(normalizedSearch)
                     ? await _userRepository.CountAsync()
                     : await _userRepository.CountSearchAsync(normalizedSearch);
 
+                _logger.LogDebug("Total user count: {TotalCount}", totalCount);
+
+                // Early return for empty results
+                if (totalCount == 0)
+                {
+                    var emptyResult = new PagedResult<UserDto>(
+                        new List<UserDto>(),
+                        validatedPageNumber,
+                        validatedPageSize,
+                        0);
+
+                    await _cacheService.SetAsync(cacheKey, emptyResult, _cacheOptions.ShortExpiration);
+                    return emptyResult;
+                }
+
+                // Calculate pagination metadata in service layer
+                var totalPages = (int)Math.Ceiling((double)totalCount / validatedPageSize);
+                var adjustedPageNumber = Math.Min(validatedPageNumber, totalPages);
+
+                _logger.LogDebug("Pagination metadata: totalPages {TotalPages}, adjustedPage {AdjustedPage}",
+                    totalPages, adjustedPageNumber);
+
+                // Get users for the specific page
                 var users = string.IsNullOrEmpty(normalizedSearch)
-                    ? await _userRepository.GetPagedWithRelatedAsync(page, pageSize)
-                    : await _userRepository.SearchUsersAsync(normalizedSearch, page, pageSize);
+                    ? await _userRepository.GetPagedWithRelatedAsync(adjustedPageNumber, validatedPageSize)
+                    : await _userRepository.SearchUsersAsync(normalizedSearch, adjustedPageNumber, validatedPageSize);
 
+                // Map to DTOs with full related data
                 var userDtos = _mapper.Map<List<UserDto>>(users);
-                var result = new UserSearchResult { Users = userDtos, TotalCount = totalCount };
 
-                // Cache the result
-                await _cacheService.SetAsync(cacheKey, result, _cacheOptions.ShortExpiration);
-                _logger.LogDebug("Cached users search results for page {Page}, size {PageSize}, search '{Search}'",
-                    page, pageSize, normalizedSearch);
+                // Create paginated result with all metadata
+                var result = new PagedResult<UserDto>(
+                    userDtos.AsReadOnly(),
+                    adjustedPageNumber,
+                    validatedPageSize,
+                    totalCount);
 
-                // Also cache individual users for faster access
+                // Cache the result for performance
+                var cacheExpiration = string.IsNullOrEmpty(normalizedSearch)
+                    ? _cacheOptions.DefaultExpiration
+                    : _cacheOptions.ShortExpiration;
+
+                await _cacheService.SetAsync(cacheKey, result, cacheExpiration);
+
+                _logger.LogDebug("Cached paginated users result for page {Page}, size {PageSize}, search '{Search}' with expiration {Expiration}",
+                    adjustedPageNumber, validatedPageSize, normalizedSearch, cacheExpiration);
+
+                // Also cache individual users for faster single-user access
                 await CacheIndividualUsersAsync(users);
 
-                return (userDtos, totalCount);
+                _logger.LogInformation("Successfully retrieved paginated users: {UserCount} users on page {Page} of {TotalPages} (total: {TotalCount})",
+                    userDtos.Count, adjustedPageNumber, result.TotalPages, totalCount);
+
+                return result;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving users for page {Page}, size {PageSize}, search '{Search}'",
-                    page, pageSize, normalizedSearch);
+                _logger.LogError(ex, "Error retrieving paginated users for page {Page}, size {PageSize}, search '{Search}'",
+                    validatedPageNumber, validatedPageSize, normalizedSearch);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Advanced user search with filtering implementation
+        /// </summary>
+        /// <param name="searchDto">Search criteria with pagination</param>
+        /// <returns>Paginated search results</returns>
+        public async Task<PagedResult<UserDto>> SearchUsersPagedAsync(UserSearchDto searchDto)
+        {
+            if (searchDto == null)
+                throw new ArgumentNullException(nameof(searchDto));
+
+            var validatedPageNumber = Math.Max(1, searchDto.PageNumber);
+            var validatedPageSize = Math.Clamp(searchDto.PageSize, MIN_PAGE_SIZE, MAX_PAGE_SIZE);
+            var normalizedSearchTerm = searchDto.SearchTerm?.Trim();
+
+            try
+            {
+                _logger.LogDebug("Advanced user search: page {PageNumber}, size {PageSize}, term '{SearchTerm}', role {Role}, active {IsActive}",
+                    validatedPageNumber, validatedPageSize, normalizedSearchTerm, searchDto.Role, searchDto.IsActive);
+
+                // Create cache key for advanced search
+                var cacheKey = CacheKeys.UserAdvancedSearch(
+                    normalizedSearchTerm ?? "",
+                    searchDto.Role?.ToString() ?? "",
+                    searchDto.IsActive,
+                    validatedPageNumber,
+                    validatedPageSize);
+
+                // Try cache first
+                var cachedResult = await _cacheService.GetAsync<PagedResult<UserDto>>(cacheKey);
+                if (cachedResult != null)
+                {
+                    _logger.LogDebug("Retrieved advanced search results from cache");
+                    return cachedResult;
+                }
+
+                // Build query with all filters
+                var query = _context.Users
+                    .Include(u => u.Addresses.Where(a => !a.IsDeleted))
+                    .Include(u => u.ContactDetails.Where(c => !c.IsDeleted))
+                    .Include(u => u.Picture)
+                    .Where(u => !u.IsDeleted)
+                    .AsQueryable();
+
+                // Apply search term filter
+                if (!string.IsNullOrEmpty(normalizedSearchTerm))
+                {
+                    query = query.Where(u =>
+                        u.Email.Contains(normalizedSearchTerm) ||
+                        u.Username.Contains(normalizedSearchTerm) ||
+                        u.FirstName.Contains(normalizedSearchTerm) ||
+                        u.LastName.Contains(normalizedSearchTerm));
+                }
+
+                // Apply role filter
+                if (searchDto.Role.HasValue)
+                {
+                    query = query.Where(u => u.Role == searchDto.Role.Value);
+                }
+
+                // Apply active status filter
+                if (searchDto.IsActive.HasValue)
+                {
+                    query = query.Where(u => u.IsActive == searchDto.IsActive.Value);
+                }
+
+                // Apply additional filters if needed
+                if (searchDto.IsLocked.HasValue)
+                {
+                    query = query.Where(u => u.IsLocked == searchDto.IsLocked.Value);
+                }
+
+                if (searchDto.EmailVerified.HasValue)
+                {
+                    if (searchDto.EmailVerified.Value)
+                    {
+                        query = query.Where(u => u.EmailVerifiedAt != null);
+                    }
+                    else
+                    {
+                        query = query.Where(u => u.EmailVerifiedAt == null);
+                    }
+                }
+
+                // Apply date range filters
+                if (searchDto.CreatedAfter.HasValue)
+                {
+                    query = query.Where(u => u.CreatedAt >= searchDto.CreatedAfter.Value);
+                }
+
+                if (searchDto.CreatedBefore.HasValue)
+                {
+                    query = query.Where(u => u.CreatedAt <= searchDto.CreatedBefore.Value);
+                }
+
+                // Apply sorting
+                query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
+
+                // Get total count for pagination
+                var totalCount = await query.CountAsync();
+                _logger.LogDebug("Advanced search total count: {TotalCount}", totalCount);
+
+                // Early return for empty results
+                if (totalCount == 0)
+                {
+                    var emptyResult = new PagedResult<UserDto>(
+                        new List<UserDto>(),
+                        validatedPageNumber,
+                        validatedPageSize,
+                        0);
+
+                    await _cacheService.SetAsync(cacheKey, emptyResult, _cacheOptions.ShortExpiration);
+                    return emptyResult;
+                }
+
+                // Calculate pagination
+                var totalPages = (int)Math.Ceiling((double)totalCount / validatedPageSize);
+                var adjustedPageNumber = Math.Min(validatedPageNumber, totalPages);
+                var skip = (adjustedPageNumber - 1) * validatedPageSize;
+
+                // Get paginated results
+                var users = await query
+                    .Skip(skip)
+                    .Take(validatedPageSize)
+                    .ToListAsync();
+
+                _logger.LogDebug("Retrieved {UserCount} users from advanced search", users.Count);
+
+                // Map to DTOs
+                var userDtos = _mapper.Map<List<UserDto>>(users);
+
+                // Create paginated result
+                var result = new PagedResult<UserDto>(
+                    userDtos.AsReadOnly(),
+                    adjustedPageNumber,
+                    validatedPageSize,
+                    totalCount);
+
+                // Cache the result
+                await _cacheService.SetAsync(cacheKey, result, _cacheOptions.ShortExpiration);
+
+                // Cache individual users
+                await CacheIndividualUsersAsync(users);
+
+                _logger.LogInformation("Advanced search completed: {UserCount} users on page {Page} of {TotalPages} (total: {TotalCount})",
+                    userDtos.Count, adjustedPageNumber, result.TotalPages, totalCount);
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in advanced user search");
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Legacy method for backward compatibility - redirects to paginated implementation
+        /// </summary>
+        [Obsolete("Use GetUsersPagedAsync instead")]
+        public async Task<(List<UserDto> users, int totalCount)> GetUsersAsync(int page = 1, int pageSize = 10, string? search = null)
+        {
+            var result = await GetUsersPagedAsync(page, pageSize, search);
+            return (result.Data.ToList(), result.TotalCount);
         }
 
         public async Task<UserDto> CreateUserAsync(CreateUserDto createUserDto)
@@ -763,6 +978,27 @@ namespace Backend.CMS.Infrastructure.Services
 
         #region Private Helper Methods
 
+        /// <summary>
+        /// Applies sorting to user query based on sort parameters
+        /// </summary>
+        private IQueryable<User> ApplySorting(IQueryable<User> query, string? sortBy, string? sortDirection)
+        {
+            var isDescending = string.Equals(sortDirection, "desc", StringComparison.OrdinalIgnoreCase);
+
+            return (sortBy?.ToLowerInvariant()) switch
+            {
+                "email" => isDescending ? query.OrderByDescending(u => u.Email) : query.OrderBy(u => u.Email),
+                "username" => isDescending ? query.OrderByDescending(u => u.Username) : query.OrderBy(u => u.Username),
+                "firstname" => isDescending ? query.OrderByDescending(u => u.FirstName) : query.OrderBy(u => u.FirstName),
+                "lastname" => isDescending ? query.OrderByDescending(u => u.LastName) : query.OrderBy(u => u.LastName),
+                "role" => isDescending ? query.OrderByDescending(u => u.Role) : query.OrderBy(u => u.Role),
+                "isactive" => isDescending ? query.OrderByDescending(u => u.IsActive) : query.OrderBy(u => u.IsActive),
+                "lastloginat" => isDescending ? query.OrderByDescending(u => u.LastLoginAt) : query.OrderBy(u => u.LastLoginAt),
+                "updatedat" => isDescending ? query.OrderByDescending(u => u.UpdatedAt) : query.OrderBy(u => u.UpdatedAt),
+                _ => isDescending ? query.OrderByDescending(u => u.CreatedAt) : query.OrderBy(u => u.CreatedAt) // Default sort by created date
+            };
+        }
+
         private async Task CacheUserByAllKeysAsync(User user)
         {
             try
@@ -818,6 +1054,7 @@ namespace Backend.CMS.Infrastructure.Services
                 // Invalidate user list caches
                 await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.Pattern("user:list"));
                 await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.Pattern("user:search"));
+                await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.Pattern("user:advanced-search"));
             }
             catch (Exception ex)
             {
@@ -876,6 +1113,9 @@ namespace Backend.CMS.Infrastructure.Services
                 // Invalidate related caches for status changes
                 await InvalidateUserRelatedCaches(userId);
 
+                // Invalidate list caches since status affects search results
+                await InvalidateUserListCaches();
+
                 _logger.LogInformation("User {UserId} {Action} by user {CurrentUserId}", userId, action, currentUserId);
                 return true;
             }
@@ -916,6 +1156,9 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Update user in cache
                 await CacheUserByAllKeysAsync(user);
+
+                // Invalidate list caches
+                await InvalidateUserListCaches();
 
                 _logger.LogInformation("User {UserId} {ActionDescription}", userId, actionDescription);
 

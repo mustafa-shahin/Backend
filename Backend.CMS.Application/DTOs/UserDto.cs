@@ -78,5 +78,21 @@ namespace Backend.CMS.Application.DTOs
     {
         public string RefreshToken { get; set; } = string.Empty;
     }
- 
+    /// <summary>
+    /// Advanced user search criteria DTO
+    /// </summary>
+    public class UserSearchDto
+    {
+        public int PageNumber { get; set; } = 1;
+        public int PageSize { get; set; } = 10;
+        public string? SearchTerm { get; set; }
+        public UserRole? Role { get; set; }
+        public bool? IsActive { get; set; }
+        public bool? IsLocked { get; set; }
+        public bool? EmailVerified { get; set; }
+        public DateTime? CreatedAfter { get; set; }
+        public DateTime? CreatedBefore { get; set; }
+        public string SortBy { get; set; } = "CreatedAt";
+        public string SortDirection { get; set; } = "Desc";
+    }
 }
