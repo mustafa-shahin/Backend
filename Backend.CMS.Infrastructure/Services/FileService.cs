@@ -364,12 +364,11 @@ namespace Backend.CMS.Infrastructure.Services
                 throw new ArgumentException("File not found");
 
             // Record access and update stats atomically
-            //await Task.WhenAll(
-            //    RecordFileAccessAsync(fileId, FileAccessType.Download),
-            //    UpdateFileStatsAsync(file)
-            //);
-            await RecordFileAccessAsync(fileId, FileAccessType.Download);
-            await UpdateFileStatsAsync(file);
+            await Task.WhenAll(
+                RecordFileAccessAsync(fileId, FileAccessType.Download),
+                UpdateFileStatsAsync(file)
+            );
+
             var stream = new MemoryStream(file.FileContent, false);
             return (stream, file.ContentType, file.OriginalFileName);
         }
