@@ -22,6 +22,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IImageProcessingService _imageProcessingService;
         private readonly IFileValidationService _fileValidationService;
         private readonly IUserSessionService _userSessionService;
+        private readonly IFileUrlBuilder _fileUrlBuilder;
         private readonly IMapper _mapper;
         private readonly ILogger<FileService> _logger;
         private readonly IConfiguration _configuration;
@@ -37,6 +38,7 @@ namespace Backend.CMS.Infrastructure.Services
             IImageProcessingService imageProcessingService,
             IFileValidationService fileValidationService,
             IUserSessionService userSessionService,
+            IFileUrlBuilder fileUrlBuilder,
             IMapper mapper,
             ILogger<FileService> logger,
             IConfiguration configuration)
@@ -46,6 +48,7 @@ namespace Backend.CMS.Infrastructure.Services
             _imageProcessingService = imageProcessingService ?? throw new ArgumentNullException(nameof(imageProcessingService));
             _fileValidationService = fileValidationService ?? throw new ArgumentNullException(nameof(fileValidationService));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
+            _fileUrlBuilder = fileUrlBuilder ?? throw new ArgumentNullException(nameof(fileUrlBuilder));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
@@ -58,6 +61,8 @@ namespace Backend.CMS.Infrastructure.Services
             _semaphoreCleanupTimer = new Timer(CleanupHashSemaphores, null,
                 TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
         }
+
+        #region File Upload Operations
 
         public async Task<FileDto> UploadFileAsync(FileUploadDto uploadDto)
         {
@@ -149,11 +154,11 @@ namespace Backend.CMS.Infrastructure.Services
                     }
 
                     // Process image after saving to database
-                    if (fileType == FileType.Image)
+                    if (fileType == FileType.Image && uploadDto.ProcessImmediately)
                     {
                         await ProcessImageFileAsync(fileEntity, uploadDto.GenerateThumbnail);
                     }
-                    else
+                    else if (uploadDto.ProcessImmediately)
                     {
                         fileEntity.IsProcessed = true;
                         fileEntity.ProcessingStatus = "Completed";
@@ -188,9 +193,14 @@ namespace Backend.CMS.Infrastructure.Services
 
             // Process files in parallel with controlled concurrency
             var semaphore = new SemaphoreSlim(Math.Min(Environment.ProcessorCount, uploadDto.Files.Count()));
+
             var tasks = uploadDto.Files.Select(async file =>
             {
-                await semaphore.WaitAsync();
+                if (uploadDto.ProcessInParallel)
+                {
+                    await semaphore.WaitAsync();
+                }
+
                 try
                 {
                     var singleUpload = new FileUploadDto
@@ -198,7 +208,8 @@ namespace Backend.CMS.Infrastructure.Services
                         File = file,
                         FolderId = uploadDto.FolderId,
                         IsPublic = uploadDto.IsPublic,
-                        GenerateThumbnail = uploadDto.GenerateThumbnails
+                        GenerateThumbnail = uploadDto.GenerateThumbnails,
+                        ProcessImmediately = uploadDto.ProcessImmediately
                     };
 
                     var result = await UploadFileAsync(singleUpload);
@@ -211,11 +222,26 @@ namespace Backend.CMS.Infrastructure.Services
                 }
                 finally
                 {
-                    semaphore.Release();
+                    if (uploadDto.ProcessInParallel)
+                    {
+                        semaphore.Release();
+                    }
                 }
             });
 
-            await Task.WhenAll(tasks);
+            if (uploadDto.ProcessInParallel)
+            {
+                await Task.WhenAll(tasks);
+            }
+            else
+            {
+                // Process sequentially
+                foreach (var task in tasks)
+                {
+                    await task;
+                }
+            }
+
             semaphore.Dispose();
 
             if (errors.Any())
@@ -279,6 +305,66 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
+        #endregion
+
+        #region File Retrieval Operations with Pagination
+
+        public async Task<PagedResult<FileDto>> GetFilesPagedAsync(FileSearchDto searchDto)
+        {
+            try
+            {
+                // Validate pagination parameters
+                var pageNumber = Math.Max(1, searchDto.PageNumber);
+                var pageSize = Math.Clamp(searchDto.PageSize, 1, 100);
+
+                // Build query
+                var query = await BuildFileQueryAsync(searchDto);
+
+                // Apply sorting
+                query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
+
+                // Get total count for pagination
+                var totalCount = await query.CountAsync();
+
+                // Apply pagination
+                var files = await query
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync();
+
+                // Map to DTOs with URLs
+                var fileDtos = await MapFilesToDtos(files);
+
+                return new PagedResult<FileDto>(fileDtos, pageNumber, pageSize, totalCount);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting paginated files");
+                throw;
+            }
+        }
+
+        public async Task<PagedResult<FileDto>> SearchFilesPagedAsync(FileSearchDto searchDto)
+        {
+            // SearchFilesPagedAsync uses the same logic as GetFilesPagedAsync
+            // but with more emphasis on search functionality
+            return await GetFilesPagedAsync(searchDto);
+        }
+
+        public async Task<PagedResult<FileDto>> GetFilesByFolderPagedAsync(int? folderId, int pageNumber = 1, int pageSize = 10)
+        {
+            var searchDto = new FileSearchDto
+            {
+                FolderId = folderId,
+                PageNumber = pageNumber,
+                PageSize = pageSize,
+                SortBy = "CreatedAt",
+                SortDirection = "Desc"
+            };
+
+            return await GetFilesPagedAsync(searchDto);
+        }
+
         public async Task<FileDto> GetFileByIdAsync(int fileId)
         {
             var file = await _fileRepository.GetByIdAsync(fileId);
@@ -288,74 +374,9 @@ namespace Backend.CMS.Infrastructure.Services
             return await MapFileToDto(file);
         }
 
-        public async Task<List<FileDto>> GetFilesAsync(int page = 1, int pageSize = 20)
-        {
-            var files = await _fileRepository.GetPagedAsync(page, pageSize);
-            return await MapFilesToDtos(files);
-        }
+        #endregion
 
-        public async Task<List<FileDto>> GetFilesByFolderAsync(int? folderId, int page = 1, int pageSize = 20)
-        {
-            var files = await _fileRepository.FindAsync(f => f.FolderId == folderId);
-            var pagedFiles = files.Skip((page - 1) * pageSize).Take(pageSize);
-            return await MapFilesToDtos(pagedFiles);
-        }
-
-        public async Task<List<FileDto>> SearchFilesAsync(FileSearchDto searchDto)
-        {
-            var query = await _fileRepository.GetAllAsync();
-            var files = query.AsQueryable();
-
-            // Apply filters efficiently
-            if (!string.IsNullOrEmpty(searchDto.SearchTerm))
-            {
-                var searchTermLower = searchDto.SearchTerm.ToLowerInvariant();
-                files = files.Where(f => f.OriginalFileName.ToLower().Contains(searchTermLower) ||
-                                        (f.Description != null && f.Description.ToLower().Contains(searchTermLower)));
-            }
-
-            if (searchDto.FileType.HasValue)
-                files = files.Where(f => f.FileType == searchDto.FileType.Value);
-
-            if (searchDto.FolderId.HasValue)
-                files = files.Where(f => f.FolderId == searchDto.FolderId.Value);
-
-            if (searchDto.IsPublic.HasValue)
-                files = files.Where(f => f.IsPublic == searchDto.IsPublic.Value);
-
-            if (searchDto.CreatedFrom.HasValue)
-                files = files.Where(f => f.CreatedAt >= searchDto.CreatedFrom.Value);
-
-            if (searchDto.CreatedTo.HasValue)
-                files = files.Where(f => f.CreatedAt <= searchDto.CreatedTo.Value);
-
-            if (searchDto.MinSize.HasValue)
-                files = files.Where(f => f.FileSize >= searchDto.MinSize.Value);
-
-            if (searchDto.MaxSize.HasValue)
-                files = files.Where(f => f.FileSize <= searchDto.MaxSize.Value);
-
-            // Apply sorting
-            files = searchDto.SortBy.ToLower() switch
-            {
-                "name" => searchDto.SortDirection.Equals("desc", StringComparison.OrdinalIgnoreCase)
-                    ? files.OrderByDescending(f => f.OriginalFileName)
-                    : files.OrderBy(f => f.OriginalFileName),
-                "size" => searchDto.SortDirection.Equals("desc", StringComparison.OrdinalIgnoreCase)
-                    ? files.OrderByDescending(f => f.FileSize)
-                    : files.OrderBy(f => f.FileSize),
-                "createdat" => searchDto.SortDirection.Equals("desc", StringComparison.OrdinalIgnoreCase)
-                    ? files.OrderByDescending(f => f.CreatedAt)
-                    : files.OrderBy(f => f.CreatedAt),
-                _ => files.OrderByDescending(f => f.CreatedAt)
-            };
-
-            // Apply pagination
-            var pagedFiles = files.Skip((searchDto.Page - 1) * searchDto.PageSize)
-                                 .Take(searchDto.PageSize);
-
-            return await MapFilesToDtos(pagedFiles);
-        }
+        #region File Stream Operations
 
         public async Task<(Stream stream, string contentType, string fileName)> GetFileStreamAsync(int fileId)
         {
@@ -363,13 +384,10 @@ namespace Backend.CMS.Infrastructure.Services
             if (file == null)
                 throw new ArgumentException("File not found");
 
-            // Record access and update stats atomically
-            //await Task.WhenAll(
-            //    RecordFileAccessAsync(fileId, FileAccessType.Download),
-            //    UpdateFileStatsAsync(file)
-            //);
+            // Record access and update stats
             await RecordFileAccessAsync(fileId, FileAccessType.Download);
             await UpdateFileStatsAsync(file);
+
             var stream = new MemoryStream(file.FileContent, false);
             return (stream, file.ContentType, file.OriginalFileName);
         }
@@ -388,6 +406,10 @@ namespace Backend.CMS.Infrastructure.Services
             var stream = new MemoryStream(file.ThumbnailContent, false);
             return (stream, "image/jpeg", $"thumb_{file.OriginalFileName}");
         }
+
+        #endregion
+
+        #region File Management Operations
 
         public async Task<FileDto> UpdateFileAsync(int fileId, UpdateFileDto updateDto)
         {
@@ -412,6 +434,12 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     file.Tags[tag.Key] = tag.Value;
                 }
+            }
+
+            // Regenerate thumbnail if requested
+            if (updateDto.RegenerateThumbnail && file.FileType == FileType.Image)
+            {
+                await GenerateThumbnailAsync(fileId);
             }
 
             _fileRepository.Update(file);
@@ -478,6 +506,13 @@ namespace Backend.CMS.Infrastructure.Services
             file.UpdatedAt = DateTime.UtcNow;
             file.UpdatedByUserId = currentUserId;
 
+            // Update metadata if requested
+            if (moveDto.UpdateMetadata)
+            {
+                file.Metadata["lastMoved"] = DateTime.UtcNow;
+                file.Metadata["movedBy"] = currentUserId;
+            }
+
             _fileRepository.Update(file);
             await _fileRepository.SaveChangesAsync();
 
@@ -510,7 +545,6 @@ namespace Backend.CMS.Infrastructure.Services
                 IsPublic = originalFile.IsPublic,
                 FolderId = copyDto.DestinationFolderId ?? originalFile.FolderId,
                 Hash = originalFile.Hash,
-                Tags = new Dictionary<string, object>(originalFile.Tags),
                 Width = originalFile.Width,
                 Height = originalFile.Height,
                 Duration = originalFile.Duration,
@@ -520,8 +554,15 @@ namespace Backend.CMS.Infrastructure.Services
                 UpdatedByUserId = currentUserId
             };
 
-            // Copy thumbnail if exists
-            if (originalFile.ThumbnailContent != null && originalFile.ThumbnailContent.Length > 0)
+            // Copy metadata and tags if requested
+            if (copyDto.CopyMetadata)
+            {
+                newFile.Tags = new Dictionary<string, object>(originalFile.Tags);
+                newFile.Metadata = new Dictionary<string, object>(originalFile.Metadata);
+            }
+
+            // Copy thumbnail if exists and requested
+            if (copyDto.CopyThumbnail && originalFile.ThumbnailContent != null && originalFile.ThumbnailContent.Length > 0)
             {
                 newFile.ThumbnailContent = (byte[])originalFile.ThumbnailContent.Clone();
             }
@@ -550,6 +591,10 @@ namespace Backend.CMS.Infrastructure.Services
             return true;
         }
 
+        #endregion
+
+        #region File Preview and Processing
+
         public async Task<FilePreviewDto> GetFilePreviewAsync(int fileId)
         {
             var file = await _fileRepository.GetByIdAsync(fileId);
@@ -558,39 +603,49 @@ namespace Backend.CMS.Infrastructure.Services
 
             await RecordFileAccessAsync(fileId, FileAccessType.Preview);
 
+            var urlSet = _fileUrlBuilder.GenerateFileUrls(file);
+
             var previewDto = new FilePreviewDto
             {
                 Id = file.Id,
                 OriginalFileName = file.OriginalFileName,
                 ContentType = file.ContentType,
                 FileType = file.FileType,
-                FileUrl = GenerateFileUrl(file.Id),
-                ThumbnailUrl = file.ThumbnailContent != null && file.ThumbnailContent.Length > 0
-                    ? GenerateThumbnailUrl(file.Id)
-                    : null,
+                Urls = new FileUrlsDto
+                {
+                    Download = urlSet.DownloadUrl,
+                    Preview = urlSet.PreviewUrl,
+                    Thumbnail = urlSet.ThumbnailUrl,
+                    DirectAccess = urlSet.DirectAccessUrl,
+                    Additional = urlSet.AdditionalUrls
+                },
                 Width = file.Width,
                 Height = file.Height,
                 Duration = file.Duration,
-                CanPreview = CanPreviewFile(file.FileType, file.ContentType)
+                CanPreview = CanPreviewFile(file.FileType, file.ContentType),
+                Metadata = file.Metadata
             };
 
-            previewDto.PreviewHtml = GeneratePreviewHtml(file);
+            previewDto.PreviewHtml = GeneratePreviewHtml(file, urlSet);
 
             return previewDto;
         }
 
+        [Obsolete("URLs are now automatically generated in DTOs")]
         public async Task<string> GenerateFileUrlAsync(int fileId, bool thumbnail = false)
         {
             var file = await _fileRepository.GetByIdAsync(fileId);
             if (file == null)
                 throw new ArgumentException("File not found");
 
-            if (thumbnail && file.ThumbnailContent != null && file.ThumbnailContent.Length > 0)
+            var urlSet = _fileUrlBuilder.GenerateFileUrls(file);
+
+            if (thumbnail && !string.IsNullOrEmpty(urlSet.ThumbnailUrl))
             {
-                return GenerateThumbnailUrl(fileId);
+                return urlSet.ThumbnailUrl;
             }
 
-            return GenerateFileUrl(fileId);
+            return urlSet.DownloadUrl;
         }
 
         public async Task<bool> GenerateThumbnailAsync(int fileId)
@@ -643,6 +698,10 @@ namespace Backend.CMS.Infrastructure.Services
             return true;
         }
 
+        #endregion
+
+        #region File Access and Statistics
+
         public async Task RecordFileAccessAsync(int fileId, FileAccessType accessType)
         {
             var currentUserId = _userSessionService.GetCurrentUserId();
@@ -664,7 +723,7 @@ namespace Backend.CMS.Infrastructure.Services
         public async Task<List<FileDto>> GetRecentFilesAsync(int count = 10)
         {
             var files = await _fileRepository.GetAllAsync();
-            var recentFiles = files.OrderByDescending(f => f.CreatedAt).Take(count);
+            var recentFiles = files.OrderByDescending(f => f.CreatedAt).Take(Math.Clamp(count, 1, 50));
             return await MapFilesToDtos(recentFiles);
         }
 
@@ -690,9 +749,14 @@ namespace Backend.CMS.Infrastructure.Services
                 ["averageFileSize"] = averageFileSize,
                 ["averageFileSizeFormatted"] = FormatFileSize(averageFileSize),
                 ["filesByType"] = filesByType,
-                ["lastUpload"] = files.Any() ? files.Max(f => f.CreatedAt) : (DateTime?)null
+                ["lastUpload"] = files.Any() ? files.Max(f => f.CreatedAt) : (DateTime?)null,
+                ["generatedAt"] = DateTime.UtcNow
             };
         }
+
+        #endregion
+
+        #region File Validation and Utilities
 
         public async Task<bool> ValidateFileAsync(IFormFile file)
         {
@@ -729,6 +793,72 @@ namespace Backend.CMS.Infrastructure.Services
 
             return files.Sum(f => f.FileSize);
         }
+
+        #endregion
+
+        #region File Integrity and Diagnostics
+
+        public async Task<bool> VerifyFileIntegrityAsync(int fileId)
+        {
+            try
+            {
+                var file = await _fileRepository.GetByIdAsync(fileId);
+                if (file == null)
+                {
+                    _logger.LogWarning("File verification failed - file not found: {FileId}", fileId);
+                    return false;
+                }
+
+                // Check if file content exists
+                if (file.FileContent == null || file.FileContent.Length == 0)
+                {
+                    _logger.LogWarning("File verification failed - no content: {FileId}", fileId);
+                    return false;
+                }
+
+                // Verify file size matches
+                if (file.FileContent.Length != file.FileSize)
+                {
+                    _logger.LogWarning("File verification failed - size mismatch: {FileId}, expected: {ExpectedSize}, actual: {ActualSize}",
+                        fileId, file.FileSize, file.FileContent.Length);
+                    return false;
+                }
+
+                // Verify hash if available
+                if (!string.IsNullOrEmpty(file.Hash))
+                {
+                    var calculatedHash = await CalculateFileHashAsync(file.FileContent);
+                    if (calculatedHash != file.Hash)
+                    {
+                        _logger.LogWarning("File verification failed - hash mismatch: {FileId}, expected: {ExpectedHash}, actual: {ActualHash}",
+                            fileId, file.Hash[..16], calculatedHash[..16]);
+                        return false;
+                    }
+                }
+
+                // For image files, verify image integrity
+                if (file.FileType == FileType.Image)
+                {
+                    if (!await ValidateImageContentAsync(file.FileContent))
+                    {
+                        _logger.LogWarning("File verification failed - invalid image content: {FileId}", fileId);
+                        return false;
+                    }
+                }
+
+                _logger.LogInformation("File integrity verification passed: {FileId}", fileId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during file integrity verification: {FileId}", fileId);
+                return false;
+            }
+        }
+
+        #endregion
+
+        #region Bulk Operations
 
         public async Task<bool> BulkUpdateFilesAsync(List<int> fileIds, UpdateFileDto updateDto)
         {
@@ -839,65 +969,81 @@ namespace Backend.CMS.Infrastructure.Services
             return copiedFiles;
         }
 
-        public async Task<bool> VerifyFileIntegrityAsync(int fileId)
+        #endregion
+
+        #region Private Helper Methods
+
+        private async Task<IQueryable<FileEntity>> BuildFileQueryAsync(FileSearchDto searchDto)
         {
-            try
+            var files = await _fileRepository.GetAllAsync();
+            var query = files.AsQueryable();
+
+            // Apply filters efficiently
+            if (!string.IsNullOrEmpty(searchDto.SearchTerm))
             {
-                var file = await _fileRepository.GetByIdAsync(fileId);
-                if (file == null)
-                {
-                    _logger.LogWarning("File verification failed - file not found: {FileId}", fileId);
-                    return false;
-                }
-
-                // Check if file content exists
-                if (file.FileContent == null || file.FileContent.Length == 0)
-                {
-                    _logger.LogWarning("File verification failed - no content: {FileId}", fileId);
-                    return false;
-                }
-
-                // Verify file size matches
-                if (file.FileContent.Length != file.FileSize)
-                {
-                    _logger.LogWarning("File verification failed - size mismatch: {FileId}, expected: {ExpectedSize}, actual: {ActualSize}",
-                        fileId, file.FileSize, file.FileContent.Length);
-                    return false;
-                }
-
-                // Verify hash if available
-                if (!string.IsNullOrEmpty(file.Hash))
-                {
-                    var calculatedHash = await CalculateFileHashAsync(file.FileContent);
-                    if (calculatedHash != file.Hash)
-                    {
-                        _logger.LogWarning("File verification failed - hash mismatch: {FileId}, expected: {ExpectedHash}, actual: {ActualHash}",
-                            fileId, file.Hash[..16], calculatedHash[..16]);
-                        return false;
-                    }
-                }
-
-                // For image files, verify image integrity
-                if (file.FileType == FileType.Image)
-                {
-                    if (!await ValidateImageContentAsync(file.FileContent))
-                    {
-                        _logger.LogWarning("File verification failed - invalid image content: {FileId}", fileId);
-                        return false;
-                    }
-                }
-
-                _logger.LogInformation("File integrity verification passed: {FileId}", fileId);
-                return true;
+                var searchTermLower = searchDto.SearchTerm.ToLowerInvariant();
+                query = query.Where(f => f.OriginalFileName.ToLower().Contains(searchTermLower) ||
+                                        (f.Description != null && f.Description.ToLower().Contains(searchTermLower)));
             }
-            catch (Exception ex)
+
+            if (searchDto.FileType.HasValue)
+                query = query.Where(f => f.FileType == searchDto.FileType.Value);
+
+            if (searchDto.FolderId.HasValue)
+                query = query.Where(f => f.FolderId == searchDto.FolderId.Value);
+
+            if (searchDto.IsPublic.HasValue)
+                query = query.Where(f => f.IsPublic == searchDto.IsPublic.Value);
+
+            if (searchDto.CreatedFrom.HasValue)
+                query = query.Where(f => f.CreatedAt >= searchDto.CreatedFrom.Value);
+
+            if (searchDto.CreatedTo.HasValue)
+                query = query.Where(f => f.CreatedAt <= searchDto.CreatedTo.Value);
+
+            if (searchDto.MinSize.HasValue)
+                query = query.Where(f => f.FileSize >= searchDto.MinSize.Value);
+
+            if (searchDto.MaxSize.HasValue)
+                query = query.Where(f => f.FileSize <= searchDto.MaxSize.Value);
+
+            if (searchDto.UserFilesOnly)
             {
-                _logger.LogError(ex, "Error during file integrity verification: {FileId}", fileId);
-                return false;
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                if (currentUserId.HasValue)
+                {
+                    query = query.Where(f => f.CreatedByUserId == currentUserId.Value);
+                }
             }
+
+            return query;
         }
 
-        // Private helper methods
+        private static IQueryable<FileEntity> ApplySorting(IQueryable<FileEntity> query, string sortBy, string sortDirection)
+        {
+            var isDescending = sortDirection.Equals("desc", StringComparison.OrdinalIgnoreCase);
+
+            return sortBy.ToLower() switch
+            {
+                "name" => isDescending
+                    ? query.OrderByDescending(f => f.OriginalFileName)
+                    : query.OrderBy(f => f.OriginalFileName),
+                "size" => isDescending
+                    ? query.OrderByDescending(f => f.FileSize)
+                    : query.OrderBy(f => f.FileSize),
+                "createdat" => isDescending
+                    ? query.OrderByDescending(f => f.CreatedAt)
+                    : query.OrderBy(f => f.CreatedAt),
+                "updatedat" => isDescending
+                    ? query.OrderByDescending(f => f.UpdatedAt)
+                    : query.OrderBy(f => f.UpdatedAt),
+                "downloads" => isDescending
+                    ? query.OrderByDescending(f => f.DownloadCount)
+                    : query.OrderBy(f => f.DownloadCount),
+                _ => query.OrderByDescending(f => f.CreatedAt)
+            };
+        }
+
         private async Task<bool> ValidateImageContentAsync(byte[] content)
         {
             try
@@ -1038,6 +1184,18 @@ namespace Backend.CMS.Infrastructure.Services
             return $"{len:0.##} {sizes[order]}";
         }
 
+        private static string FormatDuration(TimeSpan? duration)
+        {
+            if (!duration.HasValue) return string.Empty;
+
+            var d = duration.Value;
+            if (d.TotalHours >= 1)
+            {
+                return d.ToString(@"h\:mm\:ss");
+            }
+            return d.ToString(@"m\:ss");
+        }
+
         private static bool CanPreviewFile(FileType fileType, string contentType)
         {
             return fileType switch
@@ -1050,32 +1208,23 @@ namespace Backend.CMS.Infrastructure.Services
             };
         }
 
-        private string GeneratePreviewHtml(FileEntity file)
+        private string GeneratePreviewHtml(FileEntity file, FileUrlSet urlSet)
         {
-            var fileUrl = GenerateFileUrl(file.Id);
-
             return file.FileType switch
             {
-                FileType.Image => $"<img src=\"{fileUrl}\" alt=\"{file.Alt ?? file.OriginalFileName}\" style=\"max-width: 100%; height: auto;\" />",
-                FileType.Video => $"<video controls style=\"max-width: 100%;\"><source src=\"{fileUrl}\" type=\"{file.ContentType}\">Your browser does not support the video tag.</video>",
-                FileType.Audio => $"<audio controls><source src=\"{fileUrl}\" type=\"{file.ContentType}\">Your browser does not support the audio tag.</audio>",
-                FileType.Document when file.ContentType == "application/pdf" => $"<embed src=\"{fileUrl}\" type=\"application/pdf\" width=\"100%\" height=\"600px\" />",
+                FileType.Image => $"<img src=\"{urlSet.DownloadUrl}\" alt=\"{file.Alt ?? file.OriginalFileName}\" style=\"max-width: 100%; height: auto;\" />",
+                FileType.Video => $"<video controls style=\"max-width: 100%;\"><source src=\"{urlSet.DownloadUrl}\" type=\"{file.ContentType}\">Your browser does not support the video tag.</video>",
+                FileType.Audio => $"<audio controls><source src=\"{urlSet.DownloadUrl}\" type=\"{file.ContentType}\">Your browser does not support the audio tag.</audio>",
+                FileType.Document when file.ContentType == "application/pdf" => $"<embed src=\"{urlSet.DownloadUrl}\" type=\"application/pdf\" width=\"100%\" height=\"600px\" />",
                 _ => null
             };
         }
 
-        private string GenerateFileUrl(int fileId)
-        {
-            return $"{_baseUrl.TrimEnd('/')}/{fileId}/download";
-        }
-
-        private string GenerateThumbnailUrl(int fileId)
-        {
-            return $"{_baseUrl.TrimEnd('/')}/{fileId}/thumbnail";
-        }
-
         private async Task<FileDto> MapFileToDto(FileEntity file)
         {
+            var urlSet = _fileUrlBuilder.GenerateFileUrls(file);
+            var hasThumbnail = file.ThumbnailContent != null && file.ThumbnailContent.Length > 0;
+
             return new FileDto
             {
                 Id = file.Id,
@@ -1083,8 +1232,10 @@ namespace Backend.CMS.Infrastructure.Services
                 StoredFileName = file.StoredFileName,
                 ContentType = file.ContentType,
                 FileSize = file.FileSize,
+                FileSizeFormatted = FormatFileSize(file.FileSize),
                 FileExtension = file.FileExtension,
                 FileType = file.FileType,
+                FileTypeName = file.FileType.ToString(),
                 Description = file.Description,
                 Alt = file.Alt,
                 Metadata = file.Metadata,
@@ -1095,12 +1246,23 @@ namespace Backend.CMS.Infrastructure.Services
                 Width = file.Width,
                 Height = file.Height,
                 Duration = file.Duration,
+                DurationFormatted = FormatDuration(file.Duration),
+                Hash = file.Hash,
                 IsProcessed = file.IsProcessed,
                 ProcessingStatus = file.ProcessingStatus,
                 Tags = file.Tags,
                 CreatedAt = file.CreatedAt,
                 UpdatedAt = file.UpdatedAt,
-                Hash = file.Hash
+                Urls = new FileUrlsDto
+                {
+                    Download = urlSet.DownloadUrl,
+                    Preview = urlSet.PreviewUrl,
+                    Thumbnail = urlSet.ThumbnailUrl,
+                    DirectAccess = urlSet.DirectAccessUrl,
+                    Additional = urlSet.AdditionalUrls
+                },
+                HasThumbnail = hasThumbnail,
+                CanPreview = CanPreviewFile(file.FileType, file.ContentType)
             };
         }
 
@@ -1113,6 +1275,10 @@ namespace Backend.CMS.Infrastructure.Services
             }
             return fileDtos;
         }
+
+        #endregion
+
+        #region IDisposable Implementation
 
         public void Dispose()
         {
@@ -1136,5 +1302,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _disposed = true;
             }
         }
+
+        #endregion
     }
 }

@@ -341,60 +341,429 @@
             );
         }
 
-        window.downloadFileWithAuth = async (url, filename) => {
-            try {
-                // Try fetch first to handle authentication
-                const response = await fetch(url, {
-                    method: 'GET',
-                    credentials: 'include', // Include cookies for authentication
-                    headers: {
-                        'Accept': '*/*'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                // Get the blob data
-                const blob = await response.blob();
-
-                // Create blob URL and download
-                const blobUrl = window.URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = blobUrl;
-                link.download = filename || 'download';
-
-                // Add to DOM, click, and remove
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-
-                // Clean up blob URL
-                window.URL.revokeObjectURL(blobUrl);
-
-                return true;
-            } catch (error) {
-                console.error('Download failed:', error);
-
-                // Fallback to simple link method
+        window.fileHelpers = {
+            /**
+             * Downloads a file with authentication support
+             * @param {string} url - Download URL
+             * @param {string} filename - Optional filename
+             */
+            downloadFileWithAuth: function (url, filename) {
                 try {
+                    // Create a temporary link element
                     const link = document.createElement('a');
                     link.href = url;
                     link.download = filename || 'download';
-                    link.target = '_blank';
+                    link.style.display = 'none';
 
+                    // Add to DOM, click, and remove
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
 
-                    return true;
-                } catch (fallbackError) {
-                    console.error('Fallback download failed:', fallbackError);
+                    console.log(`File download initiated: ${filename || 'download'}`);
+                } catch (error) {
+                    console.error('Error downloading file:', error);
+                    this.showNotification('Download failed', 'error');
+                }
+            },
+
+            /**
+             * Downloads file using fetch API with proper error handling
+             * @param {string} url - Download URL
+             * @param {string} filename - Filename
+             * @param {Object} options - Additional options
+             */
+            downloadFileWithFetch: async function (url, filename, options = {}) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': this.getAuthHeader(),
+                            ...options.headers
+                        }
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+                    }
+
+                    const blob = await response.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+
+                    const link = document.createElement('a');
+                    link.href = downloadUrl;
+                    link.download = filename;
+                    link.click();
+
+                    // Cleanup
+                    window.URL.revokeObjectURL(downloadUrl);
+
+                    console.log(`File downloaded successfully: ${filename}`);
+                    this.showNotification(`Downloaded: ${filename}`, 'success');
+                } catch (error) {
+                    console.error('Error downloading file:', error);
+                    this.showNotification(`Download failed: ${error.message}`, 'error');
+                }
+            },
+
+            /**
+             * Gets the authorization header for authenticated requests
+             * @returns {string} Authorization header value
+             */
+            getAuthHeader: function () {
+                const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+                return token ? `Bearer ${token}` : '';
+            },
+
+            /**
+             * Validates file before upload
+             * @param {File} file - File to validate
+             * @param {Object} options - Validation options
+             * @returns {Object} Validation result
+             */
+            validateFile: function (file, options = {}) {
+                const result = {
+                    isValid: true,
+                    errors: [],
+                    warnings: []
+                };
+
+                // Size validation
+                const maxSize = options.maxSize || 10 * 1024 * 1024; // 10MB default
+                if (file.size > maxSize) {
+                    result.isValid = false;
+                    result.errors.push(`File size (${this.formatFileSize(file.size)}) exceeds maximum allowed size (${this.formatFileSize(maxSize)})`);
+                }
+
+                // Type validation
+                const allowedTypes = options.allowedTypes || [];
+                if (allowedTypes.length > 0) {
+                    const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+                    const isAllowed = allowedTypes.includes(fileExtension) || allowedTypes.includes(file.type);
+
+                    if (!isAllowed) {
+                        result.isValid = false;
+                        result.errors.push(`File type not allowed. Allowed types: ${allowedTypes.join(', ')}`);
+                    }
+                }
+
+                // Name validation
+                if (file.name.length > 255) {
+                    result.warnings.push('Filename is very long and may be truncated');
+                }
+
+                // Special character validation
+                const invalidChars = /[<>:"/\\|?*]/;
+                if (invalidChars.test(file.name)) {
+                    result.warnings.push('Filename contains special characters that may cause issues');
+                }
+
+                return result;
+            },
+
+            /**
+             * Formats file size in human-readable format
+             * @param {number} bytes - Size in bytes
+             * @returns {string} Formatted size
+             */
+            formatFileSize: function (bytes) {
+                if (bytes === 0) return '0 B';
+
+                const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(1024));
+
+                return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+            },
+
+            /**
+             * Formats duration in human-readable format
+             * @param {number} seconds - Duration in seconds
+             * @returns {string} Formatted duration
+             */
+            formatDuration: function (seconds) {
+                if (!seconds || seconds < 0) return '0:00';
+
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                const secs = Math.floor(seconds % 60);
+
+                if (hours > 0) {
+                    return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+                }
+                return `${minutes}:${secs.toString().padStart(2, '0')}`;
+            },
+
+            /**
+             * Gets file type icon class based on file extension or type
+             * @param {string} filename - Filename or file type
+             * @returns {string} CSS class for icon
+             */
+            getFileIcon: function (filename) {
+                const extension = filename.toLowerCase().split('.').pop();
+
+                const iconMap = {
+                    // Images
+                    'jpg': 'fa-image', 'jpeg': 'fa-image', 'png': 'fa-image', 'gif': 'fa-image',
+                    'bmp': 'fa-image', 'webp': 'fa-image', 'svg': 'fa-image',
+
+                    // Documents
+                    'pdf': 'fa-file-pdf', 'doc': 'fa-file-word', 'docx': 'fa-file-word',
+                    'xls': 'fa-file-excel', 'xlsx': 'fa-file-excel', 'ppt': 'fa-file-powerpoint',
+                    'pptx': 'fa-file-powerpoint', 'txt': 'fa-file-alt', 'rtf': 'fa-file-alt',
+
+                    // Archives
+                    'zip': 'fa-file-archive', 'rar': 'fa-file-archive', '7z': 'fa-file-archive',
+                    'tar': 'fa-file-archive', 'gz': 'fa-file-archive',
+
+                    // Video
+                    'mp4': 'fa-file-video', 'avi': 'fa-file-video', 'mov': 'fa-file-video',
+                    'wmv': 'fa-file-video', 'flv': 'fa-file-video', 'webm': 'fa-file-video',
+
+                    // Audio
+                    'mp3': 'fa-file-audio', 'wav': 'fa-file-audio', 'ogg': 'fa-file-audio',
+                    'flac': 'fa-file-audio'
+                };
+
+                return iconMap[extension] || 'fa-file';
+            },
+
+            /**
+             * Shows a notification to the user
+             * @param {string} message - Notification message
+             * @param {string} type - Notification type (success, error, warning, info)
+             * @param {number} duration - Display duration in milliseconds
+             */
+            showNotification: function (message, type = 'info', duration = 5000) {
+                // Try to use existing notification system
+                if (window.blazorNotifications && typeof window.blazorNotifications.show === 'function') {
+                    window.blazorNotifications.show(message, type, duration);
+                    return;
+                }
+
+                // Fallback to console
+                console.log(`[${type.toUpperCase()}] ${message}`);
+
+                // Simple toast notification fallback
+                this.createToastNotification(message, type, duration);
+            },
+
+            /**
+             * Creates a simple toast notification
+             * @param {string} message - Message text
+             * @param {string} type - Notification type
+             * @param {number} duration - Display duration
+             */
+            createToastNotification: function (message, type, duration) {
+                // Create toast container if it doesn't exist
+                let container = document.getElementById('toast-container');
+                if (!container) {
+                    container = document.createElement('div');
+                    container.id = 'toast-container';
+                    container.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 10000;
+                pointer-events: none;
+            `;
+                    document.body.appendChild(container);
+                }
+
+                // Create toast element
+                const toast = document.createElement('div');
+                toast.style.cssText = `
+            background: ${this.getToastColor(type)};
+            color: white;
+            padding: 12px 20px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            pointer-events: auto;
+            cursor: pointer;
+            max-width: 350px;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.3s ease;
+        `;
+                toast.textContent = message;
+
+                // Add to container
+                container.appendChild(toast);
+
+                // Animate in
+                setTimeout(() => {
+                    toast.style.opacity = '1';
+                    toast.style.transform = 'translateX(0)';
+                }, 10);
+
+                // Remove after duration
+                setTimeout(() => {
+                    toast.style.opacity = '0';
+                    toast.style.transform = 'translateX(100%)';
+                    setTimeout(() => {
+                        if (toast.parentNode) {
+                            toast.parentNode.removeChild(toast);
+                        }
+                    }, 300);
+                }, duration);
+
+                // Click to dismiss
+                toast.addEventListener('click', () => {
+                    toast.style.opacity = '0';
+                    toast.style.transform = 'translateX(100%)';
+                    setTimeout(() => {
+                        if (toast.parentNode) {
+                            toast.parentNode.removeChild(toast);
+                        }
+                    }, 300);
+                });
+            },
+
+            /**
+             * Gets color for toast notification based on type
+             * @param {string} type - Notification type
+             * @returns {string} CSS color value
+             */
+            getToastColor: function (type) {
+                const colors = {
+                    success: '#28a745',
+                    error: '#dc3545',
+                    warning: '#ffc107',
+                    info: '#17a2b8'
+                };
+                return colors[type] || colors.info;
+            },
+
+            /**
+             * Previews an image file before upload
+             * @param {File} file - Image file
+             * @param {HTMLElement} previewElement - Element to show preview
+             */
+            previewImage: function (file, previewElement) {
+                if (!file || !file.type.startsWith('image/')) {
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    if (previewElement.tagName === 'IMG') {
+                        previewElement.src = e.target.result;
+                    } else {
+                        previewElement.style.backgroundImage = `url(${e.target.result})`;
+                        previewElement.style.backgroundSize = 'cover';
+                        previewElement.style.backgroundPosition = 'center';
+                    }
+                };
+                reader.readAsDataURL(file);
+            },
+
+            /**
+             * Checks if a file type can be previewed
+             * @param {string} fileType - File type or filename
+             * @returns {boolean} True if file can be previewed
+             */
+            canPreview: function (fileType) {
+                const previewableTypes = [
+                    'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
+                    'application/pdf',
+                    'text/plain', 'text/html', 'text/csv',
+                    'video/mp4', 'video/webm', 'video/ogg',
+                    'audio/mp3', 'audio/wav', 'audio/ogg'
+                ];
+
+                return previewableTypes.some(type => fileType.includes(type));
+            },
+
+            /**
+             * Copies text to clipboard
+             * @param {string} text - Text to copy
+             * @returns {Promise<boolean>} Success status
+             */
+            copyToClipboard: async function (text) {
+                try {
+                    if (navigator.clipboard && window.isSecureContext) {
+                        await navigator.clipboard.writeText(text);
+                        this.showNotification('Copied to clipboard', 'success', 2000);
+                        return true;
+                    } else {
+                        // Fallback for older browsers
+                        const textArea = document.createElement('textarea');
+                        textArea.value = text;
+                        textArea.style.position = 'fixed';
+                        textArea.style.opacity = '0';
+                        document.body.appendChild(textArea);
+                        textArea.focus();
+                        textArea.select();
+
+                        try {
+                            const successful = document.execCommand('copy');
+                            document.body.removeChild(textArea);
+
+                            if (successful) {
+                                this.showNotification('Copied to clipboard', 'success', 2000);
+                                return true;
+                            }
+                        } catch (err) {
+                            document.body.removeChild(textArea);
+                            throw err;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Failed to copy to clipboard:', error);
+                    this.showNotification('Failed to copy to clipboard', 'error');
                     return false;
                 }
+            },
+
+            /**
+             * Debounces a function call
+             * @param {Function} func - Function to debounce
+             * @param {number} delay - Delay in milliseconds
+             * @returns {Function} Debounced function
+             */
+            debounce: function (func, delay) {
+                let timeoutId;
+                return function (...args) {
+                    clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => func.apply(this, args), delay);
+                };
+            },
+
+            /**
+             * Throttles a function call
+             * @param {Function} func - Function to throttle
+             * @param {number} delay - Delay in milliseconds
+             * @returns {Function} Throttled function
+             */
+            throttle: function (func, delay) {
+                let timeoutId;
+                let lastExecTime = 0;
+                return function (...args) {
+                    const currentTime = Date.now();
+
+                    if (currentTime - lastExecTime > delay) {
+                        func.apply(this, args);
+                        lastExecTime = currentTime;
+                    } else {
+                        clearTimeout(timeoutId);
+                        timeoutId = setTimeout(() => {
+                            func.apply(this, args);
+                            lastExecTime = Date.now();
+                        }, delay - (currentTime - lastExecTime));
+                    }
+                };
             }
         };
+
+        // Global functions for Blazor interop
+        window.downloadFileWithAuth = window.fileHelpers.downloadFileWithAuth.bind(window.fileHelpers);
+        window.validateFile = window.fileHelpers.validateFile.bind(window.fileHelpers);
+        window.formatFileSize = window.fileHelpers.formatFileSize.bind(window.fileHelpers);
+        window.formatDuration = window.fileHelpers.formatDuration.bind(window.fileHelpers);
+        window.copyToClipboard = window.fileHelpers.copyToClipboard.bind(window.fileHelpers);
+        window.previewImage = window.fileHelpers.previewImage.bind(window.fileHelpers);
+
+        console.log('File helpers loaded successfully');
 
         // copy to clipboard with better error handling
         window.copyToClipboard = async (text) => {

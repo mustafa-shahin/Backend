@@ -71,10 +71,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             // Cleanup unused semaphores every 10 minutes
             _semaphoreCleanupTimer = new Timer(CleanupUnusedSemaphores, null,
-                TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
-
-            _logger.LogInformation("EnterpriseCachedFolderService initialized with {MaxOperations} max concurrent operations",
-                _maxConcurrentOperations);
+                TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));;
         }
 
         #region Create/Update/Delete Operations (Invalidate cache)

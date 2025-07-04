@@ -34,6 +34,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
+using Asp.Versioning;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,6 +43,9 @@ ConfigureLogging(builder);
 
 // Configure rate limiting
 ConfigureRateLimiting(builder);
+
+// Configure API versioning
+ConfigureApiVersioning(builder);
 
 // Configure basic services
 ConfigureBasicServices(builder);
@@ -108,6 +112,31 @@ static void ConfigureLogging(WebApplicationBuilder builder)
     builder.Host.UseSerilog();
 }
 
+static void ConfigureApiVersioning(WebApplicationBuilder builder)
+{
+    builder.Services.AddApiVersioning(options =>
+    {
+        options.DefaultApiVersion = new ApiVersion(1, 0);
+        options.AssumeDefaultVersionWhenUnspecified = true;
+        options.ApiVersionReader = ApiVersionReader.Combine(
+            new UrlSegmentApiVersionReader(),
+            new QueryStringApiVersionReader("version"),
+            new HeaderApiVersionReader("X-Version"),
+            new MediaTypeApiVersionReader("ver")
+        );
+    }).AddApiExplorer(setup =>
+    {
+        setup.GroupNameFormat = "'v'VVV";
+        setup.SubstituteApiVersionInUrl = true;
+    });
+
+    builder.Services.Configure<RouteOptions>(options =>
+    {
+        options.LowercaseUrls = true;
+        options.LowercaseQueryStrings = true;
+    });
+}
+
 static void ConfigureRateLimiting(WebApplicationBuilder builder)
 {
     builder.Services.AddRateLimiter(options =>
@@ -125,6 +154,13 @@ static void ConfigureRateLimiting(WebApplicationBuilder builder)
             configure.PermitLimit = 100;
             configure.Window = TimeSpan.FromMinutes(1);
         });
+
+        // File upload rate limiting
+        options.AddFixedWindowLimiter("FileUploadPolicy", configure =>
+        {
+            configure.PermitLimit = 20;
+            configure.Window = TimeSpan.FromMinutes(1);
+        });
     });
 }
 
@@ -137,6 +173,7 @@ static void ConfigureBasicServices(WebApplicationBuilder builder)
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
     });
 
     builder.Services.AddHttpContextAccessor();
@@ -588,8 +625,8 @@ static void RegisterSearchServices(WebApplicationBuilder builder)
 
 static void RegisterFileServices(WebApplicationBuilder builder)
 {
-    // Register base services
-    //builder.Services.AddScoped<FileService>();
+    // Register file URL builder first as it's a dependency
+    builder.Services.AddScoped<IFileUrlBuilder, FileUrlBuilder>();
 
     // Register additional file services
     builder.Services.AddScoped<IImageProcessingService, ImageProcessingService>();
@@ -637,6 +674,13 @@ static void ConfigureSwagger(WebApplicationBuilder builder)
             Description = "Multi-tenant CMS API with page builder functionality and job management"
         });
 
+        c.SwaggerDoc("v2", new OpenApiInfo
+        {
+            Title = "Backend CMS API",
+            Version = "v2",
+            Description = "Multi-tenant CMS API with enhanced features"
+        });
+
         // Add JWT authentication to Swagger
         c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
         {
@@ -661,6 +705,14 @@ static void ConfigureSwagger(WebApplicationBuilder builder)
                 Array.Empty<string>()
             }
         });
+
+        // Include XML comments
+        var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+        var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+        if (File.Exists(xmlPath))
+        {
+            c.IncludeXmlComments(xmlPath);
+        }
     });
 }
 #endregion
@@ -682,6 +734,7 @@ static void ConfigureRequestPipeline(WebApplication app)
         app.UseSwaggerUI(c =>
         {
             c.SwaggerEndpoint("/swagger/v1/swagger.json", "Backend CMS API V1");
+            c.SwaggerEndpoint("/swagger/v2/swagger.json", "Backend CMS API V2");
             c.RoutePrefix = "swagger";
         });
     }

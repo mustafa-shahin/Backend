@@ -23,6 +23,7 @@ namespace Backend.CMS.Infrastructure.Mapping
             ConfigureProductOptionMappings();
             ConfigureDesignerMapping();
             ConfigureImageMappings();
+            ConfigureFileMappings();
         }
 
         private void ConfigureAddressMappings()
@@ -361,6 +362,48 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.File, opt => opt.Ignore());
         }
 
+        private void ConfigureFileMappings()
+        {
+
+            CreateMap<FileUploadDto, FileEntity>()
+                .IgnoreAuditProperties()
+                .ForMember(dest => dest.StoredFileName, opt => opt.Ignore())
+                .ForMember(dest => dest.FileContent, opt => opt.Ignore())
+                .ForMember(dest => dest.FileSize, opt => opt.Ignore())
+                .ForMember(dest => dest.ContentType, opt => opt.Ignore())
+                .ForMember(dest => dest.FileExtension, opt => opt.Ignore())
+                .ForMember(dest => dest.FileType, opt => opt.Ignore())
+                .ForMember(dest => dest.Hash, opt => opt.Ignore())
+                .ForMember(dest => dest.ThumbnailContent, opt => opt.Ignore())
+                .ForMember(dest => dest.Width, opt => opt.Ignore())
+                .ForMember(dest => dest.Height, opt => opt.Ignore())
+                .ForMember(dest => dest.Duration, opt => opt.Ignore())
+                .ForMember(dest => dest.IsProcessed, opt => opt.Ignore())
+                .ForMember(dest => dest.ProcessingStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.DownloadCount, opt => opt.Ignore())
+                .ForMember(dest => dest.LastAccessedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.Folder, opt => opt.Ignore());
+
+            CreateMap<UpdateFileDto, FileEntity>()
+                .IgnoreBaseEntityProperties()
+                .ForMember(dest => dest.OriginalFileName, opt => opt.Ignore())
+                .ForMember(dest => dest.StoredFileName, opt => opt.Ignore())
+                .ForMember(dest => dest.FileContent, opt => opt.Ignore())
+                .ForMember(dest => dest.FileSize, opt => opt.Ignore())
+                .ForMember(dest => dest.ContentType, opt => opt.Ignore())
+                .ForMember(dest => dest.FileExtension, opt => opt.Ignore())
+                .ForMember(dest => dest.FileType, opt => opt.Ignore())
+                .ForMember(dest => dest.Hash, opt => opt.Ignore())
+                .ForMember(dest => dest.ThumbnailContent, opt => opt.Ignore())
+                .ForMember(dest => dest.Width, opt => opt.Ignore())
+                .ForMember(dest => dest.Height, opt => opt.Ignore())
+                .ForMember(dest => dest.Duration, opt => opt.Ignore())
+                .ForMember(dest => dest.IsProcessed, opt => opt.Ignore())
+                .ForMember(dest => dest.ProcessingStatus, opt => opt.Ignore())
+                .ForMember(dest => dest.DownloadCount, opt => opt.Ignore())
+                .ForMember(dest => dest.LastAccessedAt, opt => opt.Ignore())
+                .ForMember(dest => dest.Folder, opt => opt.Ignore());
+        }
         private void ConfigureDesignerMapping()
         {
             CreateMap<Page, DesignerPageDto>()

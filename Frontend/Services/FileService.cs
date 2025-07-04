@@ -5,42 +5,94 @@ using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.JSInterop;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Collections.Concurrent;
 
 namespace Frontend.Services
 {
+    /// <summary>
+    /// Frontend file service implementation with file management
+    /// </summary>
     public class FileService : IFileService
     {
         private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonOptions;
         private readonly IJSRuntime _jsRuntime;
         private readonly string _baseUrl;
+        private readonly SemaphoreSlim _downloadSemaphore;
+        private readonly ConcurrentDictionary<int, FileDto> _fileCache;
+        private readonly Timer _cacheCleanupTimer;
 
         public FileService(HttpClient httpClient, IJSRuntime jsRuntime)
         {
-            _httpClient = httpClient;
-            _jsRuntime = jsRuntime;
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _jsRuntime = jsRuntime ?? throw new ArgumentNullException(nameof(jsRuntime));
             _baseUrl = httpClient.BaseAddress?.ToString().TrimEnd('/') ?? "";
+            _downloadSemaphore = new SemaphoreSlim(5, 5); // Limit concurrent downloads
+            _fileCache = new ConcurrentDictionary<int, FileDto>();
+
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
             };
+
+            // Clean cache every 10 minutes
+            _cacheCleanupTimer = new Timer(CleanupCache, null,
+                TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
         }
 
-        public async Task<PagedResult<FileDto>> GetFilesAsync(int page = 1, int pageSize = 20, int? folderId = null, string? search = null, FileType? fileType = null)
+        #region Core File Operations with Pagination
+
+        public async Task<PagedResult<FileDto>> GetFilesAsync(
+            int pageNumber = 1,
+            int pageSize = 10,
+            int? folderId = null,
+            string? search = null,
+            FileType? fileType = null,
+            bool? isPublic = null,
+            string sortBy = "CreatedAt",
+            string sortDirection = "Desc")
         {
             try
             {
-                var query = $"api/file?page={page}&pageSize={pageSize}";
-                if (folderId.HasValue) query += $"&folderId={folderId}";
-                if (!string.IsNullOrEmpty(search)) query += $"&search={Uri.EscapeDataString(search)}";
-                if (fileType.HasValue) query += $"&fileType={fileType}";
+                var queryParams = new List<string>
+                {
+                    $"pageNumber={pageNumber}",
+                    $"pageSize={Math.Clamp(pageSize, 1, 100)}", // Ensure page size is within bounds
+                    $"sortBy={Uri.EscapeDataString(sortBy)}",
+                    $"sortDirection={Uri.EscapeDataString(sortDirection)}"
+                };
+
+                if (folderId.HasValue)
+                    queryParams.Add($"folderId={folderId}");
+
+                if (!string.IsNullOrEmpty(search))
+                    queryParams.Add($"search={Uri.EscapeDataString(search)}");
+
+                if (fileType.HasValue)
+                    queryParams.Add($"fileType={fileType}");
+
+                if (isPublic.HasValue)
+                    queryParams.Add($"isPublic={isPublic.Value.ToString().ToLower()}");
+
+                var query = $"api/v1/file?{string.Join("&", queryParams)}";
 
                 var response = await _httpClient.GetAsync(query);
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<PagedResult<FileDto>>(_jsonOptions);
-                    return result ?? new PagedResult<FileDto>();
+
+                    // Cache the files for performance
+                    if (result?.Data != null)
+                    {
+                        foreach (var file in result.Data)
+                        {
+                            _fileCache.TryAdd(file.Id, file);
+                        }
+                    }
+
+                    return result ?? PagedResult<FileDto>.Empty(pageNumber, pageSize);
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
@@ -52,14 +104,67 @@ namespace Frontend.Services
             }
         }
 
+        public async Task<PagedResult<FileDto>> SearchFilesAsync(FileSearchDto searchDto)
+        {
+            try
+            {
+                if (searchDto == null)
+                    throw new ArgumentNullException(nameof(searchDto));
+
+                // Ensure pagination parameters are valid
+                searchDto.PageNumber = Math.Max(1, searchDto.PageNumber);
+                searchDto.PageSize = Math.Clamp(searchDto.PageSize, 1, 100);
+
+                var response = await _httpClient.PostAsJsonAsync("api/v1/file/search", searchDto, _jsonOptions);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<PagedResult<FileDto>>(_jsonOptions);
+
+                    // Cache the files
+                    if (result?.Data != null)
+                    {
+                        foreach (var file in result.Data)
+                        {
+                            _fileCache.TryAdd(file.Id, file);
+                        }
+                    }
+
+                    return result ?? PagedResult<FileDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to search files: {response.StatusCode} - {errorContent}");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error searching files: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<PagedResult<FileDto>> GetFilesByFolderAsync(int? folderId, int pageNumber = 1, int pageSize = 10)
+        {
+            return await GetFilesAsync(pageNumber, pageSize, folderId);
+        }
+
         public async Task<FileDto?> GetFileByIdAsync(int id)
         {
             try
             {
-                var response = await _httpClient.GetAsync($"api/file/{id}");
+                // Check cache first
+                if (_fileCache.TryGetValue(id, out var cachedFile))
+                {
+                    return cachedFile;
+                }
+
+                var response = await _httpClient.GetAsync($"api/v1/file/{id}");
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
+                    var file = await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
+                    if (file != null)
+                    {
+                        _fileCache.TryAdd(file.Id, file);
+                    }
+                    return file;
                 }
 
                 if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -76,10 +181,17 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<FileDto?> UploadFileAsync(FileUploadDto uploadDto)
+        #endregion
+
+        #region File Upload Operations
+
+        public async Task<FileUploadResultDto?> UploadFileAsync(FileUploadDto uploadDto)
         {
             try
             {
+                if (uploadDto?.File == null)
+                    throw new ArgumentException("File is required");
+
                 using var content = new MultipartFormDataContent();
 
                 // Add the file
@@ -99,6 +211,7 @@ namespace Frontend.Services
 
                 content.Add(new StringContent(uploadDto.IsPublic.ToString().ToLower()), "IsPublic");
                 content.Add(new StringContent(uploadDto.GenerateThumbnail.ToString().ToLower()), "GenerateThumbnail");
+                content.Add(new StringContent(uploadDto.ProcessImmediately.ToString().ToLower()), "ProcessImmediately");
 
                 // Add tags if any
                 if (uploadDto.Tags?.Any() == true)
@@ -109,25 +222,51 @@ namespace Frontend.Services
                     }
                 }
 
-                var response = await _httpClient.PostAsync("api/file/upload", content);
+                var response = await _httpClient.PostAsync("api/v1/file/upload", content);
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
+                    var result = await response.Content.ReadFromJsonAsync<FileUploadResultDto>(_jsonOptions);
+
+                    // Cache the uploaded file
+                    if (result?.File != null)
+                    {
+                        _fileCache.TryAdd(result.File.Id, result.File);
+                    }
+
+                    return result;
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
-                throw new HttpRequestException($"Failed to upload file: {response.StatusCode} - {errorContent}");
+                return new FileUploadResultDto
+                {
+                    Success = false,
+                    ErrorMessage = $"Upload failed: {response.StatusCode} - {errorContent}"
+                };
             }
             catch (Exception ex)
             {
-                throw new Exception($"Error uploading file: {ex.Message}", ex);
+                return new FileUploadResultDto
+                {
+                    Success = false,
+                    ErrorMessage = $"Error uploading file: {ex.Message}"
+                };
             }
         }
 
-        public async Task<List<FileDto>> UploadMultipleFilesAsync(MultipleFileUploadDto uploadDto)
+        public async Task<BulkOperationResultDto> UploadMultipleFilesAsync(MultipleFileUploadDto uploadDto)
         {
             try
             {
+                if (uploadDto?.Files == null || !uploadDto.Files.Any())
+                {
+                    return new BulkOperationResultDto
+                    {
+                        TotalRequested = 0,
+                        SuccessCount = 0,
+                        FailureCount = 0
+                    };
+                }
+
                 using var content = new MultipartFormDataContent();
 
                 // Add files
@@ -144,31 +283,74 @@ namespace Frontend.Services
 
                 content.Add(new StringContent(uploadDto.IsPublic.ToString().ToLower()), "IsPublic");
                 content.Add(new StringContent(uploadDto.GenerateThumbnails.ToString().ToLower()), "GenerateThumbnails");
+                content.Add(new StringContent(uploadDto.ProcessImmediately.ToString().ToLower()), "ProcessImmediately");
+                content.Add(new StringContent(uploadDto.ProcessInParallel.ToString().ToLower()), "ProcessInParallel");
 
-                var response = await _httpClient.PostAsync("api/file/upload/multiple", content);
+                var response = await _httpClient.PostAsync("api/v1/file/upload/multiple", content);
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<List<FileDto>>(_jsonOptions);
-                    return result ?? new List<FileDto>();
+                    var result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions);
+
+                    // Cache successful files
+                    if (result?.SuccessfulFiles != null)
+                    {
+                        foreach (var file in result.SuccessfulFiles)
+                        {
+                            _fileCache.TryAdd(file.Id, file);
+                        }
+                    }
+
+                    return result ?? new BulkOperationResultDto();
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
-                throw new HttpRequestException($"Failed to upload files: {response.StatusCode} - {errorContent}");
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = uploadDto.Files.Count,
+                    SuccessCount = 0,
+                    FailureCount = uploadDto.Files.Count,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Upload failed: {response.StatusCode} - {errorContent}" }
+                    }
+                };
             }
             catch (Exception ex)
             {
-                throw new Exception($"Error uploading files: {ex.Message}", ex);
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = uploadDto?.Files?.Count ?? 0,
+                    SuccessCount = 0,
+                    FailureCount = uploadDto?.Files?.Count ?? 0,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Error uploading files: {ex.Message}" }
+                    }
+                };
             }
         }
+
+        #endregion
+
+        #region File Management Operations
 
         public async Task<FileDto?> UpdateFileAsync(int id, UpdateFileDto updateDto)
         {
             try
             {
-                var response = await _httpClient.PutAsJsonAsync($"api/file/{id}", updateDto, _jsonOptions);
+                if (updateDto == null)
+                    throw new ArgumentNullException(nameof(updateDto));
+
+                var response = await _httpClient.PutAsJsonAsync($"api/v1/file/{id}", updateDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
+                    var file = await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
+                    if (file != null)
+                    {
+                        // Update cache
+                        _fileCache.AddOrUpdate(file.Id, file, (key, oldValue) => file);
+                    }
+                    return file;
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
@@ -184,8 +366,16 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.DeleteAsync($"api/file/{id}");
-                return response.IsSuccessStatusCode;
+                var response = await _httpClient.DeleteAsync($"api/v1/file/{id}");
+                var success = response.IsSuccessStatusCode;
+
+                if (success)
+                {
+                    // Remove from cache
+                    _fileCache.TryRemove(id, out _);
+                }
+
+                return success;
             }
             catch (Exception ex)
             {
@@ -193,17 +383,59 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<bool> DeleteMultipleFilesAsync(List<int> fileIds)
+        public async Task<BulkOperationResultDto> DeleteMultipleFilesAsync(List<int> fileIds)
         {
             try
             {
+                if (fileIds?.Any() != true)
+                {
+                    return new BulkOperationResultDto();
+                }
+
                 var bulkDto = new { FileIds = fileIds };
-                var response = await _httpClient.PostAsJsonAsync("api/file/bulk-delete", bulkDto, _jsonOptions);
-                return response.IsSuccessStatusCode;
+                var response = await _httpClient.PostAsJsonAsync("api/v1/file/bulk-delete", bulkDto, _jsonOptions);
+
+                BulkOperationResultDto result;
+                if (response.IsSuccessStatusCode)
+                {
+                    result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions)
+                        ?? new BulkOperationResultDto();
+
+                    // Remove successful deletions from cache
+                    if (result.IsCompleteSuccess || result.IsPartialSuccess)
+                    {
+                        foreach (var fileId in fileIds)
+                        {
+                            _fileCache.TryRemove(fileId, out _);
+                        }
+                    }
+                }
+                else
+                {
+                    result = new BulkOperationResultDto
+                    {
+                        TotalRequested = fileIds.Count,
+                        FailureCount = fileIds.Count,
+                        Errors = new List<BulkOperationErrorDto>
+                        {
+                            new() { ErrorMessage = $"Delete failed: {response.StatusCode}" }
+                        }
+                    };
+                }
+
+                return result;
             }
             catch (Exception ex)
             {
-                throw new Exception($"Error deleting files: {ex.Message}", ex);
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = fileIds?.Count ?? 0,
+                    FailureCount = fileIds?.Count ?? 0,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Error deleting files: {ex.Message}" }
+                    }
+                };
             }
         }
 
@@ -211,10 +443,19 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("api/file/move", moveDto, _jsonOptions);
+                if (moveDto == null)
+                    throw new ArgumentNullException(nameof(moveDto));
+
+                var response = await _httpClient.PostAsJsonAsync("api/v1/file/move", moveDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
+                    var file = await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
+                    if (file != null)
+                    {
+                        // Update cache
+                        _fileCache.AddOrUpdate(file.Id, file, (key, oldValue) => file);
+                    }
+                    return file;
                 }
                 return null;
             }
@@ -228,10 +469,19 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("api/file/copy", copyDto, _jsonOptions);
+                if (copyDto == null)
+                    throw new ArgumentNullException(nameof(copyDto));
+
+                var response = await _httpClient.PostAsJsonAsync("api/v1/file/copy", copyDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
+                    var file = await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
+                    if (file != null)
+                    {
+                        // Add to cache
+                        _fileCache.TryAdd(file.Id, file);
+                    }
+                    return file;
                 }
                 return null;
             }
@@ -241,14 +491,48 @@ namespace Frontend.Services
             }
         }
 
+        #endregion
+
+        #region File Access and Preview
+
+        public async Task<FilePreviewDto> GetFilePreviewAsync(int id)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync($"api/v1/file/{id}/preview");
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<FilePreviewDto>(_jsonOptions);
+                    return result ?? new FilePreviewDto();
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new HttpRequestException($"Failed to get file preview: {response.StatusCode} - {errorContent}");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error getting file preview {id}: {ex.Message}", ex);
+            }
+        }
+
         public async Task<List<FileDto>> GetRecentFilesAsync(int count = 10)
         {
             try
             {
-                var response = await _httpClient.GetAsync($"api/file/recent?count={count}");
+                var response = await _httpClient.GetAsync($"api/v1/file/recent?count={Math.Clamp(count, 1, 50)}");
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<List<FileDto>>(_jsonOptions);
+
+                    // Cache the files
+                    if (result != null)
+                    {
+                        foreach (var file in result)
+                        {
+                            _fileCache.TryAdd(file.Id, file);
+                        }
+                    }
+
                     return result ?? new List<FileDto>();
                 }
                 return new List<FileDto>();
@@ -263,7 +547,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync("api/file/statistics");
+                var response = await _httpClient.GetAsync("api/v1/file/statistics");
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(_jsonOptions);
@@ -281,8 +565,16 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"api/file/{id}/generate-thumbnail", null);
-                return response.IsSuccessStatusCode;
+                var response = await _httpClient.PostAsync($"api/v1/file/{id}/generate-thumbnail", null);
+                var success = response.IsSuccessStatusCode;
+
+                if (success)
+                {
+                    // Invalidate cache for this file so it gets refreshed
+                    _fileCache.TryRemove(id, out _);
+                }
+
+                return success;
             }
             catch (Exception ex)
             {
@@ -290,11 +582,15 @@ namespace Frontend.Services
             }
         }
 
+        #endregion
+
+        #region Download and Streaming
+
         public async Task<string> GenerateDownloadTokenAsync(int fileId)
         {
             try
             {
-                var response = await _httpClient.PostAsync($"api/file/{fileId}/download-token", null);
+                var response = await _httpClient.PostAsync($"api/v1/file/{fileId}/download-token", null);
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
@@ -312,6 +608,7 @@ namespace Frontend.Services
 
         public async Task DownloadFileAsync(int id)
         {
+            await _downloadSemaphore.WaitAsync();
             try
             {
                 // Get file info first to check if it's public
@@ -321,11 +618,11 @@ namespace Frontend.Services
                     throw new Exception("File not found");
                 }
 
+                string downloadUrl;
                 if (fileInfo.IsPublic)
                 {
                     // For public files, use direct download
-                    var downloadUrl = $"{_baseUrl}/api/file/{id}/download";
-                    await _jsRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, fileInfo.OriginalFileName);
+                    downloadUrl = fileInfo.Urls.DirectAccess ?? fileInfo.Urls.Download;
                 }
                 else
                 {
@@ -333,18 +630,23 @@ namespace Frontend.Services
                     var token = await GenerateDownloadTokenAsync(id);
                     if (!string.IsNullOrEmpty(token))
                     {
-                        var downloadUrl = $"{_baseUrl}/api/file/download/{token}";
-                        await _jsRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, fileInfo.OriginalFileName);
+                        downloadUrl = $"{_baseUrl}/api/v1/file/download/{token}";
                     }
                     else
                     {
                         throw new Exception("Failed to generate download token");
                     }
                 }
+
+                await _jsRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, fileInfo.OriginalFileName);
             }
             catch (Exception ex)
             {
                 throw new Exception($"Error downloading file {id}: {ex.Message}", ex);
+            }
+            finally
+            {
+                _downloadSemaphore.Release();
             }
         }
 
@@ -352,7 +654,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"api/file/{id}/download");
+                var response = await _httpClient.GetAsync($"api/v1/file/{id}/download");
                 if (response.IsSuccessStatusCode)
                 {
                     var stream = await response.Content.ReadAsStreamAsync();
@@ -381,7 +683,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"api/file/{id}/thumbnail");
+                var response = await _httpClient.GetAsync($"api/v1/file/{id}/thumbnail");
                 if (response.IsSuccessStatusCode)
                 {
                     var stream = await response.Content.ReadAsStreamAsync();
@@ -404,113 +706,240 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<FilePreviewDto> GetFilePreviewAsync(int id)
+        #endregion
+
+        #region Bulk Operations
+
+        public async Task<BulkOperationResultDto> BulkUpdateFilesAsync(List<int> fileIds, UpdateFileDto updateDto)
         {
             try
             {
-                var response = await _httpClient.GetAsync($"api/file/{id}/preview");
-                if (response.IsSuccessStatusCode)
+                if (fileIds?.Any() != true || updateDto == null)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<FilePreviewDto>(_jsonOptions);
-                    return result ?? new FilePreviewDto();
+                    return new BulkOperationResultDto();
                 }
 
-                var errorContent = await response.Content.ReadAsStringAsync();
-                throw new HttpRequestException($"Failed to get file preview: {response.StatusCode} - {errorContent}");
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Error getting file preview {id}: {ex.Message}", ex);
-            }
-        }
-
-        public async Task<List<FileDto>> SearchFilesAsync(FileSearchDto searchDto)
-        {
-            try
-            {
-                var response = await _httpClient.PostAsJsonAsync("api/file/search", searchDto, _jsonOptions);
-                if (response.IsSuccessStatusCode)
-                {
-                    var result = await response.Content.ReadFromJsonAsync<List<FileDto>>(_jsonOptions);
-                    return result ?? new List<FileDto>();
-                }
-                return new List<FileDto>();
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Error searching files: {ex.Message}", ex);
-            }
-        }
-
-        public async Task<bool> BulkUpdateFilesAsync(List<int> fileIds, UpdateFileDto updateDto)
-        {
-            try
-            {
                 var bulkDto = new { FileIds = fileIds, UpdateDto = updateDto };
-                var response = await _httpClient.PostAsJsonAsync("api/file/bulk-update", bulkDto, _jsonOptions);
-                return response.IsSuccessStatusCode;
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Error bulk updating files: {ex.Message}", ex);
-            }
-        }
+                var response = await _httpClient.PostAsJsonAsync("api/v1/file/bulk-update", bulkDto, _jsonOptions);
 
-        public async Task<bool> BulkMoveFilesAsync(List<int> fileIds, int? destinationFolderId)
-        {
-            try
-            {
-                var bulkDto = new { FileIds = fileIds, DestinationFolderId = destinationFolderId };
-                var response = await _httpClient.PostAsJsonAsync("api/file/bulk-move", bulkDto, _jsonOptions);
-                return response.IsSuccessStatusCode;
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Error bulk moving files: {ex.Message}", ex);
-            }
-        }
-
-        public async Task<List<FileDto>> BulkCopyFilesAsync(List<int> fileIds, int? destinationFolderId)
-        {
-            try
-            {
-                var bulkDto = new { FileIds = fileIds, DestinationFolderId = destinationFolderId };
-                var response = await _httpClient.PostAsJsonAsync("api/file/bulk-copy", bulkDto, _jsonOptions);
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<List<FileDto>>(_jsonOptions);
-                    return result ?? new List<FileDto>();
+                    var result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions)
+                        ?? new BulkOperationResultDto();
+
+                    // Invalidate cache for updated files
+                    if (result.IsCompleteSuccess || result.IsPartialSuccess)
+                    {
+                        foreach (var fileId in fileIds)
+                        {
+                            _fileCache.TryRemove(fileId, out _);
+                        }
+                    }
+
+                    return result;
                 }
-                return new List<FileDto>();
+
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = fileIds.Count,
+                    FailureCount = fileIds.Count,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Bulk update failed: {response.StatusCode}" }
+                    }
+                };
             }
             catch (Exception ex)
             {
-                throw new Exception($"Error bulk copying files: {ex.Message}", ex);
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = fileIds?.Count ?? 0,
+                    FailureCount = fileIds?.Count ?? 0,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Error bulk updating files: {ex.Message}" }
+                    }
+                };
             }
         }
 
-        // Helper methods for URL generation
+        public async Task<BulkOperationResultDto> BulkMoveFilesAsync(List<int> fileIds, int? destinationFolderId)
+        {
+            try
+            {
+                if (fileIds?.Any() != true)
+                {
+                    return new BulkOperationResultDto();
+                }
+
+                var bulkDto = new { FileIds = fileIds, DestinationFolderId = destinationFolderId };
+                var response = await _httpClient.PostAsJsonAsync("api/v1/file/bulk-move", bulkDto, _jsonOptions);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions)
+                        ?? new BulkOperationResultDto();
+
+                    // Invalidate cache for moved files
+                    if (result.IsCompleteSuccess || result.IsPartialSuccess)
+                    {
+                        foreach (var fileId in fileIds)
+                        {
+                            _fileCache.TryRemove(fileId, out _);
+                        }
+                    }
+
+                    return result;
+                }
+
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = fileIds.Count,
+                    FailureCount = fileIds.Count,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Bulk move failed: {response.StatusCode}" }
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = fileIds?.Count ?? 0,
+                    FailureCount = fileIds?.Count ?? 0,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Error bulk moving files: {ex.Message}" }
+                    }
+                };
+            }
+        }
+
+        public async Task<BulkOperationResultDto> BulkCopyFilesAsync(List<int> fileIds, int? destinationFolderId)
+        {
+            try
+            {
+                if (fileIds?.Any() != true)
+                {
+                    return new BulkOperationResultDto();
+                }
+
+                var bulkDto = new { FileIds = fileIds, DestinationFolderId = destinationFolderId };
+                var response = await _httpClient.PostAsJsonAsync("api/v1/file/bulk-copy", bulkDto, _jsonOptions);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions)
+                        ?? new BulkOperationResultDto();
+
+                    // Cache new files
+                    if (result.SuccessfulFiles != null)
+                    {
+                        foreach (var file in result.SuccessfulFiles)
+                        {
+                            _fileCache.TryAdd(file.Id, file);
+                        }
+                    }
+
+                    return result;
+                }
+
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = fileIds.Count,
+                    FailureCount = fileIds.Count,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Bulk copy failed: {response.StatusCode}" }
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = fileIds?.Count ?? 0,
+                    FailureCount = fileIds?.Count ?? 0,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Error bulk copying files: {ex.Message}" }
+                    }
+                };
+            }
+        }
+
+        #endregion
+
+        #region Utility Methods
+
         public string GetFileUrl(int fileId)
         {
-            return $"{_baseUrl}/api/file/{fileId}/download";
+            // Try to get from cache first
+            if (_fileCache.TryGetValue(fileId, out var cachedFile))
+            {
+                return cachedFile.Urls.Download;
+            }
+
+            // Fallback to constructed URL
+            return $"{_baseUrl}/api/v1/file/{fileId}/download";
         }
 
         public string GetThumbnailUrl(int fileId)
         {
-            return $"{_baseUrl}/api/file/{fileId}/thumbnail";
+            // Try to get from cache first
+            if (_fileCache.TryGetValue(fileId, out var cachedFile) && !string.IsNullOrEmpty(cachedFile.Urls.Thumbnail))
+            {
+                return cachedFile.Urls.Thumbnail;
+            }
+
+            // Fallback to constructed URL
+            return $"{_baseUrl}/api/v1/file/{fileId}/thumbnail";
         }
 
         public string GetPreviewUrl(int fileId)
         {
-            return $"{_baseUrl}/api/file/{fileId}/preview";
+            // Try to get from cache first
+            if (_fileCache.TryGetValue(fileId, out var cachedFile) && !string.IsNullOrEmpty(cachedFile.Urls.Preview))
+            {
+                return cachedFile.Urls.Preview;
+            }
+
+            // Fallback to constructed URL
+            return $"{_baseUrl}/api/v1/file/{fileId}/preview";
         }
 
-        // Additional methods to match backend functionality
+        public string FormatFileSize(long bytes)
+        {
+            string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+            double len = bytes;
+            int order = 0;
+            while (len >= 1024 && order < sizes.Length - 1)
+            {
+                order++;
+                len /= 1024;
+            }
+            return $"{len:0.##} {sizes[order]}";
+        }
+
+        public string FormatDuration(TimeSpan duration)
+        {
+            if (duration.TotalHours >= 1)
+            {
+                return duration.ToString(@"h\:mm\:ss");
+            }
+            return duration.ToString(@"m\:ss");
+        }
+
+        #endregion
+
+        #region Diagnostics and Integrity
+
         public async Task<bool> VerifyFileIntegrityAsync(int fileId)
         {
             try
             {
-                var response = await _httpClient.PostAsync($"api/file/{fileId}/verify-integrity", null);
+                var response = await _httpClient.PostAsync($"api/v1/file/{fileId}/verify-integrity", null);
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -523,7 +952,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"api/file/{fileId}/diagnostic");
+                var response = await _httpClient.GetAsync($"api/v1/file/{fileId}/diagnostic");
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<object>(_jsonOptions);
@@ -538,25 +967,78 @@ namespace Frontend.Services
                 throw new Exception($"Error getting diagnostic info for file {fileId}: {ex.Message}", ex);
             }
         }
-        public string FormatFileSize(long bytes)
+
+        #endregion
+
+        #region Cache and Performance
+
+        public async Task ClearCacheAsync()
         {
-            string[] sizes = { "B", "KB", "MB", "GB", "TB" };
-            double len = bytes;
-            int order = 0;
-            while (len >= 1024 && order < sizes.Length - 1)
+            await Task.Run(() =>
             {
-                order++;
-                len /= 1024;
-            }
-            return $"{len:0.##} {sizes[order]}";
+                _fileCache.Clear();
+            });
         }
-        public string FormatDuration(TimeSpan duration)
+
+        public async Task PreloadFilesAsync(List<int> fileIds)
         {
-            if (duration.TotalHours >= 1)
-            {
-                return duration.ToString(@"h\:mm\:ss");
-            }
-            return duration.ToString(@"m\:ss");
+            if (fileIds?.Any() != true)
+                return;
+
+            var tasks = fileIds.Where(id => !_fileCache.ContainsKey(id))
+                              .Select(async id =>
+                              {
+                                  try
+                                  {
+                                      await GetFileByIdAsync(id);
+                                  }
+                                  catch
+                                  {
+                                      // Ignore errors during preloading
+                                  }
+                              });
+
+            await Task.WhenAll(tasks);
         }
+
+        #endregion
+
+        #region Private Methods
+
+        private void CleanupCache(object? state)
+        {
+            try
+            {
+                const int maxCacheSize = 1000;
+                if (_fileCache.Count <= maxCacheSize)
+                    return;
+
+                // Remove 20% of oldest entries
+                var itemsToRemove = _fileCache.Count / 5;
+                var keysToRemove = _fileCache.Keys.Take(itemsToRemove).ToList();
+
+                foreach (var key in keysToRemove)
+                {
+                    _fileCache.TryRemove(key, out _);
+                }
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+
+        #endregion
+
+        #region IDisposable
+
+        public void Dispose()
+        {
+            _downloadSemaphore?.Dispose();
+            _cacheCleanupTimer?.Dispose();
+            _fileCache?.Clear();
+        }
+
+        #endregion
     }
 }
