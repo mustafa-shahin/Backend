@@ -3,11 +3,20 @@ using Backend.CMS.Application.DTOs;
 using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Asp.Versioning;
+using System.ComponentModel.DataAnnotations;
 
 namespace Backend.CMS.API.Controllers
 {
+    /// <summary>
+    /// Category management controller providing category operations with API versioning and pagination
+    /// </summary>
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/[controller]")]
+    [ApiVersion("1.0")]
+    [ApiVersion("2.0")]
+    [EnableRateLimiting("ApiPolicy")]
     public class CategoryController : ControllerBase
     {
         private readonly ICategoryService _categoryService;
@@ -20,34 +29,50 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get all categories
+        /// Get paginated list of categories with optional filtering
         /// </summary>
+        /// <param name="pageNumber">Page number (1-based, default: 1)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <param name="parentCategoryId">Optional parent category ID to filter by</param>
+        /// <param name="isActive">Optional active status filter</param>
+        /// <param name="isVisible">Optional visibility filter</param>
+        /// <param name="sortBy">Sort field (default: Name)</param>
+        /// <param name="sortDirection">Sort direction (Asc/Desc, default: Asc)</param>
+        /// <returns>Paginated list of categories</returns>
         [HttpGet]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<PagedResult<CategoryDto>>> GetCategories(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20)
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] int? parentCategoryId = null,
+            [FromQuery] bool? isActive = null,
+            [FromQuery] bool? isVisible = null,
+            [FromQuery] string sortBy = "Name",
+            [FromQuery] string sortDirection = "Asc")
         {
             try
             {
-                var allCategories = await _categoryService.GetCategoriesAsync();
-
-                // Apply pagination
-                var totalCount = allCategories.Count;
-                var items = allCategories
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToList();
-
-                var result = new PagedResult<CategoryDto>
+                var searchDto = new CategorySearchDto
                 {
-                    Items = items,
-                    Page = page,
+                    PageNumber = pageNumber,
                     PageSize = pageSize,
-                    TotalCount = totalCount
+                    ParentCategoryId = parentCategoryId,
+                    IsActive = isActive,
+                    IsVisible = isVisible,
+                    SortBy = sortBy,
+                    SortDirection = sortDirection
                 };
 
+                var result = await _categoryService.GetCategoriesPagedAsync(searchDto);
                 return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid request parameters for getting categories");
+                return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -57,10 +82,12 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get category tree structure
+        /// Get category tree structure (non-paginated for tree display)
         /// </summary>
         [HttpGet("tree")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(List<CategoryTreeDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<CategoryTreeDto>>> GetCategoryTree()
         {
             try
@@ -76,16 +103,28 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get root categories (categories without parent)
+        /// Get root categories (categories without parent) with pagination
         /// </summary>
+        /// <param name="pageNumber">Page number (1-based, default: 1)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of root categories</returns>
         [HttpGet("root")]
         [AllowAnonymous]
-        public async Task<ActionResult<List<CategoryDto>>> GetRootCategories()
+        [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<CategoryDto>>> GetRootCategories(
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var categories = await _categoryService.GetRootCategoriesAsync();
-                return Ok(categories);
+                var result = await _categoryService.GetRootCategoriesPagedAsync(pageNumber, pageSize);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid request parameters for getting root categories");
+                return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -99,6 +138,9 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpGet("{id:int}")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryDto>> GetCategory(int id)
         {
             try
@@ -123,6 +165,9 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpGet("by-slug/{slug}")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryDto>> GetCategoryBySlug(string slug)
         {
             try
@@ -141,16 +186,30 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get subcategories of a category
+        /// Get subcategories of a category with pagination
         /// </summary>
+        /// <param name="id">Parent category ID</param>
+        /// <param name="pageNumber">Page number (1-based, default: 1)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of subcategories</returns>
         [HttpGet("{id:int}/subcategories")]
         [AllowAnonymous]
-        public async Task<ActionResult<List<CategoryDto>>> GetSubCategories(int id)
+        [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<CategoryDto>>> GetSubCategories(
+            int id,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var subcategories = await _categoryService.GetSubCategoriesAsync(id);
-                return Ok(subcategories);
+                var result = await _categoryService.GetSubCategoriesPagedAsync(id, pageNumber, pageSize);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid request parameters for getting subcategories");
+                return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -160,24 +219,31 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Search categories
+        /// Advanced category search with filtering and pagination
         /// </summary>
+        /// <param name="searchDto">Search criteria</param>
+        /// <returns>Paginated search results</returns>
         [HttpPost("search")]
         [AllowAnonymous]
-        public async Task<ActionResult<List<CategoryDto>>> SearchCategories([FromBody] CategorySearchDto searchDto)
+        [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<CategoryDto>>> SearchCategories([FromBody] CategorySearchDto searchDto)
         {
             try
             {
-                var categories = await _categoryService.SearchCategoriesAsync(searchDto);
-                var totalCount = await _categoryService.GetSearchCountAsync(searchDto);
-
-                return Ok(new
+                if (searchDto == null)
                 {
-                    Categories = categories,
-                    TotalCount = totalCount,
-                    Page = searchDto.Page,
-                    PageSize = searchDto.PageSize
-                });
+                    return BadRequest(new { Message = "Search criteria is required" });
+                }
+
+                var result = await _categoryService.SearchCategoriesPagedAsync(searchDto);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid search criteria");
+                return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -191,6 +257,9 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPost]
         [AdminOrDev]
+        [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryDto>> CreateCategory([FromBody] CreateCategoryDto createCategoryDto)
         {
             try
@@ -215,6 +284,10 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPut("{id:int}")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryDto>> UpdateCategory(int id, [FromBody] UpdateCategoryDto updateCategoryDto)
         {
             try
@@ -239,6 +312,10 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpDelete("{id:int}")]
         [AdminOrDev]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> DeleteCategory(int id)
         {
             try
@@ -266,6 +343,9 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPost("{id:int}/move")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryDto>> MoveCategory(int id, [FromBody] MoveCategoryDto moveCategoryDto)
         {
             try
@@ -290,6 +370,8 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPost("reorder")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(List<CategoryDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<CategoryDto>>> ReorderCategories([FromBody] ReorderCategoriesDto reorderDto)
         {
             try
@@ -310,7 +392,10 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpGet("validate-slug")]
         [AdminOrDev]
-        public async Task<ActionResult<bool>> ValidateSlug([FromQuery] string slug, [FromQuery] int? excludeCategoryId = null)
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<object>> ValidateSlug([FromQuery] string slug, [FromQuery] int? excludeCategoryId = null)
         {
             try
             {
@@ -332,7 +417,9 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpGet("{id:int}/can-delete")]
         [AdminOrDev]
-        public async Task<ActionResult<bool>> CanDelete(int id)
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<object>> CanDelete(int id)
         {
             try
             {
@@ -345,11 +432,15 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { Message = "An error occurred while checking delete permissions" });
             }
         }
-        // <summary>
+
+        /// <summary>
         /// Add image to category
         /// </summary>
         [HttpPost("{id:int}/images")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(CategoryImageDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryImageDto>> AddCategoryImage(int id, [FromBody] CreateCategoryImageDto createImageDto)
         {
             try
@@ -368,11 +459,15 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { Message = "An error occurred while adding the image" });
             }
         }
+
         /// <summary>
         /// Update category image
         /// </summary>
         [HttpPut("images/{imageId:int}")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(CategoryImageDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryImageDto>> UpdateCategoryImage(int imageId, [FromBody] UpdateCategoryImageDto updateImageDto)
         {
             try
@@ -397,6 +492,9 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpDelete("images/{imageId:int}")]
         [AdminOrDev]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> DeleteCategoryImage(int imageId)
         {
             try
@@ -413,11 +511,14 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { Message = "An error occurred while deleting the image" });
             }
         }
-        // <summary>
+
+        /// <summary>
         /// Reorder category images
         /// </summary>
         [HttpPost("{id:int}/images/reorder")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(List<CategoryImageDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<CategoryImageDto>>> ReorderCategoryImages(int id, [FromBody] ReorderCategoryImagesDto reorderDto)
         {
             try
@@ -432,31 +533,41 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { Message = "An error occurred while reordering images" });
             }
         }
+
         // Supporting DTOs for controller actions
         public class MoveCategoryDto
         {
+            [Required]
             public int? NewParentCategoryId { get; set; }
         }
 
         public class ReorderCategoriesDto
         {
+            [Required]
             public List<CategoryOrderDto> Categories { get; set; } = new();
         }
 
         public class CategoryOrderDto
         {
+            [Required]
             public int Id { get; set; }
+
+            [Required]
             public int SortOrder { get; set; }
         }
 
         public class ReorderCategoryImagesDto
         {
+            [Required]
             public List<CategoryImageOrderDto> Images { get; set; } = new();
         }
 
         public class CategoryImageOrderDto
         {
+            [Required]
             public int Id { get; set; }
+
+            [Required]
             public int Position { get; set; }
         }
     }

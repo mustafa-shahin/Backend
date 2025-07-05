@@ -5,7 +5,6 @@ using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
-using Backend.CMS.Infrastructure.Services;
 using Microsoft.Extensions.Logging;
 
 namespace Backend.CMS.Infrastructure.Services
@@ -20,6 +19,9 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ICacheKeyService _cacheKeyService;
         private readonly IMapper _mapper;
         private readonly ILogger<CategoryService> _logger;
+
+        private const int DefaultPageSize = 10;
+        private const int MaxPageSize = 100;
 
         public CategoryService(
             ICategoryRepository categoryRepository,
@@ -40,6 +42,124 @@ namespace Backend.CMS.Infrastructure.Services
             _mapper = mapper;
             _logger = logger;
         }
+
+        #region Paginated Methods
+
+        /// <summary>
+        /// Get paginated categories with filtering and sorting
+        /// </summary>
+        public async Task<PagedResult<CategoryDto>> GetCategoriesPagedAsync(CategorySearchDto searchDto)
+        {
+            ValidateSearchDto(searchDto);
+
+            var cacheKey = _cacheKeyService.GetQueryKey<Category>("paged_list", new
+            {
+                searchDto.PageNumber,
+                searchDto.PageSize,
+                searchDto.ParentCategoryId,
+                searchDto.IsActive,
+                searchDto.IsVisible,
+                searchDto.SortBy,
+                searchDto.SortDirection
+            });
+
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                var (categories, totalCount) = await _categoryRepository.GetCategoriesPagedAsync(searchDto);
+
+                if (!categories.Any())
+                    return PagedResult<CategoryDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
+
+                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
+
+                // Enrich with product counts
+                await EnrichCategoriesWithProductCountsAsync(categoryDtos);
+
+                return new PagedResult<CategoryDto>(categoryDtos, searchDto.PageNumber, searchDto.PageSize, totalCount);
+            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
+
+            return result ?? PagedResult<CategoryDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
+        }
+
+        /// <summary>
+        /// Get paginated root categories
+        /// </summary>
+        public async Task<PagedResult<CategoryDto>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize)
+        {
+            ValidatePaginationParameters(pageNumber, pageSize);
+
+            var cacheKey = _cacheKeyService.GetCollectionKey<Category>("root_paged", new object[] { pageNumber, pageSize });
+
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                var (categories, totalCount) = await _categoryRepository.GetRootCategoriesPagedAsync(pageNumber, pageSize);
+
+                if (!categories.Any())
+                    return PagedResult<CategoryDto>.Empty(pageNumber, pageSize);
+
+                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
+                await EnrichCategoriesWithProductCountsAsync(categoryDtos);
+
+                return new PagedResult<CategoryDto>(categoryDtos, pageNumber, pageSize, totalCount);
+            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
+
+            return result ?? PagedResult<CategoryDto>.Empty(pageNumber, pageSize);
+        }
+
+        /// <summary>
+        /// Get paginated subcategories
+        /// </summary>
+        public async Task<PagedResult<CategoryDto>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize)
+        {
+            ValidatePaginationParameters(pageNumber, pageSize);
+
+            var cacheKey = _cacheKeyService.GetCollectionKey<Category>("subcategories_paged",
+                new object[] { parentCategoryId, pageNumber, pageSize });
+
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                var (categories, totalCount) = await _categoryRepository.GetSubCategoriesPagedAsync(parentCategoryId, pageNumber, pageSize);
+
+                if (!categories.Any())
+                    return PagedResult<CategoryDto>.Empty(pageNumber, pageSize);
+
+                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
+                await EnrichCategoriesWithProductCountsAsync(categoryDtos);
+
+                return new PagedResult<CategoryDto>(categoryDtos, pageNumber, pageSize, totalCount);
+            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
+
+            return result ?? PagedResult<CategoryDto>.Empty(pageNumber, pageSize);
+        }
+
+        /// <summary>
+        /// Search categories with pagination
+        /// </summary>
+        public async Task<PagedResult<CategoryDto>> SearchCategoriesPagedAsync(CategorySearchDto searchDto)
+        {
+            ValidateSearchDto(searchDto);
+
+            var cacheKey = _cacheKeyService.GetQueryKey<Category>("search_paged", searchDto);
+
+            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                var (categories, totalCount) = await _categoryRepository.SearchCategoriesPagedAsync(searchDto);
+
+                if (!categories.Any())
+                    return PagedResult<CategoryDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
+
+                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
+                await EnrichCategoriesWithProductCountsAsync(categoryDtos);
+
+                return new PagedResult<CategoryDto>(categoryDtos, searchDto.PageNumber, searchDto.PageSize, totalCount);
+            }, CacheExpiration.ForDataType(CacheDataVolatility.Volatile));
+
+            return result ?? PagedResult<CategoryDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
+        }
+
+        #endregion
+
+        #region Existing Methods (Updated for compatibility)
 
         public async Task<CategoryDto> GetCategoryByIdAsync(int categoryId)
         {
@@ -78,28 +198,7 @@ namespace Backend.CMS.Infrastructure.Services
             }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
         }
 
-        public async Task<List<CategoryDto>> GetCategoriesAsync()
-        {
-            var cacheKey = CacheKeys.AllCategories;
-
-            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var categories = await _categoryRepository.GetAllAsync();
-                if (!categories.Any())
-                    return null; // Don't cache empty collections
-
-                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
-
-                foreach (var categoryDto in categoryDtos)
-                {
-                    categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(categoryDto.Id, true);
-                }
-
-                return categoryDtos.OrderBy(c => c.SortOrder).ThenBy(c => c.Name).ToList();
-            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
-
-            return result ?? new List<CategoryDto>();
-        }
+   
 
         public async Task<List<CategoryTreeDto>> GetCategoryTreeAsync()
         {
@@ -109,7 +208,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var rootCategories = await _categoryRepository.GetCategoryTreeAsync();
                 if (!rootCategories.Any())
-                    return null; // Don't cache empty collections
+                    return null;
 
                 return await BuildCategoryTreeAsync(rootCategories);
             }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
@@ -117,51 +216,9 @@ namespace Backend.CMS.Infrastructure.Services
             return result ?? new List<CategoryTreeDto>();
         }
 
-        public async Task<List<CategoryDto>> GetRootCategoriesAsync()
-        {
-            var cacheKey = CacheKeys.RootCategories;
+        #endregion
 
-            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var categories = await _categoryRepository.GetRootCategoriesAsync();
-                if (!categories.Any())
-                    return null; // Don't cache empty collections
-
-                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
-
-                foreach (var categoryDto in categoryDtos)
-                {
-                    categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(categoryDto.Id, true);
-                }
-
-                return categoryDtos;
-            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
-
-            return result ?? new List<CategoryDto>();
-        }
-
-        public async Task<List<CategoryDto>> GetSubCategoriesAsync(int parentCategoryId)
-        {
-            var cacheKey = CacheKeys.SubCategories(parentCategoryId);
-
-            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var categories = await _categoryRepository.GetSubCategoriesAsync(parentCategoryId);
-                if (!categories.Any())
-                    return null; // Don't cache empty collections
-
-                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
-
-                foreach (var categoryDto in categoryDtos)
-                {
-                    categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(categoryDto.Id, true);
-                }
-
-                return categoryDtos;
-            }, CacheExpiration.ForDataType(CacheDataVolatility.SemiStatic));
-
-            return result ?? new List<CategoryDto>();
-        }
+        #region CRUD Operations
 
         public async Task<CategoryDto> CreateCategoryAsync(CreateCategoryDto createCategoryDto)
         {
@@ -264,59 +321,6 @@ namespace Backend.CMS.Infrastructure.Services
             return true;
         }
 
-        public async Task<List<CategoryDto>> SearchCategoriesAsync(CategorySearchDto searchDto)
-        {
-            // Create cache key for search results
-            var searchKey = _cacheKeyService.GetQueryKey<Category>("search", new
-            {
-                searchDto.SearchTerm,
-                searchDto.Page,
-                searchDto.PageSize
-            });
-
-            var result = await _cacheService.GetOrAddAsync(searchKey, async () =>
-            {
-                var categories = await _categoryRepository.SearchCategoriesAsync(
-                    searchDto.SearchTerm ?? string.Empty,
-                    searchDto.Page,
-                    searchDto.PageSize);
-
-                if (!categories.Any())
-                    return null; // Don't cache empty search results
-
-                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
-
-                foreach (var categoryDto in categoryDtos)
-                {
-                    categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(categoryDto.Id, true);
-                }
-
-                return categoryDtos;
-            }, CacheExpiration.ForDataType(CacheDataVolatility.Volatile));
-
-            return result ?? new List<CategoryDto>();
-        }
-
-        public async Task<int> GetSearchCountAsync(CategorySearchDto searchDto)
-        {
-            var countKey = _cacheKeyService.GetQueryKey<Category>("search_count", new
-            {
-                searchDto.SearchTerm
-            });
-
-            var result = await _cacheService.GetOrAddAsync(countKey, async () =>
-            {
-                var categories = await _categoryRepository.SearchCategoriesAsync(
-                    searchDto.SearchTerm ?? string.Empty,
-                    1,
-                    int.MaxValue);
-
-                return new CountWrapper(categories.Count());
-            }, CacheExpiration.ForDataType(CacheDataVolatility.Volatile));
-
-            return result?.Value ?? 0;
-        }
-
         public async Task<bool> ValidateSlugAsync(string slug, int? excludeCategoryId = null)
         {
             var validationKey = _cacheKeyService.GetCustomKey("category_slug_validation", slug, excludeCategoryId?.ToString() ?? "null");
@@ -390,7 +394,10 @@ namespace Backend.CMS.Infrastructure.Services
             return _mapper.Map<List<CategoryDto>>(categories);
         }
 
-        // Image management methods
+        #endregion
+
+        #region Image Management
+
         public async Task<CategoryImageDto> AddCategoryImageAsync(int categoryId, CreateCategoryImageDto createImageDto)
         {
             var category = await _categoryRepository.GetByIdAsync(categoryId);
@@ -476,7 +483,52 @@ namespace Backend.CMS.Infrastructure.Services
             return _mapper.Map<List<CategoryImageDto>>(images.OrderBy(i => i.Position));
         }
 
-        // Private helper methods
+        #endregion
+
+        #region Private Helper Methods
+
+        private void ValidateSearchDto(CategorySearchDto searchDto)
+        {
+            if (searchDto == null)
+                throw new ArgumentNullException(nameof(searchDto));
+
+            // Validate and normalize pagination parameters
+            searchDto.PageNumber = Math.Max(1, searchDto.PageNumber);
+            searchDto.PageSize = Math.Clamp(searchDto.PageSize, 1, MaxPageSize);
+
+            // Set default page size if not specified
+            if (searchDto.PageSize <= 0)
+                searchDto.PageSize = DefaultPageSize;
+
+            // Validate sort parameters
+            var validSortFields = new[] { "Name", "CreatedAt", "UpdatedAt", "SortOrder" };
+            if (!validSortFields.Contains(searchDto.SortBy, StringComparer.OrdinalIgnoreCase))
+                searchDto.SortBy = "Name";
+
+            var validSortDirections = new[] { "Asc", "Desc" };
+            if (!validSortDirections.Contains(searchDto.SortDirection, StringComparer.OrdinalIgnoreCase))
+                searchDto.SortDirection = "Asc";
+        }
+
+        private void ValidatePaginationParameters(int pageNumber, int pageSize)
+        {
+            if (pageNumber < 1)
+                throw new ArgumentException("Page number must be greater than 0", nameof(pageNumber));
+
+            if (pageSize < 1 || pageSize > MaxPageSize)
+                throw new ArgumentException($"Page size must be between 1 and {MaxPageSize}", nameof(pageSize));
+        }
+
+        private async Task EnrichCategoriesWithProductCountsAsync(List<CategoryDto> categoryDtos)
+        {
+            var productCountTasks = categoryDtos.Select(async categoryDto =>
+            {
+                categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(categoryDto.Id, true);
+            });
+
+            await Task.WhenAll(productCountTasks);
+        }
+
         private async Task<List<CategoryTreeDto>> BuildCategoryTreeAsync(IEnumerable<Category> categories)
         {
             var treeDtos = new List<CategoryTreeDto>();
@@ -647,5 +699,7 @@ namespace Backend.CMS.Infrastructure.Services
             await _cacheInvalidationService.InvalidateByPatternAsync("category_*");
             await _cacheInvalidationService.InvalidateByPatternAsync("*category*");
         }
+
+        #endregion
     }
 }

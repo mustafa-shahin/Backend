@@ -347,27 +347,4 @@ namespace Backend.CMS.Application.DTOs
         public List<string> Warnings { get; set; } = new();
         public Dictionary<string, object> ProcessingInfo { get; set; } = new();
     }
-
-    /// <summary>
-    /// Bulk operation result
-    /// </summary>
-    public class BulkOperationResultDto
-    {
-        public int TotalRequested { get; set; }
-        public int SuccessCount { get; set; }
-        public int FailureCount { get; set; }
-        public List<FileDto> SuccessfulFiles { get; set; } = new();
-        public List<BulkOperationErrorDto> Errors { get; set; } = new();
-        public bool IsPartialSuccess => SuccessCount > 0 && FailureCount > 0;
-        public bool IsCompleteSuccess => SuccessCount == TotalRequested;
-        public bool IsCompleteFailure => FailureCount == TotalRequested;
-    }
-
-    public class BulkOperationErrorDto
-    {
-        public int FileId { get; set; }
-        public string FileName { get; set; } = string.Empty;
-        public string ErrorMessage { get; set; } = string.Empty;
-        public string ErrorCode { get; set; } = string.Empty;
-    }
 }
