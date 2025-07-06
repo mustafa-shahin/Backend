@@ -17,7 +17,8 @@ namespace Backend.CMS.Application.DTOs
         public int FailureCount { get; set; }
         public List<CategoryDto> SuccessfulCategories { get; set; } = new();
         public List<LocationDto> SuccessfulLocations { get; set; } = new();
-        public List<object> SuccessfulFiles { get; set; } = new();
+        public List<FileDto> SuccessfulFiles { get; set; } = new();
+        public List<FolderDto> SuccessfulFolders { get; set; } = new();
         public List<BulkOperationErrorDto> Errors { get; set; } = new();
         public bool IsPartialSuccess => SuccessCount > 0 && FailureCount > 0;
         public bool IsCompleteSuccess => SuccessCount > 0 && FailureCount == 0;
