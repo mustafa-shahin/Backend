@@ -1,4 +1,5 @@
-﻿using Backend.CMS.Domain.Entities;
+﻿using Backend.CMS.Application.DTOs;
+using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
@@ -158,6 +159,204 @@ namespace Backend.CMS.Infrastructure.Repositories
             return !hasSubCategories;
         }
 
+        #region Paginated Methods Implementation
+
+        public async Task<(IEnumerable<Category> categories, int totalCount)> GetCategoriesPagedAsync(CategorySearchDto searchDto)
+        {
+            var query = BuildSearchQuery(searchDto);
+
+            // Get total count
+            var totalCount = await query.CountAsync();
+
+            // Apply sorting and pagination
+            query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
+
+            var categories = await query
+                .Include(c => c.ParentCategory)
+                .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                .Take(searchDto.PageSize)
+                .ToListAsync();
+
+            return (categories, totalCount);
+        }
+
+        public async Task<(IEnumerable<Category> categories, int totalCount)> GetRootCategoriesPagedAsync(int pageNumber, int pageSize)
+        {
+            var query = _dbSet
+                .Where(c => c.ParentCategoryId == null && !c.IsDeleted);
+
+            var totalCount = await query.CountAsync();
+
+            var categories = await query
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .OrderBy(c => c.SortOrder)
+                .ThenBy(c => c.Name)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return (categories, totalCount);
+        }
+
+        public async Task<(IEnumerable<Category> categories, int totalCount)> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize)
+        {
+            var query = _dbSet
+                .Where(c => c.ParentCategoryId == parentCategoryId && !c.IsDeleted);
+
+            var totalCount = await query.CountAsync();
+
+            var categories = await query
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .OrderBy(c => c.SortOrder)
+                .ThenBy(c => c.Name)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return (categories, totalCount);
+        }
+
+        public async Task<(IEnumerable<Category> categories, int totalCount)> SearchCategoriesPagedAsync(CategorySearchDto searchDto)
+        {
+            var query = BuildAdvancedSearchQuery(searchDto);
+
+            // Get total count
+            var totalCount = await query.CountAsync();
+
+            // Apply sorting and pagination
+            query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
+
+            var categories = await query
+                .Include(c => c.ParentCategory)
+                .Include(c => c.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File)
+                .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                .Take(searchDto.PageSize)
+                .ToListAsync();
+
+            return (categories, totalCount);
+        }
+
+        #endregion
+
+        #region Private Helper Methods
+
+        private IQueryable<Category> BuildSearchQuery(CategorySearchDto searchDto)
+        {
+            var query = _dbSet.Where(c => !c.IsDeleted);
+
+            // Apply basic filters
+            if (searchDto.ParentCategoryId.HasValue)
+            {
+                query = query.Where(c => c.ParentCategoryId == searchDto.ParentCategoryId.Value);
+            }
+
+            if (searchDto.IsActive.HasValue)
+            {
+                query = query.Where(c => c.IsActive == searchDto.IsActive.Value);
+            }
+
+            if (searchDto.IsVisible.HasValue)
+            {
+                query = query.Where(c => c.IsVisible == searchDto.IsVisible.Value);
+            }
+
+            // Apply text search if provided
+            if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
+            {
+                var searchTerm = searchDto.SearchTerm.Trim().ToLower();
+                query = query.Where(c =>
+                    c.Name.ToLower().Contains(searchTerm) ||
+                    (c.Description != null && c.Description.ToLower().Contains(searchTerm)) ||
+                    c.Slug.ToLower().Contains(searchTerm) ||
+                    (c.MetaKeywords != null && c.MetaKeywords.ToLower().Contains(searchTerm)));
+            }
+
+            return query;
+        }
+
+        private IQueryable<Category> BuildAdvancedSearchQuery(CategorySearchDto searchDto)
+        {
+            var query = _dbSet.Where(c => !c.IsDeleted);
+
+            // Apply all filters from basic search
+            query = BuildSearchQuery(searchDto);
+
+            // Apply date range filters
+            if (searchDto.CreatedFrom.HasValue)
+            {
+                query = query.Where(c => c.CreatedAt >= searchDto.CreatedFrom.Value);
+            }
+
+            if (searchDto.CreatedTo.HasValue)
+            {
+                query = query.Where(c => c.CreatedAt <= searchDto.CreatedTo.Value);
+            }
+
+            if (searchDto.UpdatedFrom.HasValue)
+            {
+                query = query.Where(c => c.UpdatedAt >= searchDto.UpdatedFrom.Value);
+            }
+
+            if (searchDto.UpdatedTo.HasValue)
+            {
+                query = query.Where(c => c.UpdatedAt <= searchDto.UpdatedTo.Value);
+            }
+
+            // Apply product count filters
+            if (searchDto.MinProductCount.HasValue || searchDto.MaxProductCount.HasValue)
+            {
+                // This would require a more complex query involving product counts
+                // For now, we'll apply it at the service level after getting results
+            }
+
+            // Apply image filter
+            if (searchDto.HasImages.HasValue)
+            {
+                if (searchDto.HasImages.Value)
+                {
+                    query = query.Where(c => c.Images.Any(i => !i.IsDeleted));
+                }
+                else
+                {
+                    query = query.Where(c => !c.Images.Any(i => !i.IsDeleted));
+                }
+            }
+
+            // Apply meta keywords filter
+            if (!string.IsNullOrWhiteSpace(searchDto.MetaKeywords))
+            {
+                var keywords = searchDto.MetaKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(k => k.Trim().ToLower()).ToList();
+
+                foreach (var keyword in keywords)
+                {
+                    query = query.Where(c => c.MetaKeywords != null && c.MetaKeywords.ToLower().Contains(keyword));
+                }
+            }
+
+            return query;
+        }
+
+        private IQueryable<Category> ApplySorting(IQueryable<Category> query, string sortBy, string sortDirection)
+        {
+            var isDescending = sortDirection.Equals("Desc", StringComparison.OrdinalIgnoreCase);
+
+            return sortBy.ToLowerInvariant() switch
+            {
+                "name" => isDescending ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
+                "createdat" => isDescending ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt),
+                "updatedat" => isDescending ? query.OrderByDescending(c => c.UpdatedAt) : query.OrderBy(c => c.UpdatedAt),
+                "sortorder" => isDescending ? query.OrderByDescending(c => c.SortOrder) : query.OrderBy(c => c.SortOrder),
+                _ => query.OrderBy(c => c.SortOrder).ThenBy(c => c.Name)
+            };
+        }
+
         private async Task<List<int>> GetAllDescendantCategoryIdsAsync(int categoryId)
         {
             var descendantIds = new List<int>();
@@ -175,5 +374,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
             return descendantIds;
         }
+
+        #endregion
     }
 }

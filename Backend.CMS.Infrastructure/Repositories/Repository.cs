@@ -513,8 +513,8 @@ namespace Backend.CMS.Infrastructure.Repositories
 
                 return new PagedResult<T>
                 {
-                    Items = items,
-                    Page = page,
+                    Data = items,           
+                    PageNumber = page,  
                     PageSize = pageSize,
                     TotalCount = totalCount
                 };

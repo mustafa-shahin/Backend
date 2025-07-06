@@ -1,4 +1,5 @@
-﻿using Backend.CMS.Domain.Entities;
+﻿using Backend.CMS.Application.DTOs;
+using Backend.CMS.Domain.Entities;
 
 namespace Backend.CMS.Infrastructure.IRepositories
 {
@@ -15,5 +16,11 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<int> GetProductCountAsync(int categoryId, bool includeSubCategories = false);
         Task<bool> HasSubCategoriesAsync(int categoryId);
         Task<bool> CanDeleteAsync(int categoryId);
+
+        // Paginated methods with proper return types
+        Task<(IEnumerable<Category> categories, int totalCount)> GetCategoriesPagedAsync(CategorySearchDto searchDto);
+        Task<(IEnumerable<Category> categories, int totalCount)> GetRootCategoriesPagedAsync(int pageNumber, int pageSize);
+        Task<(IEnumerable<Category> categories, int totalCount)> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize);
+        Task<(IEnumerable<Category> categories, int totalCount)> SearchCategoriesPagedAsync(CategorySearchDto searchDto);
     }
 }
