@@ -22,6 +22,8 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IMapper _mapper;
         private readonly ILogger<ProductService> _logger;
 
+        private const int DefaultPageSize = 10;
+
         public ProductService(
             IProductRepository productRepository,
             IProductVariantRepository variantRepository,
@@ -83,24 +85,83 @@ namespace Backend.CMS.Infrastructure.Services
             });
         }
 
-        public async Task<List<ProductDto>> GetProductsAsync()
+        public async Task<PagedResult<ProductDto>> GetProductsAsync(int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("all");
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("paged", page, pageSize);
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.GetAllAsync();
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Get paginated result from repository
+                    var pagedResult = await _productRepository.GetPagedResultAsync(
+                        page,
+                        pageSize,
+                        predicate: null,
+                        orderBy: query => query.OrderBy(p => p.Name)
+                    );
+
+                    // Map entities to DTOs
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Items = productDtos,
+                        Page = pagedResult.Page,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated products for page {Page}, pageSize {PageSize}", page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
-        public async Task<List<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 20)
+        public async Task<PagedResult<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 10)
         {
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+
             var cacheKey = _cacheKeyService.GetCollectionKey<Product>("by_category", categoryId, page, pageSize);
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.GetByCategoryAsync(categoryId, page, pageSize);
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Get paginated result from repository with category filter
+                    var pagedResult = await _productRepository.GetPagedResultAsync(
+                        page,
+                        pageSize,
+                        predicate: p => p.ProductCategories.Any(pc => pc.CategoryId == categoryId && !pc.IsDeleted),
+                        orderBy: query => query.OrderBy(p => p.Name)
+                    );
+
+                    // Map entities to DTOs
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Items = productDtos,
+                        Page = pagedResult.Page,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated products by category {CategoryId} for page {Page}, pageSize {PageSize}",
+                        categoryId, page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
         public async Task<ProductDto> CreateProductAsync(CreateProductDto createProductDto)
@@ -260,14 +321,39 @@ namespace Backend.CMS.Infrastructure.Services
             return true;
         }
 
-        public async Task<List<ProductDto>> SearchProductsAsync(ProductSearchDto searchDto)
+        public async Task<PagedResult<ProductDto>> SearchProductsAsync(ProductSearchDto searchDto)
         {
-            var cacheKey = _cacheKeyService.GetQueryKey<Product>("search", searchDto);
+            // Validate and normalize pagination parameters
+            var page = Math.Max(1, searchDto.Page);
+            var pageSize = searchDto.PageSize <= 0 ? DefaultPageSize : Math.Min(searchDto.PageSize, 100);
+
+            var cacheKey = _cacheKeyService.GetQueryKey<Product>("search", searchDto, page, pageSize);
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.SearchProductsAsync(searchDto);
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Get total count for pagination
+                    var totalCount = await _productRepository.GetSearchCountAsync(searchDto);
+
+                    // Get paginated search results
+                    var products = await _productRepository.SearchProductsAsync(searchDto);
+                    var productDtos = _mapper.Map<List<ProductDto>>(products);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Items = productDtos,
+                        Page = page,
+                        PageSize = pageSize,
+                        TotalCount = totalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error searching products with criteria: {@SearchDto}", searchDto);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
         public async Task<int> GetSearchCountAsync(ProductSearchDto searchDto)
@@ -424,44 +510,140 @@ namespace Backend.CMS.Infrastructure.Services
             return _mapper.Map<ProductDto>(createdProduct!);
         }
 
-        public async Task<List<ProductDto>> GetFeaturedProductsAsync(int count = 10)
+        public async Task<PagedResult<ProductDto>> GetFeaturedProductsAsync(int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("featured", count);
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("featured", page, pageSize);
 
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 try
                 {
-                    var products = await _productRepository.GetFeaturedProductsAsync(count);
-                    var productDtos = _mapper.Map<List<ProductDto>>(products);
-                    return productDtos ?? [];
+                    // Get paginated featured products
+                    var pagedResult = await _productRepository.GetPagedResultAsync(
+                        page,
+                        pageSize,
+                        predicate: p => p.Status == ProductStatus.Active,
+                        orderBy: query => query.OrderBy(p => Guid.NewGuid()) // Random order for featured products
+                    );
+
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Items = productDtos,
+                        Page = pagedResult.Page,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error fetching or mapping featured products");
+                    _logger.LogError(ex, "Error fetching paginated featured products for page {Page}, pageSize {PageSize}", page, pageSize);
                     throw;
                 }
-            }) ?? [];
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
-        public async Task<List<ProductDto>> GetRelatedProductsAsync(int productId, int count = 4)
+        public async Task<PagedResult<ProductDto>> GetRelatedProductsAsync(int productId, int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("related", productId, count);
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("related", productId, page, pageSize);
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.GetRelatedProductsAsync(productId, count);
-                return products != null ? _mapper.Map<List<ProductDto>>(products) : new List<ProductDto>();
-            }) ?? [];
+                try
+                {
+                    var product = await _productRepository.GetByIdAsync(productId);
+                    if (product == null)
+                    {
+                        return PagedResult<ProductDto>.Empty(page, pageSize);
+                    }
+
+                    var productWithCategories = await _productRepository.GetWithCategoriesAsync(productId);
+                    if (productWithCategories == null)
+                    {
+                        return PagedResult<ProductDto>.Empty(page, pageSize);
+                    }
+
+                    var categoryIds = productWithCategories.ProductCategories.Select(pc => pc.CategoryId).ToList();
+
+                    if (!categoryIds.Any())
+                    {
+                        return PagedResult<ProductDto>.Empty(page, pageSize);
+                    }
+
+                    // Get paginated related products
+                    var pagedResult = await _productRepository.GetPagedResultAsync(
+                        page,
+                        pageSize,
+                        predicate: p => p.Id != productId &&
+                                       p.Status == ProductStatus.Active &&
+                                       p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId) && !pc.IsDeleted),
+                        orderBy: query => query.OrderBy(p => Guid.NewGuid()) // Random order
+                    );
+
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Items = productDtos,
+                        Page = pagedResult.Page,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated related products for product {ProductId}, page {Page}, pageSize {PageSize}",
+                        productId, page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
-        public async Task<List<ProductDto>> GetRecentProductsAsync(int count = 10)
+        public async Task<PagedResult<ProductDto>> GetRecentProductsAsync(int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("recent", count);
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("recent", page, pageSize);
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.GetRecentProductsAsync(count);
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Get paginated recent products
+                    var pagedResult = await _productRepository.GetPagedResultAsync(
+                        page,
+                        pageSize,
+                        predicate: p => p.Status == ProductStatus.Active,
+                        orderBy: query => query.OrderByDescending(p => p.CreatedAt)
+                    );
+
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Items = productDtos,
+                        Page = pagedResult.Page,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated recent products for page {Page}, pageSize {PageSize}", page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
         public async Task<Dictionary<string, object>> GetProductStatisticsAsync()
@@ -541,26 +723,81 @@ namespace Backend.CMS.Infrastructure.Services
             await InvalidateProductCacheAsync();
         }
 
-        public async Task<List<ProductDto>> GetLowStockProductsAsync(int threshold = 5)
+        public async Task<PagedResult<ProductDto>> GetLowStockProductsAsync(int threshold = 5, int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "low_stock", threshold);
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "low_stock", threshold, page, pageSize);
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.FindAsync(p =>
-                    p.TrackQuantity && p.Quantity <= threshold && p.Quantity > 0);
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Get paginated low stock products
+                    var pagedResult = await _productRepository.GetPagedResultAsync(
+                        page,
+                        pageSize,
+                        predicate: p => p.TrackQuantity && p.Quantity <= threshold && p.Quantity > 0,
+                        orderBy: query => query.OrderBy(p => p.Quantity).ThenBy(p => p.Name)
+                    );
+
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Items = productDtos,
+                        Page = pagedResult.Page,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated low stock products for threshold {Threshold}, page {Page}, pageSize {PageSize}",
+                        threshold, page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
-        public async Task<List<ProductDto>> GetOutOfStockProductsAsync()
+        public async Task<PagedResult<ProductDto>> GetOutOfStockProductsAsync(int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "out_of_stock");
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "out_of_stock", page, pageSize);
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.FindAsync(p =>
-                    p.TrackQuantity && p.Quantity <= 0);
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Get paginated out of stock products
+                    var pagedResult = await _productRepository.GetPagedResultAsync(
+                        page,
+                        pageSize,
+                        predicate: p => p.TrackQuantity && p.Quantity <= 0,
+                        orderBy: query => query.OrderBy(p => p.Name)
+                    );
+
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Items = productDtos,
+                        Page = pagedResult.Page,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated out of stock products for page {Page}, pageSize {PageSize}", page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
         // Image management methods
