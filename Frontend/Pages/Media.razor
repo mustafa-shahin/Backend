@@ -137,12 +137,12 @@
                                          class="w-12 h-12 object-cover"
                                          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
                                     <div class="w-12 h-12 flex items-center justify-center" style="display: none;">
-                                        <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType)"></i>
+                                        <i class="@StyleService.GetFileIcon(file.FileType) @StyleService.GetFileTypeColor(file.FileType)"></i>
                                     </div>
                                 }
                                 else
                                 {
-                                    <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType) text-xl"></i>
+                                    <i class="@StyleService.GetFileIcon(file.FileType) @StyleService.GetFileTypeColor(file.FileType) text-xl"></i>
                                 }
                             </div>
                             <div class="flex-1">
@@ -151,10 +151,10 @@
                                 </h3>
                                 <div class="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400 mt-1">
                                     <span class="inline-flex items-center">
-                                        <i class="@GetFileIcon(file.FileType) mr-1"></i>
+                                        <i class="@StyleService.GetFileIcon(file.FileType) mr-1"></i>
                                         @file.FileType
                                     </span>
-                                    <span>@FormatFileSize(file.FileSize)</span>
+                                    <span>@file.FileSize</span>
                                     <span>@file.CreatedAt.ToString("MMM dd, yyyy")</span>
                                 </div>
                             </div>
@@ -221,15 +221,15 @@
             var folders = await FolderService.GetFoldersAsync(null);
 
             // Calculate stats
-            var imageCount = allFiles.Items.Count(f => f.FileType == FileType.Image);
-            var videoCount = allFiles.Items.Count(f => f.FileType == FileType.Video);
-            var audioCount = allFiles.Items.Count(f => f.FileType == FileType.Audio);
-            var documentCount = allFiles.Items.Count(f => f.FileType == FileType.Document);
+            var imageCount = allFiles.Data.Count(f => f.FileType == FileType.Image);
+            var videoCount = allFiles.Data.Count(f => f.FileType == FileType.Video);
+            var audioCount = allFiles.Data.Count(f => f.FileType == FileType.Audio);
+            var documentCount = allFiles.Data.Count(f => f.FileType == FileType.Document);
 
-            var imageSize = allFiles.Items.Where(f => f.FileType == FileType.Image).Sum(f => f.FileSize);
-            var videoSize = allFiles.Items.Where(f => f.FileType == FileType.Video).Sum(f => f.FileSize);
-            var audioSize = allFiles.Items.Where(f => f.FileType == FileType.Audio).Sum(f => f.FileSize);
-            var documentSize = allFiles.Items.Where(f => f.FileType == FileType.Document).Sum(f => f.FileSize);
+            var imageSize = allFiles.Data.Where(f => f.FileType == FileType.Image).Sum(f => f.FileSize);
+            var videoSize = allFiles.Data.Where(f => f.FileType == FileType.Video).Sum(f => f.FileSize);
+            var audioSize = allFiles.Data.Where(f => f.FileType == FileType.Audio).Sum(f => f.FileSize);
+            var documentSize = allFiles.Data.Where(f => f.FileType == FileType.Document).Sum(f => f.FileSize);
 
             statsCards = new List<StatCard>
             {
@@ -272,7 +272,7 @@
             };
 
             // Get recent files
-            recentFiles = allFiles.Items.OrderByDescending(f => f.CreatedAt).ToList();
+            recentFiles = allFiles.Data.OrderByDescending(f => f.CreatedAt).ToList();
         }
         catch (Exception ex)
         {
@@ -389,32 +389,6 @@
     private string GetActionIconClass(string color)
     {
         return $"text-{color}-600 dark:text-{color}-400";
-    }
-
-    private string GetFileIcon(FileType fileType)
-    {
-        return fileType switch
-        {
-            FileType.Image => "fas fa-image",
-            FileType.Video => "fas fa-video",
-            FileType.Audio => "fas fa-music",
-            FileType.Document => "fas fa-file-alt",
-            FileType.Archive => "fas fa-file-archive",
-            _ => "fas fa-file"
-        };
-    }
-
-    private string GetFileTypeColor(FileType fileType)
-    {
-        return fileType switch
-        {
-            FileType.Image => "text-green-600 dark:text-green-400",
-            FileType.Video => "text-blue-600 dark:text-blue-400",
-            FileType.Audio => "text-purple-600 dark:text-purple-400",
-            FileType.Document => "text-red-600 dark:text-red-400",
-            FileType.Archive => "text-yellow-600 dark:text-yellow-400",
-            _ => "text-gray-600 dark:text-gray-400"
-        };
     }
 
     private string FormatFileSize(long bytes)

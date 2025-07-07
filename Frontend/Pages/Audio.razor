@@ -116,14 +116,14 @@
             </div>
         </div>
     }
-    else if (files.Items?.Any() == true)
+    else if (files.Data?.Any() == true)
     {
         @if (currentViewMode == ViewMode.Grid)
         {
             <!-- Grid View -->
             <div class="p-6">
                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                    @foreach (var file in files.Items)
+                    @foreach (var file in files.Data)
                     {
                         <div class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 overflow-hidden group cursor-pointer border border-gray-200 dark:border-gray-700">
                             <!-- Audio Icon -->
@@ -197,7 +197,7 @@
                                 </h4>
 
                                 <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-2">
-                                    <span>@FormatFileSize(file.FileSize)</span>
+                                    <span>@file.FileSizeFormatted</span>
                                     <span>@file.CreatedAt.ToString("MMM dd")</span>
                                 </div>
 
@@ -236,7 +236,7 @@
                         </tr>
                     </thead>
                     <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                        @foreach (var file in files.Items)
+                        @foreach (var file in files.Data)
                         {
                             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150">
                                 <td class="px-6 py-4 whitespace-nowrap">
@@ -249,7 +249,7 @@
                                     <div class="text-sm text-gray-500 dark:text-gray-400">@file.FileExtension.ToUpper()</div>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                                    @FormatFileSize(file.FileSize)
+                                    @file.FileSizeFormatted
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                                     @if (file.Duration.HasValue)
@@ -811,19 +811,6 @@
     private string GetFileUrl(int fileId)
     {
         return $"/api/file/{fileId}/download";
-    }
-
-    private string FormatFileSize(long bytes)
-    {
-        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
-        double len = bytes;
-        int order = 0;
-        while (len >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            len /= 1024;
-        }
-        return $"{len:0.##} {sizes[order]}";
     }
 
     private string FormatDuration(TimeSpan duration)

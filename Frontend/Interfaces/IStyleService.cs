@@ -59,5 +59,6 @@ namespace Frontend.Interfaces
         string GetDialogSizeClass(string size);
         string GetBodyClass(string size);
         string GetFileIconColor(FileType fileType);
+        string GetViewToggleClass(bool isActive, bool isFirst);
     }
 }

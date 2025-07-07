@@ -279,7 +279,7 @@
                                         </h4>
 
                                         <div class="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-2">
-                                            <span>@FileService.FormatFileSize(file.FileSize)</span>
+                                            <span>@file.FileSizeFormatted</span>
                                             <span>@file.CreatedAt.ToString("MMM dd")</span>
                                         </div>
 
@@ -338,7 +338,7 @@
                                             <div class="text-sm text-gray-500 dark:text-gray-400">@file.FileExtension.ToUpper()</div>
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                                            @FileService.FormatFileSize(file.FileSize)
+                                            @file.FileSizeFormatted
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
                                             @if (file.Width.HasValue && file.Height.HasValue)
@@ -578,6 +578,26 @@
     // Performance optimization
     private readonly SemaphoreSlim loadingSemaphore = new(1, 1);
 
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Parse URL parameters
+            var uri = new Uri(Navigation.Uri);
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            selectedFolderId = query["folderId"] ?? string.Empty;
+
+            // Load data in parallel where possible
+            await Task.WhenAll(
+                LoadFoldersAsync(),
+                LoadDataAsync()
+            );
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to initialize page: {ex.Message}");
+        }
+    }
     
     private async Task LoadFoldersAsync()
     {
