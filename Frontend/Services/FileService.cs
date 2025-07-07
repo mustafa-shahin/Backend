@@ -9,9 +9,6 @@ using System.Collections.Concurrent;
 
 namespace Frontend.Services
 {
-    /// <summary>
-    /// Frontend file service implementation with file management
-    /// </summary>
     public class FileService : IFileService
     {
         private readonly HttpClient _httpClient;
@@ -20,6 +17,7 @@ namespace Frontend.Services
         private readonly string _backendBaseUrl;
         private readonly SemaphoreSlim _downloadSemaphore;
         private readonly ConcurrentDictionary<int, FileDto> _fileCache;
+        private readonly ConcurrentDictionary<string, PagedResult<FileDto>> _paginationCache;
         private readonly Timer _cacheCleanupTimer;
 
         public FileService(HttpClient httpClient, IJSRuntime jsRuntime)
@@ -27,11 +25,10 @@ namespace Frontend.Services
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _jsRuntime = jsRuntime ?? throw new ArgumentNullException(nameof(jsRuntime));
 
-            // Extract backend base URL from HttpClient configuration
             _backendBaseUrl = GetBackendBaseUrl(httpClient);
-
-            _downloadSemaphore = new SemaphoreSlim(5, 5); // Limit concurrent downloads
+            _downloadSemaphore = new SemaphoreSlim(5, 5);
             _fileCache = new ConcurrentDictionary<int, FileDto>();
+            _paginationCache = new ConcurrentDictionary<string, PagedResult<FileDto>>();
 
             _jsonOptions = new JsonSerializerOptions
             {
@@ -40,26 +37,23 @@ namespace Frontend.Services
                 Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() }
             };
 
-            // Clean cache every 10 minutes
             _cacheCleanupTimer = new Timer(CleanupCache, null,
                 TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
         }
 
         private string GetBackendBaseUrl(HttpClient httpClient)
         {
-            // Try to get from HttpClient base address
             if (httpClient.BaseAddress != null)
             {
                 return httpClient.BaseAddress.ToString().TrimEnd('/');
             }
 
-            // Fallback based on environment
             return Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development"
-                ? "https://localhost:7206"  // Development backend URL
-                : "https://api.domain.com"; // Production backend URL
+                ? "https://localhost:7206"
+                : "https://api.domain.com";
         }
 
-        #region Core File Operations with Pagination
+        #region Enhanced Core File Operations with Pagination
 
         public async Task<PagedResult<FileDto>> GetFilesAsync(
             int pageNumber = 1,
@@ -73,47 +67,59 @@ namespace Frontend.Services
         {
             try
             {
-                var queryParams = new List<string>
+                // Validate and normalize parameters
+                pageNumber = Math.Max(1, pageNumber);
+                pageSize = Math.Clamp(pageSize, 1, 100);
+
+                // Create cache key for pagination
+                var cacheKey = CreatePaginationCacheKey(pageNumber, pageSize, folderId, search, fileType, isPublic, sortBy, sortDirection);
+
+                // Check cache first (only for short-term caching)
+                if (_paginationCache.TryGetValue(cacheKey, out var cachedResult))
                 {
-                    $"pageNumber={pageNumber}",
-                    $"pageSize={Math.Clamp(pageSize, 1, 100)}", // Ensure page size is within bounds
-                    $"sortBy={Uri.EscapeDataString(sortBy)}",
-                    $"sortDirection={Uri.EscapeDataString(sortDirection)}"
-                };
+                    var cacheAge = DateTime.UtcNow - cachedResult.Data.FirstOrDefault()?.CreatedAt;
+                    if (cacheAge?.TotalMinutes < 2) // Only cache for 2 minutes
+                    {
+                        return cachedResult;
+                    }
+                    _paginationCache.TryRemove(cacheKey, out _);
+                }
 
-                if (folderId.HasValue)
-                    queryParams.Add($"folderId={folderId}");
-
-                if (!string.IsNullOrEmpty(search))
-                    queryParams.Add($"search={Uri.EscapeDataString(search)}");
-
-                if (fileType.HasValue)
-                    queryParams.Add($"fileType={fileType}");
-
-                if (isPublic.HasValue)
-                    queryParams.Add($"isPublic={isPublic.Value.ToString().ToLower()}");
-
+                var queryParams = BuildQueryParameters(pageNumber, pageSize, folderId, search, fileType, isPublic, sortBy, sortDirection);
                 var query = $"api/v1/file?{string.Join("&", queryParams)}";
 
                 var response = await _httpClient.GetAsync(query);
-                if (response.IsSuccessStatusCode)
+
+                if (!response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<FileDto>>(_jsonOptions);
-
-                    // Cache the files for performance
-                    if (result?.Data != null)
-                    {
-                        foreach (var file in result.Data)
-                        {
-                            _fileCache.TryAdd(file.Id, file);
-                        }
-                    }
-
-                    return result ?? PagedResult<FileDto>.Empty(pageNumber, pageSize);
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"Failed to get files: {response.StatusCode} - {errorContent}");
                 }
 
-                var errorContent = await response.Content.ReadAsStringAsync();
-                throw new HttpRequestException($"Failed to get files: {response.StatusCode} - {errorContent}");
+                var result = await response.Content.ReadFromJsonAsync<PagedResult<FileDto>>(_jsonOptions);
+
+                if (result == null)
+                {
+                    return PagedResult<FileDto>.Empty(pageNumber, pageSize);
+                }
+
+                // Validate pagination data integrity
+                if (result.TotalCount < 0 || result.PageNumber != pageNumber || result.PageSize != pageSize)
+                {
+                    throw new InvalidOperationException("Invalid pagination data received from server");
+                }
+
+                // Cache files individually and pagination result
+                if (result.Data?.Any() == true)
+                {
+                    foreach (var file in result.Data)
+                    {
+                        _fileCache.TryAdd(file.Id, file);
+                    }
+                    _paginationCache.TryAdd(cacheKey, result);
+                }
+
+                return result;
             }
             catch (Exception ex)
             {
@@ -128,29 +134,35 @@ namespace Frontend.Services
                 if (searchDto == null)
                     throw new ArgumentNullException(nameof(searchDto));
 
-                // Ensure pagination parameters are valid
+                // Validate and normalize search parameters
                 searchDto.PageNumber = Math.Max(1, searchDto.PageNumber);
                 searchDto.PageSize = Math.Clamp(searchDto.PageSize, 1, 100);
 
                 var response = await _httpClient.PostAsJsonAsync("api/v1/file/search", searchDto, _jsonOptions);
-                if (response.IsSuccessStatusCode)
+
+                if (!response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<FileDto>>(_jsonOptions);
-
-                    // Cache the files
-                    if (result?.Data != null)
-                    {
-                        foreach (var file in result.Data)
-                        {
-                            _fileCache.TryAdd(file.Id, file);
-                        }
-                    }
-
-                    return result ?? PagedResult<FileDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"Failed to search files: {response.StatusCode} - {errorContent}");
                 }
 
-                var errorContent = await response.Content.ReadAsStringAsync();
-                throw new HttpRequestException($"Failed to search files: {response.StatusCode} - {errorContent}");
+                var result = await response.Content.ReadFromJsonAsync<PagedResult<FileDto>>(_jsonOptions);
+
+                if (result == null)
+                {
+                    return PagedResult<FileDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
+                }
+
+                // Cache the search results
+                if (result.Data?.Any() == true)
+                {
+                    foreach (var file in result.Data)
+                    {
+                        _fileCache.TryAdd(file.Id, file);
+                    }
+                }
+
+                return result;
             }
             catch (Exception ex)
             {
@@ -167,30 +179,30 @@ namespace Frontend.Services
         {
             try
             {
-                // Check cache first
                 if (_fileCache.TryGetValue(id, out var cachedFile))
                 {
                     return cachedFile;
                 }
 
                 var response = await _httpClient.GetAsync($"api/v1/file/{id}");
-                if (response.IsSuccessStatusCode)
-                {
-                    var file = await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
-                    if (file != null)
-                    {
-                        _fileCache.TryAdd(file.Id, file);
-                    }
-                    return file;
-                }
 
                 if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 {
                     return null;
                 }
 
-                var errorContent = await response.Content.ReadAsStringAsync();
-                throw new HttpRequestException($"Failed to get file: {response.StatusCode} - {errorContent}");
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"Failed to get file: {response.StatusCode} - {errorContent}");
+                }
+
+                var file = await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
+                if (file != null)
+                {
+                    _fileCache.TryAdd(file.Id, file);
+                }
+                return file;
             }
             catch (Exception ex)
             {
@@ -211,54 +223,33 @@ namespace Frontend.Services
 
                 using var content = new MultipartFormDataContent();
 
-                // Add the file
                 var fileContent = new StreamContent(uploadDto.File.OpenReadStream());
                 fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(uploadDto.File.ContentType);
                 content.Add(fileContent, "File", uploadDto.File.Name);
 
-                // Add other properties
-                if (!string.IsNullOrEmpty(uploadDto.Description))
-                    content.Add(new StringContent(uploadDto.Description), "Description");
-
-                if (!string.IsNullOrEmpty(uploadDto.Alt))
-                    content.Add(new StringContent(uploadDto.Alt), "Alt");
-
-                if (uploadDto.FolderId.HasValue)
-                    content.Add(new StringContent(uploadDto.FolderId.Value.ToString()), "FolderId");
-
-                content.Add(new StringContent(uploadDto.IsPublic.ToString().ToLower()), "IsPublic");
-                content.Add(new StringContent(uploadDto.GenerateThumbnail.ToString().ToLower()), "GenerateThumbnail");
-                content.Add(new StringContent(uploadDto.ProcessImmediately.ToString().ToLower()), "ProcessImmediately");
-
-                // Add tags if any
-                if (uploadDto.Tags?.Any() == true)
-                {
-                    foreach (var tag in uploadDto.Tags)
-                    {
-                        content.Add(new StringContent(tag.Value?.ToString() ?? ""), $"Tags[{tag.Key}]");
-                    }
-                }
+                AddFormParameters(content, uploadDto);
 
                 var response = await _httpClient.PostAsync("api/v1/file/upload", content);
-                if (response.IsSuccessStatusCode)
+
+                if (!response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<FileUploadResultDto>(_jsonOptions);
-
-                    // Cache the uploaded file
-                    if (result?.File != null)
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    return new FileUploadResultDto
                     {
-                        _fileCache.TryAdd(result.File.Id, result.File);
-                    }
-
-                    return result;
+                        Success = false,
+                        ErrorMessage = $"Upload failed: {response.StatusCode} - {errorContent}"
+                    };
                 }
 
-                var errorContent = await response.Content.ReadAsStringAsync();
-                return new FileUploadResultDto
+                var result = await response.Content.ReadFromJsonAsync<FileUploadResultDto>(_jsonOptions);
+
+                if (result?.File != null)
                 {
-                    Success = false,
-                    ErrorMessage = $"Upload failed: {response.StatusCode} - {errorContent}"
-                };
+                    _fileCache.TryAdd(result.File.Id, result.File);
+                    InvalidatePaginationCache();
+                }
+
+                return result;
             }
             catch (Exception ex)
             {
@@ -286,7 +277,6 @@ namespace Frontend.Services
 
                 using var content = new MultipartFormDataContent();
 
-                // Add files
                 foreach (var file in uploadDto.Files)
                 {
                     var fileContent = new StreamContent(file.OpenReadStream());
@@ -294,43 +284,37 @@ namespace Frontend.Services
                     content.Add(fileContent, "Files", file.Name);
                 }
 
-                // Add other properties
-                if (uploadDto.FolderId.HasValue)
-                    content.Add(new StringContent(uploadDto.FolderId.Value.ToString()), "FolderId");
-
-                content.Add(new StringContent(uploadDto.IsPublic.ToString().ToLower()), "IsPublic");
-                content.Add(new StringContent(uploadDto.GenerateThumbnails.ToString().ToLower()), "GenerateThumbnails");
-                content.Add(new StringContent(uploadDto.ProcessImmediately.ToString().ToLower()), "ProcessImmediately");
-                content.Add(new StringContent(uploadDto.ProcessInParallel.ToString().ToLower()), "ProcessInParallel");
+                AddMultipleUploadParameters(content, uploadDto);
 
                 var response = await _httpClient.PostAsync("api/v1/file/upload/multiple", content);
-                if (response.IsSuccessStatusCode)
+
+                if (!response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions);
-
-                    // Cache successful files
-                    if (result?.SuccessfulFiles != null)
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    return new BulkOperationResultDto
                     {
-                        foreach (var file in result.SuccessfulFiles)
+                        TotalRequested = uploadDto.Files.Count,
+                        SuccessCount = 0,
+                        FailureCount = uploadDto.Files.Count,
+                        Errors = new List<BulkOperationErrorDto>
                         {
-                            _fileCache.TryAdd(file.Id, file);
+                            new() { ErrorMessage = $"Upload failed: {response.StatusCode} - {errorContent}" }
                         }
-                    }
-
-                    return result ?? new BulkOperationResultDto();
+                    };
                 }
 
-                var errorContent = await response.Content.ReadAsStringAsync();
-                return new BulkOperationResultDto
+                var result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions);
+
+                if (result?.SuccessfulFiles != null)
                 {
-                    TotalRequested = uploadDto.Files.Count,
-                    SuccessCount = 0,
-                    FailureCount = uploadDto.Files.Count,
-                    Errors = new List<BulkOperationErrorDto>
+                    foreach (var file in result.SuccessfulFiles)
                     {
-                        new() { ErrorMessage = $"Upload failed: {response.StatusCode} - {errorContent}" }
+                        _fileCache.TryAdd(file.Id, file);
                     }
-                };
+                    InvalidatePaginationCache();
+                }
+
+                return result ?? new BulkOperationResultDto();
             }
             catch (Exception ex)
             {
@@ -359,19 +343,20 @@ namespace Frontend.Services
                     throw new ArgumentNullException(nameof(updateDto));
 
                 var response = await _httpClient.PutAsJsonAsync($"api/v1/file/{id}", updateDto, _jsonOptions);
-                if (response.IsSuccessStatusCode)
+
+                if (!response.IsSuccessStatusCode)
                 {
-                    var file = await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
-                    if (file != null)
-                    {
-                        // Update cache
-                        _fileCache.AddOrUpdate(file.Id, file, (key, oldValue) => file);
-                    }
-                    return file;
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"Failed to update file: {response.StatusCode} - {errorContent}");
                 }
 
-                var errorContent = await response.Content.ReadAsStringAsync();
-                throw new HttpRequestException($"Failed to update file: {response.StatusCode} - {errorContent}");
+                var file = await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
+                if (file != null)
+                {
+                    _fileCache.AddOrUpdate(file.Id, file, (key, oldValue) => file);
+                    InvalidatePaginationCache();
+                }
+                return file;
             }
             catch (Exception ex)
             {
@@ -388,8 +373,8 @@ namespace Frontend.Services
 
                 if (success)
                 {
-                    // Remove from cache
                     _fileCache.TryRemove(id, out _);
+                    InvalidatePaginationCache();
                 }
 
                 return success;
@@ -418,13 +403,13 @@ namespace Frontend.Services
                     result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions)
                         ?? new BulkOperationResultDto();
 
-                    // Remove successful deletions from cache
                     if (result.IsCompleteSuccess || result.IsPartialSuccess)
                     {
                         foreach (var fileId in fileIds)
                         {
                             _fileCache.TryRemove(fileId, out _);
                         }
+                        InvalidatePaginationCache();
                     }
                 }
                 else
@@ -469,8 +454,8 @@ namespace Frontend.Services
                     var file = await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
                     if (file != null)
                     {
-                        // Update cache
                         _fileCache.AddOrUpdate(file.Id, file, (key, oldValue) => file);
+                        InvalidatePaginationCache();
                     }
                     return file;
                 }
@@ -495,8 +480,8 @@ namespace Frontend.Services
                     var file = await response.Content.ReadFromJsonAsync<FileDto>(_jsonOptions);
                     if (file != null)
                     {
-                        // Add to cache
                         _fileCache.TryAdd(file.Id, file);
+                        InvalidatePaginationCache();
                     }
                     return file;
                 }
@@ -541,7 +526,6 @@ namespace Frontend.Services
                 {
                     var result = await response.Content.ReadFromJsonAsync<List<FileDto>>(_jsonOptions);
 
-                    // Cache the files
                     if (result != null)
                     {
                         foreach (var file in result)
@@ -587,7 +571,6 @@ namespace Frontend.Services
 
                 if (success)
                 {
-                    // Invalidate cache for this file so it gets refreshed
                     _fileCache.TryRemove(id, out _);
                 }
 
@@ -628,7 +611,6 @@ namespace Frontend.Services
             await _downloadSemaphore.WaitAsync();
             try
             {
-                // Get file info first to check if it's public
                 var fileInfo = await GetFileByIdAsync(id);
                 if (fileInfo == null)
                 {
@@ -638,12 +620,10 @@ namespace Frontend.Services
                 string downloadUrl;
                 if (fileInfo.IsPublic)
                 {
-                    // For public files, use direct download
                     downloadUrl = fileInfo.Urls.DirectAccess ?? fileInfo.Urls.Download;
                 }
                 else
                 {
-                    // For private files, generate token first
                     var token = await GenerateDownloadTokenAsync(id);
                     if (!string.IsNullOrEmpty(token))
                     {
@@ -677,7 +657,6 @@ namespace Frontend.Services
                     var stream = await response.Content.ReadAsStreamAsync();
                     var contentType = response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream";
 
-                    // Try to get filename from Content-Disposition header
                     var fileName = "file";
                     if (response.Content.Headers.ContentDisposition?.FileName != null)
                     {
@@ -744,13 +723,13 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions)
                         ?? new BulkOperationResultDto();
 
-                    // Invalidate cache for updated files
                     if (result.IsCompleteSuccess || result.IsPartialSuccess)
                     {
                         foreach (var fileId in fileIds)
                         {
                             _fileCache.TryRemove(fileId, out _);
                         }
+                        InvalidatePaginationCache();
                     }
 
                     return result;
@@ -797,13 +776,13 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions)
                         ?? new BulkOperationResultDto();
 
-                    // Invalidate cache for moved files
                     if (result.IsCompleteSuccess || result.IsPartialSuccess)
                     {
                         foreach (var fileId in fileIds)
                         {
                             _fileCache.TryRemove(fileId, out _);
                         }
+                        InvalidatePaginationCache();
                     }
 
                     return result;
@@ -850,13 +829,13 @@ namespace Frontend.Services
                     var result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions)
                         ?? new BulkOperationResultDto();
 
-                    // Cache new files
                     if (result.SuccessfulFiles != null)
                     {
                         foreach (var file in result.SuccessfulFiles)
                         {
                             _fileCache.TryAdd(file.Id, file);
                         }
+                        InvalidatePaginationCache();
                     }
 
                     return result;
@@ -892,37 +871,31 @@ namespace Frontend.Services
 
         public string GetFileUrl(int fileId)
         {
-            // Try to get from cache first - use the backend provided URL
             if (_fileCache.TryGetValue(fileId, out var cachedFile) && !string.IsNullOrEmpty(cachedFile.Urls.Download))
             {
                 return cachedFile.Urls.Download;
             }
 
-            // Fallback to constructed URL only if not available from backend
             return $"{_backendBaseUrl}/api/v1/file/{fileId}/download";
         }
 
         public string GetThumbnailUrl(int fileId)
         {
-            // Try to get from cache first - use the backend provided URL
             if (_fileCache.TryGetValue(fileId, out var cachedFile) && !string.IsNullOrEmpty(cachedFile.Urls.Thumbnail))
             {
                 return cachedFile.Urls.Thumbnail;
             }
 
-            // Fallback to constructed URL only if not available from backend
             return $"{_backendBaseUrl}/api/v1/file/{fileId}/thumbnail";
         }
 
         public string GetPreviewUrl(int fileId)
         {
-            // Try to get from cache first - use the backend provided URL
             if (_fileCache.TryGetValue(fileId, out var cachedFile) && !string.IsNullOrEmpty(cachedFile.Urls.Preview))
             {
                 return cachedFile.Urls.Preview;
             }
 
-            // Fallback to constructed URL only if not available from backend
             return $"{_backendBaseUrl}/api/v1/file/{fileId}/preview";
         }
 
@@ -994,6 +967,7 @@ namespace Frontend.Services
             await Task.Run(() =>
             {
                 _fileCache.Clear();
+                _paginationCache.Clear();
             });
         }
 
@@ -1020,23 +994,101 @@ namespace Frontend.Services
 
         #endregion
 
-        #region Private Methods
+        #region Private Helper Methods
+
+        private List<string> BuildQueryParameters(int pageNumber, int pageSize, int? folderId, string? search,
+            FileType? fileType, bool? isPublic, string sortBy, string sortDirection)
+        {
+            var queryParams = new List<string>
+            {
+                $"pageNumber={pageNumber}",
+                $"pageSize={pageSize}",
+                $"sortBy={Uri.EscapeDataString(sortBy)}",
+                $"sortDirection={Uri.EscapeDataString(sortDirection)}"
+            };
+
+            if (folderId.HasValue)
+                queryParams.Add($"folderId={folderId}");
+
+            if (!string.IsNullOrEmpty(search))
+                queryParams.Add($"search={Uri.EscapeDataString(search)}");
+
+            if (fileType.HasValue)
+                queryParams.Add($"fileType={fileType}");
+
+            if (isPublic.HasValue)
+                queryParams.Add($"isPublic={isPublic.Value.ToString().ToLower()}");
+
+            return queryParams;
+        }
+
+        private string CreatePaginationCacheKey(int pageNumber, int pageSize, int? folderId, string? search,
+            FileType? fileType, bool? isPublic, string sortBy, string sortDirection)
+        {
+            return $"files_{pageNumber}_{pageSize}_{folderId}_{search}_{fileType}_{isPublic}_{sortBy}_{sortDirection}";
+        }
+
+        private void AddFormParameters(MultipartFormDataContent content, FileUploadDto uploadDto)
+        {
+            if (!string.IsNullOrEmpty(uploadDto.Description))
+                content.Add(new StringContent(uploadDto.Description), "Description");
+
+            if (!string.IsNullOrEmpty(uploadDto.Alt))
+                content.Add(new StringContent(uploadDto.Alt), "Alt");
+
+            if (uploadDto.FolderId.HasValue)
+                content.Add(new StringContent(uploadDto.FolderId.Value.ToString()), "FolderId");
+
+            content.Add(new StringContent(uploadDto.IsPublic.ToString().ToLower()), "IsPublic");
+            content.Add(new StringContent(uploadDto.GenerateThumbnail.ToString().ToLower()), "GenerateThumbnail");
+            content.Add(new StringContent(uploadDto.ProcessImmediately.ToString().ToLower()), "ProcessImmediately");
+
+            if (uploadDto.Tags?.Any() == true)
+            {
+                foreach (var tag in uploadDto.Tags)
+                {
+                    content.Add(new StringContent(tag.Value?.ToString() ?? ""), $"Tags[{tag.Key}]");
+                }
+            }
+        }
+
+        private void AddMultipleUploadParameters(MultipartFormDataContent content, MultipleFileUploadDto uploadDto)
+        {
+            if (uploadDto.FolderId.HasValue)
+                content.Add(new StringContent(uploadDto.FolderId.Value.ToString()), "FolderId");
+
+            content.Add(new StringContent(uploadDto.IsPublic.ToString().ToLower()), "IsPublic");
+            content.Add(new StringContent(uploadDto.GenerateThumbnails.ToString().ToLower()), "GenerateThumbnails");
+            content.Add(new StringContent(uploadDto.ProcessImmediately.ToString().ToLower()), "ProcessImmediately");
+            content.Add(new StringContent(uploadDto.ProcessInParallel.ToString().ToLower()), "ProcessInParallel");
+        }
+
+        private void InvalidatePaginationCache()
+        {
+            _paginationCache.Clear();
+        }
 
         private void CleanupCache(object? state)
         {
             try
             {
                 const int maxCacheSize = 1000;
-                if (_fileCache.Count <= maxCacheSize)
-                    return;
 
-                // Remove 20% of oldest entries
-                var itemsToRemove = _fileCache.Count / 5;
-                var keysToRemove = _fileCache.Keys.Take(itemsToRemove).ToList();
-
-                foreach (var key in keysToRemove)
+                if (_fileCache.Count > maxCacheSize)
                 {
-                    _fileCache.TryRemove(key, out _);
+                    var itemsToRemove = _fileCache.Count / 5;
+                    var keysToRemove = _fileCache.Keys.Take(itemsToRemove).ToList();
+
+                    foreach (var key in keysToRemove)
+                    {
+                        _fileCache.TryRemove(key, out _);
+                    }
+                }
+
+                // Clean pagination cache (keep only recent entries)
+                if (_paginationCache.Count > 50)
+                {
+                    _paginationCache.Clear();
                 }
             }
             catch
@@ -1054,6 +1106,7 @@ namespace Frontend.Services
             _downloadSemaphore?.Dispose();
             _cacheCleanupTimer?.Dispose();
             _fileCache?.Clear();
+            _paginationCache?.Clear();
         }
 
         #endregion

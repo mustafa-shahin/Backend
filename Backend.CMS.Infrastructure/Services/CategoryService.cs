@@ -20,7 +20,6 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IMapper _mapper;
         private readonly ILogger<CategoryService> _logger;
 
-        // Enterprise-grade pagination constants
         private const int DefaultPageSize = 10;
         private const int MaxPageSize = 100;
         private const int MinPageSize = 1;
@@ -45,7 +44,7 @@ namespace Backend.CMS.Infrastructure.Services
             _logger = logger;
         }
 
-        #region Paginated Methods - Enterprise Implementation
+        #region Paginated Methods
 
         /// <summary>
         /// Get paginated categories with filtering and sorting - Service-level pagination

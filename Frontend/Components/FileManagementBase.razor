@@ -1,0 +1,787 @@
+﻿@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interface
+@using Frontend.Interfaces
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Http
+@using Microsoft.AspNetCore.Http.Internal
+@inject IFileService FileService
+@inject INotificationService NotificationService
+@inject IStyleService StyleService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <!-- Page Header -->
+    <div class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+        <div class="mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between py-6 space-y-4 sm:space-y-0">
+                <div>
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-gradient-to-br @GetHeaderGradient() rounded-lg flex items-center justify-center mr-4">
+                            <i class="@GetFileTypeIcon() text-white text-lg"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">@PageTitle</h1>
+                            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                @PageDescription
+                                @if (files.TotalCount > 0)
+                                {
+                                    <span class="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium @GetCountBadgeClass()">
+                                        @files.TotalCount total
+                                    </span>
+                                }
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button @onclick="ShowUploadDialog"
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white @GetPrimaryButtonClass() transition-colors duration-200">
+                        <i class="fas fa-upload mr-2"></i>
+                        Upload @FileTypeName
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Search and Filters -->
+        <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+            <div class="p-6">
+                <div class="flex flex-col lg:flex-row gap-4">
+                    <!-- Search -->
+                    <div class="flex-1">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-search text-gray-400"></i>
+                            </div>
+                            <input @bind="searchState.SearchTerm"
+                                   @bind:event="oninput"
+                                   @onkeyup="OnSearchKeyUp"
+                                   type="text"
+                                   placeholder="Search @FileTypeName.ToLower() by name, description, or tags..."
+                                   class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 sm:text-sm" />
+                            @if (!string.IsNullOrEmpty(searchState.SearchTerm))
+                            {
+                                <button @onclick="ClearSearch"
+                                        class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Filters and Controls -->
+                    <div class="flex items-center space-x-3">
+                        <!-- View Mode Toggle -->
+                        <div class="inline-flex rounded-lg shadow-sm" role="group">
+                            <button @onclick="() => SetViewMode(ViewMode.Grid)"
+                                    type="button"
+                                    class="@StyleService.GetViewToggleClass(currentViewMode == ViewMode.Grid, true)">
+                                <i class="fas fa-th mr-1"></i>
+                                Grid
+                            </button>
+                            <button @onclick="() => SetViewMode(ViewMode.List)"
+                                    type="button"
+                                    class="@StyleService.GetViewToggleClass(currentViewMode == ViewMode.List, false)">
+                                <i class="fas fa-list mr-1"></i>
+                                List
+                            </button>
+                        </div>
+
+                        <!-- Refresh Button -->
+                        <button @onclick="RefreshData"
+                                class="inline-flex items-center p-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"
+                                title="Refresh"
+                                disabled="@loadingState.IsLoading">
+                            <i class="fas fa-refresh @(loadingState.IsLoading ? "fa-spin" : "") text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Results Summary -->
+                @if (!loadingState.IsLoading && (files.Data?.Any() == true || !string.IsNullOrEmpty(searchState.SearchTerm)))
+                {
+                    <div class="mt-4 flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+                        <div>
+                            @if (!string.IsNullOrEmpty(searchState.SearchTerm))
+                            {
+                                <span>
+                                    Found <strong class="text-gray-900 dark:text-gray-100">@files.TotalCount</strong> @FileTypeName.ToLower() matching
+                                    <strong class="text-gray-900 dark:text-gray-100">"@searchState.SearchTerm"</strong>
+                                </span>
+                            }
+                            else
+                            {
+                                <span>
+                                    Showing <strong class="text-gray-900 dark:text-gray-100">@files.Data?.Count()</strong> of
+                                    <strong class="text-gray-900 dark:text-gray-100">@files.TotalCount</strong> @FileTypeName.ToLower()
+                                </span>
+                            }
+                        </div>
+                        @if (files.TotalCount > 0)
+                        {
+                            <div class="text-xs text-gray-500 dark:text-gray-400">
+                                Page @paginationState.CurrentPage of @paginationState.TotalPages
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            @if (loadingState.IsLoading)
+            {
+                <div class="p-6">
+                    <div class="flex items-center justify-center py-12">
+                        <div class="text-center">
+                            <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 dark:border-gray-600 border-t-green-600 dark:border-t-green-400 mb-4"></div>
+                            <p class="text-gray-500 dark:text-gray-400 text-lg font-medium">Loading @FileTypeName.ToLower()...</p>
+                            <p class="text-gray-400 dark:text-gray-500 text-sm mt-1">Please wait while we fetch your files</p>
+                        </div>
+                    </div>
+                </div>
+            }
+            else if (files.Data?.Any() == true)
+            {
+                @if (currentViewMode == ViewMode.Grid)
+                {
+                    <div class="p-6">
+                        <FileGridView Files="@files.Data"
+                                     OnEditFile="@ShowEditFileDialog"
+                                     OnDeleteFile="@ShowDeleteFileConfirmation"
+                                     OnDownloadFile="@DownloadFile"
+                                     OnPreviewFile="@PreviewFile" />
+                    </div>
+                }
+                else
+                {
+                    <div class="overflow-x-auto">
+                        <FileTableView Files="@files.Data"
+                                      FileType="@TargetFileType"
+                                      OnEditFile="@ShowEditFileDialog"
+                                      OnDeleteFile="@ShowDeleteFileConfirmation"
+                                      OnDownloadFile="@DownloadFile"
+                                      OnPreviewFile="@PreviewFile" />
+                    </div>
+                }
+            }
+            else
+            {
+                <!-- Enhanced Empty State -->
+                <div class="p-6">
+                    <div class="text-center py-12">
+                        <div class="mx-auto w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
+                            @if (!string.IsNullOrEmpty(searchState.SearchTerm))
+                            {
+                                <i class="fas fa-search text-gray-400 text-2xl"></i>
+                            }
+                            else
+                            {
+                                <i class="@GetFileTypeIcon() text-gray-400 text-2xl"></i>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(searchState.SearchTerm))
+                        {
+                            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                                No @FileTypeName.ToLower() found matching "@searchState.SearchTerm"
+                            </h3>
+                            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                                Try adjusting your search terms or browse all @FileTypeName.ToLower() instead.
+                            </p>
+                            <div class="flex flex-col sm:flex-row gap-3 justify-center">
+                                <button @onclick="ClearSearch"
+                                        class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
+                                    <i class="fas fa-times mr-2"></i>
+                                    Clear Search
+                                </button>
+                                <button @onclick="ShowUploadDialog"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @GetPrimaryButtonClass() transition-colors">
+                                    <i class="fas fa-upload mr-2"></i>
+                                    Upload @FileTypeName
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                                Welcome to your @FileTypeName.ToLower() library
+                            </h3>
+                            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                                Get started by uploading your first @FileTypeName.ToLower(). You can organize them and manage them easily.
+                            </p>
+                            <button @onclick="ShowUploadDialog"
+                                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @GetPrimaryButtonClass() transition-colors">
+                                <i class="fas fa-upload mr-2"></i>
+                                Upload Your First @FileTypeName
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Pagination -->
+        @if (files.TotalCount > 0 && paginationState.TotalPages > 1)
+        {
+            <div class="mt-6">
+                <Pagination CurrentPage="@paginationState.CurrentPage"
+                            TotalPages="@paginationState.TotalPages"
+                            TotalItems="@files.TotalCount"
+                            OnPageChanged="@OnPageChanged"
+                            IsLoading="@loadingState.IsLoading" />
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Edit File Dialog -->
+<FormDialog @ref="fileDialog"
+            Title="@DialogTitle"
+            Description="@DialogDescription"
+            HeaderIcon="fas fa-edit"
+            IsVisible="@dialogState.ShowFileDialog"
+            IsSaving="@loadingState.IsSaving"
+            Size="large"
+            Model="@fileModel"
+            ValidationErrors="@fileValidationErrors"
+            IsEditMode="true"
+            OnClose="@CloseFileDialog"
+            OnSave="@SaveFile"
+            CloseOnBackdrop="false">
+
+
+    <FormContent Context="context">
+        <FileEditForm Model="@((UpdateFileDto)context.Model)"
+                      ValidationErrors="@context.ValidationErrors"
+                      OriginalFile="@selectedFile" />
+    </FormContent>
+</FormDialog>
+
+<!-- Upload Files Dialog -->
+<GenericDialog @ref="uploadDialog"
+               Title="@UploadDialogTitle"
+               Description="@UploadDialogDescription"
+               HeaderIcon="fas fa-upload"
+               IsVisible="@dialogState.ShowUploadDialog"
+               OnClose="@CloseUploadDialog"
+               OnSave="@UploadFiles"
+               IsSaving="@loadingState.IsUploading"
+               SaveText="Upload"
+               SavingText="Uploading..."
+               Size="large">
+
+    <BodyContent>
+        <FileUpload @ref="fileUpload"
+                    Files="@uploadState.SelectedFiles"
+                    FilesChanged="@OnFilesChanged"
+                    UploadProgress="@uploadState.UploadProgress"
+                    UploadProgressChanged="@OnUploadProgressChanged"
+                    IsUploading="@loadingState.IsUploading" />
+    </BodyContent>
+</GenericDialog>
+
+<!-- File Preview Dialog -->
+<FilePreview @ref="filePreview" />
+
+<!-- Delete Confirmation -->
+<ConfirmationDialog @ref="deleteFileDialog"
+                    Title="@DeleteDialogTitle"
+                    Message="@DeleteDialogMessage"
+                    ConfirmText="Delete"
+                    ConfirmClass="bg-red-600 hover:bg-red-700 focus:ring-red-500"
+                    ConfirmIcon="fas fa-trash"
+                    OnConfirm="@DeleteFile" />
+
+@code {
+    // Parameters that must be set by the consuming page
+    [Parameter, EditorRequired] public FileType TargetFileType { get; set; }
+    [Parameter, EditorRequired] public string FileTypeName { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string PageTitle { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string PageDescription { get; set; } = string.Empty;
+
+    // Optional parameters
+    [Parameter] public Func<string, bool>? FileTypeValidator { get; set; }
+    [Parameter] public int DefaultPageSize { get; set; } = 24;
+
+    // ViewMode enum
+    public enum ViewMode { Grid, List }
+
+    private string DialogTitle => $"Edit {FileTypeName}";
+    private string DialogDescription => $"Update {FileTypeName.ToLower()} information and metadata";
+
+    private string UploadDialogTitle => $"Upload {FileTypeName}";
+    private string UploadDialogDescription => $"Upload new {FileTypeName.ToLower()} files to your library";
+
+    private string DeleteDialogTitle => $"Delete {FileTypeName}";
+    private string DeleteDialogMessage => $"Are you sure you want to delete this {FileTypeName.ToLower()}? This action cannot be undone.";
+    // State management classes
+    public class LoadingState
+    {
+        public bool IsLoading { get; set; } = true;
+        public bool IsSaving { get; set; } = false;
+        public bool IsUploading { get; set; } = false;
+    }
+
+    public class SearchState
+    {
+        public string SearchTerm { get; set; } = string.Empty;
+        public Timer? SearchTimer { get; set; }
+    }
+
+    public class PaginationState
+    {
+        public int CurrentPage { get; set; } = 1;
+        public int PageSize { get; set; } = 24;
+        public int TotalPages { get; set; } = 0;
+    }
+
+    public class DialogState
+    {
+        public bool ShowFileDialog { get; set; } = false;
+        public bool ShowUploadDialog { get; set; } = false;
+    }
+
+    public class UploadState
+    {
+        public List<IBrowserFile> SelectedFiles { get; set; } = new();
+        public Dictionary<string, int> UploadProgress { get; set; } = new();
+    }
+
+    // State instances
+    private LoadingState loadingState = new();
+    private SearchState searchState = new();
+    private PaginationState paginationState = new();
+    private DialogState dialogState = new();
+    private UploadState uploadState = new();
+
+    // Data
+    private PagedResult<FileDto> files = new();
+    private ViewMode currentViewMode = ViewMode.Grid;
+    private FileDto? selectedFile = null;
+
+    // Form models and validation
+    private UpdateFileDto fileModel = new();
+    private Dictionary<string, string> fileValidationErrors = new();
+
+    // Component references
+    private FormDialog? fileDialog;
+    private GenericDialog? uploadDialog;
+    private ConfirmationDialog? deleteFileDialog;
+    private FileUpload? fileUpload;
+    private FilePreview? filePreview;
+
+    // Performance optimization
+    private readonly SemaphoreSlim loadingSemaphore = new(1, 1);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            paginationState.PageSize = DefaultPageSize;
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to initialize page: {ex.Message}");
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (TargetFileType == default || string.IsNullOrEmpty(FileTypeName))
+        {
+            throw new InvalidOperationException("TargetFileType and FileTypeName parameters are required");
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (!await loadingSemaphore.WaitAsync(100))
+        {
+            return; // Skip if already loading
+        }
+
+        try
+        {
+            loadingState.IsLoading = true;
+            StateHasChanged();
+
+            var searchTerm = string.IsNullOrEmpty(searchState.SearchTerm) ? null : searchState.SearchTerm;
+
+            files = await FileService.GetFilesAsync(
+                paginationState.CurrentPage,
+                paginationState.PageSize,
+                null, // folderId - not handling folder navigation in this base component
+                searchTerm,
+                TargetFileType
+            );
+
+            // Update pagination state
+            paginationState.TotalPages = files.TotalPages;
+
+            // Validate pagination integrity
+            if (paginationState.CurrentPage > paginationState.TotalPages && paginationState.TotalPages > 0)
+            {
+                paginationState.CurrentPage = 1;
+                await LoadDataAsync(); // Reload with corrected page
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load {FileTypeName.ToLower()}: {ex.Message}");
+            files = new PagedResult<FileDto>();
+        }
+        finally
+        {
+            loadingState.IsLoading = false;
+            loadingSemaphore.Release();
+            StateHasChanged();
+        }
+    }
+
+    private async Task ForceRefreshData()
+    {
+        try
+        {
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to refresh data: {ex.Message}");
+        }
+    }
+
+    private void OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        searchState.SearchTimer?.Dispose();
+        searchState.SearchTimer = new Timer(async _ =>
+        {
+            paginationState.CurrentPage = 1;
+            await InvokeAsync(LoadDataAsync);
+        }, null, 300, Timeout.Infinite);
+    }
+
+    private void ClearSearch()
+    {
+        searchState.SearchTerm = string.Empty;
+        paginationState.CurrentPage = 1;
+        _ = LoadDataAsync();
+    }
+
+    private async Task OnPageChanged(int page)
+    {
+        if (page == paginationState.CurrentPage || loadingState.IsLoading)
+            return;
+
+        paginationState.CurrentPage = page;
+        await LoadDataAsync();
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadDataAsync();
+    }
+
+    private void SetViewMode(ViewMode mode)
+    {
+        currentViewMode = mode;
+        StateHasChanged();
+    }
+
+    // File Management Operations
+    private async Task ShowEditFileDialog(FileDto file)
+    {
+        selectedFile = file;
+        fileModel = new UpdateFileDto
+        {
+            Description = file.Description,
+            Alt = file.Alt,
+            IsPublic = file.IsPublic,
+            FolderId = file.FolderId,
+            Tags = file.Tags ?? new Dictionary<string, object>()
+        };
+        fileValidationErrors.Clear();
+        dialogState.ShowFileDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseFileDialog()
+    {
+        dialogState.ShowFileDialog = false;
+        fileModel = new UpdateFileDto();
+        selectedFile = null;
+        fileValidationErrors.Clear();
+        StateHasChanged();
+    }
+
+    private async Task SaveFile()
+    {
+        if (loadingState.IsSaving || selectedFile == null) return;
+
+        try
+        {
+            loadingState.IsSaving = true;
+            StateHasChanged();
+
+            await FileService.UpdateFileAsync(selectedFile.Id, fileModel);
+            NotificationService.ShowSuccess($"{FileTypeName} updated successfully");
+
+            CloseFileDialog();
+            await ForceRefreshData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to save {FileTypeName.ToLower()}: {ex.Message}");
+        }
+        finally
+        {
+            loadingState.IsSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ShowDeleteFileConfirmation(FileDto file)
+    {
+        selectedFile = file;
+        deleteFileDialog?.Show();
+    }
+
+    private async Task DeleteFile()
+    {
+        if (selectedFile == null) return;
+
+        try
+        {
+            await FileService.DeleteFileAsync(selectedFile.Id);
+            NotificationService.ShowSuccess($"{FileTypeName} deleted successfully");
+            await ForceRefreshData();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to delete {FileTypeName.ToLower()}: {ex.Message}");
+        }
+    }
+
+    private async Task PreviewFile(FileDto file)
+    {
+        filePreview?.ShowPreview(file);
+    }
+
+    private async Task DownloadFile(FileDto file)
+    {
+        try
+        {
+            await FileService.DownloadFileAsync(file.Id);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to download {FileTypeName.ToLower()}: {ex.Message}");
+        }
+    }
+
+    // Upload Management
+    private void ShowUploadDialog()
+    {
+        uploadState.SelectedFiles.Clear();
+        uploadState.UploadProgress.Clear();
+        dialogState.ShowUploadDialog = true;
+        StateHasChanged();
+    }
+
+    private void CloseUploadDialog()
+    {
+        dialogState.ShowUploadDialog = false;
+        uploadState.SelectedFiles.Clear();
+        uploadState.UploadProgress.Clear();
+        fileUpload?.ClearFiles();
+        StateHasChanged();
+    }
+
+    private async Task UploadFiles()
+    {
+        if (!uploadState.SelectedFiles.Any() || loadingState.IsUploading) return;
+
+        var validFiles = uploadState.SelectedFiles;
+        if (FileTypeValidator != null)
+        {
+            validFiles = uploadState.SelectedFiles.Where(f => FileTypeValidator(f.ContentType)).ToList();
+        }
+        else
+        {
+            validFiles = uploadState.SelectedFiles.Where(f => IsValidFileType(f.ContentType)).ToList();
+        }
+
+        if (!validFiles.Any())
+        {
+            NotificationService.ShowWarning($"Please select at least one valid {FileTypeName.ToLower()} file");
+            return;
+        }
+
+        try
+        {
+            loadingState.IsUploading = true;
+            StateHasChanged();
+
+            var uploadTasks = validFiles.Select(async file =>
+            {
+                try
+                {
+                    using var memoryStream = new MemoryStream();
+                    var maxSize = GetMaxFileSize();
+                    await file.OpenReadStream(maxAllowedSize: maxSize).CopyToAsync(memoryStream);
+                    memoryStream.Position = 0;
+
+                    var formFile = new FormFile(memoryStream, 0, memoryStream.Length, file.Name, file.Name)
+                    {
+                        Headers = new HeaderDictionary(),
+                        ContentType = file.ContentType
+                    };
+
+                    var uploadDto = new FileUploadDto
+                    {
+                        File = formFile,
+                        FolderId = null, // Not handling folder upload in base component
+                        IsPublic = false,
+                        GenerateThumbnail = TargetFileType == FileType.Image
+                    };
+
+                    return await FileService.UploadFileAsync(uploadDto);
+                }
+                catch (Exception ex)
+                {
+                    NotificationService.ShowError($"Failed to upload {file.Name}: {ex.Message}");
+                    return null;
+                }
+            });
+
+            var results = await Task.WhenAll(uploadTasks);
+            var successCount = results.Count(r => r != null);
+
+            if (successCount > 0)
+            {
+                NotificationService.ShowSuccess($"Successfully uploaded {successCount} {FileTypeName.ToLower()}(s)");
+                CloseUploadDialog();
+                await ForceRefreshData();
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to upload {FileTypeName.ToLower()}: {ex.Message}");
+        }
+        finally
+        {
+            loadingState.IsUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private Task OnFilesChanged(List<IBrowserFile> files)
+    {
+        uploadState.SelectedFiles = files;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private Task OnUploadProgressChanged(Dictionary<string, int> progress)
+    {
+        uploadState.UploadProgress = progress;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    // Helper methods for file type validation and styling
+    private bool IsValidFileType(string contentType)
+    {
+        return TargetFileType switch
+        {
+            FileType.Image => contentType.StartsWith("image/"),
+            FileType.Video => contentType.StartsWith("video/"),
+            FileType.Audio => contentType.StartsWith("audio/"),
+            FileType.Document => IsDocumentType(contentType),
+            _ => true
+        };
+    }
+
+    private bool IsDocumentType(string contentType)
+    {
+        return contentType.Contains("pdf") ||
+               contentType.Contains("word") ||
+               contentType.Contains("excel") ||
+               contentType.Contains("powerpoint") ||
+               contentType.Contains("text") ||
+               contentType.Contains("document");
+    }
+
+    private long GetMaxFileSize()
+    {
+        return TargetFileType switch
+        {
+            FileType.Image => 10 * 1024 * 1024,   // 10MB
+            FileType.Video => 100 * 1024 * 1024,  // 100MB
+            FileType.Audio => 50 * 1024 * 1024,   // 50MB
+            FileType.Document => 50 * 1024 * 1024,// 50MB
+            _ => 10 * 1024 * 1024
+        };
+    }
+
+    private string GetFileTypeIcon()
+    {
+        return TargetFileType switch
+        {
+            FileType.Image => "fas fa-images",
+            FileType.Video => "fas fa-video",
+            FileType.Audio => "fas fa-music",
+            FileType.Document => "fas fa-file-alt",
+            _ => "fas fa-file"
+        };
+    }
+
+    private string GetHeaderGradient()
+    {
+        return TargetFileType switch
+        {
+            FileType.Image => "from-green-500 to-green-600",
+            FileType.Video => "from-blue-500 to-blue-600",
+            FileType.Audio => "from-purple-500 to-purple-600",
+            FileType.Document => "from-red-500 to-red-600",
+            _ => "from-gray-500 to-gray-600"
+        };
+    }
+
+    private string GetCountBadgeClass()
+    {
+        return TargetFileType switch
+        {
+            FileType.Image => "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+            FileType.Video => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+            FileType.Audio => "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+            FileType.Document => "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+            _ => "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+        };
+    }
+
+    private string GetPrimaryButtonClass()
+    {
+        return TargetFileType switch
+        {
+            FileType.Image => "bg-green-600 hover:bg-green-700 focus:ring-green-500",
+            FileType.Video => "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500",
+            FileType.Audio => "bg-purple-600 hover:bg-purple-700 focus:ring-purple-500",
+            FileType.Document => "bg-red-600 hover:bg-red-700 focus:ring-red-500",
+            _ => "bg-gray-600 hover:bg-gray-700 focus:ring-gray-500"
+        };
+    }
+
+    public void Dispose()
+    {
+        searchState.SearchTimer?.Dispose();
+        loadingSemaphore?.Dispose();
+    }
+}
