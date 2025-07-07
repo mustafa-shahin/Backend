@@ -15,7 +15,7 @@ namespace Backend.CMS.API.Controllers
     [ApiController]
     [Route("api/v{version:apiVersion}/folder")]
     [ApiVersion("1.0")]
-    [ApiVersion("2.0")]
+     
     [Authorize]
     [EnableRateLimiting("ApiPolicy")]
     public class FolderController : ControllerBase

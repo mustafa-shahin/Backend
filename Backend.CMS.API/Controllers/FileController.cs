@@ -19,7 +19,7 @@ namespace Backend.CMS.API.Controllers
     [ApiController]
     [Route("api/v{version:apiVersion}/file")]
     [ApiVersion("1.0")]
-    [ApiVersion("2.0")]
+     
     [Authorize]
     [EnableRateLimiting("ApiPolicy")]
     public class FileController : ControllerBase

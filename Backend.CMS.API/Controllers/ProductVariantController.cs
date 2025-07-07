@@ -14,7 +14,7 @@ namespace Backend.CMS.API.Controllers
     [ApiController]
     [Route("api/v{version:apiVersion}/product-variant")]
     [ApiVersion("1.0")]
-    [ApiVersion("2.0")]
+     
     [EnableRateLimiting("ApiPolicy")]
     public class ProductVariantController : ControllerBase
     {

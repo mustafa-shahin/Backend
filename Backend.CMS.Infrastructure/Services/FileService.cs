@@ -6,12 +6,12 @@ using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
+using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -83,7 +83,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var fileType = _fileValidationService.GetFileType(uploadDto.File.FileName, uploadDto.File.ContentType);
 
                 var originalFileName = uploadDto.File.FileName;
-                var storedFileName = $"{cleanFileName}_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}[..8]{fileExtension}";
+                var storedFileName = $"{cleanFileName}_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString()[..8]}{fileExtension}";
 
                 // Read file content efficiently
                 byte[] fileContent;
@@ -317,8 +317,8 @@ namespace Backend.CMS.Infrastructure.Services
                 var pageNumber = Math.Max(1, searchDto.PageNumber);
                 var pageSize = Math.Clamp(searchDto.PageSize, 1, 100);
 
-                // Build query
-                var query = await BuildFileQueryAsync(searchDto);
+                // Build query using EF queryable
+                var query = BuildFileQuery(searchDto);
 
                 // Apply sorting
                 query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
@@ -326,7 +326,7 @@ namespace Backend.CMS.Infrastructure.Services
                 // Get total count for pagination
                 var totalCount = await query.CountAsync();
 
-                // Apply pagination
+                // Apply pagination and get results
                 var files = await query
                     .Skip((pageNumber - 1) * pageSize)
                     .Take(pageSize)
@@ -528,7 +528,7 @@ namespace Backend.CMS.Infrastructure.Services
             var currentUserId = _userSessionService.GetCurrentUserId();
 
             var newFileName = copyDto.NewName ?? $"Copy of {originalFile.OriginalFileName}";
-            var newStoredFileName = $"copy_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}[..8]{originalFile.FileExtension}";
+            var newStoredFileName = $"copy_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString()[..8]}{originalFile.FileExtension}";
 
             // Create new file entity with copied content
             var newFile = new FileEntity
@@ -631,22 +631,6 @@ namespace Backend.CMS.Infrastructure.Services
             return previewDto;
         }
 
-        [Obsolete("URLs are now automatically generated in DTOs")]
-        public async Task<string> GenerateFileUrlAsync(int fileId, bool thumbnail = false)
-        {
-            var file = await _fileRepository.GetByIdAsync(fileId);
-            if (file == null)
-                throw new ArgumentException("File not found");
-
-            var urlSet = _fileUrlBuilder.GenerateFileUrls(file);
-
-            if (thumbnail && !string.IsNullOrEmpty(urlSet.ThumbnailUrl))
-            {
-                return urlSet.ThumbnailUrl;
-            }
-
-            return urlSet.DownloadUrl;
-        }
 
         public async Task<bool> GenerateThumbnailAsync(int fileId)
         {
@@ -722,23 +706,33 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<FileDto>> GetRecentFilesAsync(int count = 10)
         {
-            var files = await _fileRepository.GetAllAsync();
-            var recentFiles = files.OrderByDescending(f => f.CreatedAt).Take(Math.Clamp(count, 1, 50));
-            return await MapFilesToDtos(recentFiles);
+            var query = _fileRepository.GetQueryable()
+                .OrderByDescending(f => f.CreatedAt)
+                .Take(Math.Clamp(count, 1, 50));
+
+            var files = await query.ToListAsync();
+            return await MapFilesToDtos(files);
         }
 
         public async Task<Dictionary<string, object>> GetFileStatisticsAsync()
         {
-            var files = await _fileRepository.GetAllAsync();
+            var query = _fileRepository.GetQueryable();
 
-            var totalFiles = files.Count();
-            var totalSize = files.Sum(f => f.FileSize);
-            var totalDownloads = files.Sum(f => f.DownloadCount);
+            var totalFiles = await query.CountAsync();
+            var totalSize = await query.SumAsync(f => f.FileSize);
+            var totalDownloads = await query.SumAsync(f => f.DownloadCount);
 
-            var filesByType = files.GroupBy(f => f.FileType)
-                                  .ToDictionary(g => g.Key.ToString(), g => g.Count());
+            var filesByType = await query
+                .GroupBy(f => f.FileType)
+                .Select(g => new { Type = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.Type.ToString(), x => (object)x.Count);
 
             var averageFileSize = totalFiles > 0 ? totalSize / totalFiles : 0;
+
+            var lastUpload = await query
+                .OrderByDescending(f => f.CreatedAt)
+                .Select(f => f.CreatedAt)
+                .FirstOrDefaultAsync();
 
             return new Dictionary<string, object>
             {
@@ -749,7 +743,7 @@ namespace Backend.CMS.Infrastructure.Services
                 ["averageFileSize"] = averageFileSize,
                 ["averageFileSizeFormatted"] = FormatFileSize(averageFileSize),
                 ["filesByType"] = filesByType,
-                ["lastUpload"] = files.Any() ? files.Max(f => f.CreatedAt) : (DateTime?)null,
+                ["lastUpload"] = totalFiles > 0 ? lastUpload : (DateTime?)null,
                 ["generatedAt"] = DateTime.UtcNow
             };
         }
@@ -787,11 +781,14 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<long> GetTotalFileSizeAsync(int? folderId = null)
         {
-            var files = folderId.HasValue
-                ? await _fileRepository.FindAsync(f => f.FolderId == folderId.Value)
-                : await _fileRepository.GetAllAsync();
+            var query = _fileRepository.GetQueryable();
 
-            return files.Sum(f => f.FileSize);
+            if (folderId.HasValue)
+            {
+                query = query.Where(f => f.FolderId == folderId.Value);
+            }
+
+            return await query.SumAsync(f => f.FileSize);
         }
 
         #endregion
@@ -874,7 +871,10 @@ namespace Backend.CMS.Infrastructure.Services
 
             foreach (var batch in batches)
             {
-                var files = await _fileRepository.FindAsync(f => batch.Contains(f.Id));
+                var query = _fileRepository.GetQueryable()
+                    .Where(f => batch.Contains(f.Id));
+
+                var files = await query.ToListAsync();
 
                 foreach (var file in files)
                 {
@@ -918,12 +918,20 @@ namespace Backend.CMS.Infrastructure.Services
             var currentUserId = _userSessionService.GetCurrentUserId();
             var successCount = 0;
 
-            foreach (var fileId in fileIds)
+            // Process in batches for better performance
+            const int batchSize = 50;
+            var batches = fileIds.Chunk(batchSize);
+
+            foreach (var batch in batches)
             {
                 try
                 {
-                    var file = await _fileRepository.GetByIdAsync(fileId);
-                    if (file != null)
+                    var query = _fileRepository.GetQueryable()
+                        .Where(f => batch.Contains(f.Id));
+
+                    var files = await query.ToListAsync();
+
+                    foreach (var file in files)
                     {
                         file.FolderId = destinationFolderId;
                         file.UpdatedAt = DateTime.UtcNow;
@@ -932,14 +940,15 @@ namespace Backend.CMS.Infrastructure.Services
                         _fileRepository.Update(file);
                         successCount++;
                     }
+
+                    await _fileRepository.SaveChangesAsync();
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to move file: {FileId}", fileId);
+                    _logger.LogError(ex, "Failed to move files in batch: {BatchFiles}", string.Join(",", batch));
                 }
             }
 
-            await _fileRepository.SaveChangesAsync();
             return successCount == fileIds.Count;
         }
 
@@ -973,17 +982,16 @@ namespace Backend.CMS.Infrastructure.Services
 
         #region Private Helper Methods
 
-        private async Task<IQueryable<FileEntity>> BuildFileQueryAsync(FileSearchDto searchDto)
+        private IQueryable<FileEntity> BuildFileQuery(FileSearchDto searchDto)
         {
-            var files = await _fileRepository.GetAllAsync();
-            var query = files.AsQueryable();
+            var query = _fileRepository.GetQueryable();
 
-            // Apply filters efficiently
+            // Apply filters efficiently at database level
             if (!string.IsNullOrEmpty(searchDto.SearchTerm))
             {
                 var searchTermLower = searchDto.SearchTerm.ToLowerInvariant();
-                query = query.Where(f => f.OriginalFileName.ToLower().Contains(searchTermLower) ||
-                                        (f.Description != null && f.Description.ToLower().Contains(searchTermLower)));
+                query = query.Where(f => EF.Functions.Like(f.OriginalFileName.ToLower(), $"%{searchTermLower}%") ||
+                                        (f.Description != null && EF.Functions.Like(f.Description.ToLower(), $"%{searchTermLower}%")));
             }
 
             if (searchDto.FileType.HasValue)

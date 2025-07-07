@@ -15,7 +15,6 @@ namespace Backend.CMS.API.Controllers
     [ApiController]
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
-    [ApiVersion("2.0")]
     [EnableRateLimiting("ApiPolicy")]
     public class CategoryController : ControllerBase
     {
@@ -43,9 +42,7 @@ namespace Backend.CMS.API.Controllers
         [AllowAnonymous]
         [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
         public async Task<ActionResult<PagedResult<CategoryDto>>> GetCategories(
             [FromQuery] int pageNumber = 1,
             [FromQuery] int? parentCategoryId = null,
@@ -96,9 +93,7 @@ namespace Backend.CMS.API.Controllers
         [HttpGet("tree")]
         [AllowAnonymous]
         [ProducesResponseType(typeof(List<CategoryTreeDto>), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
         public async Task<ActionResult<List<CategoryTreeDto>>> GetCategoryTree()
         {
             try
@@ -123,9 +118,7 @@ namespace Backend.CMS.API.Controllers
         [AllowAnonymous]
         [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]        
         public async Task<ActionResult<PagedResult<CategoryDto>>> GetRootCategories(
             [FromQuery] int pageNumber = 1)
         {
@@ -160,9 +153,7 @@ namespace Backend.CMS.API.Controllers
         [AllowAnonymous]
         [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
         public async Task<ActionResult<CategoryDto>> GetCategory(int id)
         {
             try
@@ -197,9 +188,7 @@ namespace Backend.CMS.API.Controllers
         [AllowAnonymous]
         [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]     
         public async Task<ActionResult<CategoryDto>> GetCategoryBySlug(string slug)
         {
             try
@@ -233,9 +222,7 @@ namespace Backend.CMS.API.Controllers
         [AllowAnonymous]
         [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
         public async Task<ActionResult<PagedResult<CategoryDto>>> GetSubCategories(
             int id,
             [FromQuery] int pageNumber = 1)
@@ -276,9 +263,7 @@ namespace Backend.CMS.API.Controllers
         [AllowAnonymous]
         [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
         public async Task<ActionResult<PagedResult<CategoryDto>>> SearchCategories([FromBody] CategorySearchDto searchDto)
         {
             try
@@ -317,9 +302,7 @@ namespace Backend.CMS.API.Controllers
         [AdminOrDev]
         [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]        
         public async Task<ActionResult<CategoryDto>> CreateCategory([FromBody] CreateCategoryDto createCategoryDto)
         {
             try
@@ -358,9 +341,7 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]        
         public async Task<ActionResult<CategoryDto>> UpdateCategory(int id, [FromBody] UpdateCategoryDto updateCategoryDto)
         {
             try
@@ -403,9 +384,7 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]    
         public async Task<ActionResult> DeleteCategory(int id)
         {
             try
@@ -445,9 +424,7 @@ namespace Backend.CMS.API.Controllers
         [AdminOrDev]
         [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]    
         public async Task<ActionResult<CategoryDto>> MoveCategory(int id, [FromBody] MoveCategoryDto moveCategoryDto)
         {
             try
@@ -490,8 +467,6 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(typeof(List<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
         public async Task<ActionResult<List<CategoryDto>>> ReorderCategories([FromBody] ReorderCategoriesDto reorderDto)
         {
             try
@@ -531,8 +506,6 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
         public async Task<ActionResult<object>> ValidateSlug([FromQuery] string slug, [FromQuery] int? excludeCategoryId = null)
         {
             try
@@ -560,8 +533,6 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
         public async Task<ActionResult<object>> CanDelete(int id)
         {
             try
@@ -594,8 +565,6 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(typeof(CategoryImageDto), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
         public async Task<ActionResult<CategoryImageDto>> AddCategoryImage(int id, [FromBody] CreateCategoryImageDto createImageDto)
         {
             try
@@ -639,8 +608,6 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(typeof(CategoryImageDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
         public async Task<ActionResult<CategoryImageDto>> UpdateCategoryImage(int imageId, [FromBody] UpdateCategoryImageDto updateImageDto)
         {
             try
@@ -683,8 +650,6 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
         public async Task<ActionResult> DeleteCategoryImage(int imageId)
         {
             try
@@ -720,8 +685,6 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(typeof(List<CategoryImageDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        [MapToApiVersion("1.0")]
-        [MapToApiVersion("2.0")]
         public async Task<ActionResult<List<CategoryImageDto>>> ReorderCategoryImages(int id, [FromBody] ReorderCategoryImagesDto reorderDto)
         {
             try

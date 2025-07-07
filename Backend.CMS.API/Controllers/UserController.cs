@@ -16,7 +16,7 @@ namespace Backend.CMS.API.Controllers
     [ApiController]
     [Route("api/v{version:apiVersion}/user")]
     [ApiVersion("1.0")]
-    [ApiVersion("2.0")]
+     
     [AdminOrDev]
     [EnableRateLimiting("ApiPolicy")]
     public class UserController : ControllerBase

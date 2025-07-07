@@ -15,7 +15,7 @@ namespace Backend.CMS.API.Controllers
     [ApiController]
     [Route("api/v{version:apiVersion}/product")]
     [ApiVersion("1.0")]
-    [ApiVersion("2.0")]
+     
     [EnableRateLimiting("ApiPolicy")]
     public class ProductController : ControllerBase
     {

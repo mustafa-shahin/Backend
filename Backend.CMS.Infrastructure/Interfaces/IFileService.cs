@@ -144,14 +144,6 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// <returns>Preview DTO with all relevant URLs</returns>
         Task<FilePreviewDto> GetFilePreviewAsync(int fileId);
 
-        /// <summary>
-        /// Generate file URL (deprecated - URLs are now auto-generated)
-        /// </summary>
-        /// <param name="fileId">File identifier</param>
-        /// <param name="thumbnail">Whether to generate thumbnail URL</param>
-        /// <returns>Generated URL</returns>
-        [Obsolete("URLs are now automatically generated in DTOs")]
-        Task<string> GenerateFileUrlAsync(int fileId, bool thumbnail = false);
 
         /// <summary>
         /// Generate thumbnail for image files
