@@ -616,5 +616,16 @@ namespace Frontend.Services
                 _ => "from-gray-500 to-gray-600"
             };
         }
+        public string GetStatusBadgeClasses(PageStatus status)
+        {
+            return status switch
+            {
+                Backend.CMS.Domain.Enums.PageStatus.Published => "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+                Backend.CMS.Domain.Enums.PageStatus.Draft => "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+                Backend.CMS.Domain.Enums.PageStatus.Scheduled => "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+                Backend.CMS.Domain.Enums.PageStatus.Archived => "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+                _ => "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+            };
+        }
     }
 }

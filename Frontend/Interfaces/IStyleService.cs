@@ -65,5 +65,6 @@ namespace Frontend.Interfaces
         string GetHeaderGradient(FileType fileType);
         string GetFileTypeIcon(FileType fileType);
         long GetMaxFileSize(FileType fileType);
+        string GetStatusBadgeClasses(PageStatus status);
     }
 }
