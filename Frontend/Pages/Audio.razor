@@ -3,16 +3,29 @@
 
 <PageTitle>Audio - Media Library</PageTitle>
 
-<FileManagementBase TargetFileType="FileType.Audio"
+<FileManagementBase TargetFileType="Backend.CMS.Domain.Enums.FileType.Audio"
                     FileTypeName="Audio"
                     PageTitle="Audio Files"
-                    PageDescription="Manage your audio files"
+                    PageDescription="Manage your audio files including music, podcasts, and sound effects"
                     FileTypeValidator="@IsAudioFile"
                     DefaultPageSize="20" />
 
 @code {
     private bool IsAudioFile(string contentType)
     {
-        return contentType.StartsWith("audio/");
+        return contentType.StartsWith("audio/") && (
+            contentType.Contains("mp3") ||
+            contentType.Contains("wav") ||
+            contentType.Contains("ogg") ||
+            contentType.Contains("flac") ||
+            contentType.Contains("aac") ||
+            contentType.Contains("m4a") ||
+            contentType.Contains("wma") ||
+            contentType.Contains("opus") ||
+            contentType.Contains("amr") ||
+            contentType.Contains("aiff") ||
+            contentType.Contains("au") ||
+            contentType.Contains("ra")
+        );
     }
 }

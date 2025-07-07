@@ -121,6 +121,7 @@ else
     private bool showDetails = false;
     private string errorId = string.Empty;
 
+
     protected override async Task OnErrorAsync(Exception exception)
     {
         errorId = Guid.NewGuid().ToString("N")[..8].ToUpper();
@@ -131,17 +132,78 @@ else
             Message = exception.Message,
             Type = exception.GetType().Name,
             StackTrace = exception.StackTrace,
+            InnerException = exception.InnerException?.Message,
+            Source = exception.Source,
+            TargetSite = exception.TargetSite?.ToString(),
+            Data = exception.Data.Count > 0 ? exception.Data : null,
             Timestamp = DateTime.UtcNow,
-            UserAgent = await JSRuntime.InvokeAsync<string>("eval", "navigator.userAgent"),
-            Url = Navigation.Uri
+            UserAgent = await GetUserAgentSafely(),
+            Url = Navigation.Uri,
+            ComponentStack = await GetComponentStackSafely()
         };
 
-        await JSRuntime.InvokeVoidAsync("console.error", $"ErrorBoundary caught exception [{errorId}]:", errorInfo);
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("console.error", $"ErrorBoundary caught exception [{errorId}]:", errorInfo);
+
+            // Log to window error handler if available
+            await JSRuntime.InvokeVoidAsync("eval", $@"
+                if (window.errorHandler) {{
+                    window.errorHandler.logError(new Error('{exception.Message}'), {{
+                        type: 'blazor-component',
+                        errorId: '{errorId}',
+                        component: 'ErrorBoundary',
+                        url: '{Navigation.Uri}'
+                    }});
+                }}
+            ");
+        }
+        catch
+        {
+            // Fallback logging if JS interop fails
+            Console.WriteLine($"Error Boundary [{errorId}]: {exception.Message}");
+        }
 
         // could also send this to a logging service here
         // await LoggingService.LogErrorAsync(errorInfo);
     }
-
+    private async Task<string> GetUserAgentSafely()
+    {
+        try
+        {
+            return await JSRuntime.InvokeAsync<string>("eval", "navigator.userAgent");
+        }
+        catch
+        {
+            return "Unknown";
+        }
+    }
+    private async Task<string> GetComponentStackSafely()
+    {
+        try
+        {
+            // Try to get more context about the component hierarchy
+            return await JSRuntime.InvokeAsync<string>("eval", @"
+                try {
+                    const stack = [];
+                    let element = document.activeElement;
+                    while (element && element !== document.body) {
+                        if (element.getAttribute && element.getAttribute('data-blazor-component')) {
+                            stack.push(element.getAttribute('data-blazor-component'));
+                        }
+                        element = element.parentElement;
+                    }
+                    return stack.join(' > ') || 'No component stack available';
+                } catch (e) {
+                    return 'Unable to determine component stack';
+                }
+            ");
+        }
+        catch
+        {
+            return "Component stack unavailable";
+        }
+    }
     private async Task TryRecover()
     {
         try

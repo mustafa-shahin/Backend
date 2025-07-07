@@ -1,4 +1,6 @@
-﻿@if (IsVisible)
+﻿@using Frontend.Interfaces
+@inject IStyleService StyleService
+@if (IsVisible)
 {
     <div class="fixed inset-0 z-50 overflow-y-auto">
         <!-- Backdrop -->
@@ -44,14 +46,14 @@
                 <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 flex justify-end space-x-3">
                     <button @onclick="Cancel"
                             type="button"
-                            class="btn-secondary"
+                            class="@StyleService.GetButtonClass("secondry", "medium")"
                             disabled="@IsProcessing">
                         @CancelText
                     </button>
 
                     <button @onclick="Confirm"
                             type="button"
-                            class="@ConfirmClass"
+                            class="@StyleService.GetButtonClass("danger", "medium")"
                             disabled="@IsProcessing">
                         @if (IsProcessing)
                         {
@@ -92,37 +94,60 @@
     [Parameter] public EventCallback OnConfirm { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
 
+    // Internal state to track if we're currently processing
+    private bool _internalProcessing = false;
+
     private async Task Confirm()
     {
-        if (IsProcessing) return;
-
-        IsProcessing = true;
-        StateHasChanged();
+        if (_internalProcessing || IsProcessing) return;
 
         try
         {
+            _internalProcessing = true;
+            StateHasChanged();
+
             await OnConfirm.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error in confirmation action: {ex.Message}");
         }
         finally
         {
-            IsProcessing = false;
-            IsVisible = false;
+            _internalProcessing = false;
+
+            // Only auto-hide if the parent isn't managing visibility
+            if (!IsProcessing)
+            {
+                IsVisible = false;
+            }
+
             StateHasChanged();
         }
     }
 
     private async Task Cancel()
     {
-        if (IsProcessing) return;
+        if (_internalProcessing || IsProcessing) return;
 
-        IsVisible = false;
-        await OnCancel.InvokeAsync();
-        StateHasChanged();
+        try
+        {
+            IsVisible = false;
+            await OnCancel.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error in cancel action: {ex.Message}");
+        }
+        finally
+        {
+            StateHasChanged();
+        }
     }
 
     private async Task HandleBackdropClick()
     {
-        if (CloseOnBackdrop && !IsProcessing)
+        if (CloseOnBackdrop && !IsProcessing && !_internalProcessing)
         {
             await Cancel();
         }
@@ -143,12 +168,23 @@
     public void Show()
     {
         IsVisible = true;
+        _internalProcessing = false;
         StateHasChanged();
     }
 
     public void Hide()
     {
         IsVisible = false;
+        _internalProcessing = false;
         StateHasChanged();
+    }
+
+    protected override void OnParametersSet()
+    {
+        // Reset internal processing state when visibility changes from outside
+        if (!IsVisible)
+        {
+            _internalProcessing = false;
+        }
     }
 }

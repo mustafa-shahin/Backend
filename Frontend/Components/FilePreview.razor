@@ -228,17 +228,33 @@
 
     private async Task DownloadFile()
     {
-
         if (selectedFile != null)
         {
-            if (OnDownloadFile.HasDelegate)
+            try
             {
-               await FileSerive.DownloadFileAsync(selectedFile.Id);
+                if (OnDownloadFile.HasDelegate)
+                {
+                    await OnDownloadFile.InvokeAsync(selectedFile);
+                }
+                else
+                {
+                    await FileSerive.DownloadFileAsync(selectedFile.Id);
+                }
             }
-            else
+            catch (Exception ex)
             {
-                var downloadUrl = FileSerive.GetFileUrl(selectedFile.Id);
-                await JSRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, selectedFile.OriginalFileName);
+                Console.Error.WriteLine($"Error downloading file: {ex.Message}");
+
+                // Fallback to direct download
+                try
+                {
+                    var downloadUrl = FileSerive.GetFileUrl(selectedFile.Id);
+                    await JSRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, selectedFile.OriginalFileName);
+                }
+                catch (Exception fallbackEx)
+                {
+                    Console.Error.WriteLine($"Fallback download also failed: {fallbackEx.Message}");
+                }
             }
         }
     }

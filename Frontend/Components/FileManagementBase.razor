@@ -18,8 +18,8 @@
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between py-6 space-y-4 sm:space-y-0">
                 <div>
                     <div class="flex items-center">
-                        <div class="w-10 h-10 bg-gradient-to-br @GetHeaderGradient() rounded-lg flex items-center justify-center mr-4">
-                            <i class="@GetFileTypeIcon() text-white text-lg"></i>
+                        <div class="w-10 h-10 bg-gradient-to-br @StyleService.GetHeaderGradient(TargetFileType) rounded-lg flex items-center justify-center mr-4">
+                            <i class="@StyleService.GetFileTypeIcon(TargetFileType) text-white text-lg"></i>
                         </div>
                         <div>
                             <h1 class="text-2xl font-bold text-gray-900 dark:text-white">@PageTitle</h1>
@@ -27,7 +27,7 @@
                                 @PageDescription
                                 @if (files.TotalCount > 0)
                                 {
-                                    <span class="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium @GetCountBadgeClass()">
+                                    <span class="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium @StyleService.GetCountBadgeClass(TargetFileType)">
                                         @files.TotalCount total
                                     </span>
                                 }
@@ -37,7 +37,7 @@
                 </div>
                 <div class="flex items-center space-x-3">
                     <button @onclick="ShowUploadDialog"
-                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white @GetPrimaryButtonClass() transition-colors duration-200">
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white @StyleService.GetPrimaryButtonClass(TargetFileType) transition-colors duration-200">
                         <i class="fas fa-upload mr-2"></i>
                         Upload @FileTypeName
                     </button>
@@ -152,21 +152,21 @@
                 {
                     <div class="p-6">
                         <FileGridView Files="@files.Data"
-                                     OnEditFile="@ShowEditFileDialog"
-                                     OnDeleteFile="@ShowDeleteFileConfirmation"
-                                     OnDownloadFile="@DownloadFile"
-                                     OnPreviewFile="@PreviewFile" />
+                                      OnEditFile="@ShowEditFileDialog"
+                                      OnDeleteFile="@ShowDeleteFileConfirmation"
+                                      OnDownloadFile="@DownloadFile"
+                                      OnPreviewFile="@PreviewFile" />
                     </div>
                 }
                 else
                 {
                     <div class="overflow-x-auto">
                         <FileTableView Files="@files.Data"
-                                      FileType="@TargetFileType"
-                                      OnEditFile="@ShowEditFileDialog"
-                                      OnDeleteFile="@ShowDeleteFileConfirmation"
-                                      OnDownloadFile="@DownloadFile"
-                                      OnPreviewFile="@PreviewFile" />
+                                       FileType="@TargetFileType"
+                                       OnEditFile="@ShowEditFileDialog"
+                                       OnDeleteFile="@ShowDeleteFileConfirmation"
+                                       OnDownloadFile="@DownloadFile"
+                                       OnPreviewFile="@PreviewFile" />
                     </div>
                 }
             }
@@ -182,7 +182,7 @@
                             }
                             else
                             {
-                                <i class="@GetFileTypeIcon() text-gray-400 text-2xl"></i>
+                                <i class="@StyleService.GetFileTypeIcon(TargetFileType) text-gray-400 text-2xl"></i>
                             }
                         </div>
 
@@ -201,7 +201,7 @@
                                     Clear Search
                                 </button>
                                 <button @onclick="ShowUploadDialog"
-                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @GetPrimaryButtonClass() transition-colors">
+                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @StyleService.GetPrimaryButtonClass(TargetFileType) transition-colors">
                                     <i class="fas fa-upload mr-2"></i>
                                     Upload @FileTypeName
                                 </button>
@@ -216,7 +216,7 @@
                                 Get started by uploading your first @FileTypeName.ToLower(). You can organize them and manage them easily.
                             </p>
                             <button @onclick="ShowUploadDialog"
-                                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @GetPrimaryButtonClass() transition-colors">
+                                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @StyleService.GetPrimaryButtonClass(TargetFileType) transition-colors">
                                 <i class="fas fa-upload mr-2"></i>
                                 Upload Your First @FileTypeName
                             </button>
@@ -255,10 +255,9 @@
             OnSave="@SaveFile"
             CloseOnBackdrop="false">
 
-
-    <FormContent Context="context">
-        <FileEditForm Model="@((UpdateFileDto)context.Model)"
-                      ValidationErrors="@context.ValidationErrors"
+    <FormContent Context="formContext">
+        <FileEditForm Model="@((UpdateFileDto)formContext.Model)"
+                      ValidationErrors="@formContext.ValidationErrors"
                       OriginalFile="@selectedFile" />
     </FormContent>
 </FormDialog>
@@ -296,7 +295,9 @@
                     ConfirmText="Delete"
                     ConfirmClass="bg-red-600 hover:bg-red-700 focus:ring-red-500"
                     ConfirmIcon="fas fa-trash"
-                    OnConfirm="@DeleteFile" />
+                    OnConfirm="@DeleteFile"
+                    IsVisible="@dialogState.ShowDeleteDialog"
+                    IsProcessing="@loadingState.IsDeleting" />
 
 @code {
     // Parameters that must be set by the consuming page
@@ -320,12 +321,14 @@
 
     private string DeleteDialogTitle => $"Delete {FileTypeName}";
     private string DeleteDialogMessage => $"Are you sure you want to delete this {FileTypeName.ToLower()}? This action cannot be undone.";
+
     // State management classes
     public class LoadingState
     {
         public bool IsLoading { get; set; } = true;
         public bool IsSaving { get; set; } = false;
         public bool IsUploading { get; set; } = false;
+        public bool IsDeleting { get; set; } = false;
     }
 
     public class SearchState
@@ -345,6 +348,7 @@
     {
         public bool ShowFileDialog { get; set; } = false;
         public bool ShowUploadDialog { get; set; } = false;
+        public bool ShowDeleteDialog { get; set; } = false;
     }
 
     public class UploadState
@@ -394,9 +398,24 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (TargetFileType == default || string.IsNullOrEmpty(FileTypeName))
+        if (TargetFileType == default)
         {
-            throw new InvalidOperationException("TargetFileType and FileTypeName parameters are required");
+            throw new InvalidOperationException("TargetFileType parameter is required");
+        }
+
+        if (string.IsNullOrEmpty(FileTypeName))
+        {
+            throw new InvalidOperationException("FileTypeName parameter is required");
+        }
+
+        if (string.IsNullOrEmpty(PageTitle))
+        {
+            throw new InvalidOperationException("PageTitle parameter is required");
+        }
+
+        if (string.IsNullOrEmpty(PageDescription))
+        {
+            throw new InvalidOperationException("PageDescription parameter is required");
         }
     }
 
@@ -550,22 +569,40 @@
     private void ShowDeleteFileConfirmation(FileDto file)
     {
         selectedFile = file;
-        deleteFileDialog?.Show();
+        dialogState.ShowDeleteDialog = true;
+        StateHasChanged();
     }
 
     private async Task DeleteFile()
     {
-        if (selectedFile == null) return;
+        if (selectedFile == null || loadingState.IsDeleting) return;
 
         try
         {
-            await FileService.DeleteFileAsync(selectedFile.Id);
-            NotificationService.ShowSuccess($"{FileTypeName} deleted successfully");
-            await ForceRefreshData();
+            loadingState.IsDeleting = true;
+            StateHasChanged();
+
+            var success = await FileService.DeleteFileAsync(selectedFile.Id);
+            if (success)
+            {
+                NotificationService.ShowSuccess($"{FileTypeName} deleted successfully");
+                await ForceRefreshData();
+            }
+            else
+            {
+                NotificationService.ShowError($"Failed to delete {FileTypeName.ToLower()}");
+            }
         }
         catch (Exception ex)
         {
             NotificationService.ShowError($"Failed to delete {FileTypeName.ToLower()}: {ex.Message}");
+        }
+        finally
+        {
+            loadingState.IsDeleting = false;
+            dialogState.ShowDeleteDialog = false;
+            selectedFile = null;
+            StateHasChanged();
         }
     }
 
@@ -634,7 +671,7 @@
                 try
                 {
                     using var memoryStream = new MemoryStream();
-                    var maxSize = GetMaxFileSize();
+                    var maxSize = StyleService.GetMaxFileSize(TargetFileType);
                     await file.OpenReadStream(maxAllowedSize: maxSize).CopyToAsync(memoryStream);
                     memoryStream.Position = 0;
 
@@ -652,7 +689,8 @@
                         GenerateThumbnail = TargetFileType == FileType.Image
                     };
 
-                    return await FileService.UploadFileAsync(uploadDto);
+                    var result = await FileService.UploadFileAsync(uploadDto);
+                    return result?.File;
                 }
                 catch (Exception ex)
                 {
@@ -719,65 +757,9 @@
                contentType.Contains("document");
     }
 
-    private long GetMaxFileSize()
-    {
-        return TargetFileType switch
-        {
-            FileType.Image => 10 * 1024 * 1024,   // 10MB
-            FileType.Video => 100 * 1024 * 1024,  // 100MB
-            FileType.Audio => 50 * 1024 * 1024,   // 50MB
-            FileType.Document => 50 * 1024 * 1024,// 50MB
-            _ => 10 * 1024 * 1024
-        };
-    }
 
-    private string GetFileTypeIcon()
-    {
-        return TargetFileType switch
-        {
-            FileType.Image => "fas fa-images",
-            FileType.Video => "fas fa-video",
-            FileType.Audio => "fas fa-music",
-            FileType.Document => "fas fa-file-alt",
-            _ => "fas fa-file"
-        };
-    }
 
-    private string GetHeaderGradient()
-    {
-        return TargetFileType switch
-        {
-            FileType.Image => "from-green-500 to-green-600",
-            FileType.Video => "from-blue-500 to-blue-600",
-            FileType.Audio => "from-purple-500 to-purple-600",
-            FileType.Document => "from-red-500 to-red-600",
-            _ => "from-gray-500 to-gray-600"
-        };
-    }
 
-    private string GetCountBadgeClass()
-    {
-        return TargetFileType switch
-        {
-            FileType.Image => "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
-            FileType.Video => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-            FileType.Audio => "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
-            FileType.Document => "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
-            _ => "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-        };
-    }
-
-    private string GetPrimaryButtonClass()
-    {
-        return TargetFileType switch
-        {
-            FileType.Image => "bg-green-600 hover:bg-green-700 focus:ring-green-500",
-            FileType.Video => "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500",
-            FileType.Audio => "bg-purple-600 hover:bg-purple-700 focus:ring-purple-500",
-            FileType.Document => "bg-red-600 hover:bg-red-700 focus:ring-red-500",
-            _ => "bg-gray-600 hover:bg-gray-700 focus:ring-gray-500"
-        };
-    }
 
     public void Dispose()
     {

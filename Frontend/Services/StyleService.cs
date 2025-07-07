@@ -557,5 +557,64 @@ namespace Frontend.Services
 
             return $"{baseClass} {positionClass} {stateClass}";
         }
+        public string GetPrimaryButtonClass(FileType fileType)
+        {
+            return fileType switch
+            {
+                FileType.Image => "bg-green-600 hover:bg-green-700 focus:ring-green-500",
+                FileType.Video => "bg-blue-600 hover:bg-blue-700 focus:ring-blue-500",
+                FileType.Audio => "bg-purple-600 hover:bg-purple-700 focus:ring-purple-500",
+                FileType.Document => "bg-red-600 hover:bg-red-700 focus:ring-red-500",
+                _ => "bg-gray-600 hover:bg-gray-700 focus:ring-gray-500"
+            };
+        }
+        public string GetCountBadgeClass(FileType fileType)
+        {
+            return fileType switch
+            {
+                FileType.Image => "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+                FileType.Video => "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+                FileType.Audio => "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+                FileType.Document => "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+                _ => "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+            };
+        }
+
+
+        public long GetMaxFileSize(FileType fileType)
+        {
+            return fileType switch
+            {
+                FileType.Image => 10 * 1024 * 1024,   // 10MB
+                FileType.Video => 100 * 1024 * 1024,  // 100MB
+                FileType.Audio => 50 * 1024 * 1024,   // 50MB
+                FileType.Document => 50 * 1024 * 1024,// 50MB
+                _ => 10 * 1024 * 1024
+            };
+        }
+
+        public string GetFileTypeIcon(FileType fileType)
+        {
+            return fileType switch
+            {
+                FileType.Image => "fas fa-images",
+                FileType.Video => "fas fa-video",
+                FileType.Audio => "fas fa-music",
+                FileType.Document => "fas fa-file-alt",
+                _ => "fas fa-file"
+            };
+        }
+
+        public string GetHeaderGradient(FileType fileType)
+        {
+            return fileType switch
+            {
+                FileType.Image => "from-green-500 to-green-600",
+                FileType.Video => "from-blue-500 to-blue-600",
+                FileType.Audio => "from-purple-500 to-purple-600",
+                FileType.Document => "from-red-500 to-red-600",
+                _ => "from-gray-500 to-gray-600"
+            };
+        }
     }
 }

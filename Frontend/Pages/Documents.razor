@@ -3,10 +3,10 @@
 
 <PageTitle>Documents - Media Library</PageTitle>
 
-<FileManagementBase TargetFileType="FileType.Document"
+<FileManagementBase TargetFileType="Backend.CMS.Domain.Enums.FileType.Document"
                     FileTypeName="Documents"
                     PageTitle="Documents"
-                    PageDescription="Manage your document files"
+                    PageDescription="Manage your document files including PDFs, Word docs, Excel sheets, and more"
                     FileTypeValidator="@IsDocumentFile"
                     DefaultPageSize="20" />
 
@@ -19,6 +19,18 @@
                contentType.Contains("powerpoint") ||
                contentType.Contains("text") ||
                contentType.Contains("document") ||
-               contentType.Contains("application/");
+               contentType.Contains("application/vnd.openxmlformats") ||
+               contentType.Contains("application/vnd.ms-") ||
+               contentType.Contains("application/msword") ||
+               contentType.Contains("application/vnd.ms-excel") ||
+               contentType.Contains("application/vnd.ms-powerpoint") ||
+               contentType.Contains("text/plain") ||
+               contentType.Contains("text/csv") ||
+               contentType.Contains("text/html") ||
+               contentType.Contains("text/xml") ||
+               contentType.Contains("application/json") ||
+               contentType.Contains("application/xml") ||
+               contentType.Contains("application/rtf") ||
+               contentType.Contains("application/") && !contentType.StartsWith("image/") && !contentType.StartsWith("video/") && !contentType.StartsWith("audio/");
     }
 }

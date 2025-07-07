@@ -60,12 +60,12 @@
                 {
                     <div class="flex rounded-lg shadow-sm">
                         <button @onclick="() => SetViewMode(ViewMode.Grid)"
-                                class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.Grid) rounded-r-none border-r-0">
+                                class="@StyleService.GetViewToggleClass(currentViewMode == ViewMode.Grid, true) rounded-r-none border-r-0">
                             <i class="fas fa-th mr-1"></i>
                             Grid
                         </button>
                         <button @onclick="() => SetViewMode(ViewMode.List)"
-                                class="@StyleService.GetViewModeToggleClass(currentViewMode == ViewMode.List) rounded-l-none">
+                                class="@StyleService.GetViewToggleClass(currentViewMode == ViewMode.List, false) rounded-l-none">
                             <i class="fas fa-list mr-1"></i>
                             List
                         </button>
@@ -210,20 +210,20 @@
             Size="@DialogSize"
             Model="@entityModel"
             ValidationErrors="@validationErrors"
-            IsEditMode="@isEditMode" @* <--- Pass IsEditMode directly to FormDialog *@
+            IsEditMode="@isEditMode"
             OnClose="@CloseEntityDialog"
             OnSave="@SaveEntity">
 
-    <FormContent Context="context">
+    <FormContent Context="formContext">
         @if (FormContent != null)
         {
-                @FormContent(context)
+            @FormContent((formContext.Model, formContext.ValidationErrors, formContext.IsEditMode))
         }
         else
         {
-                <div class="text-center py-8">
-                    <p class="text-gray-500 dark:text-gray-400">No form content provided.</p>
-                </div>
+            <div class="text-center py-8">
+                <p class="text-gray-500 dark:text-gray-400">No form content provided.</p>
+            </div>
         }
     </FormContent>
 </FormDialog>
@@ -242,7 +242,7 @@
                 OnClose="@CloseDuplicateDialog"
                 OnSave="@DuplicateEntity">
 
-        <FormContent Context="context">
+        <FormContent Context="formContext">
             <div class="space-y-1">
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     New @EntitySingularName Name *
