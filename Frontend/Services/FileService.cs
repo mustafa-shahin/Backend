@@ -17,7 +17,7 @@ namespace Frontend.Services
         private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonOptions;
         private readonly IJSRuntime _jsRuntime;
-        private readonly string _baseUrl;
+        private readonly string _backendBaseUrl;
         private readonly SemaphoreSlim _downloadSemaphore;
         private readonly ConcurrentDictionary<int, FileDto> _fileCache;
         private readonly Timer _cacheCleanupTimer;
@@ -26,7 +26,10 @@ namespace Frontend.Services
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
             _jsRuntime = jsRuntime ?? throw new ArgumentNullException(nameof(jsRuntime));
-            _baseUrl = httpClient.BaseAddress?.ToString().TrimEnd('/') ?? "";
+
+            // Extract backend base URL from HttpClient configuration
+            _backendBaseUrl = GetBackendBaseUrl(httpClient);
+
             _downloadSemaphore = new SemaphoreSlim(5, 5); // Limit concurrent downloads
             _fileCache = new ConcurrentDictionary<int, FileDto>();
 
@@ -40,6 +43,20 @@ namespace Frontend.Services
             // Clean cache every 10 minutes
             _cacheCleanupTimer = new Timer(CleanupCache, null,
                 TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
+        }
+
+        private string GetBackendBaseUrl(HttpClient httpClient)
+        {
+            // Try to get from HttpClient base address
+            if (httpClient.BaseAddress != null)
+            {
+                return httpClient.BaseAddress.ToString().TrimEnd('/');
+            }
+
+            // Fallback based on environment
+            return Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development"
+                ? "https://localhost:7206"  // Development backend URL
+                : "https://api.domain.com"; // Production backend URL
         }
 
         #region Core File Operations with Pagination
@@ -630,7 +647,7 @@ namespace Frontend.Services
                     var token = await GenerateDownloadTokenAsync(id);
                     if (!string.IsNullOrEmpty(token))
                     {
-                        downloadUrl = $"{_baseUrl}/api/v1/file/download/{token}";
+                        downloadUrl = $"{_backendBaseUrl}/api/v1/file/download/{token}";
                     }
                     else
                     {
@@ -875,38 +892,38 @@ namespace Frontend.Services
 
         public string GetFileUrl(int fileId)
         {
-            // Try to get from cache first
-            if (_fileCache.TryGetValue(fileId, out var cachedFile))
+            // Try to get from cache first - use the backend provided URL
+            if (_fileCache.TryGetValue(fileId, out var cachedFile) && !string.IsNullOrEmpty(cachedFile.Urls.Download))
             {
                 return cachedFile.Urls.Download;
             }
 
-            // Fallback to constructed URL
-            return $"{_baseUrl}/api/v1/file/{fileId}/download";
+            // Fallback to constructed URL only if not available from backend
+            return $"{_backendBaseUrl}/api/v1/file/{fileId}/download";
         }
 
         public string GetThumbnailUrl(int fileId)
         {
-            // Try to get from cache first
+            // Try to get from cache first - use the backend provided URL
             if (_fileCache.TryGetValue(fileId, out var cachedFile) && !string.IsNullOrEmpty(cachedFile.Urls.Thumbnail))
             {
                 return cachedFile.Urls.Thumbnail;
             }
 
-            // Fallback to constructed URL
-            return $"{_baseUrl}/api/v1/file/{fileId}/thumbnail";
+            // Fallback to constructed URL only if not available from backend
+            return $"{_backendBaseUrl}/api/v1/file/{fileId}/thumbnail";
         }
 
         public string GetPreviewUrl(int fileId)
         {
-            // Try to get from cache first
+            // Try to get from cache first - use the backend provided URL
             if (_fileCache.TryGetValue(fileId, out var cachedFile) && !string.IsNullOrEmpty(cachedFile.Urls.Preview))
             {
                 return cachedFile.Urls.Preview;
             }
 
-            // Fallback to constructed URL
-            return $"{_baseUrl}/api/v1/file/{fileId}/preview";
+            // Fallback to constructed URL only if not available from backend
+            return $"{_backendBaseUrl}/api/v1/file/{fileId}/preview";
         }
 
         public string FormatFileSize(long bytes)

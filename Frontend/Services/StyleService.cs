@@ -547,5 +547,15 @@ namespace Frontend.Services
 
             return $"{baseClass} {heightClass}";
         }
+        public string GetViewToggleClass(bool isActive, bool isFirst)
+        {
+            var baseClass = "px-4 py-2 text-sm font-medium transition-colors duration-200";
+            var positionClass = isFirst ? "rounded-l-lg border border-r-0" : "rounded-r-lg border";
+            var stateClass = isActive
+                ? "bg-green-600 text-white border-green-600 hover:bg-green-700"
+                : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-600";
+
+            return $"{baseClass} {positionClass} {stateClass}";
+        }
     }
 }

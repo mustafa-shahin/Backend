@@ -34,12 +34,6 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                if (isPublic)
-                {
-                    return $"{_baseUrl}/api/v{_apiVersion}/file/{fileId}/download";
-                }
-
-                // For private files, they need to generate a token first
                 return $"{_baseUrl}/api/v{_apiVersion}/file/{fileId}/download";
             }
             catch (Exception ex)
@@ -150,7 +144,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                return $"{_baseUrl}/api/v{_apiVersion}/file/{fileId}/direct";
+                return $"{_baseUrl}/api/v{_apiVersion}/file/{fileId}/download";
             }
             catch (Exception ex)
             {
@@ -187,7 +181,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 // First try to get from configuration
-                var configuredBaseUrl = _configuration["FileStorage:BaseUrl"];
+                var configuredBaseUrl = _configuration["AppSettings:BaseUrl"];
                 if (!string.IsNullOrEmpty(configuredBaseUrl))
                 {
                     return configuredBaseUrl.TrimEnd('/');
@@ -203,14 +197,13 @@ namespace Backend.CMS.Infrastructure.Services
                     return $"{scheme}://{host}";
                 }
 
-                // Fallback to configuration or default
-                var fallbackUrl = _configuration["AppSettings:BaseUrl"] ?? "http://localhost:5000";
-                return fallbackUrl.TrimEnd('/');
+                // Fallback to localhost
+                return "https://localhost:7206"; // Default backend URL
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Error getting base URL, using fallback");
-                return "http://localhost:5000";
+                return "https://localhost:7206";
             }
         }
 
