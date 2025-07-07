@@ -21,6 +21,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ILogger<ProductVariantService> _logger;
 
         private const int DefaultPageSize = 10;
+        private const int MaxPageSize = 100;
 
         public ProductVariantService(
             IProductVariantRepository variantRepository,
@@ -66,7 +67,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
-            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
             var cacheKey = _cacheKeyService.GetCollectionKey<ProductVariant>("paged", page, pageSize, standaloneOnly);
 
@@ -82,7 +83,7 @@ namespace Backend.CMS.Infrastructure.Services
                         pagedResult = await _variantRepository.GetPagedResultAsync(
                             page,
                             pageSize,
-                            predicate: v => v.ProductId == 0 || v.ProductId == null,
+                            predicate: v => v.ProductId == 0,
                             orderBy: query => query.OrderBy(v => v.Position).ThenBy(v => v.Title)
                         );
                     }
@@ -97,12 +98,12 @@ namespace Backend.CMS.Infrastructure.Services
                         );
                     }
 
-                    var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Items);
+                    var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductVariantDto>
                     {
-                        Items = variantDtos,
-                        Page = pagedResult.Page,
+                        Data = variantDtos,
+                        PageNumber = pagedResult.PageNumber,
                         PageSize = pagedResult.PageSize,
                         TotalCount = pagedResult.TotalCount
                     };
@@ -373,7 +374,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
-            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
             var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "low_stock", threshold, page, pageSize);
 
@@ -389,12 +390,12 @@ namespace Backend.CMS.Infrastructure.Services
                         orderBy: query => query.OrderBy(v => v.Quantity).ThenBy(v => v.Title)
                     );
 
-                    var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Items);
+                    var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductVariantDto>
                     {
-                        Items = variantDtos,
-                        Page = pagedResult.Page,
+                        Data = variantDtos,
+                        PageNumber = pagedResult.PageNumber,
                         PageSize = pagedResult.PageSize,
                         TotalCount = pagedResult.TotalCount
                     };
@@ -412,7 +413,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
-            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
             var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "out_of_stock", page, pageSize);
 
@@ -428,12 +429,12 @@ namespace Backend.CMS.Infrastructure.Services
                         orderBy: query => query.OrderBy(v => v.Title)
                     );
 
-                    var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Items);
+                    var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductVariantDto>
                     {
-                        Items = variantDtos,
-                        Page = pagedResult.Page,
+                        Data = variantDtos,
+                        PageNumber = pagedResult.PageNumber,
                         PageSize = pagedResult.PageSize,
                         TotalCount = pagedResult.TotalCount
                     };
@@ -694,5 +695,4 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
     }
-
 }

@@ -23,6 +23,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ILogger<ProductService> _logger;
 
         private const int DefaultPageSize = 10;
+        private const int MaxPageSize = 100;
 
         public ProductService(
             IProductRepository productRepository,
@@ -89,7 +90,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
-            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
             var cacheKey = _cacheKeyService.GetCollectionKey<Product>("paged", page, pageSize);
 
@@ -98,7 +99,7 @@ namespace Backend.CMS.Infrastructure.Services
                 try
                 {
                     // Get paginated result from repository
-                    var pagedResult = await _productRepository.GetPagedResultAsync(
+                    var pagedResult = await _productRepository.GetPagedAsync(
                         page,
                         pageSize,
                         predicate: null,
@@ -106,12 +107,12 @@ namespace Backend.CMS.Infrastructure.Services
                     );
 
                     // Map entities to DTOs
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
                     {
-                        Items = productDtos,
-                        Page = pagedResult.Page,
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
                         PageSize = pagedResult.PageSize,
                         TotalCount = pagedResult.TotalCount
                     };
@@ -128,7 +129,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
-            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
             var cacheKey = _cacheKeyService.GetCollectionKey<Product>("by_category", categoryId, page, pageSize);
 
@@ -145,12 +146,12 @@ namespace Backend.CMS.Infrastructure.Services
                     );
 
                     // Map entities to DTOs
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
                     {
-                        Items = productDtos,
-                        Page = pagedResult.Page,
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
                         PageSize = pagedResult.PageSize,
                         TotalCount = pagedResult.TotalCount
                     };
@@ -325,7 +326,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             // Validate and normalize pagination parameters
             var page = Math.Max(1, searchDto.Page);
-            var pageSize = searchDto.PageSize <= 0 ? DefaultPageSize : Math.Min(searchDto.PageSize, 100);
+            var pageSize = searchDto.PageSize <= 0 ? DefaultPageSize : Math.Min(searchDto.PageSize, MaxPageSize);
 
             var cacheKey = _cacheKeyService.GetQueryKey<Product>("search", searchDto, page, pageSize);
 
@@ -342,8 +343,8 @@ namespace Backend.CMS.Infrastructure.Services
 
                     return new PagedResult<ProductDto>
                     {
-                        Items = productDtos,
-                        Page = page,
+                        Data = productDtos,
+                        PageNumber = page,
                         PageSize = pageSize,
                         TotalCount = totalCount
                     };
@@ -358,7 +359,6 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<int> GetSearchCountAsync(ProductSearchDto searchDto)
         {
-            // For primitive return types, we need to wrap in a class
             var cacheKey = _cacheKeyService.GetQueryKey<Product>("search_count", searchDto);
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
@@ -514,7 +514,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
-            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
             var cacheKey = _cacheKeyService.GetCollectionKey<Product>("featured", page, pageSize);
 
@@ -530,12 +530,12 @@ namespace Backend.CMS.Infrastructure.Services
                         orderBy: query => query.OrderBy(p => Guid.NewGuid()) // Random order for featured products
                     );
 
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
                     {
-                        Items = productDtos,
-                        Page = pagedResult.Page,
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
                         PageSize = pagedResult.PageSize,
                         TotalCount = pagedResult.TotalCount
                     };
@@ -552,7 +552,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
-            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
             var cacheKey = _cacheKeyService.GetCollectionKey<Product>("related", productId, page, pageSize);
 
@@ -589,12 +589,12 @@ namespace Backend.CMS.Infrastructure.Services
                         orderBy: query => query.OrderBy(p => Guid.NewGuid()) // Random order
                     );
 
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
                     {
-                        Items = productDtos,
-                        Page = pagedResult.Page,
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
                         PageSize = pagedResult.PageSize,
                         TotalCount = pagedResult.TotalCount
                     };
@@ -612,7 +612,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
-            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
             var cacheKey = _cacheKeyService.GetCollectionKey<Product>("recent", page, pageSize);
 
@@ -628,12 +628,12 @@ namespace Backend.CMS.Infrastructure.Services
                         orderBy: query => query.OrderByDescending(p => p.CreatedAt)
                     );
 
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
                     {
-                        Items = productDtos,
-                        Page = pagedResult.Page,
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
                         PageSize = pagedResult.PageSize,
                         TotalCount = pagedResult.TotalCount
                     };
@@ -727,7 +727,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
-            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
             var cacheKey = _cacheKeyService.GetCustomKey("product", "low_stock", threshold, page, pageSize);
 
@@ -743,12 +743,12 @@ namespace Backend.CMS.Infrastructure.Services
                         orderBy: query => query.OrderBy(p => p.Quantity).ThenBy(p => p.Name)
                     );
 
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
                     {
-                        Items = productDtos,
-                        Page = pagedResult.Page,
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
                         PageSize = pagedResult.PageSize,
                         TotalCount = pagedResult.TotalCount
                     };
@@ -766,7 +766,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
-            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, 100);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
             var cacheKey = _cacheKeyService.GetCustomKey("product", "out_of_stock", page, pageSize);
 
@@ -782,12 +782,12 @@ namespace Backend.CMS.Infrastructure.Services
                         orderBy: query => query.OrderBy(p => p.Name)
                     );
 
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Items);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
                     {
-                        Items = productDtos,
-                        Page = pagedResult.Page,
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
                         PageSize = pagedResult.PageSize,
                         TotalCount = pagedResult.TotalCount
                     };

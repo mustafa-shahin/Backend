@@ -4,11 +4,19 @@ using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Asp.Versioning;
 
 namespace Backend.CMS.API.Controllers
 {
+    /// <summary>
+    /// Product management controller providing product operations
+    /// </summary>
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/product")]
+    [ApiVersion("1.0")]
+    [ApiVersion("2.0")]
+    [EnableRateLimiting("ApiPolicy")]
     public class ProductController : ControllerBase
     {
         private readonly IProductService _productService;
@@ -23,40 +31,31 @@ namespace Backend.CMS.API.Controllers
             _productService = productService;
             _variantService = variantService;
             _logger = logger;
-  
         }
 
         /// <summary>
         /// Get all products with pagination
         /// </summary>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of products</returns>
         [HttpGet]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<PagedResult<ProductDto>>> GetProducts(
             [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 20)
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var allProducts = await _productService.GetProductsAsync();
-                var totalCount = allProducts.Count;
-                var items = allProducts
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToList();
-
-                var result = new PagedResult<ProductDto>
-                {
-                    Items = items,
-                    Page = page,
-                    PageSize = pageSize,
-                    TotalCount = totalCount
-                };
-
+                var result = await _productService.GetProductsAsync(page, pageSize);
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving products");
+                _logger.LogError(ex, "Error retrieving products for page {Page}, pageSize {PageSize}", page, pageSize);
                 return StatusCode(500, new { Message = "An error occurred while retrieving products" });
             }
         }
@@ -64,8 +63,13 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get product by ID
         /// </summary>
+        /// <param name="id">Product ID</param>
+        /// <returns>Product information</returns>
         [HttpGet("{id:int}")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductDto>> GetProduct(int id)
         {
             try
@@ -91,8 +95,13 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get product by slug
         /// </summary>
+        /// <param name="slug">Product slug</param>
+        /// <returns>Product information</returns>
         [HttpGet("by-slug/{slug}")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductDto>> GetProductBySlug(string slug)
         {
             try
@@ -113,21 +122,29 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get products by category
         /// </summary>
+        /// <param name="categoryId">Category ID</param>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of products in category</returns>
         [HttpGet("category/{categoryId:int}")]
         [AllowAnonymous]
-        public async Task<ActionResult<List<ProductDto>>> GetProductsByCategory(
+        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<ProductDto>>> GetProductsByCategory(
             int categoryId,
             [FromQuery] int page = 1,
-            [FromQuery] int pageSize = 20)
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var products = await _productService.GetProductsByCategoryAsync(categoryId, page, pageSize);
-                return Ok(products);
+                var result = await _productService.GetProductsByCategoryAsync(categoryId, page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving products by category {CategoryId}", categoryId);
+                _logger.LogError(ex, "Error retrieving products by category {CategoryId} for page {Page}, pageSize {PageSize}",
+                    categoryId, page, pageSize);
                 return StatusCode(500, new { Message = "An error occurred while retrieving products" });
             }
         }
@@ -135,27 +152,28 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Search products
         /// </summary>
+        /// <param name="searchDto">Search criteria</param>
+        /// <returns>Paginated search results</returns>
         [HttpPost("search")]
         [AllowAnonymous]
-        public async Task<ActionResult> SearchProducts([FromBody] ProductSearchDto searchDto)
+        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<ProductDto>>> SearchProducts([FromBody] ProductSearchDto searchDto)
         {
             try
             {
-                var products = await _productService.SearchProductsAsync(searchDto);
-                var totalCount = await _productService.GetSearchCountAsync(searchDto);
-
-                return Ok(new
+                if (searchDto == null)
                 {
-                    Products = products,
-                    TotalCount = totalCount,
-                    Page = searchDto.Page,
-                    PageSize = searchDto.PageSize,
-                    TotalPages = (int)Math.Ceiling((double)totalCount / searchDto.PageSize)
-                });
+                    return BadRequest(new { Message = "Search criteria is required" });
+                }
+
+                var result = await _productService.SearchProductsAsync(searchDto);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error searching products");
+                _logger.LogError(ex, "Error searching products with criteria: {@SearchDto}", searchDto);
                 return StatusCode(500, new { Message = "An error occurred while searching products" });
             }
         }
@@ -163,18 +181,25 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get featured products
         /// </summary>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of featured products</returns>
         [HttpGet("featured")]
         [AllowAnonymous]
-        public async Task<ActionResult<List<ProductDto>>> GetFeaturedProducts([FromQuery] int count = 10)
+        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<ProductDto>>> GetFeaturedProducts(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var products = await _productService.GetFeaturedProductsAsync(count);
-                return Ok(products);
+                var result = await _productService.GetFeaturedProductsAsync(page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving featured products");
+                _logger.LogError(ex, "Error retrieving featured products for page {Page}, pageSize {PageSize}", page, pageSize);
                 return StatusCode(500, new { Message = "An error occurred while retrieving featured products" });
             }
         }
@@ -182,18 +207,25 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get recent products
         /// </summary>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of recent products</returns>
         [HttpGet("recent")]
         [AllowAnonymous]
-        public async Task<ActionResult<List<ProductDto>>> GetRecentProducts([FromQuery] int count = 10)
+        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<ProductDto>>> GetRecentProducts(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var products = await _productService.GetRecentProductsAsync(count);
-                return Ok(products);
+                var result = await _productService.GetRecentProductsAsync(page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving recent products");
+                _logger.LogError(ex, "Error retrieving recent products for page {Page}, pageSize {PageSize}", page, pageSize);
                 return StatusCode(500, new { Message = "An error occurred while retrieving recent products" });
             }
         }
@@ -201,18 +233,28 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get related products
         /// </summary>
+        /// <param name="id">Product ID</param>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of related products</returns>
         [HttpGet("{id:int}/related")]
         [AllowAnonymous]
-        public async Task<ActionResult<List<ProductDto>>> GetRelatedProducts(int id, [FromQuery] int count = 4)
+        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<ProductDto>>> GetRelatedProducts(
+            int id,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var products = await _productService.GetRelatedProductsAsync(id, count);
-                return Ok(products);
+                var result = await _productService.GetRelatedProductsAsync(id, page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving related products for {ProductId}", id);
+                _logger.LogError(ex, "Error retrieving related products for {ProductId}, page {Page}, pageSize {PageSize}",
+                    id, page, pageSize);
                 return StatusCode(500, new { Message = "An error occurred while retrieving related products" });
             }
         }
@@ -220,16 +262,19 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Create a new product
         /// </summary>
+        /// <param name="createProductDto">Product creation data</param>
+        /// <returns>Created product information</returns>
         [HttpPost]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductDto>> CreateProduct([FromBody] CreateProductDto createProductDto)
         {
             try
             {
-                // Log the incoming request for debugging
                 _logger.LogInformation("CreateProduct called with data: {@CreateProductDto}", createProductDto);
 
-                // Validate the model state
                 if (!ModelState.IsValid)
                 {
                     var errors = ModelState.SelectMany(x => x.Value.Errors).Select(x => x.ErrorMessage);
@@ -237,7 +282,6 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Validation failed", Errors = errors });
                 }
 
-                // Additional validation
                 if (createProductDto == null)
                 {
                     _logger.LogWarning("CreateProductDto is null");
@@ -277,12 +321,25 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Update an existing product
         /// </summary>
+        /// <param name="id">Product ID</param>
+        /// <param name="updateProductDto">Product update data</param>
+        /// <returns>Updated product information</returns>
         [HttpPut("{id:int}")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductDto>> UpdateProduct(int id, [FromBody] UpdateProductDto updateProductDto)
         {
             try
             {
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.SelectMany(x => x.Value.Errors).Select(x => x.ErrorMessage);
+                    return BadRequest(new { Message = "Validation failed", Errors = errors });
+                }
+
                 var product = await _productService.UpdateProductAsync(id, updateProductDto);
                 return Ok(product);
             }
@@ -301,8 +358,13 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Delete a product
         /// </summary>
+        /// <param name="id">Product ID</param>
+        /// <returns>Deletion confirmation</returns>
         [HttpDelete("{id:int}")]
         [AdminOrDev]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> DeleteProduct(int id)
         {
             try
@@ -323,8 +385,14 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Publish a product
         /// </summary>
+        /// <param name="id">Product ID</param>
+        /// <returns>Published product information</returns>
         [HttpPost("{id:int}/publish")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductDto>> PublishProduct(int id)
         {
             try
@@ -347,8 +415,14 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Unpublish a product
         /// </summary>
+        /// <param name="id">Product ID</param>
+        /// <returns>Unpublished product information</returns>
         [HttpPost("{id:int}/unpublish")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductDto>> UnpublishProduct(int id)
         {
             try
@@ -371,8 +445,14 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Archive a product
         /// </summary>
+        /// <param name="id">Product ID</param>
+        /// <returns>Archived product information</returns>
         [HttpPost("{id:int}/archive")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductDto>> ArchiveProduct(int id)
         {
             try
@@ -395,12 +475,24 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Duplicate a product
         /// </summary>
+        /// <param name="id">Product ID to duplicate</param>
+        /// <param name="duplicateDto">Duplication parameters</param>
+        /// <returns>Duplicated product information</returns>
         [HttpPost("{id:int}/duplicate")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductDto>> DuplicateProduct(int id, [FromBody] DuplicateProductDto duplicateDto)
         {
             try
             {
+                if (string.IsNullOrWhiteSpace(duplicateDto?.NewName))
+                {
+                    return BadRequest(new { Message = "New product name is required" });
+                }
+
                 var product = await _productService.DuplicateProductAsync(id, duplicateDto.NewName);
                 return CreatedAtAction(nameof(GetProduct), new { id = product.Id }, product);
             }
@@ -419,12 +511,24 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Update product stock
         /// </summary>
+        /// <param name="id">Product ID</param>
+        /// <param name="updateStockDto">Stock update data</param>
+        /// <returns>Success confirmation</returns>
         [HttpPost("{id:int}/stock")]
         [AdminOrDev]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> UpdateStock(int id, [FromBody] UpdateStockDto updateStockDto)
         {
             try
             {
+                if (updateStockDto.NewQuantity < 0)
+                {
+                    return BadRequest(new { Message = "Quantity cannot be negative" });
+                }
+
                 await _productService.UpdateStockAsync(id, updateStockDto.VariantId, updateStockDto.NewQuantity);
                 return Ok(new { Message = "Stock updated successfully" });
             }
@@ -443,8 +547,11 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get product statistics
         /// </summary>
+        /// <returns>Product statistics</returns>
         [HttpGet("statistics")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(Dictionary<string, object>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<Dictionary<string, object>>> GetStatistics()
         {
             try
@@ -462,8 +569,11 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get price range
         /// </summary>
+        /// <returns>Minimum and maximum prices</returns>
         [HttpGet("price-range")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> GetPriceRange()
         {
             try
@@ -481,8 +591,11 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get all vendors
         /// </summary>
+        /// <returns>List of vendors</returns>
         [HttpGet("vendors")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(List<string>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<string>>> GetVendors()
         {
             try
@@ -500,8 +613,11 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get all product tags
         /// </summary>
+        /// <returns>List of tags</returns>
         [HttpGet("tags")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(List<string>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<string>>> GetTags()
         {
             try
@@ -519,18 +635,28 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get low stock products
         /// </summary>
+        /// <param name="threshold">Stock threshold (default: 5)</param>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of low stock products</returns>
         [HttpGet("low-stock")]
         [AdminOrDev]
-        public async Task<ActionResult<List<ProductDto>>> GetLowStockProducts([FromQuery] int threshold = 5)
+        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<ProductDto>>> GetLowStockProducts(
+            [FromQuery] int threshold = 5,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var products = await _productService.GetLowStockProductsAsync(threshold);
-                return Ok(products);
+                var result = await _productService.GetLowStockProductsAsync(threshold, page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving low stock products");
+                _logger.LogError(ex, "Error retrieving low stock products for threshold {Threshold}, page {Page}, pageSize {PageSize}",
+                    threshold, page, pageSize);
                 return StatusCode(500, new { Message = "An error occurred while retrieving low stock products" });
             }
         }
@@ -538,18 +664,25 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get out of stock products
         /// </summary>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of out of stock products</returns>
         [HttpGet("out-of-stock")]
         [AdminOrDev]
-        public async Task<ActionResult<List<ProductDto>>> GetOutOfStockProducts()
+        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<ProductDto>>> GetOutOfStockProducts(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var products = await _productService.GetOutOfStockProductsAsync();
-                return Ok(products);
+                var result = await _productService.GetOutOfStockProductsAsync(page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving out of stock products");
+                _logger.LogError(ex, "Error retrieving out of stock products for page {Page}, pageSize {PageSize}", page, pageSize);
                 return StatusCode(500, new { Message = "An error occurred while retrieving out of stock products" });
             }
         }
@@ -557,9 +690,17 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Validate product slug
         /// </summary>
+        /// <param name="slug">Slug to validate</param>
+        /// <param name="excludeProductId">Product ID to exclude from validation</param>
+        /// <returns>Validation result</returns>
         [HttpGet("validate-slug")]
         [AdminOrDev]
-        public async Task<ActionResult<bool>> ValidateSlug([FromQuery] string slug, [FromQuery] int? excludeProductId = null)
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<bool>> ValidateSlug(
+            [FromQuery] string slug,
+            [FromQuery] int? excludeProductId = null)
         {
             try
             {
@@ -579,9 +720,17 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Validate product SKU
         /// </summary>
+        /// <param name="sku">SKU to validate</param>
+        /// <param name="excludeProductId">Product ID to exclude from validation</param>
+        /// <returns>Validation result</returns>
         [HttpGet("validate-sku")]
         [AdminOrDev]
-        public async Task<ActionResult<bool>> ValidateSKU([FromQuery] string sku, [FromQuery] int? excludeProductId = null)
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<bool>> ValidateSKU(
+            [FromQuery] string sku,
+            [FromQuery] int? excludeProductId = null)
         {
             try
             {
@@ -601,8 +750,13 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get product variants
         /// </summary>
+        /// <param name="id">Product ID</param>
+        /// <returns>List of product variants</returns>
         [HttpGet("{id:int}/variants")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(List<ProductVariantDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<ProductVariantDto>>> GetProductVariants(int id)
         {
             try
@@ -616,13 +770,35 @@ namespace Backend.CMS.API.Controllers
                 return StatusCode(500, new { Message = "An error occurred while retrieving product variants" });
             }
         }
-        [HttpPost("{productId}/variant")]
+
+        /// <summary>
+        /// Create product variant
+        /// </summary>
+        /// <param name="productId">Product ID</param>
+        /// <param name="createVariantDto">Variant creation data</param>
+        /// <returns>Created variant information</returns>
+        [HttpPost("{productId:int}/variant")]
+        [AdminOrDev]
+        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> CreateProductVariant(int productId, [FromBody] CreateProductVariantDto createVariantDto)
         {
             try
             {
+                if (!ModelState.IsValid)
+                {
+                    var errors = ModelState.SelectMany(x => x.Value.Errors).Select(x => x.ErrorMessage);
+                    return BadRequest(new { message = "Validation failed", errors });
+                }
+
                 var variant = await _variantService.CreateVariantAsync(productId, createVariantDto);
-                return Ok(variant);
+                return CreatedAtAction(
+                    actionName: "GetVariant",
+                    controllerName: "ProductVariant",
+                    routeValues: new { id = variant.Id },
+                    value: variant);
             }
             catch (ArgumentException ex)
             {
@@ -635,7 +811,18 @@ namespace Backend.CMS.API.Controllers
             }
         }
 
-        [HttpPut("{productId}/variant/{variantId}/set-default")]
+        /// <summary>
+        /// Set default variant for product
+        /// </summary>
+        /// <param name="productId">Product ID</param>
+        /// <param name="variantId">Variant ID to set as default</param>
+        /// <returns>Updated variant information</returns>
+        [HttpPut("{productId:int}/variant/{variantId:int}/set-default")]
+        [AdminOrDev]
+        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> SetDefaultVariant(int productId, int variantId)
         {
             try

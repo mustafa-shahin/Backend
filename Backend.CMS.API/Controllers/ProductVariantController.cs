@@ -3,11 +3,19 @@ using Backend.CMS.Application.DTOs;
 using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Asp.Versioning;
 
 namespace Backend.CMS.API.Controllers
 {
+    /// <summary>
+    /// Product variant management controller providing variant operations
+    /// </summary>
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/product-variant")]
+    [ApiVersion("1.0")]
+    [ApiVersion("2.0")]
+    [EnableRateLimiting("ApiPolicy")]
     public class ProductVariantController : ControllerBase
     {
         private readonly IProductVariantService _variantService;
@@ -24,50 +32,29 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get all variants with pagination
         /// </summary>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <param name="standaloneOnly">Filter for standalone variants only</param>
+        /// <returns>Paginated list of variants</returns>
         [HttpGet]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(PagedResult<ProductVariantDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<PagedResult<ProductVariantDto>>> GetVariants(
             [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
             [FromQuery] bool standaloneOnly = false)
         {
             try
             {
-                // Each page will display 10 items.
-                const int pageSize = 10;
-
-                // 1. Fetch the full list of variants from the service.
-                var allVariants = await _variantService.GetVariantsAsync();
-
-                // Filter standalone variants if requested
-                if (standaloneOnly)
-                {
-                    allVariants = allVariants.Where(v => v.ProductId == 0 || v.ProductId == null).ToList();
-                }
-
-                var totalCount = allVariants.Count;
-
-                // 2. Apply pagination logic here in the controller.
-                var items = allVariants
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToList();
-
-                // 3. Calculate the total number of pages.
-                var totalPages = (int)Math.Ceiling((double)totalCount / pageSize);
-
-                // 4. Return a structured response including pagination details.
-                return Ok(new
-                {
-                    Items = items,
-                    Page = page,
-                    PageSize = pageSize,
-                    TotalCount = totalCount,
-                    TotalPages = totalPages
-                });
+                var result = await _variantService.GetVariantsAsync(page, pageSize, standaloneOnly);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving variants");
+                _logger.LogError(ex, "Error retrieving variants for page {Page}, pageSize {PageSize}, standaloneOnly {StandaloneOnly}",
+                    page, pageSize, standaloneOnly);
                 return StatusCode(500, new { Message = "An error occurred while retrieving variants" });
             }
         }
@@ -75,19 +62,25 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get standalone variants (variants without product association)
         /// </summary>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of standalone variants</returns>
         [HttpGet("standalone")]
         [AllowAnonymous]
-        public async Task<ActionResult<List<ProductVariantDto>>> GetStandaloneVariants()
+        [ProducesResponseType(typeof(PagedResult<ProductVariantDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<ProductVariantDto>>> GetStandaloneVariants(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var allVariants = await _variantService.GetVariantsAsync();
-                var standaloneVariants = allVariants.Where(v => v.ProductId == 0 || v.ProductId == null).ToList();
-                return Ok(standaloneVariants);
+                var result = await _variantService.GetStandaloneVariantsAsync(page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving standalone variants");
+                _logger.LogError(ex, "Error retrieving standalone variants for page {Page}, pageSize {PageSize}", page, pageSize);
                 return StatusCode(500, new { Message = "An error occurred while retrieving standalone variants" });
             }
         }
@@ -95,8 +88,13 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get variant by ID
         /// </summary>
+        /// <param name="id">Variant ID</param>
+        /// <returns>Variant information</returns>
         [HttpGet("{id:int}")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductVariantDto>> GetVariant(int id)
         {
             try
@@ -122,8 +120,13 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get variant by SKU
         /// </summary>
+        /// <param name="sku">Variant SKU</param>
+        /// <returns>Variant information</returns>
         [HttpGet("by-sku/{sku}")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductVariantDto>> GetVariantBySKU(string sku)
         {
             try
@@ -144,8 +147,12 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get variants by product ID
         /// </summary>
+        /// <param name="productId">Product ID</param>
+        /// <returns>List of variants for the product</returns>
         [HttpGet("product/{productId:int}")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(List<ProductVariantDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<ProductVariantDto>>> GetVariantsByProduct(int productId)
         {
             try
@@ -163,8 +170,13 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get default variant for a product
         /// </summary>
+        /// <param name="productId">Product ID</param>
+        /// <returns>Default variant information</returns>
         [HttpGet("product/{productId:int}/default")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductVariantDto>> GetDefaultVariant(int productId)
         {
             try
@@ -185,15 +197,21 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Create a new variant for a product
         /// </summary>
+        /// <param name="productId">Product ID</param>
+        /// <param name="createVariantDto">Variant creation data</param>
+        /// <returns>Created variant information</returns>
         [HttpPost("product/{productId:int}")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductVariantDto>> CreateVariant(int productId, [FromBody] CreateProductVariantDto createVariantDto)
         {
             try
             {
                 _logger.LogInformation("CreateVariant called for product {ProductId} with data: {@CreateVariantDto}", productId, createVariantDto);
 
-                // Validate the model state
                 if (!ModelState.IsValid)
                 {
                     var errors = ModelState.SelectMany(x => x.Value.Errors).Select(x => x.ErrorMessage);
@@ -201,7 +219,6 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Validation failed", Errors = errors });
                 }
 
-                // Additional validation
                 if (createVariantDto == null)
                 {
                     _logger.LogWarning("CreateVariantDto is null");
@@ -236,15 +253,19 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Create a new variant (standalone) - ProductId is optional
         /// </summary>
+        /// <param name="createVariantDto">Variant creation data</param>
+        /// <returns>Created variant information</returns>
         [HttpPost]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductVariantDto>> CreateVariantStandalone([FromBody] CreateProductVariantDto createVariantDto)
         {
             try
             {
                 _logger.LogInformation("CreateVariantStandalone called with data: {@CreateVariantDto}", createVariantDto);
 
-                // Validate the model state
                 if (!ModelState.IsValid)
                 {
                     var errors = ModelState.SelectMany(x => x.Value.Errors).Select(x => x.ErrorMessage);
@@ -252,7 +273,6 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Validation failed", Errors = errors });
                 }
 
-                // Additional validation
                 if (createVariantDto == null)
                 {
                     _logger.LogWarning("CreateVariantDto is null");
@@ -289,8 +309,15 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Assign standalone variant to product
         /// </summary>
+        /// <param name="variantId">Variant ID</param>
+        /// <param name="productId">Product ID to assign to</param>
+        /// <returns>Updated variant information</returns>
         [HttpPost("{variantId:int}/assign-to-product/{productId:int}")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductVariantDto>> AssignVariantToProduct(int variantId, int productId)
         {
             try
@@ -336,8 +363,8 @@ namespace Backend.CMS.API.Controllers
                     }).ToList()
                 };
 
-                // Temporarily set ProductId for the service call
-                variant.ProductId = productId;
+                // This will need to be handled by the service differently to change ProductId
+                // For now, this is a placeholder - the service would need a specific method for this
                 var updatedVariant = await _variantService.UpdateVariantAsync(variantId, updateDto);
 
                 return Ok(updatedVariant);
@@ -357,15 +384,21 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Update an existing variant
         /// </summary>
+        /// <param name="id">Variant ID</param>
+        /// <param name="updateVariantDto">Variant update data</param>
+        /// <returns>Updated variant information</returns>
         [HttpPut("{id:int}")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductVariantDto>> UpdateVariant(int id, [FromBody] UpdateProductVariantDto updateVariantDto)
         {
             try
             {
                 _logger.LogInformation("UpdateVariant called for variant {VariantId} with data: {@UpdateVariantDto}", id, updateVariantDto);
 
-                // Validate the model state
                 if (!ModelState.IsValid)
                 {
                     var errors = ModelState.SelectMany(x => x.Value.Errors).Select(x => x.ErrorMessage);
@@ -373,7 +406,6 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Validation failed", Errors = errors });
                 }
 
-                // Additional validation
                 if (updateVariantDto == null)
                 {
                     _logger.LogWarning("UpdateVariantDto is null");
@@ -399,8 +431,13 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Delete a variant
         /// </summary>
+        /// <param name="id">Variant ID</param>
+        /// <returns>Deletion confirmation</returns>
         [HttpDelete("{id:int}")]
         [AdminOrDev]
+        [ProducesResponseType(StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> DeleteVariant(int id)
         {
             try
@@ -421,8 +458,14 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Set variant as default for its product
         /// </summary>
+        /// <param name="id">Variant ID</param>
+        /// <returns>Updated variant information</returns>
         [HttpPut("{id:int}/set-default")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductVariantDto>> SetDefaultVariant(int id)
         {
             try
@@ -445,12 +488,22 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Reorder variants for a product
         /// </summary>
+        /// <param name="reorderDto">Reorder data</param>
+        /// <returns>Reordered variants</returns>
         [HttpPost("reorder")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(List<ProductVariantDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<ProductVariantDto>>> ReorderVariants([FromBody] ReorderVariantsDto reorderDto)
         {
             try
             {
+                if (reorderDto?.Variants?.Any() != true)
+                {
+                    return BadRequest(new { Message = "Variant order data is required" });
+                }
+
                 var variantOrders = reorderDto.Variants.Select(v => (v.Id, v.Position)).ToList();
                 var variants = await _variantService.ReorderVariantsAsync(variantOrders);
                 return Ok(variants);
@@ -465,12 +518,24 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Update variant stock
         /// </summary>
+        /// <param name="id">Variant ID</param>
+        /// <param name="updateStockDto">Stock update data</param>
+        /// <returns>Updated variant information</returns>
         [HttpPost("{id:int}/stock")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<ProductVariantDto>> UpdateStock(int id, [FromBody] UpdateVariantStockDto updateStockDto)
         {
             try
             {
+                if (updateStockDto.NewQuantity < 0)
+                {
+                    return BadRequest(new { Message = "Quantity cannot be negative" });
+                }
+
                 var variant = await _variantService.UpdateStockAsync(id, updateStockDto.NewQuantity);
                 return Ok(variant);
             }
@@ -489,18 +554,28 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get low stock variants
         /// </summary>
+        /// <param name="threshold">Stock threshold (default: 5)</param>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of low stock variants</returns>
         [HttpGet("low-stock")]
         [AdminOrDev]
-        public async Task<ActionResult<List<ProductVariantDto>>> GetLowStockVariants([FromQuery] int threshold = 5)
+        [ProducesResponseType(typeof(PagedResult<ProductVariantDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<ProductVariantDto>>> GetLowStockVariants(
+            [FromQuery] int threshold = 5,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var variants = await _variantService.GetLowStockVariantsAsync(threshold);
-                return Ok(variants);
+                var result = await _variantService.GetLowStockVariantsAsync(threshold, page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving low stock variants");
+                _logger.LogError(ex, "Error retrieving low stock variants for threshold {Threshold}, page {Page}, pageSize {PageSize}",
+                    threshold, page, pageSize);
                 return StatusCode(500, new { Message = "An error occurred while retrieving low stock variants" });
             }
         }
@@ -508,18 +583,25 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get out of stock variants
         /// </summary>
+        /// <param name="page">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of out of stock variants</returns>
         [HttpGet("out-of-stock")]
         [AdminOrDev]
-        public async Task<ActionResult<List<ProductVariantDto>>> GetOutOfStockVariants()
+        [ProducesResponseType(typeof(PagedResult<ProductVariantDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<ProductVariantDto>>> GetOutOfStockVariants(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                var variants = await _variantService.GetOutOfStockVariantsAsync();
-                return Ok(variants);
+                var result = await _variantService.GetOutOfStockVariantsAsync(page, pageSize);
+                return Ok(result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving out of stock variants");
+                _logger.LogError(ex, "Error retrieving out of stock variants for page {Page}, pageSize {PageSize}", page, pageSize);
                 return StatusCode(500, new { Message = "An error occurred while retrieving out of stock variants" });
             }
         }
@@ -527,8 +609,12 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get total stock for a product
         /// </summary>
+        /// <param name="productId">Product ID</param>
+        /// <returns>Total stock quantity</returns>
         [HttpGet("product/{productId:int}/total-stock")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<int>> GetTotalStock(int productId)
         {
             try
@@ -546,9 +632,17 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Validate variant SKU
         /// </summary>
+        /// <param name="sku">SKU to validate</param>
+        /// <param name="excludeVariantId">Variant ID to exclude from validation</param>
+        /// <returns>Validation result</returns>
         [HttpGet("validate-sku")]
         [AdminOrDev]
-        public async Task<ActionResult<bool>> ValidateSKU([FromQuery] string sku, [FromQuery] int? excludeVariantId = null)
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<bool>> ValidateSKU(
+            [FromQuery] string sku,
+            [FromQuery] int? excludeVariantId = null)
         {
             try
             {
@@ -565,12 +659,27 @@ namespace Backend.CMS.API.Controllers
             }
         }
 
+        /// <summary>
+        /// Add image to variant
+        /// </summary>
+        /// <param name="id">Variant ID</param>
+        /// <param name="createImageDto">Image creation data</param>
+        /// <returns>Created image information</returns>
         [HttpPost("{id:int}/images")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductVariantImageDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> AddVariantImage(int id, [FromBody] CreateProductVariantImageDto createImageDto)
         {
             try
             {
+                if (createImageDto == null)
+                {
+                    return BadRequest(new { message = "Image data is required" });
+                }
+
                 var image = await _variantService.AddVariantImageAsync(id, createImageDto);
                 return CreatedAtAction(nameof(GetVariant), new { id }, image);
             }
@@ -585,12 +694,27 @@ namespace Backend.CMS.API.Controllers
             }
         }
 
-        [HttpPut("images/{imageId}")]
+        /// <summary>
+        /// Update variant image
+        /// </summary>
+        /// <param name="imageId">Image ID</param>
+        /// <param name="updateImageDto">Image update data</param>
+        /// <returns>Updated image information</returns>
+        [HttpPut("images/{imageId:int}")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(ProductVariantImageDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> UpdateVariantImage(int imageId, [FromBody] UpdateProductVariantImageDto updateImageDto)
         {
             try
             {
+                if (updateImageDto == null)
+                {
+                    return BadRequest(new { message = "Image data is required" });
+                }
+
                 updateImageDto.Id = imageId;
                 var image = await _variantService.UpdateVariantImageAsync(imageId, updateImageDto);
                 return Ok(image);
@@ -606,8 +730,16 @@ namespace Backend.CMS.API.Controllers
             }
         }
 
-        [HttpDelete("images/{imageId}")]
+        /// <summary>
+        /// Delete variant image
+        /// </summary>
+        /// <param name="imageId">Image ID</param>
+        /// <returns>Deletion confirmation</returns>
+        [HttpDelete("images/{imageId:int}")]
         [AdminOrDev]
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> DeleteVariantImage(int imageId)
         {
             try
@@ -625,12 +757,27 @@ namespace Backend.CMS.API.Controllers
             }
         }
 
-        [HttpPost("{id}/images/reorder")]
+        /// <summary>
+        /// Reorder variant images
+        /// </summary>
+        /// <param name="id">Variant ID</param>
+        /// <param name="imageOrders">Image reorder data</param>
+        /// <returns>Reordered images</returns>
+        [HttpPost("{id:int}/images/reorder")]
         [AdminOrDev]
+        [ProducesResponseType(typeof(List<ProductVariantImageDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<IActionResult> ReorderVariantImages(int id, [FromBody] List<(int ImageId, int Position)> imageOrders)
         {
             try
             {
+                if (imageOrders?.Any() != true)
+                {
+                    return BadRequest(new { message = "Image order data is required" });
+                }
+
                 var images = await _variantService.ReorderVariantImagesAsync(id, imageOrders);
                 return Ok(images);
             }
