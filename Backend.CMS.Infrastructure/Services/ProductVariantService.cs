@@ -69,7 +69,7 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCollectionKey<ProductVariant>("paged", page, pageSize, standaloneOnly);
+            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "paged", page.ToString(), pageSize.ToString(), standaloneOnly.ToString());
 
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
@@ -119,7 +119,34 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<PagedResult<ProductVariantDto>> GetStandaloneVariantsAsync(int page = 1, int pageSize = 10)
         {
-            return await GetVariantsAsync(page, pageSize, standaloneOnly: true);
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
+
+            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "standalone", page.ToString(), pageSize.ToString());
+
+            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            {
+                try
+                {
+                    // Use the repository's dedicated pagination method for standalone variants
+                    var pagedResult = await _variantRepository.GetStandaloneVariantsPagedAsync(page, pageSize);
+                    var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
+
+                    return new PagedResult<ProductVariantDto>
+                    {
+                        Data = variantDtos,
+                        PageNumber = pagedResult.PageNumber,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated standalone variants for page {Page}, pageSize {PageSize}", page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductVariantDto>.Empty(page, pageSize);
         }
 
         public async Task<ProductVariantDto?> GetVariantBySKUAsync(string sku)
@@ -144,7 +171,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<ProductVariantDto?> GetDefaultVariantAsync(int productId)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "default", productId);
+            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "default", productId.ToString());
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var variant = await _variantRepository.GetDefaultVariantAsync(productId);
@@ -376,20 +403,14 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "low_stock", threshold, page, pageSize);
+            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "low_stock", threshold.ToString(), page.ToString(), pageSize.ToString());
 
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 try
                 {
-                    // Get paginated low stock variants
-                    var pagedResult = await _variantRepository.GetPagedResultAsync(
-                        page,
-                        pageSize,
-                        predicate: v => v.TrackQuantity && v.Quantity <= threshold && v.Quantity > 0,
-                        orderBy: query => query.OrderBy(v => v.Quantity).ThenBy(v => v.Title)
-                    );
-
+                    // Use the repository's dedicated pagination method for low stock variants
+                    var pagedResult = await _variantRepository.GetLowStockVariantsPagedAsync(threshold, page, pageSize);
                     var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductVariantDto>
@@ -415,20 +436,14 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "out_of_stock", page, pageSize);
+            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "out_of_stock", page.ToString(), pageSize.ToString());
 
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 try
                 {
-                    // Get paginated out of stock variants
-                    var pagedResult = await _variantRepository.GetPagedResultAsync(
-                        page,
-                        pageSize,
-                        predicate: v => v.TrackQuantity && v.Quantity <= 0,
-                        orderBy: query => query.OrderBy(v => v.Title)
-                    );
-
+                    // Use the repository's dedicated pagination method for out of stock variants
+                    var pagedResult = await _variantRepository.GetOutOfStockVariantsPagedAsync(page, pageSize);
                     var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductVariantDto>
@@ -449,7 +464,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<int> GetTotalStockAsync(int productId)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "total_stock", productId);
+            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "total_stock", productId.ToString());
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var total = await _variantRepository.GetTotalStockAsync(productId);
@@ -678,7 +693,7 @@ namespace Backend.CMS.Infrastructure.Services
                 await _cacheInvalidationService.InvalidateByPatternAsync(_cacheKeyService.GetEntityPattern<ProductVariant>());
 
                 // Invalidate product-specific variant caches
-                var productVariantPattern = _cacheKeyService.GetCustomKey("product_variant", "*", productId);
+                var productVariantPattern = _cacheKeyService.GetCustomKey("product_variant", "*", productId.ToString());
                 await _cacheInvalidationService.InvalidateByPatternAsync(productVariantPattern);
 
                 // Also invalidate related product cache since variants affect product data (only if productId > 0)

@@ -92,12 +92,21 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public async Task<PagedResult<ProductVariant>> GetPagedByProductIdAsync(int productId, int page, int pageSize)
         {
-            return await GetPagedResultAsync(
-                page,
-                pageSize,
-                predicate: v => v.ProductId == productId,
-                orderBy: query => query.OrderBy(v => v.Position).ThenBy(v => v.Title)
-            );
+            var query = _dbSet
+                .Where(v => v.ProductId == productId && !v.IsDeleted)
+                .Include(v => v.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .OrderBy(v => v.Position)
+                .ThenBy(v => v.Title)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new PagedResult<ProductVariant>(items, page, pageSize, totalCount);
         }
 
         public async Task<int> GetCountByProductIdAsync(int productId)
@@ -150,12 +159,21 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public async Task<PagedResult<ProductVariant>> GetStandaloneVariantsPagedAsync(int page, int pageSize)
         {
-            return await GetPagedResultAsync(
-                page,
-                pageSize,
-                predicate: v => v.ProductId == 0,
-                orderBy: query => query.OrderBy(v => v.Position).ThenBy(v => v.Title)
-            );
+            var query = _dbSet
+                .Where(v => v.ProductId == 0 && !v.IsDeleted)
+                .Include(v => v.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .OrderBy(v => v.Position)
+                .ThenBy(v => v.Title)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new PagedResult<ProductVariant>(items, page, pageSize, totalCount);
         }
 
         public async Task<int> GetStandaloneVariantCountAsync()
@@ -209,12 +227,22 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public async Task<PagedResult<ProductVariant>> GetLowStockVariantsPagedAsync(int threshold, int page, int pageSize)
         {
-            return await GetPagedResultAsync(
-                page,
-                pageSize,
-                predicate: v => v.TrackQuantity && v.Quantity <= threshold && v.Quantity > 0,
-                orderBy: query => query.OrderBy(v => v.Quantity).ThenBy(v => v.Title)
-            );
+            var query = _dbSet
+                .Where(v => v.TrackQuantity && v.Quantity <= threshold && v.Quantity > 0 && !v.IsDeleted)
+                .Include(v => v.Product)
+                .Include(v => v.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .OrderBy(v => v.Quantity)
+                .ThenBy(v => v.Title)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new PagedResult<ProductVariant>(items, page, pageSize, totalCount);
         }
 
         public async Task<IEnumerable<ProductVariant>> GetOutOfStockVariantsAsync()
@@ -230,12 +258,21 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public async Task<PagedResult<ProductVariant>> GetOutOfStockVariantsPagedAsync(int page, int pageSize)
         {
-            return await GetPagedResultAsync(
-                page,
-                pageSize,
-                predicate: v => v.TrackQuantity && v.Quantity <= 0,
-                orderBy: query => query.OrderBy(v => v.Title)
-            );
+            var query = _dbSet
+                .Where(v => v.TrackQuantity && v.Quantity <= 0 && !v.IsDeleted)
+                .Include(v => v.Product)
+                .Include(v => v.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .OrderBy(v => v.Title)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new PagedResult<ProductVariant>(items, page, pageSize, totalCount);
         }
 
         public async Task UpdateStockAsync(int variantId, int newQuantity)
@@ -734,16 +771,26 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public async Task<PagedResult<ProductVariant>> SearchVariantsPagedAsync(string searchTerm, int page, int pageSize)
         {
-            return await GetPagedResultAsync(
-                page,
-                pageSize,
-                predicate: v => v.Title.Contains(searchTerm) ||
-                               v.SKU.Contains(searchTerm) ||
-                               v.Option1!.Contains(searchTerm) ||
-                               v.Option2!.Contains(searchTerm) ||
-                               v.Option3!.Contains(searchTerm),
-                orderBy: query => query.OrderBy(v => v.Title)
-            );
+            var query = _dbSet
+                .Where(v => !v.IsDeleted &&
+                           (v.Title.Contains(searchTerm) ||
+                            v.SKU.Contains(searchTerm) ||
+                            v.Option1!.Contains(searchTerm) ||
+                            v.Option2!.Contains(searchTerm) ||
+                            v.Option3!.Contains(searchTerm)))
+                .Include(v => v.Product)
+                .Include(v => v.Images.Where(i => !i.IsDeleted))
+                    .ThenInclude(i => i.File);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .OrderBy(v => v.Title)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new PagedResult<ProductVariant>(items, page, pageSize, totalCount);
         }
 
         public async Task<int> GetSearchCountAsync(string searchTerm)

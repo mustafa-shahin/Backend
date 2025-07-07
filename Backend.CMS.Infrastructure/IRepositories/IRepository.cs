@@ -1,4 +1,5 @@
-﻿using Backend.CMS.Domain.Common;
+﻿using Backend.CMS.Application.DTOs;
+using Backend.CMS.Domain.Common;
 using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.IRepositories
@@ -34,5 +35,10 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<bool> RestoreAsync(T entity, int? restoredByUserId = null);
         Task<int> SaveChangesAsync();
         IQueryable<T> GetQueryable();
+        Task<PagedResult<T>> GetPagedResultAsync(
+            int page,
+            int pageSize,
+            Expression<Func<T, bool>>? predicate = null,
+            Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy = null);
     }
 }

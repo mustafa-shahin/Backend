@@ -98,8 +98,8 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
-                    // Get paginated result from repository
-                    var pagedResult = await _productRepository.GetPagedAsync(
+                    // Get paginated result using the repository's built-in pagination
+                    var pagedResult = await _productRepository.GetPagedResultAsync(
                         page,
                         pageSize,
                         predicate: null,
@@ -137,13 +137,8 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
-                    // Get paginated result from repository with category filter
-                    var pagedResult = await _productRepository.GetPagedResultAsync(
-                        page,
-                        pageSize,
-                        predicate: p => p.ProductCategories.Any(pc => pc.CategoryId == categoryId && !pc.IsDeleted),
-                        orderBy: query => query.OrderBy(p => p.Name)
-                    );
+                    // Use the repository's dedicated pagination method for categories
+                    var pagedResult = await _productRepository.GetPagedByCategoryAsync(categoryId, page, pageSize);
 
                     // Map entities to DTOs
                     var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
@@ -328,25 +323,22 @@ namespace Backend.CMS.Infrastructure.Services
             var page = Math.Max(1, searchDto.Page);
             var pageSize = searchDto.PageSize <= 0 ? DefaultPageSize : Math.Min(searchDto.PageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetQueryKey<Product>("search", searchDto, page, pageSize);
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "search", searchDto.SearchTerm ?? "all", page.ToString(), pageSize.ToString());
 
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 try
                 {
-                    // Get total count for pagination
-                    var totalCount = await _productRepository.GetSearchCountAsync(searchDto);
-
-                    // Get paginated search results
-                    var products = await _productRepository.SearchProductsAsync(searchDto);
-                    var productDtos = _mapper.Map<List<ProductDto>>(products);
+                    // Use the repository's search method that returns a paged result
+                    var pagedResult = await _productRepository.SearchProductsPagedAsync(searchDto);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
                     {
                         Data = productDtos,
-                        PageNumber = page,
-                        PageSize = pageSize,
-                        TotalCount = totalCount
+                        PageNumber = pagedResult.PageNumber,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
                     };
                 }
                 catch (Exception ex)
@@ -359,7 +351,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<int> GetSearchCountAsync(ProductSearchDto searchDto)
         {
-            var cacheKey = _cacheKeyService.GetQueryKey<Product>("search_count", searchDto);
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "search_count", searchDto.SearchTerm ?? "all");
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 var count = await _productRepository.GetSearchCountAsync(searchDto);
@@ -522,14 +514,8 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
-                    // Get paginated featured products
-                    var pagedResult = await _productRepository.GetPagedResultAsync(
-                        page,
-                        pageSize,
-                        predicate: p => p.Status == ProductStatus.Active,
-                        orderBy: query => query.OrderBy(p => Guid.NewGuid()) // Random order for featured products
-                    );
-
+                    // Use the repository's dedicated pagination method for featured products
+                    var pagedResult = await _productRepository.GetFeaturedProductsPagedAsync(page, pageSize);
                     var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
@@ -560,35 +546,8 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
-                    var product = await _productRepository.GetByIdAsync(productId);
-                    if (product == null)
-                    {
-                        return PagedResult<ProductDto>.Empty(page, pageSize);
-                    }
-
-                    var productWithCategories = await _productRepository.GetWithCategoriesAsync(productId);
-                    if (productWithCategories == null)
-                    {
-                        return PagedResult<ProductDto>.Empty(page, pageSize);
-                    }
-
-                    var categoryIds = productWithCategories.ProductCategories.Select(pc => pc.CategoryId).ToList();
-
-                    if (!categoryIds.Any())
-                    {
-                        return PagedResult<ProductDto>.Empty(page, pageSize);
-                    }
-
-                    // Get paginated related products
-                    var pagedResult = await _productRepository.GetPagedResultAsync(
-                        page,
-                        pageSize,
-                        predicate: p => p.Id != productId &&
-                                       p.Status == ProductStatus.Active &&
-                                       p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId) && !pc.IsDeleted),
-                        orderBy: query => query.OrderBy(p => Guid.NewGuid()) // Random order
-                    );
-
+                    // Use the repository's dedicated pagination method for related products
+                    var pagedResult = await _productRepository.GetRelatedProductsPagedAsync(productId, page, pageSize);
                     var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
@@ -620,14 +579,8 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
-                    // Get paginated recent products
-                    var pagedResult = await _productRepository.GetPagedResultAsync(
-                        page,
-                        pageSize,
-                        predicate: p => p.Status == ProductStatus.Active,
-                        orderBy: query => query.OrderByDescending(p => p.CreatedAt)
-                    );
-
+                    // Use the repository's dedicated pagination method for recent products
+                    var pagedResult = await _productRepository.GetRecentProductsPagedAsync(page, pageSize);
                     var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
@@ -729,20 +682,14 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "low_stock", threshold, page, pageSize);
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "low_stock", threshold.ToString(), page.ToString(), pageSize.ToString());
 
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 try
                 {
-                    // Get paginated low stock products
-                    var pagedResult = await _productRepository.GetPagedResultAsync(
-                        page,
-                        pageSize,
-                        predicate: p => p.TrackQuantity && p.Quantity <= threshold && p.Quantity > 0,
-                        orderBy: query => query.OrderBy(p => p.Quantity).ThenBy(p => p.Name)
-                    );
-
+                    // Use the repository's dedicated pagination method for low stock products
+                    var pagedResult = await _productRepository.GetLowStockProductsPagedAsync(threshold, page, pageSize);
                     var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>
@@ -768,20 +715,14 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "out_of_stock", page, pageSize);
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "out_of_stock", page.ToString(), pageSize.ToString());
 
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 try
                 {
-                    // Get paginated out of stock products
-                    var pagedResult = await _productRepository.GetPagedResultAsync(
-                        page,
-                        pageSize,
-                        predicate: p => p.TrackQuantity && p.Quantity <= 0,
-                        orderBy: query => query.OrderBy(p => p.Name)
-                    );
-
+                    // Use the repository's dedicated pagination method for out of stock products
+                    var pagedResult = await _productRepository.GetOutOfStockProductsPagedAsync(page, pageSize);
                     var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
                     return new PagedResult<ProductDto>

@@ -3,6 +3,7 @@ using Blazored.LocalStorage;
 using Frontend.Interfaces;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Frontend.Services
 {
@@ -24,6 +25,7 @@ namespace Frontend.Services
                 PropertyNameCaseInsensitive = true,
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase
             };
+            _jsonOptions.Converters.Add(new JsonStringEnumConverter());
         }
 
         public async Task<LoginResponseDto?> LoginAsync(LoginDto loginDto)

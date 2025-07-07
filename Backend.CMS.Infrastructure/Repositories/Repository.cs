@@ -19,7 +19,10 @@ namespace Backend.CMS.Infrastructure.Repositories
             _dbSet = context.Set<T>();
             _semaphore = new SemaphoreSlim(1, 1);
         }
-
+        public IQueryable<T> GetAllAsQueryable()
+        {
+            return _dbSet.AsNoTracking(); 
+        }
         public virtual async Task<T?> GetByIdAsync(int id)
         {
             await _semaphore.WaitAsync();
