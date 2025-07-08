@@ -347,4 +347,13 @@ namespace Backend.CMS.Application.DTOs
         public List<string> Warnings { get; set; } = new();
         public Dictionary<string, object> ProcessingInfo { get; set; } = new();
     }
+    public class ThumbnailResult
+    {
+        public Stream? Stream { get; set; }
+        public string? ContentType { get; set; }
+        public string? FileName { get; set; }
+        public string? Reason { get; set; } // Optional: "NotFound", "Deleted", "NoThumbnail"
+
+        public bool Found => Stream != null;
+    }
 }

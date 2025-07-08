@@ -40,5 +40,6 @@ namespace Backend.CMS.Infrastructure.IRepositories
             int pageSize,
             Expression<Func<T, bool>>? predicate = null,
             Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy = null);
+        Task<TResult> ExecuteInTransactionAsync<TResult>(Func<Task<TResult>> operation);
     }
 }

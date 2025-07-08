@@ -392,70 +392,102 @@ namespace Backend.CMS.Infrastructure.Services
             return (stream, file.ContentType, file.OriginalFileName);
         }
 
-        public async Task<(Stream stream, string contentType, string fileName)> GetThumbnailStreamAsync(int fileId)
+        public async Task<ThumbnailResult> GetThumbnailStreamAsync(int fileId)
         {
             var file = await _fileRepository.GetByIdAsync(fileId);
+
             if (file == null)
-                throw new ArgumentException("File not found");
+                return new ThumbnailResult { Reason = "NotFound" };
+
+            if (file.IsDeleted)
+                return new ThumbnailResult { Reason = "Deleted" };
 
             if (file.ThumbnailContent == null || file.ThumbnailContent.Length == 0)
-                throw new ArgumentException("Thumbnail not available for this file");
+                return new ThumbnailResult { Reason = "NoThumbnail" };
 
             await RecordFileAccessAsync(fileId, FileAccessType.Preview);
 
-            var stream = new MemoryStream(file.ThumbnailContent, false);
-            return (stream, "image/jpeg", $"thumb_{file.OriginalFileName}");
+            return new ThumbnailResult
+            {
+                Stream = new MemoryStream(file.ThumbnailContent, writable: false),
+                ContentType = "image/jpeg",
+                FileName = $"thumb_{file.OriginalFileName}"
+            };
         }
+
 
         #endregion
 
-        #region File Management Operations
+        #region File Management Operations - FIXED DEADLOCK ISSUES
 
         public async Task<FileDto> UpdateFileAsync(int fileId, UpdateFileDto updateDto)
         {
-            var file = await _fileRepository.GetByIdAsync(fileId);
-            if (file == null)
-                throw new ArgumentException("File not found");
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            // Apply updates
-            file.Description = updateDto.Description;
-            file.Alt = updateDto.Alt;
-            file.IsPublic = updateDto.IsPublic;
-            file.FolderId = updateDto.FolderId;
-            file.UpdatedAt = DateTime.UtcNow;
-            file.UpdatedByUserId = currentUserId;
-
-            // Merge tags efficiently
-            if (updateDto.Tags?.Any() == true)
+            // Use ExecuteInTransactionAsync to ensure atomicity and avoid nested semaphore calls
+            return await _fileRepository.ExecuteInTransactionAsync(async () =>
             {
-                foreach (var tag in updateDto.Tags)
+                var file = await _fileRepository.GetByIdAsync(fileId);
+                if (file == null)
+                    throw new ArgumentException("File not found");
+
+                var currentUserId = _userSessionService.GetCurrentUserId();
+
+                // Apply updates
+                file.Description = updateDto.Description;
+                file.Alt = updateDto.Alt;
+                file.IsPublic = updateDto.IsPublic;
+                file.FolderId = updateDto.FolderId;
+                file.UpdatedAt = DateTime.UtcNow;
+                file.UpdatedByUserId = currentUserId;
+
+                // Merge tags efficiently
+                if (updateDto.Tags?.Any() == true)
                 {
-                    file.Tags[tag.Key] = tag.Value;
+                    foreach (var tag in updateDto.Tags)
+                    {
+                        file.Tags[tag.Key] = tag.Value;
+                    }
                 }
-            }
 
-            // Regenerate thumbnail if requested
-            if (updateDto.RegenerateThumbnail && file.FileType == FileType.Image)
-            {
-                await GenerateThumbnailAsync(fileId);
-            }
+                // Regenerate thumbnail if requested
+                if (updateDto.RegenerateThumbnail && file.FileType == FileType.Image)
+                {
+                    await GenerateThumbnailInternalAsync(file);
+                }
 
-            _fileRepository.Update(file);
-            await _fileRepository.SaveChangesAsync();
+                _fileRepository.Update(file);
+                await _fileRepository.SaveChangesAsync();
 
-            return await MapFileToDto(file);
+                return await MapFileToDto(file);
+            });
         }
 
         public async Task<bool> DeleteFileAsync(int fileId)
         {
-            var file = await _fileRepository.GetByIdAsync(fileId);
-            if (file == null)
-                return false;
+            try
+            {
+                _logger.LogInformation("Starting delete operation for file {FileId}", fileId);
 
-            var currentUserId = _userSessionService.GetCurrentUserId();
-            return await _fileRepository.SoftDeleteAsync(fileId, currentUserId);
+                var currentUserId = _userSessionService.GetCurrentUserId();
+
+                // Use single repository call to avoid nested semaphore acquisition
+                var success = await _fileRepository.SoftDeleteAsync(fileId, currentUserId);
+
+                if (success)
+                {
+                    _logger.LogInformation("Successfully deleted file {FileId}", fileId);
+                }
+                else
+                {
+                    _logger.LogWarning("File {FileId} not found for deletion", fileId);
+                }
+
+                return success;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting file {FileId}", fileId);
+                throw;
+            }
         }
 
         public async Task<bool> DeleteMultipleFilesAsync(List<int> fileIds)
@@ -463,132 +495,165 @@ namespace Backend.CMS.Infrastructure.Services
             if (fileIds?.Any() != true)
                 return false;
 
-            var currentUserId = _userSessionService.GetCurrentUserId();
-            var successCount = 0;
-
-            // Process deletions in parallel
-            var semaphore = new SemaphoreSlim(Environment.ProcessorCount);
-            var tasks = fileIds.Select(async fileId =>
+            try
             {
-                await semaphore.WaitAsync();
-                try
+                _logger.LogInformation("Starting bulk delete operation for {Count} files", fileIds.Count);
+
+                var currentUserId = _userSessionService.GetCurrentUserId();
+
+                // Use transaction to ensure atomicity
+                return await _fileRepository.ExecuteInTransactionAsync(async () =>
                 {
-                    if (await _fileRepository.SoftDeleteAsync(fileId, currentUserId))
+                    var successCount = 0;
+                    var failureCount = 0;
+
+                    // Process deletions in parallel batches to avoid overwhelming the semaphore
+                    const int batchSize = 10;
+                    var batches = fileIds.Chunk(batchSize);
+
+                    foreach (var batch in batches)
                     {
-                        Interlocked.Increment(ref successCount);
+                        var tasks = batch.Select(async fileId =>
+                        {
+                            try
+                            {
+                                var success = await _fileRepository.SoftDeleteAsync(fileId, currentUserId);
+                                if (success)
+                                {
+                                    Interlocked.Increment(ref successCount);
+                                }
+                                else
+                                {
+                                    Interlocked.Increment(ref failureCount);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Failed to delete file: {FileId}", fileId);
+                                Interlocked.Increment(ref failureCount);
+                            }
+                        });
+
+                        await Task.WhenAll(tasks);
                     }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to delete file: {FileId}", fileId);
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
-            });
 
-            await Task.WhenAll(tasks);
-            semaphore.Dispose();
+                    _logger.LogInformation("Bulk delete completed: {SuccessCount} successful, {FailureCount} failed",
+                        successCount, failureCount);
 
-            return successCount == fileIds.Count;
+                    return successCount == fileIds.Count;
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error in bulk delete operation");
+                throw;
+            }
         }
 
         public async Task<FileDto> MoveFileAsync(MoveFileDto moveDto)
         {
-            var file = await _fileRepository.GetByIdAsync(moveDto.FileId);
-            if (file == null)
-                throw new ArgumentException("File not found");
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            file.FolderId = moveDto.NewFolderId;
-            file.UpdatedAt = DateTime.UtcNow;
-            file.UpdatedByUserId = currentUserId;
-
-            // Update metadata if requested
-            if (moveDto.UpdateMetadata)
+            return await _fileRepository.ExecuteInTransactionAsync(async () =>
             {
-                file.Metadata["lastMoved"] = DateTime.UtcNow;
-                file.Metadata["movedBy"] = currentUserId;
-            }
+                var file = await _fileRepository.GetByIdAsync(moveDto.FileId);
+                if (file == null)
+                    throw new ArgumentException("File not found");
 
-            _fileRepository.Update(file);
-            await _fileRepository.SaveChangesAsync();
+                var currentUserId = _userSessionService.GetCurrentUserId();
 
-            return await MapFileToDto(file);
+                file.FolderId = moveDto.NewFolderId;
+                file.UpdatedAt = DateTime.UtcNow;
+                file.UpdatedByUserId = currentUserId;
+
+                // Update metadata if requested
+                if (moveDto.UpdateMetadata)
+                {
+                    file.Metadata["lastMoved"] = DateTime.UtcNow;
+                    file.Metadata["movedBy"] = currentUserId;
+                }
+
+                _fileRepository.Update(file);
+                await _fileRepository.SaveChangesAsync();
+
+                return await MapFileToDto(file);
+            });
         }
 
         public async Task<FileDto> CopyFileAsync(CopyFileDto copyDto)
         {
-            var originalFile = await _fileRepository.GetByIdAsync(copyDto.FileId);
-            if (originalFile == null)
-                throw new ArgumentException("File not found");
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            var newFileName = copyDto.NewName ?? $"Copy of {originalFile.OriginalFileName}";
-            var newStoredFileName = $"copy_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString()[..8]}{originalFile.FileExtension}";
-
-            // Create new file entity with copied content
-            var newFile = new FileEntity
+            return await _fileRepository.ExecuteInTransactionAsync(async () =>
             {
-                OriginalFileName = newFileName,
-                StoredFileName = newStoredFileName,
-                FileContent = (byte[])originalFile.FileContent.Clone(),
-                ContentType = originalFile.ContentType,
-                FileSize = originalFile.FileSize,
-                FileExtension = originalFile.FileExtension,
-                FileType = originalFile.FileType,
-                Description = originalFile.Description,
-                Alt = originalFile.Alt,
-                IsPublic = originalFile.IsPublic,
-                FolderId = copyDto.DestinationFolderId ?? originalFile.FolderId,
-                Hash = originalFile.Hash,
-                Width = originalFile.Width,
-                Height = originalFile.Height,
-                Duration = originalFile.Duration,
-                IsProcessed = originalFile.IsProcessed,
-                ProcessingStatus = originalFile.ProcessingStatus,
-                CreatedByUserId = currentUserId,
-                UpdatedByUserId = currentUserId
-            };
+                var originalFile = await _fileRepository.GetByIdAsync(copyDto.FileId);
+                if (originalFile == null)
+                    throw new ArgumentException("File not found");
 
-            // Copy metadata and tags if requested
-            if (copyDto.CopyMetadata)
-            {
-                newFile.Tags = new Dictionary<string, object>(originalFile.Tags);
-                newFile.Metadata = new Dictionary<string, object>(originalFile.Metadata);
-            }
+                var currentUserId = _userSessionService.GetCurrentUserId();
 
-            // Copy thumbnail if exists and requested
-            if (copyDto.CopyThumbnail && originalFile.ThumbnailContent != null && originalFile.ThumbnailContent.Length > 0)
-            {
-                newFile.ThumbnailContent = (byte[])originalFile.ThumbnailContent.Clone();
-            }
+                var newFileName = copyDto.NewName ?? $"Copy of {originalFile.OriginalFileName}";
+                var newStoredFileName = $"copy_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString()[..8]}{originalFile.FileExtension}";
 
-            await _fileRepository.AddAsync(newFile);
-            await _fileRepository.SaveChangesAsync();
+                // Create new file entity with copied content
+                var newFile = new FileEntity
+                {
+                    OriginalFileName = newFileName,
+                    StoredFileName = newStoredFileName,
+                    FileContent = (byte[])originalFile.FileContent.Clone(),
+                    ContentType = originalFile.ContentType,
+                    FileSize = originalFile.FileSize,
+                    FileExtension = originalFile.FileExtension,
+                    FileType = originalFile.FileType,
+                    Description = originalFile.Description,
+                    Alt = originalFile.Alt,
+                    IsPublic = originalFile.IsPublic,
+                    FolderId = copyDto.DestinationFolderId ?? originalFile.FolderId,
+                    Hash = originalFile.Hash,
+                    Width = originalFile.Width,
+                    Height = originalFile.Height,
+                    Duration = originalFile.Duration,
+                    IsProcessed = originalFile.IsProcessed,
+                    ProcessingStatus = originalFile.ProcessingStatus,
+                    CreatedByUserId = currentUserId,
+                    UpdatedByUserId = currentUserId
+                };
 
-            return await MapFileToDto(newFile);
+                // Copy metadata and tags if requested
+                if (copyDto.CopyMetadata)
+                {
+                    newFile.Tags = new Dictionary<string, object>(originalFile.Tags);
+                    newFile.Metadata = new Dictionary<string, object>(originalFile.Metadata);
+                }
+
+                // Copy thumbnail if exists and requested
+                if (copyDto.CopyThumbnail && originalFile.ThumbnailContent != null && originalFile.ThumbnailContent.Length > 0)
+                {
+                    newFile.ThumbnailContent = (byte[])originalFile.ThumbnailContent.Clone();
+                }
+
+                await _fileRepository.AddAsync(newFile);
+                await _fileRepository.SaveChangesAsync();
+
+                return await MapFileToDto(newFile);
+            });
         }
 
         public async Task<bool> RenameFileAsync(int fileId, string newName)
         {
-            var file = await _fileRepository.GetByIdAsync(fileId);
-            if (file == null)
-                return false;
+            return await _fileRepository.ExecuteInTransactionAsync(async () =>
+            {
+                var file = await _fileRepository.GetByIdAsync(fileId);
+                if (file == null)
+                    return false;
 
-            var currentUserId = _userSessionService.GetCurrentUserId();
+                var currentUserId = _userSessionService.GetCurrentUserId();
 
-            file.OriginalFileName = newName;
-            file.UpdatedAt = DateTime.UtcNow;
-            file.UpdatedByUserId = currentUserId;
+                file.OriginalFileName = newName;
+                file.UpdatedAt = DateTime.UtcNow;
+                file.UpdatedByUserId = currentUserId;
 
-            _fileRepository.Update(file);
-            await _fileRepository.SaveChangesAsync();
+                _fileRepository.Update(file);
+                await _fileRepository.SaveChangesAsync();
 
-            return true;
+                return true;
+            });
         }
 
         #endregion
@@ -631,13 +696,20 @@ namespace Backend.CMS.Infrastructure.Services
             return previewDto;
         }
 
-
         public async Task<bool> GenerateThumbnailAsync(int fileId)
         {
-            var file = await _fileRepository.GetByIdAsync(fileId);
-            if (file == null || file.FileType != FileType.Image)
-                return false;
+            return await _fileRepository.ExecuteInTransactionAsync(async () =>
+            {
+                var file = await _fileRepository.GetByIdAsync(fileId);
+                if (file == null || file.FileType != FileType.Image)
+                    return false;
 
+                return await GenerateThumbnailInternalAsync(file);
+            });
+        }
+
+        private async Task<bool> GenerateThumbnailInternalAsync(FileEntity file)
+        {
             try
             {
                 var thumbnailBytes = await _imageProcessingService.GenerateThumbnailFromBytesAsync(file.FileContent);
@@ -654,32 +726,35 @@ namespace Backend.CMS.Infrastructure.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to generate thumbnail for file: {FileId}", fileId);
+                _logger.LogError(ex, "Failed to generate thumbnail for file: {FileId}", file.Id);
                 return false;
             }
         }
 
         public async Task<bool> ProcessFileAsync(int fileId)
         {
-            var file = await _fileRepository.GetByIdAsync(fileId);
-            if (file == null)
-                return false;
-
-            if (file.FileType == FileType.Image)
+            return await _fileRepository.ExecuteInTransactionAsync(async () =>
             {
-                return await ProcessImageFileAsync(file, true);
-            }
+                var file = await _fileRepository.GetByIdAsync(fileId);
+                if (file == null)
+                    return false;
 
-            var currentUserId = _userSessionService.GetCurrentUserId();
-            file.IsProcessed = true;
-            file.ProcessingStatus = "Completed";
-            file.UpdatedAt = DateTime.UtcNow;
-            file.UpdatedByUserId = currentUserId;
+                if (file.FileType == FileType.Image)
+                {
+                    return await ProcessImageFileAsync(file, true);
+                }
 
-            _fileRepository.Update(file);
-            await _fileRepository.SaveChangesAsync();
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                file.IsProcessed = true;
+                file.ProcessingStatus = "Completed";
+                file.UpdatedAt = DateTime.UtcNow;
+                file.UpdatedByUserId = currentUserId;
 
-            return true;
+                _fileRepository.Update(file);
+                await _fileRepository.SaveChangesAsync();
+
+                return true;
+            });
         }
 
         #endregion
@@ -688,20 +763,28 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task RecordFileAccessAsync(int fileId, FileAccessType accessType)
         {
-            var currentUserId = _userSessionService.GetCurrentUserId();
-
-            var fileAccess = new Backend.CMS.Domain.Entities.FileAccess
+            try
             {
-                FileId = fileId,
-                UserId = currentUserId,
-                AccessType = accessType,
-                AccessedAt = DateTime.UtcNow,
-                CreatedByUserId = currentUserId,
-                UpdatedByUserId = currentUserId
-            };
+                var currentUserId = _userSessionService.GetCurrentUserId();
 
-            await _fileAccessRepository.AddAsync(fileAccess);
-            await _fileAccessRepository.SaveChangesAsync();
+                var fileAccess = new Backend.CMS.Domain.Entities.FileAccess
+                {
+                    FileId = fileId,
+                    UserId = currentUserId,
+                    AccessType = accessType,
+                    AccessedAt = DateTime.UtcNow,
+                    CreatedByUserId = currentUserId,
+                    UpdatedByUserId = currentUserId
+                };
+
+                await _fileAccessRepository.AddAsync(fileAccess);
+                await _fileAccessRepository.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record file access for file {FileId}", fileId);
+                // Don't throw - this is non-critical
+            }
         }
 
         public async Task<List<FileDto>> GetRecentFilesAsync(int count = 10)
@@ -855,76 +938,23 @@ namespace Backend.CMS.Infrastructure.Services
 
         #endregion
 
-        #region Bulk Operations
+        #region Bulk Operations - FIXED DEADLOCK ISSUES
 
         public async Task<bool> BulkUpdateFilesAsync(List<int> fileIds, UpdateFileDto updateDto)
         {
             if (fileIds?.Any() != true)
                 return false;
 
-            var currentUserId = _userSessionService.GetCurrentUserId();
-            var successCount = 0;
-
-            // Process updates in batches
-            const int batchSize = 50;
-            var batches = fileIds.Chunk(batchSize);
-
-            foreach (var batch in batches)
+            return await _fileRepository.ExecuteInTransactionAsync(async () =>
             {
-                var query = _fileRepository.GetQueryable()
-                    .Where(f => batch.Contains(f.Id));
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var successCount = 0;
 
-                var files = await query.ToListAsync();
+                // Process updates in batches
+                const int batchSize = 50;
+                var batches = fileIds.Chunk(batchSize);
 
-                foreach (var file in files)
-                {
-                    try
-                    {
-                        file.Description = updateDto.Description ?? file.Description;
-                        file.Alt = updateDto.Alt ?? file.Alt;
-                        file.IsPublic = updateDto.IsPublic;
-                        file.FolderId = updateDto.FolderId ?? file.FolderId;
-                        file.UpdatedAt = DateTime.UtcNow;
-                        file.UpdatedByUserId = currentUserId;
-
-                        if (updateDto.Tags?.Any() == true)
-                        {
-                            foreach (var tag in updateDto.Tags)
-                            {
-                                file.Tags[tag.Key] = tag.Value;
-                            }
-                        }
-
-                        _fileRepository.Update(file);
-                        successCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to update file: {FileId}", file.Id);
-                    }
-                }
-
-                await _fileRepository.SaveChangesAsync();
-            }
-
-            return successCount == fileIds.Count;
-        }
-
-        public async Task<bool> BulkMoveFilesAsync(List<int> fileIds, int? destinationFolderId)
-        {
-            if (fileIds?.Any() != true)
-                return false;
-
-            var currentUserId = _userSessionService.GetCurrentUserId();
-            var successCount = 0;
-
-            // Process in batches for better performance
-            const int batchSize = 50;
-            var batches = fileIds.Chunk(batchSize);
-
-            foreach (var batch in batches)
-            {
-                try
+                foreach (var batch in batches)
                 {
                     var query = _fileRepository.GetQueryable()
                         .Where(f => batch.Contains(f.Id));
@@ -933,54 +963,118 @@ namespace Backend.CMS.Infrastructure.Services
 
                     foreach (var file in files)
                     {
-                        file.FolderId = destinationFolderId;
-                        file.UpdatedAt = DateTime.UtcNow;
-                        file.UpdatedByUserId = currentUserId;
+                        try
+                        {
+                            file.Description = updateDto.Description ?? file.Description;
+                            file.Alt = updateDto.Alt ?? file.Alt;
+                            file.IsPublic = updateDto.IsPublic;
+                            file.FolderId = updateDto.FolderId ?? file.FolderId;
+                            file.UpdatedAt = DateTime.UtcNow;
+                            file.UpdatedByUserId = currentUserId;
 
-                        _fileRepository.Update(file);
-                        successCount++;
+                            if (updateDto.Tags?.Any() == true)
+                            {
+                                foreach (var tag in updateDto.Tags)
+                                {
+                                    file.Tags[tag.Key] = tag.Value;
+                                }
+                            }
+
+                            _fileRepository.Update(file);
+                            successCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to update file: {FileId}", file.Id);
+                        }
                     }
 
                     await _fileRepository.SaveChangesAsync();
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to move files in batch: {BatchFiles}", string.Join(",", batch));
-                }
-            }
 
-            return successCount == fileIds.Count;
+                return successCount == fileIds.Count;
+            });
+        }
+
+        public async Task<bool> BulkMoveFilesAsync(List<int> fileIds, int? destinationFolderId)
+        {
+            if (fileIds?.Any() != true)
+                return false;
+
+            return await _fileRepository.ExecuteInTransactionAsync(async () =>
+            {
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var successCount = 0;
+
+                // Process in batches for better performance
+                const int batchSize = 50;
+                var batches = fileIds.Chunk(batchSize);
+
+                foreach (var batch in batches)
+                {
+                    try
+                    {
+                        var query = _fileRepository.GetQueryable()
+                            .Where(f => batch.Contains(f.Id));
+
+                        var files = await query.ToListAsync();
+
+                        foreach (var file in files)
+                        {
+                            file.FolderId = destinationFolderId;
+                            file.UpdatedAt = DateTime.UtcNow;
+                            file.UpdatedByUserId = currentUserId;
+
+                            _fileRepository.Update(file);
+                            successCount++;
+                        }
+
+                        await _fileRepository.SaveChangesAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to move files in batch: {BatchFiles}", string.Join(",", batch));
+                    }
+                }
+
+                return successCount == fileIds.Count;
+            });
         }
 
         public async Task<List<FileDto>> BulkCopyFilesAsync(List<int> fileIds, int? destinationFolderId)
         {
-            var copiedFiles = new List<FileDto>();
 
-            foreach (var fileId in fileIds)
+            return await _fileRepository.ExecuteInTransactionAsync<List<FileDto>>(async () =>
             {
-                try
+                var copiedFiles = new List<FileDto>();
+                                                      
+
+                foreach (var fileId in fileIds)
                 {
-                    var copyDto = new CopyFileDto
+                    try
                     {
-                        FileId = fileId,
-                        DestinationFolderId = destinationFolderId
-                    };
+                        var copyDto = new CopyFileDto
+                        {
+                            FileId = fileId,
+                            DestinationFolderId = destinationFolderId
+                        };
 
-                    var copiedFile = await CopyFileAsync(copyDto);
-                    copiedFiles.Add(copiedFile);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to copy file: {FileId}", fileId);
-                }
-            }
+                        var copiedFile = await CopyFileAsync(copyDto);
+                        copiedFiles.Add(copiedFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to copy file: {FileId}", fileId);
 
-            return copiedFiles;
+                    }
+                }
+                return copiedFiles;
+            });
         }
 
         #endregion
 
-        #region Private Helper Methods
+            #region Private Helper Methods
 
         private IQueryable<FileEntity> BuildFileQuery(FileSearchDto searchDto)
         {
@@ -1024,7 +1118,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
             }
 
-            return query;
+            return query.Where(f => !f.IsDeleted);
         }
 
         private static IQueryable<FileEntity> ApplySorting(IQueryable<FileEntity> query, string sortBy, string sortDirection)

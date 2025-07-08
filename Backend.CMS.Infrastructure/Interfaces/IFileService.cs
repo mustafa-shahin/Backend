@@ -83,7 +83,7 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// </summary>
         /// <param name="fileId">File identifier</param>
         /// <returns>Thumbnail stream, content type, and filename</returns>
-        Task<(Stream stream, string contentType, string fileName)> GetThumbnailStreamAsync(int fileId);
+        Task<ThumbnailResult> GetThumbnailStreamAsync(int fileId);
 
         #endregion
 

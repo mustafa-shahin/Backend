@@ -4,6 +4,7 @@ using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Repositories
@@ -14,6 +15,8 @@ namespace Backend.CMS.Infrastructure.Repositories
         protected readonly DbSet<T> _dbSet;
         private readonly SemaphoreSlim _semaphore;
         private readonly ILogger<Repository<T>> _logger;
+        private readonly ConcurrentDictionary<int, SemaphoreSlim> _entityLocks;
+        private readonly ThreadLocal<bool> _semaphoreAcquired;
         private bool _disposed = false;
 
         public Repository(ApplicationDbContext context, ILogger<Repository<T>> logger = null)
@@ -22,262 +25,118 @@ namespace Backend.CMS.Infrastructure.Repositories
             _dbSet = context.Set<T>();
             _semaphore = new SemaphoreSlim(1, 1);
             _logger = logger;
+            _entityLocks = new ConcurrentDictionary<int, SemaphoreSlim>();
+            _semaphoreAcquired = new ThreadLocal<bool>(() => false);
         }
 
-        public IQueryable<T> GetAllAsQueryable()
+        public IQueryable<T> GetQueryable()
         {
-            return _dbSet.AsNoTracking();
+            return _dbSet.AsNoTracking().Where(e => !e.IsDeleted);
         }
+
+        #region Public Methods with Semaphore Management
 
         public virtual async Task<T?> GetByIdAsync(int id)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await GetByIdInternalAsync(id);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await GetByIdInternalAsync(id));
         }
 
         public virtual async Task<T?> GetByIdIncludeDeletedAsync(int id)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await GetByIdIncludeDeletedInternalAsync(id);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await GetByIdIncludeDeletedInternalAsync(id));
         }
 
         public virtual async Task<IEnumerable<T>> GetAllAsync()
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await GetAllInternalAsync();
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await GetAllInternalAsync());
         }
 
         public virtual async Task<IEnumerable<T>> GetAllIncludeDeletedAsync()
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await GetAllIncludeDeletedInternalAsync();
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await GetAllIncludeDeletedInternalAsync());
         }
 
         public virtual async Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await FindInternalAsync(predicate);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await FindInternalAsync(predicate));
         }
 
         public virtual async Task<IEnumerable<T>> FindIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await FindIncludeDeletedInternalAsync(predicate);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await FindIncludeDeletedInternalAsync(predicate));
         }
 
         public virtual async Task<T?> FirstOrDefaultAsync(Expression<Func<T, bool>> predicate)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await FirstOrDefaultInternalAsync(predicate);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await FirstOrDefaultInternalAsync(predicate));
         }
 
         public virtual async Task<T?> FirstOrDefaultIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await FirstOrDefaultIncludeDeletedInternalAsync(predicate);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await FirstOrDefaultIncludeDeletedInternalAsync(predicate));
         }
 
         public virtual async Task<bool> AnyAsync(Expression<Func<T, bool>> predicate)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await AnyInternalAsync(predicate);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await AnyInternalAsync(predicate));
         }
 
         public virtual async Task<bool> AnyIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await AnyIncludeDeletedInternalAsync(predicate);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await AnyIncludeDeletedInternalAsync(predicate));
         }
 
         public virtual async Task<int> CountAsync()
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await CountInternalAsync();
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await CountInternalAsync());
         }
 
         public virtual async Task<int> CountAsync(Expression<Func<T, bool>> predicate)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await CountInternalAsync(predicate);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await CountInternalAsync(predicate));
         }
 
         public virtual async Task<int> CountIncludeDeletedAsync()
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await CountIncludeDeletedInternalAsync();
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await CountIncludeDeletedInternalAsync());
         }
 
         public virtual async Task<int> CountIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await CountIncludeDeletedInternalAsync(predicate);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await CountIncludeDeletedInternalAsync(predicate));
         }
 
         public virtual async Task<IEnumerable<T>> GetPagedAsync(int page, int pageSize)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await GetPagedInternalAsync(page, pageSize);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await GetPagedInternalAsync(page, pageSize));
         }
 
         public virtual async Task<IEnumerable<T>> GetPagedIncludeDeletedAsync(int page, int pageSize)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await GetPagedIncludeDeletedInternalAsync(page, pageSize);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await GetPagedIncludeDeletedInternalAsync(page, pageSize));
         }
 
         public virtual async Task AddAsync(T entity)
         {
             if (entity == null) throw new ArgumentNullException(nameof(entity));
-
-            await _semaphore.WaitAsync();
-            try
-            {
-                await AddInternalAsync(entity);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            await ExecuteWithSemaphoreAsync(async () => await AddInternalAsync(entity));
         }
 
         public virtual async Task AddRangeAsync(IEnumerable<T> entities)
         {
             if (entities == null) throw new ArgumentNullException(nameof(entities));
-
-            await _semaphore.WaitAsync();
-            try
-            {
-                await AddRangeInternalAsync(entities);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            await ExecuteWithSemaphoreAsync(async () => await AddRangeInternalAsync(entities));
         }
 
         public virtual void Update(T entity)
         {
             if (entity == null) throw new ArgumentNullException(nameof(entity));
-
             _context.Entry(entity).State = EntityState.Modified;
         }
 
         public virtual void UpdateRange(IEnumerable<T> entities)
         {
             if (entities == null) throw new ArgumentNullException(nameof(entities));
-
             foreach (var entity in entities)
             {
                 _context.Entry(entity).State = EntityState.Modified;
@@ -287,168 +146,118 @@ namespace Backend.CMS.Infrastructure.Repositories
         public virtual void Remove(T entity)
         {
             if (entity == null) throw new ArgumentNullException(nameof(entity));
-
             _dbSet.Remove(entity);
         }
 
         public virtual void RemoveRange(IEnumerable<T> entities)
         {
             if (entities == null) throw new ArgumentNullException(nameof(entities));
-
             _dbSet.RemoveRange(entities);
         }
 
-        // Deadlock-free soft delete implementation
         public virtual async Task<bool> SoftDeleteAsync(int id, int? deletedByUserId = null)
         {
-            await _semaphore.WaitAsync();
-            try
+            return await ExecuteWithSemaphoreAsync(async () =>
             {
-                var entity = await GetByIdInternalAsync(id);
-                if (entity == null) return false;
+                try
+                {
+                    var entity = await GetByIdInternalAsync(id);
+                    if (entity == null)
+                    {
+                        _logger?.LogWarning("Entity {EntityType} with ID {Id} not found for soft delete", typeof(T).Name, id);
+                        return false;
+                    }
 
-                return await SoftDeleteInternalAsync(entity, deletedByUserId);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Error during soft delete of entity {EntityType} with ID {Id}", typeof(T).Name, id);
-                throw;
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                    return await SoftDeleteInternalAsync(entity, deletedByUserId);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Error during soft delete of entity {EntityType} with ID {Id}", typeof(T).Name, id);
+                    throw;
+                }
+            });
         }
 
         public virtual async Task<bool> SoftDeleteAsync(T entity, int? deletedByUserId = null)
         {
             if (entity == null) throw new ArgumentNullException(nameof(entity));
 
-            await _semaphore.WaitAsync();
-            try
+            return await ExecuteWithSemaphoreAsync(async () =>
             {
-                return await SoftDeleteInternalAsync(entity, deletedByUserId);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Error during soft delete of entity {EntityType}", typeof(T).Name);
-                throw;
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                try
+                {
+                    return await SoftDeleteInternalAsync(entity, deletedByUserId);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Error during soft delete of entity {EntityType} with ID {Id}", typeof(T).Name, entity.Id);
+                    throw;
+                }
+            });
         }
 
         public virtual async Task<bool> SoftDeleteRangeAsync(IEnumerable<T> entities, int? deletedByUserId = null)
         {
             if (entities == null) throw new ArgumentNullException(nameof(entities));
 
-            await _semaphore.WaitAsync();
-            try
+            return await ExecuteWithSemaphoreAsync(async () =>
             {
-                return await SoftDeleteRangeInternalAsync(entities, deletedByUserId);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Error during bulk soft delete of entities {EntityType}", typeof(T).Name);
-                throw;
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                try
+                {
+                    return await SoftDeleteRangeInternalAsync(entities, deletedByUserId);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Error during bulk soft delete of entities {EntityType}", typeof(T).Name);
+                    throw;
+                }
+            });
         }
 
         public virtual async Task<bool> RestoreAsync(int id, int? restoredByUserId = null)
         {
-            await _semaphore.WaitAsync();
-            try
+            return await ExecuteWithSemaphoreAsync(async () =>
             {
-                var entity = await GetByIdIncludeDeletedInternalAsync(id);
-                if (entity == null || !entity.IsDeleted) return false;
+                try
+                {
+                    var entity = await GetByIdIncludeDeletedInternalAsync(id);
+                    if (entity == null || !entity.IsDeleted)
+                    {
+                        _logger?.LogWarning("Entity {EntityType} with ID {Id} not found or not deleted for restore", typeof(T).Name, id);
+                        return false;
+                    }
 
-                return await RestoreInternalAsync(entity, restoredByUserId);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Error during restore of entity {EntityType} with ID {Id}", typeof(T).Name, id);
-                throw;
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                    return await RestoreInternalAsync(entity, restoredByUserId);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Error during restore of entity {EntityType} with ID {Id}", typeof(T).Name, id);
+                    throw;
+                }
+            });
         }
 
         public virtual async Task<bool> RestoreAsync(T entity, int? restoredByUserId = null)
         {
             if (entity == null) throw new ArgumentNullException(nameof(entity));
 
-            await _semaphore.WaitAsync();
-            try
+            return await ExecuteWithSemaphoreAsync(async () =>
             {
-                return await RestoreInternalAsync(entity, restoredByUserId);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Error during restore of entity {EntityType}", typeof(T).Name);
-                throw;
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                try
+                {
+                    return await RestoreInternalAsync(entity, restoredByUserId);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Error during restore of entity {EntityType} with ID {Id}", typeof(T).Name, entity.Id);
+                    throw;
+                }
+            });
         }
 
         public virtual async Task<int> SaveChangesAsync()
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await SaveChangesInternalAsync();
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
-        }
-
-        public IQueryable<T> GetQueryable()
-        {
-            return _dbSet.AsNoTracking().Where(e => !e.IsDeleted);
-        }
-
-        public async Task<IEnumerable<T>> FindWithOrderingAsync(
-            Expression<Func<T, bool>>? predicate = null,
-            Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy = null,
-            int? skip = null,
-            int? take = null)
-        {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await FindWithOrderingInternalAsync(predicate, orderBy, skip, take);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
-        }
-
-        public virtual async Task<IEnumerable<T>> FindWithIncludesAsync<TProperty>(
-            Expression<Func<T, bool>> predicate,
-            params Expression<Func<T, TProperty>>[] includes)
-        {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await FindWithIncludesInternalAsync(predicate, includes);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await SaveChangesInternalAsync());
         }
 
         public virtual async Task<PagedResult<T>> GetPagedResultAsync(
@@ -457,16 +266,10 @@ namespace Backend.CMS.Infrastructure.Repositories
             Expression<Func<T, bool>>? predicate = null,
             Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy = null)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await GetPagedResultInternalAsync(page, pageSize, predicate, orderBy);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await GetPagedResultInternalAsync(page, pageSize, predicate, orderBy));
         }
+
+        #endregion
 
         #region Internal Methods (No Semaphore Acquisition)
 
@@ -580,7 +383,6 @@ namespace Backend.CMS.Infrastructure.Repositories
             await _dbSet.AddRangeAsync(entities);
         }
 
-        // FIXED: Internal soft delete method without semaphore acquisition
         protected virtual async Task<bool> SoftDeleteInternalAsync(T entity, int? deletedByUserId = null)
         {
             try
@@ -593,6 +395,8 @@ namespace Backend.CMS.Infrastructure.Repositories
 
                 Update(entity);
                 await SaveChangesInternalAsync();
+
+                _logger?.LogInformation("Successfully soft deleted entity {EntityType} with ID {Id}", typeof(T).Name, entity.Id);
                 return true;
             }
             catch (Exception ex)
@@ -622,6 +426,8 @@ namespace Backend.CMS.Infrastructure.Repositories
 
                 UpdateRange(entityList);
                 await SaveChangesInternalAsync();
+
+                _logger?.LogInformation("Successfully soft deleted {Count} entities of type {EntityType}", entityList.Count, typeof(T).Name);
                 return true;
             }
             catch (Exception ex)
@@ -643,6 +449,8 @@ namespace Backend.CMS.Infrastructure.Repositories
 
                 Update(entity);
                 await SaveChangesInternalAsync();
+
+                _logger?.LogInformation("Successfully restored entity {EntityType} with ID {Id}", typeof(T).Name, entity.Id);
                 return true;
             }
             catch (Exception ex)
@@ -655,51 +463,6 @@ namespace Backend.CMS.Infrastructure.Repositories
         protected virtual async Task<int> SaveChangesInternalAsync()
         {
             return await _context.SaveChangesAsync();
-        }
-
-        protected virtual async Task<IEnumerable<T>> FindWithOrderingInternalAsync(
-            Expression<Func<T, bool>>? predicate = null,
-            Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy = null,
-            int? skip = null,
-            int? take = null)
-        {
-            IQueryable<T> query = GetQueryable();
-
-            if (predicate != null)
-            {
-                query = query.Where(predicate);
-            }
-
-            if (orderBy != null)
-            {
-                query = orderBy(query);
-            }
-
-            if (skip.HasValue)
-            {
-                query = query.Skip(skip.Value);
-            }
-
-            if (take.HasValue)
-            {
-                query = query.Take(take.Value);
-            }
-
-            return await query.ToListAsync();
-        }
-
-        protected virtual async Task<IEnumerable<T>> FindWithIncludesInternalAsync<TProperty>(
-            Expression<Func<T, bool>> predicate,
-            params Expression<Func<T, TProperty>>[] includes)
-        {
-            IQueryable<T> query = _dbSet.AsNoTracking().Where(e => !e.IsDeleted);
-
-            foreach (var include in includes)
-            {
-                query = query.Include(include);
-            }
-
-            return await query.Where(predicate).ToListAsync();
         }
 
         protected virtual async Task<PagedResult<T>> GetPagedResultInternalAsync(
@@ -730,13 +493,54 @@ namespace Backend.CMS.Infrastructure.Repositories
                                   .Take(pageSize)
                                   .ToListAsync();
 
-            return new PagedResult<T>
+            return new PagedResult<T>(items, page, pageSize, totalCount);
+        }
+
+        #endregion
+
+        #region Semaphore Management
+
+        private async Task<T> ExecuteWithSemaphoreAsync<T>(Func<Task<T>> operation)
+        {
+            if (_semaphoreAcquired.Value)
             {
-                Data = items,
-                PageNumber = page,
-                PageSize = pageSize,
-                TotalCount = totalCount
-            };
+                // Already holding semaphore in this thread, execute directly
+                return await operation();
+            }
+
+            await _semaphore.WaitAsync();
+            _semaphoreAcquired.Value = true;
+            try
+            {
+                return await operation();
+            }
+            finally
+            {
+                _semaphoreAcquired.Value = false;
+                _semaphore.Release();
+            }
+        }
+
+        private async Task ExecuteWithSemaphoreAsync(Func<Task> operation)
+        {
+            if (_semaphoreAcquired.Value)
+            {
+                // Already holding semaphore in this thread, execute directly
+                await operation();
+                return;
+            }
+
+            await _semaphore.WaitAsync();
+            _semaphoreAcquired.Value = true;
+            try
+            {
+                await operation();
+            }
+            finally
+            {
+                _semaphoreAcquired.Value = false;
+                _semaphore.Release();
+            }
         }
 
         #endregion
@@ -745,8 +549,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public virtual async Task<TResult> ExecuteInTransactionAsync<TResult>(Func<Task<TResult>> operation)
         {
-            await _semaphore.WaitAsync();
-            try
+            return await ExecuteWithSemaphoreAsync(async () =>
             {
                 using var transaction = await _context.Database.BeginTransactionAsync();
                 try
@@ -760,17 +563,12 @@ namespace Backend.CMS.Infrastructure.Repositories
                     await transaction.RollbackAsync();
                     throw;
                 }
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            });
         }
 
         public virtual async Task ExecuteInTransactionAsync(Func<Task> operation)
         {
-            await _semaphore.WaitAsync();
-            try
+            await ExecuteWithSemaphoreAsync(async () =>
             {
                 using var transaction = await _context.Database.BeginTransactionAsync();
                 try
@@ -783,11 +581,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     await transaction.RollbackAsync();
                     throw;
                 }
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            });
         }
 
         #endregion
@@ -796,58 +590,56 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public virtual async Task<bool> BatchSoftDeleteAsync(Expression<Func<T, bool>> predicate, int? deletedByUserId = null)
         {
-            await _semaphore.WaitAsync();
-            try
+            return await ExecuteWithSemaphoreAsync(async () =>
             {
-                var entities = await FindInternalAsync(predicate);
-                if (!entities.Any()) return true;
+                try
+                {
+                    var entities = await FindInternalAsync(predicate);
+                    if (!entities.Any()) return true;
 
-                return await SoftDeleteRangeInternalAsync(entities, deletedByUserId);
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Error during batch soft delete of entities {EntityType}", typeof(T).Name);
-                throw;
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                    return await SoftDeleteRangeInternalAsync(entities, deletedByUserId);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Error during batch soft delete of entities {EntityType}", typeof(T).Name);
+                    throw;
+                }
+            });
         }
 
         public virtual async Task<bool> BatchRestoreAsync(Expression<Func<T, bool>> predicate, int? restoredByUserId = null)
         {
-            await _semaphore.WaitAsync();
-            try
+            return await ExecuteWithSemaphoreAsync(async () =>
             {
-                var entities = await FindIncludeDeletedInternalAsync(predicate);
-                var deletedEntities = entities.Where(e => e.IsDeleted).ToList();
-
-                if (!deletedEntities.Any()) return true;
-
-                var now = DateTime.UtcNow;
-                foreach (var entity in deletedEntities)
+                try
                 {
-                    entity.IsDeleted = false;
-                    entity.DeletedAt = null;
-                    entity.DeletedByUserId = null;
-                    entity.UpdatedAt = now;
-                    entity.UpdatedByUserId = restoredByUserId;
-                }
+                    var entities = await FindIncludeDeletedInternalAsync(predicate);
+                    var deletedEntities = entities.Where(e => e.IsDeleted).ToList();
 
-                UpdateRange(deletedEntities);
-                await SaveChangesInternalAsync();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Error during batch restore of entities {EntityType}", typeof(T).Name);
-                throw;
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+                    if (!deletedEntities.Any()) return true;
+
+                    var now = DateTime.UtcNow;
+                    foreach (var entity in deletedEntities)
+                    {
+                        entity.IsDeleted = false;
+                        entity.DeletedAt = null;
+                        entity.DeletedByUserId = null;
+                        entity.UpdatedAt = now;
+                        entity.UpdatedByUserId = restoredByUserId;
+                    }
+
+                    UpdateRange(deletedEntities);
+                    await SaveChangesInternalAsync();
+
+                    _logger?.LogInformation("Successfully restored {Count} entities of type {EntityType}", deletedEntities.Count, typeof(T).Name);
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "Error during batch restore of entities {EntityType}", typeof(T).Name);
+                    throw;
+                }
+            });
         }
 
         #endregion
@@ -856,28 +648,12 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public virtual async Task<bool> ExistsAsync(int id)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await _dbSet.AnyAsync(e => e.Id == id && !e.IsDeleted);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await _dbSet.AnyAsync(e => e.Id == id && !e.IsDeleted));
         }
 
         public virtual async Task<bool> ExistsAsync(Expression<Func<T, bool>> predicate)
         {
-            await _semaphore.WaitAsync();
-            try
-            {
-                return await _dbSet.Where(e => !e.IsDeleted).AnyAsync(predicate);
-            }
-            finally
-            {
-                _semaphore.Release();
-            }
+            return await ExecuteWithSemaphoreAsync(async () => await _dbSet.Where(e => !e.IsDeleted).AnyAsync(predicate));
         }
 
         #endregion
@@ -889,6 +665,14 @@ namespace Backend.CMS.Infrastructure.Repositories
             if (!_disposed && disposing)
             {
                 _semaphore?.Dispose();
+                _semaphoreAcquired?.Dispose();
+
+                foreach (var entityLock in _entityLocks.Values)
+                {
+                    entityLock.Dispose();
+                }
+                _entityLocks.Clear();
+
                 _disposed = true;
             }
         }

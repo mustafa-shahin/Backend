@@ -424,18 +424,18 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
-                var (stream, contentType, fileName) = await _fileService.GetThumbnailStreamAsync(id);
+                var result = await _fileService.GetThumbnailStreamAsync(id);
 
-                if (stream == null || stream.Length == 0)
+                if (!result.Found)
                 {
+                    _logger.LogInformation("Thumbnail not returned for file {FileId}. Reason: {Reason}", id, result.Reason);
                     return NotFound(new { Message = "Thumbnail not found" });
                 }
 
-                // Set appropriate headers for thumbnail
-                Response.Headers.Add("Cache-Control", "public, max-age=86400"); // Cache for 1 day
-                Response.Headers.Add("Content-Length", stream.Length.ToString());
+                Response.Headers.Add("Cache-Control", "public, max-age=86400");
+                Response.Headers.Add("Content-Length", result.Stream.Length.ToString());
 
-                return File(stream, contentType, fileName);
+                return File(result.Stream, result.ContentType!, result.FileName!);
             }
             catch (ArgumentException ex)
             {
