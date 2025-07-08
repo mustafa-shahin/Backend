@@ -384,7 +384,6 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<CategoryDto> CreateCategoryAsync(CreateCategoryDto createCategoryDto)
         {
-            // Comprehensive validation
             if (createCategoryDto == null)
                 throw new ArgumentNullException(nameof(createCategoryDto));
 
@@ -1103,7 +1102,7 @@ namespace Backend.CMS.Infrastructure.Services
         }
 
         /// <summary>
-        /// Comprehensive cache invalidation for category-related data
+        /// cache invalidation for category-related data
         /// </summary>
         private async Task InvalidateCategoryCacheAsync()
         {

@@ -85,8 +85,20 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var urlSet = new FileUrlSet();
 
-                // Always generate download URL
-                urlSet.DownloadUrl = GenerateDownloadUrl(file.Id, file.IsPublic);
+                // For video and audio files, prioritize streaming URLs
+                if (IsStreamableFileType(file.FileType, file.ContentType))
+                {
+                    // Use streaming URL as the primary download URL for video/audio
+                    urlSet.DownloadUrl = GenerateStreamingUrl(file.Id, file.IsPublic);
+
+                    // Also provide the traditional download URL in additional URLs
+                    urlSet.AdditionalUrls["download_attachment"] = GenerateDownloadUrl(file.Id, file.IsPublic);
+                }
+                else
+                {
+                    // For other file types, use regular download URL
+                    urlSet.DownloadUrl = GenerateDownloadUrl(file.Id, file.IsPublic);
+                }
 
                 // Generate preview URL for supported types
                 if (SupportsPreview(file.FileType, file.ContentType))
@@ -153,6 +165,48 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
+        /// <summary>
+        /// Generates streaming URL for video/audio files
+        /// </summary>
+        /// <param name="fileId">File ID</param>
+        /// <param name="isPublic">Whether the file is public</param>
+        /// <returns>Streaming URL</returns>
+        public string GenerateStreamingUrl(int fileId, bool isPublic = false)
+        {
+            try
+            {
+                return $"{_baseUrl}/api/v{_apiVersion}/file/{fileId}/stream";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating streaming URL for file {FileId}", fileId);
+                return GenerateDownloadUrl(fileId, isPublic); // Fallback to download URL
+            }
+        }
+
+        /// <summary>
+        /// Generates token-based streaming URL for private video/audio files
+        /// </summary>
+        /// <param name="token">Access token</param>
+        /// <returns>Token-based streaming URL</returns>
+        public string GenerateTokenStreamingUrl(string token)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(token))
+                {
+                    throw new ArgumentException("Token cannot be null or empty", nameof(token));
+                }
+
+                return $"{_baseUrl}/api/v{_apiVersion}/file/stream/{token}";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating token streaming URL for token {Token}", token);
+                return string.Empty;
+            }
+        }
+
         public bool SupportsPreview(FileType fileType, string contentType)
         {
             return fileType switch
@@ -174,6 +228,17 @@ namespace Backend.CMS.Infrastructure.Services
                 FileType.Document => true, // For PDF previews
                 _ => false
             };
+        }
+
+        /// <summary>
+        /// Checks if a file type supports streaming
+        /// </summary>
+        /// <param name="fileType">File type</param>
+        /// <param name="contentType">Content type</param>
+        /// <returns>True if file supports streaming</returns>
+        public bool SupportsStreaming(FileType fileType, string contentType)
+        {
+            return IsStreamableFileType(fileType, contentType);
         }
 
         private string GetBaseUrl()
@@ -228,17 +293,28 @@ namespace Backend.CMS.Infrastructure.Services
                     urlSet.AdditionalUrls["resize_large"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/resize?width=1200&height=1200";
                 }
 
-                // For videos, add streaming URLs if supported
-                if (file.FileType == FileType.Video && IsStreamableVideo(file.ContentType))
+                // For videos and audio, add streaming and download URLs
+                if (IsStreamableFileType(file.FileType, file.ContentType))
                 {
-                    urlSet.AdditionalUrls["stream"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/stream";
-                    urlSet.AdditionalUrls["stream_hls"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/stream/hls";
+                    // Main streaming URL
+                    urlSet.AdditionalUrls["stream"] = GenerateStreamingUrl(file.Id, file.IsPublic);
+
+                    // Potential future streaming formats
+                    if (file.FileType == FileType.Video)
+                    {
+                        urlSet.AdditionalUrls["stream_hls"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/stream/hls";
+                        urlSet.AdditionalUrls["stream_dash"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/stream/dash";
+                    }
+
+                    // Traditional download URL (for download rather than streaming)
+                    urlSet.AdditionalUrls["download"] = GenerateDownloadUrl(file.Id, file.IsPublic);
                 }
 
                 // Add download token generation URL for private files
                 if (!file.IsPublic)
                 {
                     urlSet.AdditionalUrls["generate_token"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download-token";
+                    urlSet.AdditionalUrls["generate_streaming_token"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download-token";
                 }
             }
             catch (Exception ex)
@@ -247,35 +323,61 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
+        private bool IsStreamableFileType(FileType fileType, string contentType)
+        {
+            return fileType switch
+            {
+                FileType.Video => IsStreamableVideo(contentType),
+                FileType.Audio => IsStreamableAudio(contentType),
+                _ => false
+            };
+        }
+
         private static bool IsStreamableVideo(string contentType)
         {
+            if (string.IsNullOrEmpty(contentType))
+                return false;
+
             var streamableTypes = new[]
             {
                 "video/mp4",
                 "video/webm",
                 "video/ogg",
-                "video/quicktime"
+                "video/quicktime",
+                "video/x-msvideo", // AVI
+                "video/x-ms-wmv",  // WMV
+                "video/x-flv",     // FLV
+                "video/3gpp",      // 3GP
+                "video/x-matroska" // MKV
             };
 
-            return streamableTypes.Contains(contentType?.ToLowerInvariant());
+            return streamableTypes.Any(type => contentType.Contains(type, StringComparison.OrdinalIgnoreCase));
         }
 
         private static bool IsStreamableAudio(string contentType)
         {
+            if (string.IsNullOrEmpty(contentType))
+                return false;
+
             var streamableTypes = new[]
             {
                 "audio/mpeg",
                 "audio/mp4",
                 "audio/ogg",
                 "audio/wav",
-                "audio/webm"
+                "audio/webm",
+                "audio/x-ms-wma",
+                "audio/x-wav"
             };
 
-            return streamableTypes.Contains(contentType?.ToLowerInvariant());
+            return streamableTypes.Any(type => contentType.Contains(type, StringComparison.OrdinalIgnoreCase));
         }
 
         private static bool IsPreviewableDocument(string contentType)
         {
+            if (string.IsNullOrEmpty(contentType))
+                return false;
+
             var previewableTypes = new[]
             {
                 "application/pdf",
@@ -285,7 +387,7 @@ namespace Backend.CMS.Infrastructure.Services
                 "application/json"
             };
 
-            return previewableTypes.Contains(contentType?.ToLowerInvariant());
+            return previewableTypes.Any(type => contentType.Contains(type, StringComparison.OrdinalIgnoreCase));
         }
     }
 }

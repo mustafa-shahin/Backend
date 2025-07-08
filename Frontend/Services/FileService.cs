@@ -71,9 +71,22 @@ namespace Frontend.Services
                 pageNumber = Math.Max(1, pageNumber);
                 pageSize = Math.Clamp(pageSize, 1, 100);
 
+                // Create cache key for pagination
+                var cacheKey = CreatePaginationCacheKey(pageNumber, pageSize, folderId, search, fileType, isPublic, sortBy, sortDirection);
+
+                // Check cache first (only for short-term caching)
+                if (_paginationCache.TryGetValue(cacheKey, out var cachedResult))
+                {
+                    var cacheAge = DateTime.UtcNow - cachedResult.Data.FirstOrDefault()?.CreatedAt;
+                    if (cacheAge?.TotalMinutes < 2) // Only cache for 2 minutes
+                    {
+                        return cachedResult;
+                    }
+                    _paginationCache.TryRemove(cacheKey, out _);
+                }
+
                 var queryParams = BuildQueryParameters(pageNumber, pageSize, folderId, search, fileType, isPublic, sortBy, sortDirection);
                 var query = $"api/v1/file?{string.Join("&", queryParams)}";
-
 
                 var response = await _httpClient.GetAsync(query);
 
@@ -85,10 +98,15 @@ namespace Frontend.Services
 
                 var result = await response.Content.ReadFromJsonAsync<PagedResult<FileDto>>(_jsonOptions);
 
-
                 if (result == null)
                 {
                     return PagedResult<FileDto>.Empty(pageNumber, pageSize);
+                }
+
+                // Validate pagination data integrity
+                if (result.TotalCount < 0 || result.PageNumber != pageNumber || result.PageSize != pageSize)
+                {
+                    throw new InvalidOperationException("Invalid pagination data received from server");
                 }
 
                 // Cache files individually and pagination result
@@ -98,6 +116,7 @@ namespace Frontend.Services
                     {
                         _fileCache.TryAdd(file.Id, file);
                     }
+                    _paginationCache.TryAdd(cacheKey, result);
                 }
 
                 return result;
@@ -852,12 +871,71 @@ namespace Frontend.Services
 
         public string GetFileUrl(int fileId)
         {
-            if (_fileCache.TryGetValue(fileId, out var cachedFile) && !string.IsNullOrEmpty(cachedFile.Urls.Download))
+            if (_fileCache.TryGetValue(fileId, out var cachedFile))
             {
-                return cachedFile.Urls.Download;
+                // For video and audio files, use streaming URL for better playback
+                if (IsStreamableFileType(cachedFile) && !string.IsNullOrEmpty(cachedFile.Urls.Download))
+                {
+                    return cachedFile.Urls.Download; // This is now the streaming URL for video/audio
+                }
+
+                // For other files, use regular download URL
+                if (!string.IsNullOrEmpty(cachedFile.Urls.Download))
+                {
+                    return cachedFile.Urls.Download;
+                }
             }
 
-            return $"{_backendBaseUrl}/api/v1/file/{fileId}/download";
+            // Fallback - check if this should be a streaming URL
+            return $"{_backendBaseUrl}/api/v1/file/{fileId}/stream";
+        }
+
+        public string GetStreamingUrl(int fileId)
+        {
+            if (_fileCache.TryGetValue(fileId, out var cachedFile))
+            {
+                // Check if file supports streaming
+                if (IsStreamableFileType(cachedFile))
+                {
+                    // For public files, use direct streaming URL
+                    if (cachedFile.IsPublic)
+                    {
+                        return $"{_backendBaseUrl}/api/v1/file/{fileId}/stream";
+                    }
+
+                    // For private files, return streaming URL (authentication will be handled by frontend)
+                    return $"{_backendBaseUrl}/api/v1/file/{fileId}/stream";
+                }
+            }
+
+            // Fallback to streaming endpoint
+            return $"{_backendBaseUrl}/api/v1/file/{fileId}/stream";
+        }
+
+        public async Task<string> GetStreamingUrlWithTokenAsync(int fileId)
+        {
+            try
+            {
+                var fileInfo = await GetFileByIdAsync(fileId);
+                if (fileInfo?.IsPublic == true)
+                {
+                    // Public files don't need tokens
+                    return GetStreamingUrl(fileId);
+                }
+
+                // Generate token for private files
+                var token = await GenerateDownloadTokenAsync(fileId);
+                if (!string.IsNullOrEmpty(token))
+                {
+                    return $"{_backendBaseUrl}/api/v1/file/stream/{token}";
+                }
+
+                throw new Exception("Failed to generate streaming token");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error getting streaming URL with token for file {fileId}: {ex.Message}", ex);
+            }
         }
 
         public string GetThumbnailUrl(int fileId)
@@ -977,6 +1055,61 @@ namespace Frontend.Services
 
         #region Private Helper Methods
 
+        private bool IsStreamableFileType(FileDto file)
+        {
+            if (file.FileType == Backend.CMS.Domain.Enums.FileType.Video)
+            {
+                return IsStreamableVideo(file.ContentType);
+            }
+
+            if (file.FileType == Backend.CMS.Domain.Enums.FileType.Audio)
+            {
+                return IsStreamableAudio(file.ContentType);
+            }
+
+            return false;
+        }
+
+        private static bool IsStreamableVideo(string contentType)
+        {
+            if (string.IsNullOrEmpty(contentType))
+                return false;
+
+            var streamableTypes = new[]
+            {
+                "video/mp4",
+                "video/webm",
+                "video/ogg",
+                "video/quicktime",
+                "video/x-msvideo", // AVI
+                "video/x-ms-wmv",  // WMV
+                "video/x-flv",     // FLV
+                "video/3gpp",      // 3GP
+                "video/x-matroska" // MKV
+            };
+
+            return streamableTypes.Any(type => contentType.Contains(type, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool IsStreamableAudio(string contentType)
+        {
+            if (string.IsNullOrEmpty(contentType))
+                return false;
+
+            var streamableTypes = new[]
+            {
+                "audio/mpeg",
+                "audio/mp4",
+                "audio/ogg",
+                "audio/wav",
+                "audio/webm",
+                "audio/x-ms-wma",
+                "audio/x-wav"
+            };
+
+            return streamableTypes.Any(type => contentType.Contains(type, StringComparison.OrdinalIgnoreCase));
+        }
+
         private List<string> BuildQueryParameters(int pageNumber, int pageSize, int? folderId, string? search,
             FileType? fileType, bool? isPublic, string sortBy, string sortDirection)
         {
@@ -991,8 +1124,8 @@ namespace Frontend.Services
             if (folderId.HasValue)
                 queryParams.Add($"folderId={folderId}");
 
-            if (fileType.HasValue)
-                queryParams.Add($"fileType={((int)fileType.Value)}");
+            if (!string.IsNullOrEmpty(search))
+                queryParams.Add($"search={Uri.EscapeDataString(search)}");
 
             if (fileType.HasValue)
                 queryParams.Add($"fileType={fileType}");

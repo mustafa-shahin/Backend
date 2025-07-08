@@ -105,7 +105,7 @@ namespace Backend.CMS.Application.DTOs
     }
 
     /// <summary>
-    /// Enhanced category search DTO with comprehensive filtering and pagination support
+    /// Enhanced category search DTO with filtering and pagination support
     /// </summary>
     public class CategorySearchDto
     {

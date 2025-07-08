@@ -814,3 +814,312 @@ if (
     },
   };
 }
+window.videoStreamingUtils = {
+    // Download file with authentication support
+    downloadFileWithAuth: async function (url, filename) {
+        try {
+            console.log('Downloading file:', filename, 'from:', url);
+
+            // Create a temporary anchor element for download
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename || 'download';
+            link.target = '_blank';
+
+            // For same-origin URLs, we can trigger download directly
+            if (this.isSameOrigin(url)) {
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                return;
+            }
+
+            // For cross-origin or authenticated URLs, fetch first then create blob
+            const response = await fetch(url, {
+                method: 'GET',
+                credentials: 'include', // Include cookies for authentication
+                headers: {
+                    'Accept': '*/*'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+
+            link.href = blobUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            // Clean up the blob URL
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+
+        } catch (error) {
+            console.error('Download failed:', error);
+            // Fallback - open in new tab
+            window.open(url, '_blank');
+        }
+    },
+
+    // Check if URL is same origin
+    isSameOrigin: function (url) {
+        try {
+            const urlObj = new URL(url, window.location.origin);
+            return urlObj.origin === window.location.origin;
+        } catch {
+            return false;
+        }
+    },
+
+    // Setup video element with error handling and authentication
+    setupVideoElement: function (videoElement, streamUrl, fallbackUrl) {
+        if (!videoElement) return;
+
+        // Add error handling
+        videoElement.addEventListener('error', function (e) {
+            console.error('Video playback error:', e);
+
+            // Try fallback URL if available
+            if (fallbackUrl && videoElement.src !== fallbackUrl) {
+                console.log('Trying fallback URL:', fallbackUrl);
+                videoElement.src = fallbackUrl;
+                videoElement.load();
+            }
+        });
+
+        // Add loading event handlers
+        videoElement.addEventListener('loadstart', function () {
+            console.log('Video load started');
+        });
+
+        videoElement.addEventListener('canplay', function () {
+            console.log('Video can play');
+        });
+
+        videoElement.addEventListener('waiting', function () {
+            console.log('Video is waiting for data');
+        });
+
+        // Set the source
+        videoElement.src = streamUrl;
+        videoElement.load();
+    },
+
+    // Setup audio element with error handling and authentication
+    setupAudioElement: function (audioElement, streamUrl, fallbackUrl) {
+        if (!audioElement) return;
+
+        // Add error handling
+        audioElement.addEventListener('error', function (e) {
+            console.error('Audio playback error:', e);
+
+            // Try fallback URL if available
+            if (fallbackUrl && audioElement.src !== fallbackUrl) {
+                console.log('Trying fallback URL:', fallbackUrl);
+                audioElement.src = fallbackUrl;
+                audioElement.load();
+            }
+        });
+
+        // Add loading event handlers
+        audioElement.addEventListener('loadstart', function () {
+            console.log('Audio load started');
+        });
+
+        audioElement.addEventListener('canplay', function () {
+            console.log('Audio can play');
+        });
+
+        // Set the source
+        audioElement.src = streamUrl;
+        audioElement.load();
+    },
+
+    // Preload video metadata
+    preloadVideoMetadata: function (videoElement) {
+        if (videoElement) {
+            videoElement.preload = 'metadata';
+            videoElement.load();
+        }
+    },
+
+    // Check if browser supports video format
+    canPlayVideoFormat: function (mimeType) {
+        const video = document.createElement('video');
+        return video.canPlayType(mimeType) !== '';
+    },
+
+    // Check if browser supports audio format
+    canPlayAudioFormat: function (mimeType) {
+        const audio = document.createElement('audio');
+        return audio.canPlayType(mimeType) !== '';
+    },
+
+    // Get optimal video quality based on screen size
+    getOptimalVideoQuality: function () {
+        const width = window.screen.width;
+        const height = window.screen.height;
+        const pixelRatio = window.devicePixelRatio || 1;
+
+        const effectiveWidth = width * pixelRatio;
+        const effectiveHeight = height * pixelRatio;
+
+        if (effectiveWidth >= 3840) return '4k';
+        if (effectiveWidth >= 1920) return '1080p';
+        if (effectiveWidth >= 1280) return '720p';
+        if (effectiveWidth >= 854) return '480p';
+        return '360p';
+    },
+
+    // Handle video full screen
+    toggleFullscreen: function (videoElement) {
+        if (!videoElement) return;
+
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else {
+            videoElement.requestFullscreen().catch(err => {
+                console.error('Error attempting to enable fullscreen:', err);
+            });
+        }
+    },
+
+    // Handle video picture-in-picture
+    togglePictureInPicture: function (videoElement) {
+        if (!videoElement) return;
+
+        if (document.pictureInPictureElement) {
+            document.exitPictureInPicture();
+        } else {
+            videoElement.requestPictureInPicture().catch(err => {
+                console.error('Error attempting to enable picture-in-picture:', err);
+            });
+        }
+    }
+};
+
+// Legacy function names for backward compatibility
+window.downloadFileWithAuth = window.videoStreamingUtils.downloadFileWithAuth;
+
+// File input trigger function (fixed version)
+window.triggerFileInput = function (element) {
+    if (element && typeof element.click === 'function') {
+        element.click();
+    } else {
+        console.error('Element is not a valid file input or click method is not available');
+    }
+};
+
+// Copy to clipboard function
+window.copyToClipboard = async function (text) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            console.log('Text copied to clipboard');
+        } else {
+            // Fallback for non-secure contexts
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand('copy');
+            textArea.remove();
+            console.log('Text copied to clipboard (fallback)');
+        }
+    } catch (err) {
+        console.error('Failed to copy text to clipboard:', err);
+    }
+};
+
+// Escape key listener for dialogs
+window.escapeKeyListeners = new Set();
+
+window.addEscapeKeyListener = function (dotNetRef) {
+    const handler = function (event) {
+        if (event.key === 'Escape') {
+            dotNetRef.invokeMethodAsync('HandleEscapeKey');
+        }
+    };
+
+    document.addEventListener('keydown', handler);
+    window.escapeKeyListeners.add({ ref: dotNetRef, handler: handler });
+};
+
+window.removeEscapeKeyListener = function () {
+    window.escapeKeyListeners.forEach(({ handler }) => {
+        document.removeEventListener('keydown', handler);
+    });
+    window.escapeKeyListeners.clear();
+};
+
+// Network quality detection for adaptive streaming
+window.networkQuality = {
+    getConnectionType: function () {
+        if ('connection' in navigator) {
+            return navigator.connection.effectiveType || 'unknown';
+        }
+        return 'unknown';
+    },
+
+    getDownlinkSpeed: function () {
+        if ('connection' in navigator && 'downlink' in navigator.connection) {
+            return navigator.connection.downlink; // Mbps
+        }
+        return null;
+    },
+
+    isSlowConnection: function () {
+        const connectionType = this.getConnectionType();
+        return connectionType === 'slow-2g' || connectionType === '2g';
+    },
+
+    isFastConnection: function () {
+        const connectionType = this.getConnectionType();
+        return connectionType === '4g' || this.getDownlinkSpeed() > 10;
+    }
+};
+
+// Video analytics and monitoring
+window.videoAnalytics = {
+    trackVideoPlay: function (videoId, fileName) {
+        console.log('Video play started:', { videoId, fileName, timestamp: new Date() });
+        // Add analytics tracking here if needed
+    },
+
+    trackVideoComplete: function (videoId, fileName, duration) {
+        console.log('Video play completed:', { videoId, fileName, duration, timestamp: new Date() });
+        // Add analytics tracking here if needed
+    },
+
+    trackVideoError: function (videoId, fileName, error) {
+        console.error('Video error:', { videoId, fileName, error, timestamp: new Date() });
+        // Add error tracking here if needed
+    }
+};
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function () {
+    console.log('Video streaming utilities initialized');
+
+    // Add global error handler for uncaught video/audio errors
+    window.addEventListener('error', function (event) {
+        const target = event.target;
+        if (target && (target.tagName === 'VIDEO' || target.tagName === 'AUDIO')) {
+            console.error('Media element error:', {
+                type: target.tagName,
+                src: target.src,
+                error: target.error,
+                networkState: target.networkState,
+                readyState: target.readyState
+            });
+        }
+    }, true);
+});

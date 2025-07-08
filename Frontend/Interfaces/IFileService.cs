@@ -1,28 +1,24 @@
 ﻿using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Enums;
-using Microsoft.AspNetCore.Components.Forms;
 
 namespace Frontend.Interfaces
 {
-    /// <summary>
-    /// Frontend file service interface with file management capabilities
-    /// </summary>
-    public interface IFileService
+    public interface IFileService : IDisposable
     {
-        #region Core File Operations with Pagination
+        #region Enhanced Core File Operations with Pagination
 
         /// <summary>
         /// Get paginated list of files with filtering and sorting
         /// </summary>
         /// <param name="pageNumber">Page number (1-based)</param>
-        /// <param name="pageSize">Items per page (1-100, default: 10)</param>
-        /// <param name="folderId">Optional folder ID filter</param>
+        /// <param name="pageSize">Items per page</param>
+        /// <param name="folderId">Optional folder filter</param>
         /// <param name="search">Optional search term</param>
         /// <param name="fileType">Optional file type filter</param>
-        /// <param name="isPublic">Optional public/private filter</param>
-        /// <param name="sortBy">Sort field (default: CreatedAt)</param>
-        /// <param name="sortDirection">Sort direction (Asc/Desc, default: Desc)</param>
-        /// <returns>Paginated result with files</returns>
+        /// <param name="isPublic">Optional visibility filter</param>
+        /// <param name="sortBy">Sort field</param>
+        /// <param name="sortDirection">Sort direction</param>
+        /// <returns>Paginated result with file DTOs</returns>
         Task<PagedResult<FileDto>> GetFilesAsync(
             int pageNumber = 1,
             int pageSize = 10,
@@ -34,26 +30,26 @@ namespace Frontend.Interfaces
             string sortDirection = "Desc");
 
         /// <summary>
-        /// Advanced search with  filtering
+        /// Search files with advanced criteria and pagination
         /// </summary>
         /// <param name="searchDto">Search criteria with pagination</param>
         /// <returns>Paginated search results</returns>
         Task<PagedResult<FileDto>> SearchFilesAsync(FileSearchDto searchDto);
 
         /// <summary>
-        /// Get files in a specific folder with pagination
+        /// Get files by folder with pagination
         /// </summary>
         /// <param name="folderId">Folder ID (null for root)</param>
         /// <param name="pageNumber">Page number</param>
-        /// <param name="pageSize">Page size</param>
+        /// <param name="pageSize">Items per page</param>
         /// <returns>Paginated files in folder</returns>
         Task<PagedResult<FileDto>> GetFilesByFolderAsync(int? folderId, int pageNumber = 1, int pageSize = 10);
 
         /// <summary>
         /// Get single file by ID
         /// </summary>
-        /// <param name="id">File ID</param>
-        /// <returns>File details with URLs</returns>
+        /// <param name="id">File identifier</param>
+        /// <returns>File DTO with URLs populated</returns>
         Task<FileDto?> GetFileByIdAsync(int id);
 
         #endregion
@@ -61,10 +57,10 @@ namespace Frontend.Interfaces
         #region File Upload Operations
 
         /// <summary>
-        /// Upload single file
+        /// Upload a single file
         /// </summary>
-        /// <param name="uploadDto">Upload data</param>
-        /// <returns>Upload result with file details</returns>
+        /// <param name="uploadDto">File upload data</param>
+        /// <returns>Upload result with file DTO</returns>
         Task<FileUploadResultDto?> UploadFileAsync(FileUploadDto uploadDto);
 
         /// <summary>
@@ -79,24 +75,24 @@ namespace Frontend.Interfaces
         #region File Management Operations
 
         /// <summary>
-        /// Update file metadata
+        /// Update file metadata and properties
         /// </summary>
-        /// <param name="id">File ID</param>
+        /// <param name="id">File identifier</param>
         /// <param name="updateDto">Update data</param>
-        /// <returns>Updated file details</returns>
+        /// <returns>Updated file DTO</returns>
         Task<FileDto?> UpdateFileAsync(int id, UpdateFileDto updateDto);
 
         /// <summary>
-        /// Delete single file
+        /// Delete a single file
         /// </summary>
-        /// <param name="id">File ID</param>
-        /// <returns>True if successful</returns>
+        /// <param name="id">File identifier</param>
+        /// <returns>True if successfully deleted</returns>
         Task<bool> DeleteFileAsync(int id);
 
         /// <summary>
         /// Delete multiple files
         /// </summary>
-        /// <param name="fileIds">File IDs to delete</param>
+        /// <param name="fileIds">List of file identifiers</param>
         /// <returns>Bulk operation result</returns>
         Task<BulkOperationResultDto> DeleteMultipleFilesAsync(List<int> fileIds);
 
@@ -104,14 +100,14 @@ namespace Frontend.Interfaces
         /// Move file to different folder
         /// </summary>
         /// <param name="moveDto">Move operation data</param>
-        /// <returns>Updated file details</returns>
+        /// <returns>Updated file DTO</returns>
         Task<FileDto?> MoveFileAsync(MoveFileDto moveDto);
 
         /// <summary>
         /// Copy file
         /// </summary>
         /// <param name="copyDto">Copy operation data</param>
-        /// <returns>New file details</returns>
+        /// <returns>New file DTO</returns>
         Task<FileDto?> CopyFileAsync(CopyFileDto copyDto);
 
         #endregion
@@ -121,28 +117,28 @@ namespace Frontend.Interfaces
         /// <summary>
         /// Get file preview information
         /// </summary>
-        /// <param name="id">File ID</param>
-        /// <returns>Preview data with URLs</returns>
+        /// <param name="id">File identifier</param>
+        /// <returns>Preview DTO with URLs</returns>
         Task<FilePreviewDto> GetFilePreviewAsync(int id);
 
         /// <summary>
         /// Get recent files
         /// </summary>
-        /// <param name="count">Number of files to retrieve</param>
+        /// <param name="count">Number of recent files</param>
         /// <returns>List of recent files</returns>
         Task<List<FileDto>> GetRecentFilesAsync(int count = 10);
 
         /// <summary>
         /// Get file system statistics
         /// </summary>
-        /// <returns>Statistics data</returns>
+        /// <returns>Statistics dictionary</returns>
         Task<Dictionary<string, object>> GetFileStatisticsAsync();
 
         /// <summary>
-        /// Generate thumbnail for file
+        /// Generate thumbnail for image files
         /// </summary>
-        /// <param name="id">File ID</param>
-        /// <returns>True if successful</returns>
+        /// <param name="id">File identifier</param>
+        /// <returns>True if thumbnail generated</returns>
         Task<bool> GenerateThumbnailAsync(int id);
 
         #endregion
@@ -150,57 +146,75 @@ namespace Frontend.Interfaces
         #region Download and Streaming
 
         /// <summary>
-        /// Generate secure download token
+        /// Generate download token for secure access
         /// </summary>
-        /// <param name="fileId">File ID</param>
+        /// <param name="fileId">File identifier</param>
         /// <returns>Download token</returns>
         Task<string> GenerateDownloadTokenAsync(int fileId);
 
         /// <summary>
-        /// Download file (handles public/private automatically)
+        /// Download file using browser download
         /// </summary>
-        /// <param name="id">File ID</param>
-        /// <returns>Download task</returns>
+        /// <param name="id">File identifier</param>
+        /// <returns>Task completion</returns>
         Task DownloadFileAsync(int id);
 
         /// <summary>
-        /// Get file stream
+        /// Get file content stream
         /// </summary>
-        /// <param name="id">File ID</param>
+        /// <param name="id">File identifier</param>
         /// <returns>Stream, content type, and filename</returns>
         Task<(Stream stream, string contentType, string fileName)> GetFileStreamAsync(int id);
 
         /// <summary>
         /// Get thumbnail stream
         /// </summary>
-        /// <param name="id">File ID</param>
-        /// <returns>Thumbnail stream data</returns>
+        /// <param name="id">File identifier</param>
+        /// <returns>Thumbnail stream, content type, and filename</returns>
         Task<(Stream stream, string contentType, string fileName)> GetThumbnailStreamAsync(int id);
+
+        #endregion
+
+        #region Video and Audio Streaming
+
+        /// <summary>
+        /// Get streaming URL for video/audio files
+        /// </summary>
+        /// <param name="fileId">File identifier</param>
+        /// <returns>Streaming URL</returns>
+        string GetStreamingUrl(int fileId);
+
+        /// <summary>
+        /// Get streaming URL with authentication token for private files
+        /// </summary>
+        /// <param name="fileId">File identifier</param>
+        /// <returns>Streaming URL with token</returns>
+        Task<string> GetStreamingUrlWithTokenAsync(int fileId);
 
         #endregion
 
         #region Bulk Operations
 
         /// <summary>
-        /// Bulk update multiple files
+        /// Update multiple files with same data
         /// </summary>
-        /// <param name="fileIds">File IDs</param>
+        /// <param name="fileIds">List of file identifiers</param>
         /// <param name="updateDto">Update data</param>
         /// <returns>Bulk operation result</returns>
         Task<BulkOperationResultDto> BulkUpdateFilesAsync(List<int> fileIds, UpdateFileDto updateDto);
 
         /// <summary>
-        /// Bulk move multiple files
+        /// Move multiple files to new folder
         /// </summary>
-        /// <param name="fileIds">File IDs</param>
+        /// <param name="fileIds">List of file identifiers</param>
         /// <param name="destinationFolderId">Target folder ID</param>
         /// <returns>Bulk operation result</returns>
         Task<BulkOperationResultDto> BulkMoveFilesAsync(List<int> fileIds, int? destinationFolderId);
 
         /// <summary>
-        /// Bulk copy multiple files
+        /// Copy multiple files to new folder
         /// </summary>
-        /// <param name="fileIds">File IDs</param>
+        /// <param name="fileIds">List of file identifiers</param>
         /// <param name="destinationFolderId">Target folder ID</param>
         /// <returns>Bulk operation result with new files</returns>
         Task<BulkOperationResultDto> BulkCopyFilesAsync(List<int> fileIds, int? destinationFolderId);
@@ -210,37 +224,37 @@ namespace Frontend.Interfaces
         #region Utility Methods
 
         /// <summary>
-        /// Get file download URL (from file DTO URLs)
+        /// Get file URL (download for non-streamable, streaming for video/audio)
         /// </summary>
-        /// <param name="fileId">File ID</param>
-        /// <returns>Download URL</returns>
+        /// <param name="fileId">File identifier</param>
+        /// <returns>File URL</returns>
         string GetFileUrl(int fileId);
 
         /// <summary>
-        /// Get thumbnail URL (from file DTO URLs)
+        /// Get thumbnail URL
         /// </summary>
-        /// <param name="fileId">File ID</param>
+        /// <param name="fileId">File identifier</param>
         /// <returns>Thumbnail URL</returns>
         string GetThumbnailUrl(int fileId);
 
         /// <summary>
-        /// Get preview URL (from file DTO URLs)
+        /// Get preview URL
         /// </summary>
-        /// <param name="fileId">File ID</param>
+        /// <param name="fileId">File identifier</param>
         /// <returns>Preview URL</returns>
         string GetPreviewUrl(int fileId);
 
         /// <summary>
-        /// Format file size in human-readable format
+        /// Format file size in human readable format
         /// </summary>
         /// <param name="bytes">Size in bytes</param>
         /// <returns>Formatted size string</returns>
         string FormatFileSize(long bytes);
 
         /// <summary>
-        /// Format duration in human-readable format
+        /// Format duration in human readable format
         /// </summary>
-        /// <param name="duration">Duration</param>
+        /// <param name="duration">Duration timespan</param>
         /// <returns>Formatted duration string</returns>
         string FormatDuration(TimeSpan duration);
 
@@ -249,17 +263,17 @@ namespace Frontend.Interfaces
         #region Diagnostics and Integrity
 
         /// <summary>
-        /// Verify file integrity
+        /// Verify file integrity using hash validation
         /// </summary>
-        /// <param name="fileId">File ID</param>
-        /// <returns>True if integrity is valid</returns>
+        /// <param name="fileId">File identifier</param>
+        /// <returns>True if file integrity is valid</returns>
         Task<bool> VerifyFileIntegrityAsync(int fileId);
 
         /// <summary>
-        /// Get file diagnostic information
+        /// Get detailed diagnostic information for a file
         /// </summary>
-        /// <param name="fileId">File ID</param>
-        /// <returns>Diagnostic data</returns>
+        /// <param name="fileId">File identifier</param>
+        /// <returns>Diagnostic information object</returns>
         Task<object> GetFileDiagnosticInfoAsync(int fileId);
 
         #endregion
@@ -267,15 +281,15 @@ namespace Frontend.Interfaces
         #region Cache and Performance
 
         /// <summary>
-        /// Clear file cache (if implemented)
+        /// Clear all cached data
         /// </summary>
         /// <returns>Task completion</returns>
         Task ClearCacheAsync();
 
         /// <summary>
-        /// Preload file metadata for better performance
+        /// Preload files into cache
         /// </summary>
-        /// <param name="fileIds">File IDs to preload</param>
+        /// <param name="fileIds">List of file identifiers to preload</param>
         /// <returns>Task completion</returns>
         Task PreloadFilesAsync(List<int> fileIds);
 

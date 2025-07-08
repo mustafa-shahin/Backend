@@ -2,8 +2,10 @@
 @using Backend.CMS.Domain.Enums
 @using Frontend.Interfaces
 @inject IJSRuntime JSRuntime
-@inject IFileService FileSerive
+@inject IFileService FileService
 @inject IStyleService StyleService
+@inject INotificationService NotificationService
+
 @if (IsVisible && selectedFile != null)
 {
     <div class="fixed inset-0 z-50 overflow-y-auto">
@@ -31,7 +33,7 @@
                                 <div class="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400 mt-1">
                                     <span class="flex items-center">
                                         <i class="fas fa-weight-hanging mr-1"></i>
-                                        @FileSerive.FormatFileSize(selectedFile.FileSize)
+                                        @FileService.FormatFileSize(selectedFile.FileSize)
                                     </span>
                                     <span class="flex items-center">
                                         <i class="fas fa-file-alt mr-1"></i>
@@ -48,7 +50,7 @@
                                     {
                                         <span class="flex items-center">
                                             <i class="fas fa-clock mr-1"></i>
-                                            @FileSerive.FormatDuration(selectedFile.Duration.Value)
+                                            @FileService.FormatDuration(selectedFile.Duration.Value)
                                         </span>
                                     }
                                 </div>
@@ -67,7 +69,7 @@
                     @if (selectedFile.FileType == FileType.Image)
                     {
                         <div class="flex justify-center bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
-                            <img src="@FileSerive.GetFileUrl(selectedFile.Id)"
+                            <img src="@FileService.GetFileUrl(selectedFile.Id)"
                                  alt="@(selectedFile.Alt ?? selectedFile.OriginalFileName)"
                                  class="max-w-full max-h-[60vh] object-contain rounded-lg shadow-lg"
                                  style="max-height: 60vh;"
@@ -89,10 +91,70 @@
                     else if (selectedFile.FileType == FileType.Video)
                     {
                         <div class="flex justify-center bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
-                            <video controls class="max-w-full max-h-[60vh] rounded-lg shadow-lg">
-                                <source src="@FileSerive.GetFileUrl(selectedFile.Id)" type="@selectedFile.ContentType">
-                                Your browser does not support the video tag.
-                            </video>
+                            @if (isLoadingVideoUrl)
+                            {
+                                <div class="flex items-center justify-center w-full h-64">
+                                    <div class="text-center">
+                                        <div class="animate-spin rounded-full h-12 w-12 border-4 border-gray-200 dark:border-gray-600 border-t-blue-600 dark:border-t-blue-400 mb-4 mx-auto"></div>
+                                        <p class="text-gray-500 dark:text-gray-400">Loading video...</p>
+                                    </div>
+                                </div>
+                            }
+                            else if (!string.IsNullOrEmpty(videoStreamUrl))
+                            {
+                                <div class="w-full max-w-4xl">
+                                    <video @ref="videoElement"
+                                           controls
+                                           preload="metadata"
+                                           class="w-full max-h-[60vh] rounded-lg shadow-lg bg-black"
+                                           style="max-height: 60vh;"
+                                           @onloadstart="OnVideoLoadStart"
+                                           @oncanplay="OnVideoCanPlay"
+                                           @onerror="OnVideoError">
+                                        <source src="@videoStreamUrl" type="@selectedFile.ContentType">
+                                        @if (!string.IsNullOrEmpty(fallbackVideoUrl) && fallbackVideoUrl != videoStreamUrl)
+                                        {
+                                            <source src="@fallbackVideoUrl" type="@selectedFile.ContentType">
+                                        }
+                                        <p class="text-gray-500 dark:text-gray-400 p-4">
+                                            Your browser does not support the video tag.
+                                            <button @onclick="DownloadFile" class="text-blue-600 hover:text-blue-800 underline ml-2">
+                                                Download the video file instead.
+                                            </button>
+                                        </p>
+                                    </video>
+
+                                    @if (videoError)
+                                    {
+                                        <div class="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                                            <div class="flex items-center">
+                                                <i class="fas fa-exclamation-triangle text-red-600 dark:text-red-400 mr-2"></i>
+                                                <span class="text-red-800 dark:text-red-200 text-sm">
+                                                    Unable to play this video. The format may not be supported by your browser.
+                                                </span>
+                                            </div>
+                                            <button @onclick="DownloadFile"
+                                                    class="mt-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm">
+                                                <i class="fas fa-download mr-2"></i>
+                                                Download Video
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="text-center py-12">
+                                    <i class="fas fa-video text-gray-400 text-6xl mb-4"></i>
+                                    <h4 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">@selectedFile.OriginalFileName</h4>
+                                    <p class="text-gray-600 dark:text-gray-400 mb-4">Unable to load video for preview</p>
+                                    <button @onclick="DownloadFile"
+                                            class="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
+                                        <i class="fas fa-download mr-2"></i>
+                                        Download & View
+                                    </button>
+                                </div>
+                            }
                         </div>
                     }
                     else if (selectedFile.FileType == FileType.Audio)
@@ -104,13 +166,64 @@
                                     <h4 class="text-white font-semibold text-lg">@selectedFile.OriginalFileName</h4>
                                     @if (selectedFile.Duration.HasValue)
                                     {
-                                        <p class="text-purple-200 text-sm mt-2">Duration: @FileSerive.FormatDuration(selectedFile.Duration.Value)</p>
+                                        <p class="text-purple-200 text-sm mt-2">Duration: @FileService.FormatDuration(selectedFile.Duration.Value)</p>
                                     }
                                 </div>
-                                <audio controls class="w-full">
-                                    <source src="@FileSerive.GetFileUrl(selectedFile.Id)" type="@selectedFile.ContentType">
-                                    Your browser does not support the audio element.
-                                </audio>
+
+                                @if (isLoadingAudioUrl)
+                                {
+                                    <div class="flex items-center justify-center w-full py-4">
+                                        <div class="text-center">
+                                            <div class="animate-spin rounded-full h-8 w-8 border-4 border-gray-200 dark:border-gray-600 border-t-purple-600 dark:border-t-purple-400 mb-2 mx-auto"></div>
+                                            <p class="text-gray-500 dark:text-gray-400 text-sm">Loading audio...</p>
+                                        </div>
+                                    </div>
+                                }
+                                else if (!string.IsNullOrEmpty(audioStreamUrl))
+                                {
+                                    <audio @ref="audioElement"
+                                           controls
+                                           preload="metadata"
+                                           class="w-full"
+                                           @onloadstart="OnAudioLoadStart"
+                                           @oncanplay="OnAudioCanPlay"
+                                           @onerror="OnAudioError">
+                                        <source src="@audioStreamUrl" type="@selectedFile.ContentType">
+                                        @if (!string.IsNullOrEmpty(fallbackAudioUrl) && fallbackAudioUrl != audioStreamUrl)
+                                        {
+                                            <source src="@fallbackAudioUrl" type="@selectedFile.ContentType">
+                                        }
+                                        <p class="text-gray-500 dark:text-gray-400 text-sm">
+                                            Your browser does not support the audio element.
+                                            <button @onclick="DownloadFile" class="text-purple-600 hover:text-purple-800 underline ml-1">
+                                                Download instead.
+                                            </button>
+                                        </p>
+                                    </audio>
+
+                                    @if (audioError)
+                                    {
+                                        <div class="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                                            <p class="text-red-800 dark:text-red-200 text-sm">Unable to play this audio file.</p>
+                                            <button @onclick="DownloadFile"
+                                                    class="mt-2 px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors">
+                                                <i class="fas fa-download mr-1"></i>
+                                                Download
+                                            </button>
+                                        </div>
+                                    }
+                                }
+                                else
+                                {
+                                    <div class="text-center py-4">
+                                        <p class="text-gray-600 dark:text-gray-400 mb-4">Unable to load audio for preview</p>
+                                        <button @onclick="DownloadFile"
+                                                class="inline-flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors">
+                                            <i class="fas fa-download mr-2"></i>
+                                            Download & Play
+                                        </button>
+                                    </div>
+                                }
                             </div>
                         </div>
                     }
@@ -169,7 +282,7 @@
                         {
                             <span class="flex items-center">
                                 <i class="fas fa-clock mr-1"></i>
-                                @FileSerive.FormatDuration(selectedFile.Duration.Value)
+                                @FileService.FormatDuration(selectedFile.Duration.Value)
                             </span>
                         }
                         @if (selectedFile.IsPublic)
@@ -212,10 +325,38 @@
     private bool IsVisible = false;
     private FileDto? selectedFile = null;
 
+    // Video/Audio streaming state
+    private bool isLoadingVideoUrl = false;
+    private bool isLoadingAudioUrl = false;
+    private string? videoStreamUrl = null;
+    private string? audioStreamUrl = null;
+    private string? fallbackVideoUrl = null;
+    private string? fallbackAudioUrl = null;
+    private bool videoError = false;
+    private bool audioError = false;
+
+    // Element references
+    private ElementReference? videoElement;
+    private ElementReference? audioElement;
+
     public void ShowPreview(FileDto file)
     {
         selectedFile = file;
         IsVisible = true;
+
+        // Reset streaming state
+        ResetStreamingState();
+
+        // Load streaming URLs for video/audio files
+        if (file.FileType == FileType.Video)
+        {
+            _ = LoadVideoStreamingUrlAsync(file);
+        }
+        else if (file.FileType == FileType.Audio)
+        {
+            _ = LoadAudioStreamingUrlAsync(file);
+        }
+
         StateHasChanged();
     }
 
@@ -223,7 +364,92 @@
     {
         IsVisible = false;
         selectedFile = null;
+        ResetStreamingState();
         StateHasChanged();
+    }
+
+    private void ResetStreamingState()
+    {
+        isLoadingVideoUrl = false;
+        isLoadingAudioUrl = false;
+        videoStreamUrl = null;
+        audioStreamUrl = null;
+        fallbackVideoUrl = null;
+        fallbackAudioUrl = null;
+        videoError = false;
+        audioError = false;
+    }
+
+    private async Task LoadVideoStreamingUrlAsync(FileDto file)
+    {
+        try
+        {
+            isLoadingVideoUrl = true;
+            videoError = false;
+            StateHasChanged();
+
+            if (file.IsPublic)
+            {
+                // For public files, use direct streaming URL
+                videoStreamUrl = FileService.GetStreamingUrl(file.Id);
+                fallbackVideoUrl = FileService.GetFileUrl(file.Id);
+            }
+            else
+            {
+                // For private files, get streaming URL with token
+                videoStreamUrl = await FileService.GetStreamingUrlWithTokenAsync(file.Id);
+                fallbackVideoUrl = FileService.GetFileUrl(file.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading video streaming URL: {ex.Message}");
+            NotificationService.ShowError("Failed to load video streaming URL");
+
+            // Fallback to regular file URL
+            videoStreamUrl = FileService.GetFileUrl(file.Id);
+        }
+        finally
+        {
+            isLoadingVideoUrl = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadAudioStreamingUrlAsync(FileDto file)
+    {
+        try
+        {
+            isLoadingAudioUrl = true;
+            audioError = false;
+            StateHasChanged();
+
+            if (file.IsPublic)
+            {
+                // For public files, use direct streaming URL
+                audioStreamUrl = FileService.GetStreamingUrl(file.Id);
+                fallbackAudioUrl = FileService.GetFileUrl(file.Id);
+            }
+            else
+            {
+                // For private files, get streaming URL with token
+                audioStreamUrl = await FileService.GetStreamingUrlWithTokenAsync(file.Id);
+                fallbackAudioUrl = FileService.GetFileUrl(file.Id);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading audio streaming URL: {ex.Message}");
+            NotificationService.ShowError("Failed to load audio streaming URL");
+
+            // Fallback to regular file URL
+            audioStreamUrl = FileService.GetFileUrl(file.Id);
+        }
+        finally
+        {
+            isLoadingAudioUrl = false;
+            StateHasChanged();
+        }
     }
 
     private async Task DownloadFile()
@@ -238,24 +464,66 @@
                 }
                 else
                 {
-                    await FileSerive.DownloadFileAsync(selectedFile.Id);
+                    await FileService.DownloadFileAsync(selectedFile.Id);
                 }
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Error downloading file: {ex.Message}");
+                NotificationService.ShowError("Failed to download file");
 
                 // Fallback to direct download
                 try
                 {
-                    var downloadUrl = FileSerive.GetFileUrl(selectedFile.Id);
+                    var downloadUrl = FileService.GetFileUrl(selectedFile.Id);
                     await JSRuntime.InvokeVoidAsync("downloadFileWithAuth", downloadUrl, selectedFile.OriginalFileName);
                 }
                 catch (Exception fallbackEx)
                 {
                     Console.Error.WriteLine($"Fallback download also failed: {fallbackEx.Message}");
+                    NotificationService.ShowError("Download failed. Please try again later.");
                 }
             }
         }
+    }
+
+    // Video event handlers
+    private void OnVideoLoadStart()
+    {
+        Console.WriteLine("Video load started");
+    }
+
+    private void OnVideoCanPlay()
+    {
+        Console.WriteLine("Video can play");
+        videoError = false;
+        StateHasChanged();
+    }
+
+    private void OnVideoError()
+    {
+        Console.WriteLine("Video error occurred");
+        videoError = true;
+        StateHasChanged();
+    }
+
+    // Audio event handlers
+    private void OnAudioLoadStart()
+    {
+        Console.WriteLine("Audio load started");
+    }
+
+    private void OnAudioCanPlay()
+    {
+        Console.WriteLine("Audio can play");
+        audioError = false;
+        StateHasChanged();
+    }
+
+    private void OnAudioError()
+    {
+        Console.WriteLine("Audio error occurred");
+        audioError = true;
+        StateHasChanged();
     }
 }

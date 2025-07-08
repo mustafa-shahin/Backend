@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Asp.Versioning;
 using System.ComponentModel.DataAnnotations;
+using System.Net;
 
 namespace Backend.CMS.API.Controllers
 {
@@ -19,7 +20,7 @@ namespace Backend.CMS.API.Controllers
     [ApiController]
     [Route("api/v{version:apiVersion}/file")]
     [ApiVersion("1.0")]
-     
+
     [Authorize]
     [EnableRateLimiting("ApiPolicy")]
     public class FileController : ControllerBase
@@ -229,6 +230,165 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error downloading file with token {Token}", token);
                 return StatusCode(500, new { Message = "An error occurred while downloading the file" });
+            }
+        }
+
+        /// <summary>
+        /// Stream video/audio file with range request support for public files
+        /// </summary>
+        /// <param name="id">File ID</param>
+        /// <returns>File stream with range support</returns>
+        [HttpGet("{id:int}/stream")]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(FileStreamResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(FileStreamResult), StatusCodes.Status206PartialContent)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status416RangeNotSatisfiable)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult> StreamFile([FromRoute] int id)
+        {
+            try
+            {
+                _logger.LogInformation("Attempting to stream file {FileId}", id);
+
+                var file = await _fileService.GetFileByIdAsync(id);
+                if (file == null)
+                {
+                    return NotFound(new { Message = "File not found" });
+                }
+
+                // For private files, require authentication
+                if (!file.IsPublic && !User.Identity?.IsAuthenticated == true)
+                {
+                    return Unauthorized(new { Message = "Authentication required for private files" });
+                }
+
+                // Get file entity to access content
+                var fileEntity = await _fileRepository.GetByIdAsync(id);
+                if (fileEntity?.FileContent == null || fileEntity.FileContent.Length == 0)
+                {
+                    return NotFound(new { Message = "File content not found" });
+                }
+
+                // Verify this is a streamable file type
+                if (!IsStreamableFileType(fileEntity.FileType, fileEntity.ContentType))
+                {
+                    _logger.LogWarning("Attempted to stream non-streamable file type: {FileType}, {ContentType}",
+                        fileEntity.FileType, fileEntity.ContentType);
+                    return BadRequest(new { Message = "File type not suitable for streaming" });
+                }
+
+                // Record access
+                await _fileService.RecordFileAccessAsync(id, FileAccessType.Preview);
+
+                // Handle range requests for video/audio streaming
+                var rangeHeader = Request.Headers["Range"].FirstOrDefault();
+                var fileContent = fileEntity.FileContent;
+                var fileSize = fileContent.Length;
+
+                // Set common headers
+                Response.Headers.Add("Accept-Ranges", "bytes");
+                Response.Headers.Add("Content-Type", fileEntity.ContentType);
+                Response.Headers.Add("Cache-Control", "public, max-age=3600");
+                Response.Headers.Add("Last-Modified", fileEntity.UpdatedAt.ToString("R"));
+
+                // Handle range request
+                if (!string.IsNullOrEmpty(rangeHeader) && rangeHeader.StartsWith("bytes="))
+                {
+                    return await HandleRangeRequest(rangeHeader, fileContent, fileEntity.ContentType);
+                }
+
+                // No range request - return entire file
+                _logger.LogInformation("Streaming entire file {FileId}, size: {Size} bytes", id, fileSize);
+
+                Response.Headers.Add("Content-Length", fileSize.ToString());
+
+                return File(fileContent, fileEntity.ContentType, enableRangeProcessing: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error streaming file {FileId}", id);
+                return StatusCode(500, new { Message = "An error occurred while streaming the file" });
+            }
+        }
+
+        /// <summary>
+        /// Stream video/audio file using token with range request support
+        /// </summary>
+        /// <param name="token">Access token</param>
+        /// <returns>File stream with range support</returns>
+        [HttpGet("stream/{token}")]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(FileStreamResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(FileStreamResult), StatusCodes.Status206PartialContent)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status416RangeNotSatisfiable)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult> StreamFileByToken([FromRoute] string token)
+        {
+            try
+            {
+                _logger.LogInformation("Attempting to stream file with token");
+
+                if (string.IsNullOrWhiteSpace(token))
+                {
+                    return BadRequest(new { Message = "Token is required" });
+                }
+
+                var (isValid, fileId, userId) = await _downloadTokenService.ValidateTokenAsync(token);
+
+                if (!isValid)
+                {
+                    _logger.LogWarning("Invalid or expired streaming token");
+                    return BadRequest(new { Message = "Invalid or expired token" });
+                }
+
+                // Get file entity to access content
+                var fileEntity = await _fileRepository.GetByIdAsync(fileId);
+                if (fileEntity?.FileContent == null || fileEntity.FileContent.Length == 0)
+                {
+                    return NotFound(new { Message = "File content not found" });
+                }
+
+                // Verify this is a streamable file type
+                if (!IsStreamableFileType(fileEntity.FileType, fileEntity.ContentType))
+                {
+                    return BadRequest(new { Message = "File type not suitable for streaming" });
+                }
+
+                // Record access
+                await _fileService.RecordFileAccessAsync(fileId, FileAccessType.Preview);
+
+                // Handle range requests
+                var rangeHeader = Request.Headers["Range"].FirstOrDefault();
+                var fileContent = fileEntity.FileContent;
+                var fileSize = fileContent.Length;
+
+                // Set common headers
+                Response.Headers.Add("Accept-Ranges", "bytes");
+                Response.Headers.Add("Content-Type", fileEntity.ContentType);
+                Response.Headers.Add("Cache-Control", "public, max-age=3600");
+                Response.Headers.Add("Last-Modified", fileEntity.UpdatedAt.ToString("R"));
+
+                // Handle range request
+                if (!string.IsNullOrEmpty(rangeHeader) && rangeHeader.StartsWith("bytes="))
+                {
+                    return await HandleRangeRequest(rangeHeader, fileContent, fileEntity.ContentType);
+                }
+
+                // No range request - return entire file
+                _logger.LogInformation("Streaming entire file {FileId} via token, size: {Size} bytes", fileId, fileSize);
+
+                Response.Headers.Add("Content-Length", fileSize.ToString());
+
+                return File(fileContent, fileEntity.ContentType, enableRangeProcessing: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error streaming file with token {Token}", token);
+                return StatusCode(500, new { Message = "An error occurred while streaming the file" });
             }
         }
 
@@ -934,6 +1094,122 @@ namespace Backend.CMS.API.Controllers
             }
         }
 
+        #region Private Helper Methods
+
+        /// <summary>
+        /// Handles HTTP range requests for video/audio streaming
+        /// </summary>
+        private async Task<ActionResult> HandleRangeRequest(string rangeHeader, byte[] fileContent, string contentType)
+        {
+            try
+            {
+                var fileSize = fileContent.Length;
+
+ 
+                var range = rangeHeader.Substring(6); // Remove "bytes="
+                var parts = range.Split('-');
+
+                long start = 0;
+                long end = fileSize - 1;
+
+                if (!string.IsNullOrEmpty(parts[0]))
+                {
+                    start = long.Parse(parts[0]);
+                }
+
+                if (parts.Length > 1 && !string.IsNullOrEmpty(parts[1]))
+                {
+                    end = Math.Min(long.Parse(parts[1]), fileSize - 1);
+                }
+
+                // Validate range
+                if (start < 0 || start >= fileSize || end >= fileSize || start > end)
+                {
+                    _logger.LogWarning("Invalid range request: {Range} for file size {Size}", rangeHeader, fileSize);
+                    Response.Headers.Add("Content-Range", $"bytes */{fileSize}");
+                    return StatusCode(416); // Range Not Satisfiable
+                }
+
+                var contentLength = end - start + 1;
+
+                // Set response headers for partial content
+                Response.Headers.Add("Content-Range", $"bytes {start}-{end}/{fileSize}");
+                Response.Headers.Add("Content-Length", contentLength.ToString());
+
+                // Create a stream for the requested range
+                var rangeContent = new byte[contentLength];
+                Array.Copy(fileContent, start, rangeContent, 0, contentLength);
+
+                _logger.LogInformation("Serving partial content: bytes {Start}-{End}/{Total}", start, end, fileSize);
+
+                Response.StatusCode = 206; // Partial Content
+                return File(rangeContent, contentType, enableRangeProcessing: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling range request: {Range}", rangeHeader);
+                return StatusCode(500, new { Message = "Error processing range request" });
+            }
+        }
+
+        /// <summary>
+        /// Checks if a file type is suitable for streaming
+        /// </summary>
+        private static bool IsStreamableFileType(FileType fileType, string contentType)
+        {
+            if (fileType == FileType.Video)
+            {
+                return IsStreamableVideo(contentType);
+            }
+
+            if (fileType == FileType.Audio)
+            {
+                return IsStreamableAudio(contentType);
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Checks if a video content type is streamable
+        /// </summary>
+        private static bool IsStreamableVideo(string contentType)
+        {
+            var streamableTypes = new[]
+            {
+                "video/mp4",
+                "video/webm",
+                "video/ogg",
+                "video/quicktime",
+                "video/x-msvideo", // AVI
+                "video/x-ms-wmv",  // WMV
+                "video/x-flv",     // FLV
+                "video/3gpp",      // 3GP
+                "video/x-matroska" // MKV
+            };
+
+            return streamableTypes.Any(type => contentType.Contains(type, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Checks if an audio content type is streamable
+        /// </summary>
+        private static bool IsStreamableAudio(string contentType)
+        {
+            var streamableTypes = new[]
+            {
+                "audio/mpeg",
+                "audio/mp4",
+                "audio/ogg",
+                "audio/wav",
+                "audio/webm",
+                "audio/x-ms-wma",
+                "audio/x-wav"
+            };
+
+            return streamableTypes.Any(type => contentType.Contains(type, StringComparison.OrdinalIgnoreCase));
+        }
+
         private static string FormatFileSize(long bytes)
         {
             string[] sizes = { "B", "KB", "MB", "GB", "TB" };
@@ -946,6 +1222,8 @@ namespace Backend.CMS.API.Controllers
             }
             return $"{len:0.##} {sizes[order]}";
         }
+
+        #endregion
 
         public class BulkUpdateFilesDto
         {
