@@ -704,6 +704,42 @@ namespace Frontend.Services
 
         #endregion
 
+        #region Video and Audio Streaming
+
+        public string GetStreamingUrl(int fileId)
+        {
+            // Always return the streaming endpoint for video/audio files
+            return $"{_backendBaseUrl}/api/v1/file/{fileId}/stream";
+        }
+
+        public async Task<string> GetStreamingUrlWithTokenAsync(int fileId)
+        {
+            try
+            {
+                var fileInfo = await GetFileByIdAsync(fileId);
+                if (fileInfo?.IsPublic == true)
+                {
+                    // Public files don't need tokens
+                    return GetStreamingUrl(fileId);
+                }
+
+                // Generate token for private files
+                var token = await GenerateDownloadTokenAsync(fileId);
+                if (!string.IsNullOrEmpty(token))
+                {
+                    return $"{_backendBaseUrl}/api/v1/file/stream/{token}";
+                }
+
+                throw new Exception("Failed to generate streaming token");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error getting streaming URL with token for file {fileId}: {ex.Message}", ex);
+            }
+        }
+
+        #endregion
+
         #region Bulk Operations
 
         public async Task<BulkOperationResultDto> BulkUpdateFilesAsync(List<int> fileIds, UpdateFileDto updateDto)
@@ -871,71 +907,24 @@ namespace Frontend.Services
 
         public string GetFileUrl(int fileId)
         {
+            // Check cache for file info to determine if it's streamable
             if (_fileCache.TryGetValue(fileId, out var cachedFile))
             {
-                // For video and audio files, use streaming URL for better playback
-                if (IsStreamableFileType(cachedFile) && !string.IsNullOrEmpty(cachedFile.Urls.Download))
+                // For video and audio files, return streaming URL
+                if (IsStreamableFileType(cachedFile))
                 {
-                    return cachedFile.Urls.Download; // This is now the streaming URL for video/audio
+                    return GetStreamingUrl(fileId);
                 }
 
-                // For other files, use regular download URL
+                // For other files, return download URL if available
                 if (!string.IsNullOrEmpty(cachedFile.Urls.Download))
                 {
                     return cachedFile.Urls.Download;
                 }
             }
 
-            // Fallback - check if this should be a streaming URL
-            return $"{_backendBaseUrl}/api/v1/file/{fileId}/stream";
-        }
-
-        public string GetStreamingUrl(int fileId)
-        {
-            if (_fileCache.TryGetValue(fileId, out var cachedFile))
-            {
-                // Check if file supports streaming
-                if (IsStreamableFileType(cachedFile))
-                {
-                    // For public files, use direct streaming URL
-                    if (cachedFile.IsPublic)
-                    {
-                        return $"{_backendBaseUrl}/api/v1/file/{fileId}/stream";
-                    }
-
-                    // For private files, return streaming URL (authentication will be handled by frontend)
-                    return $"{_backendBaseUrl}/api/v1/file/{fileId}/stream";
-                }
-            }
-
-            // Fallback to streaming endpoint
-            return $"{_backendBaseUrl}/api/v1/file/{fileId}/stream";
-        }
-
-        public async Task<string> GetStreamingUrlWithTokenAsync(int fileId)
-        {
-            try
-            {
-                var fileInfo = await GetFileByIdAsync(fileId);
-                if (fileInfo?.IsPublic == true)
-                {
-                    // Public files don't need tokens
-                    return GetStreamingUrl(fileId);
-                }
-
-                // Generate token for private files
-                var token = await GenerateDownloadTokenAsync(fileId);
-                if (!string.IsNullOrEmpty(token))
-                {
-                    return $"{_backendBaseUrl}/api/v1/file/stream/{token}";
-                }
-
-                throw new Exception("Failed to generate streaming token");
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"Error getting streaming URL with token for file {fileId}: {ex.Message}", ex);
-            }
+            // Default fallback to download endpoint
+            return $"{_backendBaseUrl}/api/v1/file/{fileId}/download";
         }
 
         public string GetThumbnailUrl(int fileId)

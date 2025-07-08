@@ -85,14 +85,22 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var urlSet = new FileUrlSet();
 
-                // For video and audio files, prioritize streaming URLs
+                // For video and audio files, use streaming URLs as primary
                 if (IsStreamableFileType(file.FileType, file.ContentType))
                 {
-                    // Use streaming URL as the primary download URL for video/audio
+                    // Primary URL for video/audio is streaming
                     urlSet.DownloadUrl = GenerateStreamingUrl(file.Id, file.IsPublic);
 
-                    // Also provide the traditional download URL in additional URLs
-                    urlSet.AdditionalUrls["download_attachment"] = GenerateDownloadUrl(file.Id, file.IsPublic);
+                    // Add traditional download URL as additional option
+                    urlSet.AdditionalUrls["download_attachment"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download";
+
+                    // Add streaming-specific URLs
+                    urlSet.AdditionalUrls["stream"] = GenerateStreamingUrl(file.Id, file.IsPublic);
+
+                    if (!file.IsPublic)
+                    {
+                        urlSet.AdditionalUrls["stream_token_endpoint"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download-token";
+                    }
                 }
                 else
                 {
@@ -296,25 +304,29 @@ namespace Backend.CMS.Infrastructure.Services
                 // For videos and audio, add streaming and download URLs
                 if (IsStreamableFileType(file.FileType, file.ContentType))
                 {
-                    // Main streaming URL
-                    urlSet.AdditionalUrls["stream"] = GenerateStreamingUrl(file.Id, file.IsPublic);
+                    // Ensure we have both streaming and download options
+                    if (!urlSet.AdditionalUrls.ContainsKey("stream"))
+                    {
+                        urlSet.AdditionalUrls["stream"] = GenerateStreamingUrl(file.Id, file.IsPublic);
+                    }
 
-                    // Potential future streaming formats
+                    if (!urlSet.AdditionalUrls.ContainsKey("download_attachment"))
+                    {
+                        urlSet.AdditionalUrls["download_attachment"] = GenerateDownloadUrl(file.Id, file.IsPublic);
+                    }
+
+                    // Add potential future streaming formats
                     if (file.FileType == FileType.Video)
                     {
                         urlSet.AdditionalUrls["stream_hls"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/stream/hls";
                         urlSet.AdditionalUrls["stream_dash"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/stream/dash";
                     }
-
-                    // Traditional download URL (for download rather than streaming)
-                    urlSet.AdditionalUrls["download"] = GenerateDownloadUrl(file.Id, file.IsPublic);
                 }
 
                 // Add download token generation URL for private files
                 if (!file.IsPublic)
                 {
                     urlSet.AdditionalUrls["generate_token"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download-token";
-                    urlSet.AdditionalUrls["generate_streaming_token"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download-token";
                 }
             }
             catch (Exception ex)
