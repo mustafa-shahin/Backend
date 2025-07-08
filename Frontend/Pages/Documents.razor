@@ -3,7 +3,7 @@
 
 <PageTitle>Documents - Media Library</PageTitle>
 
-<FileManagementBase TargetFileType="Backend.CMS.Domain.Enums.FileType.Document"
+<FileManagementBase TargetFileType="@FileType.Document"
                     FileTypeName="Documents"
                     PageTitle="Documents"
                     PageDescription="Manage your document files including PDFs, Word docs, Excel sheets, and more"
@@ -31,6 +31,9 @@
                contentType.Contains("application/json") ||
                contentType.Contains("application/xml") ||
                contentType.Contains("application/rtf") ||
-               contentType.Contains("application/") && !contentType.StartsWith("image/") && !contentType.StartsWith("video/") && !contentType.StartsWith("audio/");
+               (contentType.Contains("application/") &&
+                !contentType.StartsWith("image/") &&
+                !contentType.StartsWith("video/") &&
+                !contentType.StartsWith("audio/"));
     }
 }

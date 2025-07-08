@@ -3,16 +3,28 @@
 
 <PageTitle>Videos - Media Library</PageTitle>
 
-<FileManagementBase TargetFileType="FileType.Video"
+<FileManagementBase TargetFileType="@FileType.Video"
                     FileTypeName="Videos"
                     PageTitle="Videos"
-                    PageDescription="Manage your video files"
+                    PageDescription="Manage your video files including movies, clips, and recordings"
                     FileTypeValidator="@IsVideoFile"
                     DefaultPageSize="20" />
 
 @code {
     private bool IsVideoFile(string contentType)
     {
-        return contentType.StartsWith("video/");
+        return contentType.StartsWith("video/") && (
+            contentType.Contains("mp4") ||
+            contentType.Contains("avi") ||
+            contentType.Contains("mov") ||
+            contentType.Contains("wmv") ||
+            contentType.Contains("flv") ||
+            contentType.Contains("webm") ||
+            contentType.Contains("mkv") ||
+            contentType.Contains("m4v") ||
+            contentType.Contains("3gp") ||
+            contentType.Contains("ogg") ||
+            contentType.Contains("ogv")
+        );
     }
 }

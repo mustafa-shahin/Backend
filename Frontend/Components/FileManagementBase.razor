@@ -295,7 +295,9 @@
                     ConfirmText="Delete"
                     ConfirmClass="bg-red-600 hover:bg-red-700 focus:ring-red-500"
                     ConfirmIcon="fas fa-trash"
+                    IconType="danger"
                     OnConfirm="@DeleteFile"
+                    OnCancel="@CancelDelete"
                     IsVisible="@dialogState.ShowDeleteDialog"
                     IsProcessing="@loadingState.IsDeleting" />
 
@@ -382,21 +384,52 @@
 
     // Performance optimization
     private readonly SemaphoreSlim loadingSemaphore = new(1, 1);
+    private bool _isParametersValid = false;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
+            // Validate required parameters
+            ValidateRequiredParameters();
+
             paginationState.PageSize = DefaultPageSize;
             await LoadDataAsync();
         }
         catch (Exception ex)
         {
             NotificationService.ShowError($"Failed to initialize page: {ex.Message}");
+            throw; // Re-throw to prevent component from rendering in invalid state
         }
     }
 
     protected override async Task OnParametersSetAsync()
+    {
+        // Only validate if not already validated and parameters are set
+        if (!_isParametersValid && IsParametersReady())
+        {
+            try
+            {
+                ValidateRequiredParameters();
+                _isParametersValid = true;
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("console.error", $"Parameter validation failed: {ex.Message}");
+                throw;
+            }
+        }
+    }
+
+    private bool IsParametersReady()
+    {
+        return TargetFileType != default &&
+               !string.IsNullOrEmpty(FileTypeName) &&
+               !string.IsNullOrEmpty(PageTitle) &&
+               !string.IsNullOrEmpty(PageDescription);
+    }
+
+    private void ValidateRequiredParameters()
     {
         if (TargetFileType == default)
         {
@@ -517,18 +550,28 @@
     // File Management Operations
     private async Task ShowEditFileDialog(FileDto file)
     {
-        selectedFile = file;
-        fileModel = new UpdateFileDto
+        try
         {
-            Description = file.Description,
-            Alt = file.Alt,
-            IsPublic = file.IsPublic,
-            FolderId = file.FolderId,
-            Tags = file.Tags ?? new Dictionary<string, object>()
-        };
-        fileValidationErrors.Clear();
-        dialogState.ShowFileDialog = true;
-        StateHasChanged();
+            // Close any open dialogs first
+            CloseAllDialogs();
+
+            selectedFile = file;
+            fileModel = new UpdateFileDto
+            {
+                Description = file.Description,
+                Alt = file.Alt,
+                IsPublic = file.IsPublic,
+                FolderId = file.FolderId,
+                Tags = file.Tags ?? new Dictionary<string, object>()
+            };
+            fileValidationErrors.Clear();
+            dialogState.ShowFileDialog = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to open edit dialog: {ex.Message}");
+        }
     }
 
     private void CloseFileDialog()
@@ -568,9 +611,20 @@
 
     private void ShowDeleteFileConfirmation(FileDto file)
     {
-        selectedFile = file;
-        dialogState.ShowDeleteDialog = true;
-        StateHasChanged();
+        try
+        {
+            // Close any open dialogs first
+            CloseAllDialogs();
+
+            selectedFile = file;
+            dialogState.ShowDeleteDialog = true;
+            loadingState.IsDeleting = false; // Reset delete state
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to show delete confirmation: {ex.Message}");
+        }
     }
 
     private async Task DeleteFile()
@@ -586,6 +640,12 @@
             if (success)
             {
                 NotificationService.ShowSuccess($"{FileTypeName} deleted successfully");
+
+                // Close dialog and reset state
+                dialogState.ShowDeleteDialog = false;
+                selectedFile = null;
+
+                // Refresh data
                 await ForceRefreshData();
             }
             else
@@ -600,15 +660,33 @@
         finally
         {
             loadingState.IsDeleting = false;
-            dialogState.ShowDeleteDialog = false;
-            selectedFile = null;
+            if (dialogState.ShowDeleteDialog)
+            {
+                dialogState.ShowDeleteDialog = false;
+                selectedFile = null;
+            }
             StateHasChanged();
         }
     }
 
+    private void CancelDelete()
+    {
+        dialogState.ShowDeleteDialog = false;
+        selectedFile = null;
+        loadingState.IsDeleting = false;
+        StateHasChanged();
+    }
+
     private async Task PreviewFile(FileDto file)
     {
-        filePreview?.ShowPreview(file);
+        try
+        {
+            filePreview?.ShowPreview(file);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to preview file: {ex.Message}");
+        }
     }
 
     private async Task DownloadFile(FileDto file)
@@ -626,10 +704,20 @@
     // Upload Management
     private void ShowUploadDialog()
     {
-        uploadState.SelectedFiles.Clear();
-        uploadState.UploadProgress.Clear();
-        dialogState.ShowUploadDialog = true;
-        StateHasChanged();
+        try
+        {
+            // Close any open dialogs first
+            CloseAllDialogs();
+
+            uploadState.SelectedFiles.Clear();
+            uploadState.UploadProgress.Clear();
+            dialogState.ShowUploadDialog = true;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to show upload dialog: {ex.Message}");
+        }
     }
 
     private void CloseUploadDialog()
@@ -757,9 +845,16 @@
                contentType.Contains("document");
     }
 
-
-
-
+    private void CloseAllDialogs()
+    {
+        dialogState.ShowFileDialog = false;
+        dialogState.ShowUploadDialog = false;
+        dialogState.ShowDeleteDialog = false;
+        selectedFile = null;
+        loadingState.IsDeleting = false;
+        loadingState.IsSaving = false;
+        loadingState.IsUploading = false;
+    }
 
     public void Dispose()
     {

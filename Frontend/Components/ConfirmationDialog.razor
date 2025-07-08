@@ -46,16 +46,16 @@
                 <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 flex justify-end space-x-3">
                     <button @onclick="Cancel"
                             type="button"
-                            class="@StyleService.GetButtonClass("secondry", "medium")"
-                            disabled="@IsProcessing">
+                            class="@StyleService.GetButtonClass("secondary", "medium")"
+                            disabled="@IsProcessingInternal">
                         @CancelText
                     </button>
 
                     <button @onclick="Confirm"
                             type="button"
                             class="@StyleService.GetButtonClass("danger", "medium")"
-                            disabled="@IsProcessing">
-                        @if (IsProcessing)
+                            disabled="@IsProcessingInternal">
+                        @if (IsProcessingInternal)
                         {
                             <i class="fas fa-spinner fa-spin mr-2"></i>
                             <span>@ProcessingText</span>
@@ -94,19 +94,44 @@
     [Parameter] public EventCallback OnConfirm { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
 
-    // Internal state to track if we're currently processing
+    // Internal state to track processing
     private bool _internalProcessing = false;
+    private bool _wasVisible = false;
+
+    // Combined processing state
+    private bool IsProcessingInternal => IsProcessing || _internalProcessing;
+
+    protected override void OnParametersSet()
+    {
+        // Reset internal processing state when dialog becomes visible
+        if (IsVisible && !_wasVisible)
+        {
+            _internalProcessing = false;
+        }
+
+        // Reset internal processing when external processing finishes
+        if (!IsProcessing && _internalProcessing)
+        {
+            _internalProcessing = false;
+        }
+
+        _wasVisible = IsVisible;
+        base.OnParametersSet();
+    }
 
     private async Task Confirm()
     {
-        if (_internalProcessing || IsProcessing) return;
+        if (IsProcessingInternal) return;
 
         try
         {
             _internalProcessing = true;
             StateHasChanged();
 
-            await OnConfirm.InvokeAsync();
+            if (OnConfirm.HasDelegate)
+            {
+                await OnConfirm.InvokeAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -114,26 +139,27 @@
         }
         finally
         {
-            _internalProcessing = false;
-
-            // Only auto-hide if the parent isn't managing visibility
+            // Only reset internal processing if external processing isn't managing it
             if (!IsProcessing)
             {
-                IsVisible = false;
+                _internalProcessing = false;
+                StateHasChanged();
             }
-
-            StateHasChanged();
         }
     }
 
     private async Task Cancel()
     {
-        if (_internalProcessing || IsProcessing) return;
+        if (IsProcessingInternal) return;
 
         try
         {
-            IsVisible = false;
-            await OnCancel.InvokeAsync();
+            _internalProcessing = false;
+
+            if (OnCancel.HasDelegate)
+            {
+                await OnCancel.InvokeAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -147,7 +173,7 @@
 
     private async Task HandleBackdropClick()
     {
-        if (CloseOnBackdrop && !IsProcessing && !_internalProcessing)
+        if (CloseOnBackdrop && !IsProcessingInternal)
         {
             await Cancel();
         }
@@ -179,12 +205,23 @@
         StateHasChanged();
     }
 
-    protected override void OnParametersSet()
+    /// <summary>
+    /// Force close the dialog and reset all states
+    /// </summary>
+    public void ForceClose()
     {
-        // Reset internal processing state when visibility changes from outside
-        if (!IsVisible)
-        {
-            _internalProcessing = false;
-        }
+        IsVisible = false;
+        _internalProcessing = false;
+        _wasVisible = false;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Reset the dialog state without changing visibility
+    /// </summary>
+    public void ResetState()
+    {
+        _internalProcessing = false;
+        StateHasChanged();
     }
 }

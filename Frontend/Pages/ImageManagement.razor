@@ -3,16 +3,27 @@
 
 <PageTitle>Pictures - Media Library</PageTitle>
 
-<FileManagementBase TargetFileType="FileType.Image"
+<FileManagementBase TargetFileType="@FileType.Image"
                     FileTypeName="Pictures"
                     PageTitle="Pictures"
-                    PageDescription="Manage your image collection"
+                    PageDescription="Manage your image collection including photos, graphics, and illustrations"
                     FileTypeValidator="@IsImageFile"
                     DefaultPageSize="24" />
 
 @code {
     private bool IsImageFile(string contentType)
     {
-        return contentType.StartsWith("image/");
+        return contentType.StartsWith("image/") && (
+            contentType.Contains("jpeg") ||
+            contentType.Contains("jpg") ||
+            contentType.Contains("png") ||
+            contentType.Contains("gif") ||
+            contentType.Contains("bmp") ||
+            contentType.Contains("webp") ||
+            contentType.Contains("svg") ||
+            contentType.Contains("tiff") ||
+            contentType.Contains("ico") ||
+            contentType.Contains("avif")
+        );
     }
 }

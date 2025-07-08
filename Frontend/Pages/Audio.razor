@@ -3,7 +3,7 @@
 
 <PageTitle>Audio - Media Library</PageTitle>
 
-<FileManagementBase TargetFileType="Backend.CMS.Domain.Enums.FileType.Audio"
+<FileManagementBase TargetFileType="@FileType.Audio"
                     FileTypeName="Audio"
                     PageTitle="Audio Files"
                     PageDescription="Manage your audio files including music, podcasts, and sound effects"
@@ -25,7 +25,9 @@
             contentType.Contains("amr") ||
             contentType.Contains("aiff") ||
             contentType.Contains("au") ||
-            contentType.Contains("ra")
+            contentType.Contains("ra") ||
+            contentType.Contains("mp2") ||
+            contentType.Contains("3gp")
         );
     }
 }
