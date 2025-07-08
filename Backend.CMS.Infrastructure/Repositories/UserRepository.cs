@@ -1,5 +1,6 @@
 ﻿using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Data;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,7 +8,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class UserRepository : Repository<User>, IUserRepository
     {
-        public UserRepository(ApplicationDbContext context) : base(context)
+        public UserRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
         {
         }
 

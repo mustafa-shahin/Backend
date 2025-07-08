@@ -41,5 +41,10 @@ namespace Backend.CMS.Infrastructure.IRepositories
             Expression<Func<T, bool>>? predicate = null,
             Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy = null);
         Task<TResult> ExecuteInTransactionAsync<TResult>(Func<Task<TResult>> operation);
+        Task ExecuteInTransactionAsync(Func<Task> operation);
+        Task<bool> BatchSoftDeleteAsync(Expression<Func<T, bool>> predicate, int? deletedByUserId = null);
+        Task<bool> BatchRestoreAsync(Expression<Func<T, bool>> predicate, int? restoredByUserId = null);
+        Task<bool> ExistsAsync(int id);
+        Task<bool> ExistsAsync(Expression<Func<T, bool>> predicate);
     }
 }

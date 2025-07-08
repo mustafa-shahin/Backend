@@ -1,40 +1,45 @@
 ﻿using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Common;
 using Backend.CMS.Infrastructure.Data;
+using Backend.CMS.Infrastructure.Interfaces; 
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using System.Collections.Concurrent;
 using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Repositories
 {
-    public class Repository<T> : IRepository<T> where T : BaseEntity
+    public class Repository<T> : IRepository<T>, IDisposable where T : BaseEntity
     {
         protected readonly ApplicationDbContext _context;
         protected readonly DbSet<T> _dbSet;
         private readonly SemaphoreSlim _semaphore;
-        private readonly ILogger<Repository<T>> _logger;
-        private readonly ConcurrentDictionary<int, SemaphoreSlim> _entityLocks;
         private readonly ThreadLocal<bool> _semaphoreAcquired;
         private bool _disposed = false;
+        private readonly IUserSessionService _userSessionService;
 
-        public Repository(ApplicationDbContext context, ILogger<Repository<T>> logger = null)
+        public Repository(ApplicationDbContext context, IUserSessionService userSessionService)
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _dbSet = context.Set<T>();
             _semaphore = new SemaphoreSlim(1, 1);
-            _logger = logger;
-            _entityLocks = new ConcurrentDictionary<int, SemaphoreSlim>();
             _semaphoreAcquired = new ThreadLocal<bool>(() => false);
+            _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
         }
 
+        /// <summary>
+        /// Provides an IQueryable for building complex queries.
+        /// Filters out deleted entities by default.
+        /// </summary>
+        /// <returns>An IQueryable of entities.</returns>
         public IQueryable<T> GetQueryable()
         {
             return _dbSet.AsNoTracking().Where(e => !e.IsDeleted);
         }
 
         #region Public Methods with Semaphore Management
+
+        // These public methods act as wrappers, acquiring the semaphore before calling internal methods.
+        // This ensures that only one operation using this repository instance runs at a time.
 
         public virtual async Task<T?> GetByIdAsync(int id)
         {
@@ -48,42 +53,54 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public virtual async Task<IEnumerable<T>> GetAllAsync()
         {
-            return await ExecuteWithSemaphoreAsync(async () => await GetAllInternalAsync());
+            return await ExecuteWithSemaphoreAsync(GetAllInternalAsync);
         }
 
         public virtual async Task<IEnumerable<T>> GetAllIncludeDeletedAsync()
         {
-            return await ExecuteWithSemaphoreAsync(async () => await GetAllIncludeDeletedInternalAsync());
+            return await ExecuteWithSemaphoreAsync(GetAllIncludeDeletedInternalAsync);
         }
 
         public virtual async Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate)
         {
-            return await ExecuteWithSemaphoreAsync(async () => await FindInternalAsync(predicate));
+            return predicate == null
+                ? throw new ArgumentNullException(nameof(predicate))
+                : await ExecuteWithSemaphoreAsync(async () => await FindInternalAsync(predicate));
         }
 
         public virtual async Task<IEnumerable<T>> FindIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
         {
-            return await ExecuteWithSemaphoreAsync(async () => await FindIncludeDeletedInternalAsync(predicate));
+            return predicate == null
+                ? throw new ArgumentNullException(nameof(predicate))
+                : await ExecuteWithSemaphoreAsync(async () => await FindIncludeDeletedInternalAsync(predicate));
         }
 
         public virtual async Task<T?> FirstOrDefaultAsync(Expression<Func<T, bool>> predicate)
         {
-            return await ExecuteWithSemaphoreAsync(async () => await FirstOrDefaultInternalAsync(predicate));
+            return predicate == null
+                ? throw new ArgumentNullException(nameof(predicate))
+                : await ExecuteWithSemaphoreAsync(async () => await FirstOrDefaultInternalAsync(predicate));
         }
 
         public virtual async Task<T?> FirstOrDefaultIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
         {
-            return await ExecuteWithSemaphoreAsync(async () => await FirstOrDefaultIncludeDeletedInternalAsync(predicate));
+            return predicate == null
+                ? throw new ArgumentNullException(nameof(predicate))
+                : await ExecuteWithSemaphoreAsync(async () => await FirstOrDefaultIncludeDeletedInternalAsync(predicate));
         }
 
         public virtual async Task<bool> AnyAsync(Expression<Func<T, bool>> predicate)
         {
-            return await ExecuteWithSemaphoreAsync(async () => await AnyInternalAsync(predicate));
+            return predicate == null
+                ? throw new ArgumentNullException(nameof(predicate))
+                : await ExecuteWithSemaphoreAsync(async () => await AnyInternalAsync(predicate));
         }
 
         public virtual async Task<bool> AnyIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
         {
-            return await ExecuteWithSemaphoreAsync(async () => await AnyIncludeDeletedInternalAsync(predicate));
+            return predicate == null
+                ? throw new ArgumentNullException(nameof(predicate))
+                : await ExecuteWithSemaphoreAsync(async () => await AnyIncludeDeletedInternalAsync(predicate));
         }
 
         public virtual async Task<int> CountAsync()
@@ -93,7 +110,9 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public virtual async Task<int> CountAsync(Expression<Func<T, bool>> predicate)
         {
-            return await ExecuteWithSemaphoreAsync(async () => await CountInternalAsync(predicate));
+            return predicate == null
+                ? throw new ArgumentNullException(nameof(predicate))
+                : await ExecuteWithSemaphoreAsync(async () => await CountInternalAsync(predicate));
         }
 
         public virtual async Task<int> CountIncludeDeletedAsync()
@@ -103,7 +122,9 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public virtual async Task<int> CountIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
         {
-            return await ExecuteWithSemaphoreAsync(async () => await CountIncludeDeletedInternalAsync(predicate));
+            return predicate == null
+                ? throw new ArgumentNullException(nameof(predicate))
+                : await ExecuteWithSemaphoreAsync(async () => await CountIncludeDeletedInternalAsync(predicate));
         }
 
         public virtual async Task<IEnumerable<T>> GetPagedAsync(int page, int pageSize)
@@ -118,27 +139,39 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public virtual async Task AddAsync(T entity)
         {
-            if (entity == null) throw new ArgumentNullException(nameof(entity));
+            ArgumentNullException.ThrowIfNull(entity);
             await ExecuteWithSemaphoreAsync(async () => await AddInternalAsync(entity));
         }
 
         public virtual async Task AddRangeAsync(IEnumerable<T> entities)
         {
-            if (entities == null) throw new ArgumentNullException(nameof(entities));
+            ArgumentNullException.ThrowIfNull(entities);
             await ExecuteWithSemaphoreAsync(async () => await AddRangeInternalAsync(entities));
         }
 
         public virtual void Update(T entity)
         {
-            if (entity == null) throw new ArgumentNullException(nameof(entity));
+            ArgumentNullException.ThrowIfNull(entity);
+
+            // Ensure the entity is tracked before setting state to Modified.
+            // If the entity is detached, attach it first.
+            if (_context.Entry(entity).State == EntityState.Detached)
+            {
+                _dbSet.Attach(entity);
+            }
             _context.Entry(entity).State = EntityState.Modified;
         }
 
         public virtual void UpdateRange(IEnumerable<T> entities)
         {
-            if (entities == null) throw new ArgumentNullException(nameof(entities));
+            ArgumentNullException.ThrowIfNull(entities);
+
             foreach (var entity in entities)
             {
+                if (_context.Entry(entity).State == EntityState.Detached)
+                {
+                    _dbSet.Attach(entity);
+                }
                 _context.Entry(entity).State = EntityState.Modified;
             }
         }
@@ -161,19 +194,17 @@ namespace Backend.CMS.Infrastructure.Repositories
             {
                 try
                 {
-                    var entity = await GetByIdInternalAsync(id);
+                    // Retrieve with tracking if it might be updated
+                    var entity = await GetByIdInternalTrackedAsync(id);
                     if (entity == null)
                     {
-                        _logger?.LogWarning("Entity {EntityType} with ID {Id} not found for soft delete", typeof(T).Name, id);
                         return false;
                     }
-
                     return await SoftDeleteInternalAsync(entity, deletedByUserId);
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Error during soft delete of entity {EntityType} with ID {Id}", typeof(T).Name, id);
-                    throw;
+                    throw; 
                 }
             });
         }
@@ -181,16 +212,19 @@ namespace Backend.CMS.Infrastructure.Repositories
         public virtual async Task<bool> SoftDeleteAsync(T entity, int? deletedByUserId = null)
         {
             if (entity == null) throw new ArgumentNullException(nameof(entity));
-
             return await ExecuteWithSemaphoreAsync(async () =>
             {
                 try
                 {
-                    return await SoftDeleteInternalAsync(entity, deletedByUserId);
+                    // If the entity is passed in, ensure it's tracked if it's not already.
+                    // This is crucial if the entity comes from outside the current context.
+                    var trackedEntity = _context.Entry(entity).State == EntityState.Detached ?
+                                        _dbSet.Attach(entity).Entity :
+                                        entity;
+                    return await SoftDeleteInternalAsync(trackedEntity, deletedByUserId);
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Error during soft delete of entity {EntityType} with ID {Id}", typeof(T).Name, entity.Id);
                     throw;
                 }
             });
@@ -199,7 +233,6 @@ namespace Backend.CMS.Infrastructure.Repositories
         public virtual async Task<bool> SoftDeleteRangeAsync(IEnumerable<T> entities, int? deletedByUserId = null)
         {
             if (entities == null) throw new ArgumentNullException(nameof(entities));
-
             return await ExecuteWithSemaphoreAsync(async () =>
             {
                 try
@@ -208,7 +241,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Error during bulk soft delete of entities {EntityType}", typeof(T).Name);
                     throw;
                 }
             });
@@ -220,18 +252,20 @@ namespace Backend.CMS.Infrastructure.Repositories
             {
                 try
                 {
-                    var entity = await GetByIdIncludeDeletedInternalAsync(id);
-                    if (entity == null || !entity.IsDeleted)
+                    // Retrieve with tracking if it might be updated
+                    var entity = await GetByIdIncludeDeletedInternalTrackedAsync(id);
+                    if (entity == null)
                     {
-                        _logger?.LogWarning("Entity {EntityType} with ID {Id} not found or not deleted for restore", typeof(T).Name, id);
                         return false;
                     }
-
+                    if (!entity.IsDeleted)
+                    {
+                        return false;
+                    }
                     return await RestoreInternalAsync(entity, restoredByUserId);
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Error during restore of entity {EntityType} with ID {Id}", typeof(T).Name, id);
                     throw;
                 }
             });
@@ -240,16 +274,18 @@ namespace Backend.CMS.Infrastructure.Repositories
         public virtual async Task<bool> RestoreAsync(T entity, int? restoredByUserId = null)
         {
             if (entity == null) throw new ArgumentNullException(nameof(entity));
-
             return await ExecuteWithSemaphoreAsync(async () =>
             {
                 try
                 {
-                    return await RestoreInternalAsync(entity, restoredByUserId);
+                    // If the entity is passed in, ensure it's tracked if it's not already.
+                    var trackedEntity = _context.Entry(entity).State == EntityState.Detached ?
+                                        _dbSet.Attach(entity).Entity :
+                                        entity;
+                    return await RestoreInternalAsync(trackedEntity, restoredByUserId);
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Error during restore of entity {EntityType} with ID {Id}", typeof(T).Name, entity.Id);
                     throw;
                 }
             });
@@ -257,7 +293,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public virtual async Task<int> SaveChangesAsync()
         {
-            return await ExecuteWithSemaphoreAsync(async () => await SaveChangesInternalAsync());
+            return await ExecuteWithSemaphoreAsync(SaveChangesInternalAsync);
         }
 
         public virtual async Task<PagedResult<T>> GetPagedResultAsync(
@@ -273,14 +309,29 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         #region Internal Methods (No Semaphore Acquisition)
 
+        // These methods are intended to be called by public methods after semaphore acquisition,
+        // or within a larger transactional scope already managed by the semaphore.
+
         protected virtual async Task<T?> GetByIdInternalAsync(int id)
         {
             return await _dbSet.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
         }
 
+        // Added for internal operations that require a tracked entity for updates
+        protected virtual async Task<T?> GetByIdInternalTrackedAsync(int id)
+        {
+            return await _dbSet.FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
+        }
+
         protected virtual async Task<T?> GetByIdIncludeDeletedInternalAsync(int id)
         {
-            return await _context.IncludeDeleted<T>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == id);
+            return await _context.Set<T>().IgnoreQueryFilters().AsNoTracking().FirstOrDefaultAsync(e => e.Id == id);
+        }
+
+        // Added for internal operations that require a tracked entity for updates (even if deleted)
+        protected virtual async Task<T?> GetByIdIncludeDeletedInternalTrackedAsync(int id)
+        {
+            return await _context.Set<T>().IgnoreQueryFilters().FirstOrDefaultAsync(e => e.Id == id);
         }
 
         protected virtual async Task<IEnumerable<T>> GetAllInternalAsync()
@@ -290,37 +341,37 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         protected virtual async Task<IEnumerable<T>> GetAllIncludeDeletedInternalAsync()
         {
-            return await _context.IncludeDeleted<T>().AsNoTracking().ToListAsync();
+            return await _context.Set<T>().IgnoreQueryFilters().AsNoTracking().ToListAsync();
         }
 
         protected virtual async Task<IEnumerable<T>> FindInternalAsync(Expression<Func<T, bool>> predicate)
         {
             return await _dbSet.AsNoTracking()
-                              .Where(e => !e.IsDeleted)
-                              .Where(predicate)
-                              .ToListAsync();
+                               .Where(e => !e.IsDeleted)
+                               .Where(predicate)
+                               .ToListAsync();
         }
 
         protected virtual async Task<IEnumerable<T>> FindIncludeDeletedInternalAsync(Expression<Func<T, bool>> predicate)
         {
-            return await _context.IncludeDeleted<T>()
-                                .AsNoTracking()
-                                .Where(predicate)
-                                .ToListAsync();
+            return await _context.Set<T>().IgnoreQueryFilters()
+                                 .AsNoTracking()
+                                 .Where(predicate)
+                                 .ToListAsync();
         }
 
         protected virtual async Task<T?> FirstOrDefaultInternalAsync(Expression<Func<T, bool>> predicate)
         {
             return await _dbSet.AsNoTracking()
-                              .Where(e => !e.IsDeleted)
-                              .FirstOrDefaultAsync(predicate);
+                               .Where(e => !e.IsDeleted)
+                               .FirstOrDefaultAsync(predicate);
         }
 
         protected virtual async Task<T?> FirstOrDefaultIncludeDeletedInternalAsync(Expression<Func<T, bool>> predicate)
         {
-            return await _context.IncludeDeleted<T>()
-                                .AsNoTracking()
-                                .FirstOrDefaultAsync(predicate);
+            return await _context.Set<T>().IgnoreQueryFilters()
+                                 .AsNoTracking()
+                                 .FirstOrDefaultAsync(predicate);
         }
 
         protected virtual async Task<bool> AnyInternalAsync(Expression<Func<T, bool>> predicate)
@@ -330,7 +381,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         protected virtual async Task<bool> AnyIncludeDeletedInternalAsync(Expression<Func<T, bool>> predicate)
         {
-            return await _context.IncludeDeleted<T>().AnyAsync(predicate);
+            return await _context.Set<T>().IgnoreQueryFilters().AnyAsync(predicate);
         }
 
         protected virtual async Task<int> CountInternalAsync()
@@ -345,32 +396,32 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         protected virtual async Task<int> CountIncludeDeletedInternalAsync()
         {
-            return await _context.IncludeDeleted<T>().CountAsync();
+            return await _context.Set<T>().IgnoreQueryFilters().CountAsync();
         }
 
         protected virtual async Task<int> CountIncludeDeletedInternalAsync(Expression<Func<T, bool>> predicate)
         {
-            return await _context.IncludeDeleted<T>().CountAsync(predicate);
+            return await _context.Set<T>().IgnoreQueryFilters().CountAsync(predicate);
         }
 
         protected virtual async Task<IEnumerable<T>> GetPagedInternalAsync(int page, int pageSize)
         {
             return await _dbSet.AsNoTracking()
-                              .Where(e => !e.IsDeleted)
-                              .OrderBy(e => e.Id)
-                              .Skip((page - 1) * pageSize)
-                              .Take(pageSize)
-                              .ToListAsync();
+                               .Where(e => !e.IsDeleted)
+                               .OrderBy(e => e.Id) // Default order for pagination
+                               .Skip((page - 1) * pageSize)
+                               .Take(pageSize)
+                               .ToListAsync();
         }
 
         protected virtual async Task<IEnumerable<T>> GetPagedIncludeDeletedInternalAsync(int page, int pageSize)
         {
-            return await _context.IncludeDeleted<T>()
-                                .AsNoTracking()
-                                .OrderBy(e => e.Id)
-                                .Skip((page - 1) * pageSize)
-                                .Take(pageSize)
-                                .ToListAsync();
+            return await _context.Set<T>().IgnoreQueryFilters()
+                                 .AsNoTracking()
+                                 .OrderBy(e => e.Id) // Default order for pagination
+                                 .Skip((page - 1) * pageSize)
+                                 .Take(pageSize)
+                                 .ToListAsync();
         }
 
         protected virtual async Task AddInternalAsync(T entity)
@@ -385,79 +436,69 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         protected virtual async Task<bool> SoftDeleteInternalAsync(T entity, int? deletedByUserId = null)
         {
-            try
+            // The entity should already be tracked by the calling public method or explicitly attached.
+            if (_context.Entry(entity).State == EntityState.Detached)
             {
-                entity.IsDeleted = true;
-                entity.DeletedAt = DateTime.UtcNow;
-                entity.DeletedByUserId = deletedByUserId;
-                entity.UpdatedAt = DateTime.UtcNow;
-                entity.UpdatedByUserId = deletedByUserId;
-
-                Update(entity);
-                await SaveChangesInternalAsync();
-
-                _logger?.LogInformation("Successfully soft deleted entity {EntityType} with ID {Id}", typeof(T).Name, entity.Id);
-                return true;
+                _dbSet.Attach(entity);
             }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Failed to soft delete entity {EntityType} with ID {Id}", typeof(T).Name, entity.Id);
-                return false;
-            }
+
+            entity.IsDeleted = true;
+            entity.DeletedAt = DateTime.UtcNow;
+            entity.DeletedByUserId = deletedByUserId ?? _userSessionService.GetCurrentUserId(); 
+            entity.UpdatedAt = DateTime.UtcNow; // Soft delete is also an update
+            entity.UpdatedByUserId = deletedByUserId ?? _userSessionService.GetCurrentUserId(); 
+
+            _context.Entry(entity).State = EntityState.Modified; // Ensure it's marked as modified
+            await SaveChangesInternalAsync(); // Save changes immediately for this single entity operation
+
+            return true;
         }
 
         protected virtual async Task<bool> SoftDeleteRangeInternalAsync(IEnumerable<T> entities, int? deletedByUserId = null)
         {
-            try
+            var entityList = entities.ToList();
+            if (!entityList.Any()) return true;
+
+            var now = DateTime.UtcNow;
+            var userId = deletedByUserId ?? _userSessionService.GetCurrentUserId();
+
+            foreach (var entity in entityList)
             {
-                var entityList = entities.ToList();
-                if (!entityList.Any()) return true;
-
-                var now = DateTime.UtcNow;
-
-                foreach (var entity in entityList)
+                if (_context.Entry(entity).State == EntityState.Detached)
                 {
-                    entity.IsDeleted = true;
-                    entity.DeletedAt = now;
-                    entity.DeletedByUserId = deletedByUserId;
-                    entity.UpdatedAt = now;
-                    entity.UpdatedByUserId = deletedByUserId;
+                    _dbSet.Attach(entity);
                 }
-
-                UpdateRange(entityList);
-                await SaveChangesInternalAsync();
-
-                _logger?.LogInformation("Successfully soft deleted {Count} entities of type {EntityType}", entityList.Count, typeof(T).Name);
-                return true;
+                entity.IsDeleted = true;
+                entity.DeletedAt = now;
+                entity.DeletedByUserId = userId;
+                entity.UpdatedAt = now;
+                entity.UpdatedByUserId = userId;
+                _context.Entry(entity).State = EntityState.Modified; // Ensure it's marked as modified
             }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Failed to soft delete entity range {EntityType}", typeof(T).Name);
-                return false;
-            }
+
+            await SaveChangesInternalAsync(); // Save all changes at once for the range operation
+
+            return true;
         }
 
         protected virtual async Task<bool> RestoreInternalAsync(T entity, int? restoredByUserId = null)
         {
-            try
+            // The entity should already be tracked by the calling public method or explicitly attached.
+            if (_context.Entry(entity).State == EntityState.Detached)
             {
-                entity.IsDeleted = false;
-                entity.DeletedAt = null;
-                entity.DeletedByUserId = null;
-                entity.UpdatedAt = DateTime.UtcNow;
-                entity.UpdatedByUserId = restoredByUserId;
-
-                Update(entity);
-                await SaveChangesInternalAsync();
-
-                _logger?.LogInformation("Successfully restored entity {EntityType} with ID {Id}", typeof(T).Name, entity.Id);
-                return true;
+                _dbSet.Attach(entity);
             }
-            catch (Exception ex)
-            {
-                _logger?.LogError(ex, "Failed to restore entity {EntityType} with ID {Id}", typeof(T).Name, entity.Id);
-                return false;
-            }
+
+            entity.IsDeleted = false;
+            entity.DeletedAt = null;
+            entity.DeletedByUserId = null;
+            entity.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedByUserId = restoredByUserId ?? _userSessionService.GetCurrentUserId();
+
+            _context.Entry(entity).State = EntityState.Modified; 
+            await SaveChangesInternalAsync(); 
+
+            return true;
         }
 
         protected virtual async Task<int> SaveChangesInternalAsync()
@@ -486,12 +527,12 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
             else
             {
-                query = query.OrderBy(e => e.Id);
+                query = query.OrderBy(e => e.Id); // Default ordering
             }
 
             var items = await query.Skip((page - 1) * pageSize)
-                                  .Take(pageSize)
-                                  .ToListAsync();
+                                   .Take(pageSize)
+                                   .ToListAsync();
 
             return new PagedResult<T>(items, page, pageSize, totalCount);
         }
@@ -500,7 +541,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         #region Semaphore Management
 
-        private async Task<T> ExecuteWithSemaphoreAsync<T>(Func<Task<T>> operation)
+        private async Task<TResult> ExecuteWithSemaphoreAsync<TResult>(Func<Task<TResult>> operation)
         {
             if (_semaphoreAcquired.Value)
             {
@@ -551,7 +592,8 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             return await ExecuteWithSemaphoreAsync(async () =>
             {
-                using var transaction = await _context.Database.BeginTransactionAsync();
+                // Use a transaction scope across operations if necessary
+                await using var transaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
                     var result = await operation();
@@ -570,7 +612,7 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             await ExecuteWithSemaphoreAsync(async () =>
             {
-                using var transaction = await _context.Database.BeginTransactionAsync();
+                await using var transaction = await _context.Database.BeginTransactionAsync();
                 try
                 {
                     await operation();
@@ -586,7 +628,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         #endregion
 
-        #region Batch Operations
+        #region Batch Operations (using EF Core 7+ ExecuteUpdate/ExecuteDelete)
 
         public virtual async Task<bool> BatchSoftDeleteAsync(Expression<Func<T, bool>> predicate, int? deletedByUserId = null)
         {
@@ -594,14 +636,24 @@ namespace Backend.CMS.Infrastructure.Repositories
             {
                 try
                 {
-                    var entities = await FindInternalAsync(predicate);
-                    if (!entities.Any()) return true;
+                    var now = DateTime.UtcNow;
+                    var userId = deletedByUserId ?? _userSessionService.GetCurrentUserId();
 
-                    return await SoftDeleteRangeInternalAsync(entities, deletedByUserId);
+                    // Using IgnoreQueryFilters to ensure we can target entities that might already be marked as deleted in other contexts
+                    var affectedRows = await _dbSet.Where(e => !e.IsDeleted) // Only soft-delete if not already deleted
+                                                   .Where(predicate)
+                                                   .ExecuteUpdateAsync(s => s
+                                                       .SetProperty(e => e.IsDeleted, true)
+                                                       .SetProperty(e => e.DeletedAt, now)
+                                                       .SetProperty(e => e.DeletedByUserId, userId)
+                                                       .SetProperty(e => e.UpdatedAt, now)
+                                                       .SetProperty(e => e.UpdatedByUserId, userId));
+
+    
+                    return affectedRows > 0;
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Error during batch soft delete of entities {EntityType}", typeof(T).Name);
                     throw;
                 }
             });
@@ -613,30 +665,22 @@ namespace Backend.CMS.Infrastructure.Repositories
             {
                 try
                 {
-                    var entities = await FindIncludeDeletedInternalAsync(predicate);
-                    var deletedEntities = entities.Where(e => e.IsDeleted).ToList();
-
-                    if (!deletedEntities.Any()) return true;
-
                     var now = DateTime.UtcNow;
-                    foreach (var entity in deletedEntities)
-                    {
-                        entity.IsDeleted = false;
-                        entity.DeletedAt = null;
-                        entity.DeletedByUserId = null;
-                        entity.UpdatedAt = now;
-                        entity.UpdatedByUserId = restoredByUserId;
-                    }
+                    var userId = restoredByUserId ?? _userSessionService.GetCurrentUserId();
 
-                    UpdateRange(deletedEntities);
-                    await SaveChangesInternalAsync();
+                    var affectedRows = await _dbSet.Where(e => e.IsDeleted) // Only restore if already deleted
+                                                   .Where(predicate)
+                                                   .ExecuteUpdateAsync(s => s
+                                                       .SetProperty(e => e.IsDeleted, false)
+                                                       .SetProperty(e => e.DeletedAt, (DateTime?)null)
+                                                       .SetProperty(e => e.DeletedByUserId, (int?)null)
+                                                       .SetProperty(e => e.UpdatedAt, now)
+                                                       .SetProperty(e => e.UpdatedByUserId, userId));
 
-                    _logger?.LogInformation("Successfully restored {Count} entities of type {EntityType}", deletedEntities.Count, typeof(T).Name);
-                    return true;
+                    return affectedRows > 0;
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Error during batch restore of entities {EntityType}", typeof(T).Name);
                     throw;
                 }
             });
@@ -664,22 +708,20 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             if (!_disposed && disposing)
             {
+                // Dispose managed state (managed objects)
                 _semaphore?.Dispose();
                 _semaphoreAcquired?.Dispose();
-
-                foreach (var entityLock in _entityLocks.Values)
-                {
-                    entityLock.Dispose();
-                }
-                _entityLocks.Clear();
-
-                _disposed = true;
+                // The _context should typically be managed by dependency injection container
+                // and its disposal handled by the container. Disposing it here might lead to
+                // issues if other components are sharing the same context instance.
             }
+
+            _disposed = true;
         }
 
         public void Dispose()
         {
-            Dispose(true);
+            Dispose(disposing: true);
             GC.SuppressFinalize(this);
         }
 

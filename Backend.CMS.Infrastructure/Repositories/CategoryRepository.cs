@@ -1,6 +1,7 @@
 ﻿using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Data;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,7 +9,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class CategoryRepository : Repository<Category>, ICategoryRepository
     {
-        public CategoryRepository(ApplicationDbContext context) : base(context)
+        public CategoryRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
         {
         }
 

@@ -1,6 +1,7 @@
 ﻿using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Data;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,7 +9,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class FileRepository : Repository<FileEntity>, IFileRepository
     {
-        public FileRepository(ApplicationDbContext context) : base(context)
+        public FileRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
         {
         }
 

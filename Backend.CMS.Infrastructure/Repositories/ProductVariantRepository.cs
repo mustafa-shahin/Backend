@@ -1,6 +1,7 @@
 ﻿using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Data;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,7 +12,7 @@ namespace Backend.CMS.Infrastructure.Repositories
     /// </summary>
     public class ProductVariantRepository : Repository<ProductVariant>, IProductVariantRepository
     {
-        public ProductVariantRepository(ApplicationDbContext context) : base(context)
+        public ProductVariantRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
         {
         }
 

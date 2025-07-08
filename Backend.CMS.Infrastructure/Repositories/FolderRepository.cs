@@ -1,6 +1,7 @@
 ﻿using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Data;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 using System.Linq;
@@ -9,7 +10,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class FolderRepository : Repository<Folder>, IFolderRepository
     {
-        public FolderRepository(ApplicationDbContext context) : base(context)
+        public FolderRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
         {
         }
 

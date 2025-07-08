@@ -1,5 +1,6 @@
 ﻿using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Data;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,7 +8,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class LocationRepository : Repository<Location>, ILocationRepository
     {
-        public LocationRepository(ApplicationDbContext context) : base(context)
+        public LocationRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
         {
         }
 
