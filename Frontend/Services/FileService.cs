@@ -71,22 +71,9 @@ namespace Frontend.Services
                 pageNumber = Math.Max(1, pageNumber);
                 pageSize = Math.Clamp(pageSize, 1, 100);
 
-                // Create cache key for pagination
-                var cacheKey = CreatePaginationCacheKey(pageNumber, pageSize, folderId, search, fileType, isPublic, sortBy, sortDirection);
-
-                // Check cache first (only for short-term caching)
-                if (_paginationCache.TryGetValue(cacheKey, out var cachedResult))
-                {
-                    var cacheAge = DateTime.UtcNow - cachedResult.Data.FirstOrDefault()?.CreatedAt;
-                    if (cacheAge?.TotalMinutes < 2) // Only cache for 2 minutes
-                    {
-                        return cachedResult;
-                    }
-                    _paginationCache.TryRemove(cacheKey, out _);
-                }
-
                 var queryParams = BuildQueryParameters(pageNumber, pageSize, folderId, search, fileType, isPublic, sortBy, sortDirection);
                 var query = $"api/v1/file?{string.Join("&", queryParams)}";
+
 
                 var response = await _httpClient.GetAsync(query);
 
@@ -98,15 +85,10 @@ namespace Frontend.Services
 
                 var result = await response.Content.ReadFromJsonAsync<PagedResult<FileDto>>(_jsonOptions);
 
+
                 if (result == null)
                 {
                     return PagedResult<FileDto>.Empty(pageNumber, pageSize);
-                }
-
-                // Validate pagination data integrity
-                if (result.TotalCount < 0 || result.PageNumber != pageNumber || result.PageSize != pageSize)
-                {
-                    throw new InvalidOperationException("Invalid pagination data received from server");
                 }
 
                 // Cache files individually and pagination result
@@ -116,7 +98,6 @@ namespace Frontend.Services
                     {
                         _fileCache.TryAdd(file.Id, file);
                     }
-                    _paginationCache.TryAdd(cacheKey, result);
                 }
 
                 return result;
@@ -1010,8 +991,8 @@ namespace Frontend.Services
             if (folderId.HasValue)
                 queryParams.Add($"folderId={folderId}");
 
-            if (!string.IsNullOrEmpty(search))
-                queryParams.Add($"search={Uri.EscapeDataString(search)}");
+            if (fileType.HasValue)
+                queryParams.Add($"fileType={((int)fileType.Value)}");
 
             if (fileType.HasValue)
                 queryParams.Add($"fileType={fileType}");

@@ -18,8 +18,8 @@
             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between py-6 space-y-4 sm:space-y-0">
                 <div>
                     <div class="flex items-center">
-                        <div class="w-10 h-10 bg-gradient-to-br @StyleService.GetHeaderGradient(TargetFileType) rounded-lg flex items-center justify-center mr-4">
-                            <i class="@StyleService.GetFileTypeIcon(TargetFileType) text-white text-lg"></i>
+                        <div class="w-10 h-10 bg-gradient-to-br @StyleService.GetHeaderGradient(TargetFileType.Value) rounded-lg flex items-center justify-center mr-4">
+                            <i class="@StyleService.GetFileTypeIcon(TargetFileType.Value) text-white text-lg"></i>
                         </div>
                         <div>
                             <h1 class="text-2xl font-bold text-gray-900 dark:text-white">@PageTitle</h1>
@@ -27,7 +27,7 @@
                                 @PageDescription
                                 @if (files.TotalCount > 0)
                                 {
-                                    <span class="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium @StyleService.GetCountBadgeClass(TargetFileType)">
+                                    <span class="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium @StyleService.GetCountBadgeClass(TargetFileType.Value)">
                                         @files.TotalCount total
                                     </span>
                                 }
@@ -37,7 +37,7 @@
                 </div>
                 <div class="flex items-center space-x-3">
                     <button @onclick="ShowUploadDialog"
-                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white @StyleService.GetPrimaryButtonClass(TargetFileType) transition-colors duration-200">
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white @StyleService.GetPrimaryButtonClass(TargetFileType.Value) transition-colors duration-200">
                         <i class="fas fa-upload mr-2"></i>
                         Upload @FileTypeName
                     </button>
@@ -162,7 +162,7 @@
                 {
                     <div class="overflow-x-auto">
                         <FileTableView Files="@files.Data"
-                                       FileType="@TargetFileType"
+                                       FileType="@TargetFileType.Value"
                                        OnEditFile="@ShowEditFileDialog"
                                        OnDeleteFile="@ShowDeleteFileConfirmation"
                                        OnDownloadFile="@DownloadFile"
@@ -182,7 +182,7 @@
                             }
                             else
                             {
-                                <i class="@StyleService.GetFileTypeIcon(TargetFileType) text-gray-400 text-2xl"></i>
+                                <i class="@StyleService.GetFileTypeIcon(TargetFileType.Value) text-gray-400 text-2xl"></i>
                             }
                         </div>
 
@@ -201,7 +201,7 @@
                                     Clear Search
                                 </button>
                                 <button @onclick="ShowUploadDialog"
-                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @StyleService.GetPrimaryButtonClass(TargetFileType) transition-colors">
+                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @StyleService.GetPrimaryButtonClass(TargetFileType.Value) transition-colors">
                                     <i class="fas fa-upload mr-2"></i>
                                     Upload @FileTypeName
                                 </button>
@@ -216,7 +216,7 @@
                                 Get started by uploading your first @FileTypeName.ToLower(). You can organize them and manage them easily.
                             </p>
                             <button @onclick="ShowUploadDialog"
-                                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @StyleService.GetPrimaryButtonClass(TargetFileType) transition-colors">
+                                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @StyleService.GetPrimaryButtonClass(TargetFileType.Value) transition-colors">
                                 <i class="fas fa-upload mr-2"></i>
                                 Upload Your First @FileTypeName
                             </button>
@@ -303,7 +303,7 @@
 
 @code {
     // Parameters that must be set by the consuming page
-    [Parameter, EditorRequired] public FileType TargetFileType { get; set; }
+    [Parameter, EditorRequired] public FileType? TargetFileType { get; set; }
     [Parameter, EditorRequired] public string FileTypeName { get; set; } = string.Empty;
     [Parameter, EditorRequired] public string PageTitle { get; set; } = string.Empty;
     [Parameter, EditorRequired] public string PageDescription { get; set; } = string.Empty;
@@ -423,7 +423,7 @@
 
     private bool IsParametersReady()
     {
-        return TargetFileType != default &&
+        return TargetFileType.HasValue &&
                !string.IsNullOrEmpty(FileTypeName) &&
                !string.IsNullOrEmpty(PageTitle) &&
                !string.IsNullOrEmpty(PageDescription);
@@ -431,7 +431,7 @@
 
     private void ValidateRequiredParameters()
     {
-        if (TargetFileType == default)
+        if (!TargetFileType.HasValue)
         {
             throw new InvalidOperationException("TargetFileType parameter is required");
         }
@@ -774,7 +774,7 @@
                 try
                 {
                     using var memoryStream = new MemoryStream();
-                    var maxSize = StyleService.GetMaxFileSize(TargetFileType);
+                    var maxSize = StyleService.GetMaxFileSize(TargetFileType.Value);
                     await file.OpenReadStream(maxAllowedSize: maxSize).CopyToAsync(memoryStream);
                     memoryStream.Position = 0;
 
