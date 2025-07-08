@@ -616,9 +616,18 @@
             // Close any open dialogs first
             CloseAllDialogs();
 
+            // Set the selected file
             selectedFile = file;
+
+            // Reset deletion state
+            loadingState.IsDeleting = false;
+
+            // Show the confirmation dialog
             dialogState.ShowDeleteDialog = true;
-            loadingState.IsDeleting = false; // Reset delete state
+
+            // Force the dialog to reset its state
+            deleteFileDialog?.ResetState();
+
             StateHasChanged();
         }
         catch (Exception ex)
@@ -637,13 +646,13 @@
             StateHasChanged();
 
             var success = await FileService.DeleteFileAsync(selectedFile.Id);
+
             if (success)
             {
                 NotificationService.ShowSuccess($"{FileTypeName} deleted successfully");
 
-                // Close dialog and reset state
-                dialogState.ShowDeleteDialog = false;
-                selectedFile = null;
+                // Close dialog and clear state immediately
+                CancelDelete();
 
                 // Refresh data
                 await ForceRefreshData();
@@ -651,30 +660,36 @@
             else
             {
                 NotificationService.ShowError($"Failed to delete {FileTypeName.ToLower()}");
+                loadingState.IsDeleting = false;
+                StateHasChanged();
             }
         }
         catch (Exception ex)
         {
             NotificationService.ShowError($"Failed to delete {FileTypeName.ToLower()}: {ex.Message}");
-        }
-        finally
-        {
             loadingState.IsDeleting = false;
-            if (dialogState.ShowDeleteDialog)
-            {
-                dialogState.ShowDeleteDialog = false;
-                selectedFile = null;
-            }
             StateHasChanged();
         }
     }
 
     private void CancelDelete()
     {
-        dialogState.ShowDeleteDialog = false;
-        selectedFile = null;
-        loadingState.IsDeleting = false;
-        StateHasChanged();
+        try
+        {
+            dialogState.ShowDeleteDialog = false;
+            selectedFile = null;
+            loadingState.IsDeleting = false;
+
+            // Force the dialog to close
+            deleteFileDialog?.Hide();
+
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            // Log but don't show error to user for cancel operation
+            Console.WriteLine($"Error canceling delete: {ex.Message}");
+        }
     }
 
     private async Task PreviewFile(FileDto file)

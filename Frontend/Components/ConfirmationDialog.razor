@@ -1,5 +1,6 @@
 ﻿@using Frontend.Interfaces
 @inject IStyleService StyleService
+
 @if (IsVisible)
 {
     <div class="fixed inset-0 z-50 overflow-y-auto">
@@ -97,20 +98,22 @@
     // Internal state to track processing
     private bool _internalProcessing = false;
     private bool _wasVisible = false;
+    private bool _confirmInProgress = false;
 
     // Combined processing state
     private bool IsProcessingInternal => IsProcessing || _internalProcessing;
 
     protected override void OnParametersSet()
     {
-        // Reset internal processing state when dialog becomes visible
+        // Reset internal processing state when dialog becomes visible after being hidden
         if (IsVisible && !_wasVisible)
         {
             _internalProcessing = false;
+            _confirmInProgress = false;
         }
 
         // Reset internal processing when external processing finishes
-        if (!IsProcessing && _internalProcessing)
+        if (!IsProcessing && _internalProcessing && !_confirmInProgress)
         {
             _internalProcessing = false;
         }
@@ -121,10 +124,11 @@
 
     private async Task Confirm()
     {
-        if (IsProcessingInternal) return;
+        if (IsProcessingInternal || _confirmInProgress) return;
 
         try
         {
+            _confirmInProgress = true;
             _internalProcessing = true;
             StateHasChanged();
 
@@ -132,19 +136,22 @@
             {
                 await OnConfirm.InvokeAsync();
             }
+
+            // If we reach here and no external processing is managing the state,
+            // and the dialog is still visible, reset our internal state
+            if (!IsProcessing && IsVisible)
+            {
+                _internalProcessing = false;
+                _confirmInProgress = false;
+                StateHasChanged();
+            }
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Error in confirmation action: {ex.Message}");
-        }
-        finally
-        {
-            // Only reset internal processing if external processing isn't managing it
-            if (!IsProcessing)
-            {
-                _internalProcessing = false;
-                StateHasChanged();
-            }
+            _internalProcessing = false;
+            _confirmInProgress = false;
+            StateHasChanged();
         }
     }
 
@@ -155,6 +162,7 @@
         try
         {
             _internalProcessing = false;
+            _confirmInProgress = false;
 
             if (OnCancel.HasDelegate)
             {
@@ -195,6 +203,7 @@
     {
         IsVisible = true;
         _internalProcessing = false;
+        _confirmInProgress = false;
         StateHasChanged();
     }
 
@@ -202,6 +211,7 @@
     {
         IsVisible = false;
         _internalProcessing = false;
+        _confirmInProgress = false;
         StateHasChanged();
     }
 
@@ -212,6 +222,7 @@
     {
         IsVisible = false;
         _internalProcessing = false;
+        _confirmInProgress = false;
         _wasVisible = false;
         StateHasChanged();
     }
@@ -222,6 +233,7 @@
     public void ResetState()
     {
         _internalProcessing = false;
+        _confirmInProgress = false;
         StateHasChanged();
     }
 }
