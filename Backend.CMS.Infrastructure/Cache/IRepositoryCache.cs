@@ -1,90 +1,54 @@
 ﻿namespace Backend.CMS.Infrastructure.Cache
 {
     /// <summary>
-    /// Repository-level caching interface
+    /// Repository cache interface
     /// </summary>
     public interface IRepositoryCache
     {
         /// <summary>
-        /// Gets cached value
+        /// Get item from cache
         /// </summary>
-        /// <typeparam name="T">Value type</typeparam>
-        /// <param name="key">Cache key</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Cached value or null if not found</returns>
         Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class;
 
         /// <summary>
-        /// Sets cached value
+        /// Set item in cache
         /// </summary>
-        /// <typeparam name="T">Value type</typeparam>
-        /// <param name="key">Cache key</param>
-        /// <param name="value">Value to cache</param>
-        /// <param name="expiration">Expiration time</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Task</returns>
-        Task SetAsync<T>(string key, T value, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class;
+        Task SetAsync<T>(string key, T value, TimeSpan expiration, IEnumerable<string>? tags = null, CancellationToken cancellationToken = default) where T : class;
 
         /// <summary>
-        /// Removes cached value
+        /// Remove item from cache
         /// </summary>
-        /// <param name="key">Cache key</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Task</returns>
         Task RemoveAsync(string key, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Removes cached values by pattern
+        /// Remove items by pattern
         /// </summary>
-        /// <param name="pattern">Pattern to match</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Task</returns>
         Task RemoveByPatternAsync(string pattern, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Gets or sets cached value
+        /// Remove items by tag
         /// </summary>
-        /// <typeparam name="T">Value type</typeparam>
-        /// <param name="key">Cache key</param>
-        /// <param name="factory">Factory function to create value if not cached</param>
-        /// <param name="expiration">Expiration time</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Cached or newly created value</returns>
-        Task<T> GetOrSetAsync<T>(string key, Func<Task<T>> factory, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class;
+        Task RemoveByTagAsync(string tag, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Checks if key exists in cache
+        /// Remove items by multiple tags
         /// </summary>
-        /// <param name="key">Cache key</param>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>True if key exists</returns>
+        Task RemoveByTagsAsync(IEnumerable<string> tags, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Get or set item in cache
+        /// </summary>
+        // Remove 'where T : class' to allow value types
+        Task<T> GetOrSetAsync<T>(string key, Func<Task<T>> factory, TimeSpan expiration, IEnumerable<string>? tags = null, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Check if key exists in cache
+        /// </summary>
         Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// Clears all cache
+        /// Clear all cache
         /// </summary>
-        /// <param name="cancellationToken">Cancellation token</param>
-        /// <returns>Task</returns>
-        Task ClearAsync(CancellationToken cancellationToken = default);
-
-        /// <summary>
-        /// Gets cache statistics
-        /// </summary>
-        /// <returns>Cache statistics</returns>
-        Task<CacheStatistics> GetStatisticsAsync();
-    }
-
-    /// <summary>
-    /// Cache statistics
-    /// </summary>
-    public class CacheStatistics
-    {
-        public int KeyCount { get; set; }
-        public long TotalMemorySize { get; set; }
-        public int HitCount { get; set; }
-        public int MissCount { get; set; }
-        public double HitRate => TotalRequests > 0 ? (double)HitCount / TotalRequests * 100 : 0;
-        public int TotalRequests => HitCount + MissCount;
-        public DateTime LastClearTime { get; set; }
+        Task ClearAllAsync(CancellationToken cancellationToken = default);
     }
 }

@@ -1,4 +1,5 @@
-﻿using Backend.CMS.Infrastructure.Data;
+﻿using Backend.CMS.Infrastructure.Cache;
+using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Backend.CMS.Infrastructure.Repositories;
