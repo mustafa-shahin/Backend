@@ -6,6 +6,7 @@ using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -55,6 +56,41 @@ namespace Backend.CMS.Infrastructure.Services
             catch (Exception ex) when (ex is not ArgumentException)
             {
                 _logger.LogError(ex, "Error retrieving address {AddressId}", addressId);
+                throw;
+            }
+        }
+
+        public async Task<PagedResult<AddressDto>> GetAddressesPagedAsync(AddressSearchDto searchDto)
+        {
+            if (searchDto == null)
+                throw new ArgumentNullException(nameof(searchDto));
+
+            try
+            {
+                var query = BuildAddressQuery(searchDto);
+
+                var totalCount = await query.CountAsync();
+
+                // Apply sorting
+                query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
+
+                // Apply pagination
+                var addresses = await query
+                    .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                    .Take(searchDto.PageSize)
+                    .ToListAsync();
+
+                var addressDtos = _mapper.Map<List<AddressDto>>(addresses);
+
+                return new PagedResult<AddressDto>(
+                    addressDtos,
+                    searchDto.PageNumber,
+                    searchDto.PageSize,
+                    totalCount);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving paged addresses");
                 throw;
             }
         }
@@ -288,7 +324,214 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
+        public async Task<List<AddressDto>> GetRecentAddressesAsync(int count)
+        {
+            if (count <= 0 || count > 50)
+                throw new ArgumentException("Count must be between 1 and 50", nameof(count));
+
+            try
+            {
+                var addresses = await _context.Addresses
+                    .Where(a => !a.IsDeleted)
+                    .OrderByDescending(a => a.CreatedAt)
+                    .Take(count)
+                    .ToListAsync();
+
+                return _mapper.Map<List<AddressDto>>(addresses);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting recent addresses");
+                throw;
+            }
+        }
+
+        public async Task<Dictionary<string, object>> GetAddressStatisticsAsync()
+        {
+            try
+            {
+                var totalAddresses = await _addressRepository.CountAsync();
+                var defaultAddresses = await _addressRepository.CountAsync(a => a.IsDefault);
+                var addressesByType = await _context.Addresses
+                    .Where(a => !a.IsDeleted)
+                    .GroupBy(a => a.AddressType ?? "Default")
+                    .Select(g => new { Type = g.Key, Count = g.Count() })
+                    .ToListAsync();
+
+                var addressesByCountry = await _context.Addresses
+                    .Where(a => !a.IsDeleted)
+                    .GroupBy(a => a.Country)
+                    .Select(g => new { Country = g.Key, Count = g.Count() })
+                    .OrderByDescending(x => x.Count)
+                    .Take(10)
+                    .ToListAsync();
+
+                return new Dictionary<string, object>
+                {
+                    ["totalAddresses"] = totalAddresses,
+                    ["defaultAddresses"] = defaultAddresses,
+                    ["addressesByType"] = addressesByType.ToDictionary(x => x.Type, x => x.Count),
+                    ["topCountries"] = addressesByCountry.ToDictionary(x => x.Country, x => x.Count),
+                    ["generatedAt"] = DateTime.UtcNow
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting address statistics");
+                throw;
+            }
+        }
+
+        public async Task<bool> BulkUpdateAddressesAsync(IEnumerable<int> addressIds, UpdateAddressDto updateDto)
+        {
+            if (!addressIds?.Any() == true)
+                throw new ArgumentException("Address IDs cannot be null or empty", nameof(addressIds));
+
+            if (updateDto == null)
+                throw new ArgumentNullException(nameof(updateDto));
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var addresses = await _addressRepository.FindAsync(a => addressIds.Contains(a.Id));
+                var updateTime = DateTime.UtcNow;
+
+                foreach (var address in addresses)
+                {
+                    _mapper.Map(updateDto, address);
+                    address.UpdatedAt = updateTime;
+                    address.UpdatedByUserId = currentUserId;
+                }
+
+                _context.Addresses.UpdateRange(addresses);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _logger.LogInformation("Bulk updated {Count} addresses by user {UserId}", addresses.Count(), currentUserId);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error bulk updating addresses");
+                throw;
+            }
+        }
+
+        public async Task<bool> BulkDeleteAddressesAsync(IEnumerable<int> addressIds)
+        {
+            if (!addressIds?.Any() == true)
+                throw new ArgumentException("Address IDs cannot be null or empty", nameof(addressIds));
+
+            try
+            {
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var addresses = await _addressRepository.FindAsync(a => addressIds.Contains(a.Id));
+
+                await _addressRepository.SoftDeleteRangeAsync(addresses, currentUserId);
+
+                _logger.LogInformation("Bulk deleted {Count} addresses by user {UserId}", addresses.Count(), currentUserId);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error bulk deleting addresses");
+                throw;
+            }
+        }
+
         #region Private Helper Methods
+
+        private IQueryable<Address> BuildAddressQuery(AddressSearchDto searchDto)
+        {
+            var query = _context.Addresses
+                .Where(a => !a.IsDeleted)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
+            {
+                var searchTerm = searchDto.SearchTerm.ToLower();
+                query = query.Where(a =>
+                    a.Street.ToLower().Contains(searchTerm) ||
+                    (a.HouseNr != null && a.HouseNr.ToLower().Contains(searchTerm)) ||
+                    a.City.ToLower().Contains(searchTerm) ||
+                    a.State.ToLower().Contains(searchTerm) ||
+                    a.Country.ToLower().Contains(searchTerm) ||
+                    a.PostalCode.Contains(searchTerm) ||
+                    (a.Notes != null && a.Notes.ToLower().Contains(searchTerm)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchDto.Country))
+            {
+                query = query.Where(a => a.Country == searchDto.Country);
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchDto.State))
+            {
+                query = query.Where(a => a.State == searchDto.State);
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchDto.City))
+            {
+                query = query.Where(a => a.City == searchDto.City);
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchDto.AddressType))
+            {
+                query = query.Where(a => a.AddressType == searchDto.AddressType);
+            }
+
+            if (searchDto.IsDefault.HasValue)
+            {
+                query = query.Where(a => a.IsDefault == searchDto.IsDefault.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchDto.EntityType) && searchDto.EntityId.HasValue)
+            {
+                var normalizedEntityType = searchDto.EntityType.ToLowerInvariant();
+                query = normalizedEntityType switch
+                {
+                    "user" => query.Where(a => EF.Property<int?>(a, "UserId") == searchDto.EntityId.Value),
+                    "company" => query.Where(a => EF.Property<int?>(a, "CompanyId") == searchDto.EntityId.Value),
+                    "location" => query.Where(a => EF.Property<int?>(a, "LocationId") == searchDto.EntityId.Value),
+                    _ => query
+                };
+            }
+
+            if (searchDto.CreatedAfter.HasValue)
+            {
+                query = query.Where(a => a.CreatedAt >= searchDto.CreatedAfter.Value);
+            }
+
+            if (searchDto.CreatedBefore.HasValue)
+            {
+                query = query.Where(a => a.CreatedAt <= searchDto.CreatedBefore.Value);
+            }
+
+            return query;
+        }
+
+        private static IQueryable<Address> ApplySorting(IQueryable<Address> query, string sortBy, string sortDirection)
+        {
+            var isDescending = sortDirection?.ToLower() == "desc";
+
+            return sortBy?.ToLower() switch
+            {
+                "street" => isDescending ? query.OrderByDescending(a => a.Street) : query.OrderBy(a => a.Street),
+                "city" => isDescending ? query.OrderByDescending(a => a.City) : query.OrderBy(a => a.City),
+                "state" => isDescending ? query.OrderByDescending(a => a.State) : query.OrderBy(a => a.State),
+                "country" => isDescending ? query.OrderByDescending(a => a.Country) : query.OrderBy(a => a.Country),
+                "postalcode" => isDescending ? query.OrderByDescending(a => a.PostalCode) : query.OrderBy(a => a.PostalCode),
+                "addresstype" => isDescending ? query.OrderByDescending(a => a.AddressType) : query.OrderBy(a => a.AddressType),
+                "isdefault" => isDescending ? query.OrderByDescending(a => a.IsDefault) : query.OrderBy(a => a.IsDefault),
+                "createdat" => isDescending ? query.OrderByDescending(a => a.CreatedAt) : query.OrderBy(a => a.CreatedAt),
+                "updatedat" => isDescending ? query.OrderByDescending(a => a.UpdatedAt) : query.OrderBy(a => a.UpdatedAt),
+                _ => isDescending ? query.OrderByDescending(a => a.CreatedAt) : query.OrderBy(a => a.CreatedAt)
+            };
+        }
 
         private static bool IsValidEntityType(string entityType)
         {

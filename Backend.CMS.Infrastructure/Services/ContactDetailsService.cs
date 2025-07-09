@@ -6,6 +6,7 @@ using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -55,6 +56,41 @@ namespace Backend.CMS.Infrastructure.Services
             catch (Exception ex) when (!(ex is ArgumentException))
             {
                 _logger.LogError(ex, "Error retrieving contact details {ContactId}", contactId);
+                throw;
+            }
+        }
+
+        public async Task<PagedResult<ContactDetailsDto>> GetContactDetailsPagedAsync(ContactDetailsSearchDto searchDto)
+        {
+            if (searchDto == null)
+                throw new ArgumentNullException(nameof(searchDto));
+
+            try
+            {
+                var query = BuildContactDetailsQuery(searchDto);
+
+                var totalCount = await query.CountAsync();
+
+                // Apply sorting
+                query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
+
+                // Apply pagination
+                var contactDetails = await query
+                    .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                    .Take(searchDto.PageSize)
+                    .ToListAsync();
+
+                var contactDetailsDtos = _mapper.Map<List<ContactDetailsDto>>(contactDetails);
+
+                return new PagedResult<ContactDetailsDto>(
+                    contactDetailsDtos,
+                    searchDto.PageNumber,
+                    searchDto.PageSize,
+                    totalCount);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving paged contact details");
                 throw;
             }
         }
@@ -289,7 +325,194 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
+        public async Task<List<ContactDetailsDto>> GetRecentContactDetailsAsync(int count)
+        {
+            if (count <= 0 || count > 50)
+                throw new ArgumentException("Count must be between 1 and 50", nameof(count));
+
+            try
+            {
+                var contactDetails = await _context.ContactDetails
+                    .Where(c => !c.IsDeleted)
+                    .OrderByDescending(c => c.CreatedAt)
+                    .Take(count)
+                    .ToListAsync();
+
+                return _mapper.Map<List<ContactDetailsDto>>(contactDetails);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting recent contact details");
+                throw;
+            }
+        }
+
+        public async Task<Dictionary<string, object>> GetContactDetailsStatisticsAsync()
+        {
+            try
+            {
+                var totalContactDetails = await _contactDetailsRepository.CountAsync();
+                var defaultContactDetails = await _contactDetailsRepository.CountAsync(c => c.IsDefault);
+                var contactDetailsByType = await _context.ContactDetails
+                    .Where(c => !c.IsDeleted)
+                    .GroupBy(c => c.ContactType ?? "Default")
+                    .Select(g => new { Type = g.Key, Count = g.Count() })
+                    .ToListAsync();
+
+                var contactDetailsWithEmail = await _contactDetailsRepository.CountAsync(c => !string.IsNullOrEmpty(c.Email));
+                var contactDetailsWithPhone = await _contactDetailsRepository.CountAsync(c => !string.IsNullOrEmpty(c.PrimaryPhone));
+                var contactDetailsWithWebsite = await _contactDetailsRepository.CountAsync(c => !string.IsNullOrEmpty(c.Website));
+
+                return new Dictionary<string, object>
+                {
+                    ["totalContactDetails"] = totalContactDetails,
+                    ["defaultContactDetails"] = defaultContactDetails,
+                    ["contactDetailsWithEmail"] = contactDetailsWithEmail,
+                    ["contactDetailsWithPhone"] = contactDetailsWithPhone,
+                    ["contactDetailsWithWebsite"] = contactDetailsWithWebsite,
+                    ["contactDetailsByType"] = contactDetailsByType.ToDictionary(x => x.Type, x => x.Count),
+                    ["generatedAt"] = DateTime.UtcNow
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting contact details statistics");
+                throw;
+            }
+        }
+
+        public async Task<bool> BulkUpdateContactDetailsAsync(IEnumerable<int> contactIds, UpdateContactDetailsDto updateDto)
+        {
+            if (!contactIds?.Any() == true)
+                throw new ArgumentException("Contact details IDs cannot be null or empty", nameof(contactIds));
+
+            if (updateDto == null)
+                throw new ArgumentNullException(nameof(updateDto));
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var contactDetails = await _contactDetailsRepository.FindAsync(c => contactIds.Contains(c.Id));
+                var updateTime = DateTime.UtcNow;
+
+                foreach (var contact in contactDetails)
+                {
+                    _mapper.Map(updateDto, contact);
+                    contact.UpdatedAt = updateTime;
+                    contact.UpdatedByUserId = currentUserId;
+                }
+
+                _context.ContactDetails.UpdateRange(contactDetails);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _logger.LogInformation("Bulk updated {Count} contact details by user {UserId}", contactDetails.Count(), currentUserId);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error bulk updating contact details");
+                throw;
+            }
+        }
+
+        public async Task<bool> BulkDeleteContactDetailsAsync(IEnumerable<int> contactIds)
+        {
+            if (!contactIds?.Any() == true)
+                throw new ArgumentException("Contact details IDs cannot be null or empty", nameof(contactIds));
+
+            try
+            {
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var contactDetails = await _contactDetailsRepository.FindAsync(c => contactIds.Contains(c.Id));
+
+                await _contactDetailsRepository.SoftDeleteRangeAsync(contactDetails, currentUserId);
+
+                _logger.LogInformation("Bulk deleted {Count} contact details by user {UserId}", contactDetails.Count(), currentUserId);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error bulk deleting contact details");
+                throw;
+            }
+        }
+
         #region Private Helper Methods
+
+        private IQueryable<ContactDetails> BuildContactDetailsQuery(ContactDetailsSearchDto searchDto)
+        {
+            var query = _context.ContactDetails
+                .Where(c => !c.IsDeleted)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
+            {
+                var searchTerm = searchDto.SearchTerm.ToLower();
+                query = query.Where(c =>
+                    (c.Email != null && c.Email.ToLower().Contains(searchTerm)) ||
+                    (c.PrimaryPhone != null && c.PrimaryPhone.Contains(searchTerm)) ||
+                    (c.SecondaryPhone != null && c.SecondaryPhone.Contains(searchTerm)) ||
+                    (c.Mobile != null && c.Mobile.Contains(searchTerm)) ||
+                    (c.Website != null && c.Website.ToLower().Contains(searchTerm)) ||
+                    (c.ContactType != null && c.ContactType.ToLower().Contains(searchTerm)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchDto.ContactType))
+            {
+                query = query.Where(c => c.ContactType == searchDto.ContactType);
+            }
+
+            if (searchDto.IsDefault.HasValue)
+            {
+                query = query.Where(c => c.IsDefault == searchDto.IsDefault.Value);
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchDto.EntityType) && searchDto.EntityId.HasValue)
+            {
+                var normalizedEntityType = searchDto.EntityType.ToLowerInvariant();
+                query = normalizedEntityType switch
+                {
+                    "user" => query.Where(c => EF.Property<int?>(c, "UserId") == searchDto.EntityId.Value),
+                    "company" => query.Where(c => EF.Property<int?>(c, "CompanyId") == searchDto.EntityId.Value),
+                    "location" => query.Where(c => EF.Property<int?>(c, "LocationId") == searchDto.EntityId.Value),
+                    _ => query
+                };
+            }
+
+            if (searchDto.CreatedAfter.HasValue)
+            {
+                query = query.Where(c => c.CreatedAt >= searchDto.CreatedAfter.Value);
+            }
+
+            if (searchDto.CreatedBefore.HasValue)
+            {
+                query = query.Where(c => c.CreatedAt <= searchDto.CreatedBefore.Value);
+            }
+
+            return query;
+        }
+
+        private static IQueryable<ContactDetails> ApplySorting(IQueryable<ContactDetails> query, string sortBy, string sortDirection)
+        {
+            var isDescending = sortDirection?.ToLower() == "desc";
+
+            return sortBy?.ToLower() switch
+            {
+                "email" => isDescending ? query.OrderByDescending(c => c.Email) : query.OrderBy(c => c.Email),
+                "primaryphone" => isDescending ? query.OrderByDescending(c => c.PrimaryPhone) : query.OrderBy(c => c.PrimaryPhone),
+                "website" => isDescending ? query.OrderByDescending(c => c.Website) : query.OrderBy(c => c.Website),
+                "contacttype" => isDescending ? query.OrderByDescending(c => c.ContactType) : query.OrderBy(c => c.ContactType),
+                "isdefault" => isDescending ? query.OrderByDescending(c => c.IsDefault) : query.OrderBy(c => c.IsDefault),
+                "createdat" => isDescending ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt),
+                "updatedat" => isDescending ? query.OrderByDescending(c => c.UpdatedAt) : query.OrderBy(c => c.UpdatedAt),
+                _ => isDescending ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt)
+            };
+        }
 
         private static bool IsValidEntityType(string entityType)
         {

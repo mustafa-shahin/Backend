@@ -1,4 +1,6 @@
-﻿namespace Backend.CMS.Application.DTOs
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace Backend.CMS.Application.DTOs
 {
     public class ContactDetailsDto
     {
@@ -61,5 +63,39 @@
         public Dictionary<string, object> AdditionalContacts { get; set; } = new();
         public bool IsDefault { get; set; }
         public string? ContactType { get; set; }
+    }
+    /// <summary>
+    /// Contact details search DTO for pagination and filtering
+    /// </summary>
+    public class ContactDetailsSearchDto
+    {
+        public int PageNumber { get; set; } = 1;
+        public int PageSize { get; set; } = 10;
+        public string? SearchTerm { get; set; }
+        public string? ContactType { get; set; }
+        public bool? IsDefault { get; set; }
+        public string? EntityType { get; set; } // "user", "company", "location"
+        public int? EntityId { get; set; }
+        public string SortBy { get; set; } = "CreatedAt";
+        public string SortDirection { get; set; } = "Desc";
+        public DateTime? CreatedAfter { get; set; }
+        public DateTime? CreatedBefore { get; set; }
+    }
+    /// <summary>
+    /// Bulk operations for contact details
+    /// </summary>
+    public class BulkUpdateContactDetailsDto
+    {
+        [Required]
+        public List<int> ContactDetailsIds { get; set; } = new();
+
+        [Required]
+        public UpdateContactDetailsDto UpdateDto { get; set; } = null!;
+    }
+
+    public class BulkDeleteContactDetailsDto
+    {
+        [Required]
+        public List<int> ContactDetailsIds { get; set; } = new();
     }
 }

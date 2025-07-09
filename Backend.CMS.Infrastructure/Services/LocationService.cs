@@ -6,6 +6,7 @@ using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -60,24 +61,48 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<List<LocationDto>> GetLocationsAsync(int page, int pageSize)
+        public async Task<PagedResult<LocationDto>> GetLocationsPagedAsync(LocationSearchDto searchDto)
         {
-            if (page <= 0)
-                throw new ArgumentException("Page must be greater than 0", nameof(page));
-
-            if (pageSize <= 0 || pageSize > 100)
-                throw new ArgumentException("Page size must be between 1 and 100", nameof(pageSize));
+            if (searchDto == null)
+                throw new ArgumentNullException(nameof(searchDto));
 
             try
             {
-                var locations = await _locationRepository.GetPagedWithRelatedAsync(page, pageSize);
-                return _mapper.Map<List<LocationDto>>(locations);
+                var query = BuildLocationQuery(searchDto);
+
+                var totalCount = await query.CountAsync();
+
+                // Apply sorting
+                query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
+
+                // Apply pagination
+                var locations = await query
+                    .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                    .Take(searchDto.PageSize)
+                    .Include(l => l.Addresses.Where(a => !a.IsDeleted))
+                    .Include(l => l.ContactDetails.Where(c => !c.IsDeleted))
+                    .Include(l => l.OpeningHours.Where(oh => !oh.IsDeleted))
+                    .ToListAsync();
+
+                var locationDtos = _mapper.Map<List<LocationDto>>(locations);
+
+                return new PagedResult<LocationDto>(
+                    locationDtos,
+                    searchDto.PageNumber,
+                    searchDto.PageSize,
+                    totalCount);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving locations for page {Page}, size {PageSize}", page, pageSize);
+                _logger.LogError(ex, "Error retrieving paged locations");
                 throw;
             }
+        }
+
+        public async Task<PagedResult<LocationDto>> SearchLocationsPagedAsync(LocationSearchDto searchDto)
+        {
+            // This method is the same as GetLocationsPagedAsync since filtering is already included
+            return await GetLocationsPagedAsync(searchDto);
         }
 
         public async Task<List<LocationDto>> GetLocationsByCompanyAsync(int companyId)
@@ -352,30 +377,188 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<List<LocationDto>> SearchLocationsAsync(string searchTerm, int page, int pageSize)
+        public async Task<List<LocationDto>> GetRecentLocationsAsync(int count)
         {
-            if (string.IsNullOrWhiteSpace(searchTerm))
-                throw new ArgumentException("Search term cannot be null or empty", nameof(searchTerm));
-
-            if (page <= 0)
-                throw new ArgumentException("Page must be greater than 0", nameof(page));
-
-            if (pageSize <= 0 || pageSize > 100)
-                throw new ArgumentException("Page size must be between 1 and 100", nameof(pageSize));
+            if (count <= 0 || count > 50)
+                throw new ArgumentException("Count must be between 1 and 50", nameof(count));
 
             try
             {
-                var locations = await _locationRepository.SearchLocationsAsync(searchTerm, page, pageSize);
+                var locations = await _context.Locations
+                    .Where(l => !l.IsDeleted)
+                    .Include(l => l.Addresses.Where(a => !a.IsDeleted))
+                    .Include(l => l.ContactDetails.Where(c => !c.IsDeleted))
+                    .OrderByDescending(l => l.CreatedAt)
+                    .Take(count)
+                    .ToListAsync();
+
                 return _mapper.Map<List<LocationDto>>(locations);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error searching locations with term '{SearchTerm}'", searchTerm);
+                _logger.LogError(ex, "Error getting recent locations");
+                throw;
+            }
+        }
+
+        public async Task<Dictionary<string, object>> GetLocationStatisticsAsync()
+        {
+            try
+            {
+                var totalLocations = await _locationRepository.CountAsync();
+                var activeLocations = await _locationRepository.CountAsync(l => l.IsActive);
+                var mainLocation = await _locationRepository.GetMainLocationAsync();
+                var locationsByType = await _context.Locations
+                    .Where(l => !l.IsDeleted)
+                    .GroupBy(l => l.LocationType)
+                    .Select(g => new { Type = g.Key, Count = g.Count() })
+                    .ToListAsync();
+
+                return new Dictionary<string, object>
+                {
+                    ["totalLocations"] = totalLocations,
+                    ["activeLocations"] = activeLocations,
+                    ["inactiveLocations"] = totalLocations - activeLocations,
+                    ["hasMainLocation"] = mainLocation != null,
+                    ["mainLocationId"] = mainLocation?.Id,
+                    ["locationsByType"] = locationsByType.ToDictionary(x => x.Type, x => x.Count),
+                    ["generatedAt"] = DateTime.UtcNow
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting location statistics");
+                throw;
+            }
+        }
+
+        public async Task<bool> BulkUpdateLocationsAsync(IEnumerable<int> locationIds, UpdateLocationDto updateDto)
+        {
+            if (!locationIds?.Any() == true)
+                throw new ArgumentException("Location IDs cannot be null or empty", nameof(locationIds));
+
+            if (updateDto == null)
+                throw new ArgumentNullException(nameof(updateDto));
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var locations = await _locationRepository.FindAsync(l => locationIds.Contains(l.Id));
+                var updateTime = DateTime.UtcNow;
+
+                foreach (var location in locations)
+                {
+                    _mapper.Map(updateDto, location);
+                    location.UpdatedAt = updateTime;
+                    location.UpdatedByUserId = currentUserId;
+                }
+
+                _context.Locations.UpdateRange(locations);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _logger.LogInformation("Bulk updated {Count} locations by user {UserId}", locations.Count(), currentUserId);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error bulk updating locations");
+                throw;
+            }
+        }
+
+        public async Task<bool> BulkDeleteLocationsAsync(IEnumerable<int> locationIds)
+        {
+            if (!locationIds?.Any() == true)
+                throw new ArgumentException("Location IDs cannot be null or empty", nameof(locationIds));
+
+            try
+            {
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var locations = await _locationRepository.FindAsync(l => locationIds.Contains(l.Id));
+
+                await _locationRepository.SoftDeleteRangeAsync(locations, currentUserId);
+
+                _logger.LogInformation("Bulk deleted {Count} locations by user {UserId}", locations.Count(), currentUserId);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error bulk deleting locations");
                 throw;
             }
         }
 
         #region Private Helper Methods
+
+        private IQueryable<Location> BuildLocationQuery(LocationSearchDto searchDto)
+        {
+            var query = _context.Locations
+                .Where(l => !l.IsDeleted)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
+            {
+                var searchTerm = searchDto.SearchTerm.ToLower();
+                query = query.Where(l =>
+                    l.Name.ToLower().Contains(searchTerm) ||
+                    (l.LocationCode != null && l.LocationCode.ToLower().Contains(searchTerm)) ||
+                    (l.Description != null && l.Description.ToLower().Contains(searchTerm)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchDto.LocationType))
+            {
+                query = query.Where(l => l.LocationType == searchDto.LocationType);
+            }
+
+            if (searchDto.IsActive.HasValue)
+            {
+                query = query.Where(l => l.IsActive == searchDto.IsActive.Value);
+            }
+
+            if (searchDto.IsMainLocation.HasValue)
+            {
+                query = query.Where(l => l.IsMainLocation == searchDto.IsMainLocation.Value);
+            }
+
+            if (searchDto.CompanyId.HasValue)
+            {
+                query = query.Where(l => l.CompanyId == searchDto.CompanyId.Value);
+            }
+
+            if (searchDto.CreatedAfter.HasValue)
+            {
+                query = query.Where(l => l.CreatedAt >= searchDto.CreatedAfter.Value);
+            }
+
+            if (searchDto.CreatedBefore.HasValue)
+            {
+                query = query.Where(l => l.CreatedAt <= searchDto.CreatedBefore.Value);
+            }
+
+            return query;
+        }
+
+        private static IQueryable<Location> ApplySorting(IQueryable<Location> query, string sortBy, string sortDirection)
+        {
+            var isDescending = sortDirection?.ToLower() == "desc";
+
+            return sortBy?.ToLower() switch
+            {
+                "name" => isDescending ? query.OrderByDescending(l => l.Name) : query.OrderBy(l => l.Name),
+                "locationcode" => isDescending ? query.OrderByDescending(l => l.LocationCode) : query.OrderBy(l => l.LocationCode),
+                "locationtype" => isDescending ? query.OrderByDescending(l => l.LocationType) : query.OrderBy(l => l.LocationType),
+                "isactive" => isDescending ? query.OrderByDescending(l => l.IsActive) : query.OrderBy(l => l.IsActive),
+                "ismainlocation" => isDescending ? query.OrderByDescending(l => l.IsMainLocation) : query.OrderBy(l => l.IsMainLocation),
+                "createdat" => isDescending ? query.OrderByDescending(l => l.CreatedAt) : query.OrderBy(l => l.CreatedAt),
+                "updatedat" => isDescending ? query.OrderByDescending(l => l.UpdatedAt) : query.OrderBy(l => l.UpdatedAt),
+                _ => isDescending ? query.OrderByDescending(l => l.Name) : query.OrderBy(l => l.Name)
+            };
+        }
 
         private async Task CreateLocationOpeningHoursAsync(int locationId, IEnumerable<CreateLocationOpeningHourDto> openingHourDtos, int? currentUserId)
         {
