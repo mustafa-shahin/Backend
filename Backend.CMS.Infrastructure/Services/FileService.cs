@@ -422,9 +422,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FileDto> UpdateFileAsync(int fileId, UpdateFileDto updateDto)
         {
-            // Use ExecuteInTransactionAsync to ensure atomicity and avoid nested semaphore calls
-            return await _fileRepository.ExecuteInTransactionAsync(async () =>
-            {
+
                 var file = await _fileRepository.GetByIdAsync(fileId);
                 if (file == null)
                     throw new ArgumentException("File not found");
@@ -458,7 +456,7 @@ namespace Backend.CMS.Infrastructure.Services
                 await _fileRepository.SaveChangesAsync();
 
                 return await MapFileToDto(file);
-            });
+            
         }
 
         public async Task<bool> DeleteFileAsync(int fileId)
@@ -501,9 +499,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
 
-                // Use transaction to ensure atomicity
-                return await _fileRepository.ExecuteInTransactionAsync(async () =>
-                {
+    
                     var successCount = 0;
                     var failureCount = 0;
 
@@ -541,7 +537,7 @@ namespace Backend.CMS.Infrastructure.Services
                         successCount, failureCount);
 
                     return successCount == fileIds.Count;
-                });
+        
             }
             catch (Exception ex)
             {
@@ -552,8 +548,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FileDto> MoveFileAsync(MoveFileDto moveDto)
         {
-            return await _fileRepository.ExecuteInTransactionAsync(async () =>
-            {
+
                 var file = await _fileRepository.GetByIdAsync(moveDto.FileId);
                 if (file == null)
                     throw new ArgumentException("File not found");
@@ -575,13 +570,12 @@ namespace Backend.CMS.Infrastructure.Services
                 await _fileRepository.SaveChangesAsync();
 
                 return await MapFileToDto(file);
-            });
+   
         }
 
         public async Task<FileDto> CopyFileAsync(CopyFileDto copyDto)
         {
-            return await _fileRepository.ExecuteInTransactionAsync(async () =>
-            {
+
                 var originalFile = await _fileRepository.GetByIdAsync(copyDto.FileId);
                 if (originalFile == null)
                     throw new ArgumentException("File not found");
@@ -632,13 +626,12 @@ namespace Backend.CMS.Infrastructure.Services
                 await _fileRepository.SaveChangesAsync();
 
                 return await MapFileToDto(newFile);
-            });
+         
         }
 
         public async Task<bool> RenameFileAsync(int fileId, string newName)
         {
-            return await _fileRepository.ExecuteInTransactionAsync(async () =>
-            {
+   
                 var file = await _fileRepository.GetByIdAsync(fileId);
                 if (file == null)
                     return false;
@@ -653,7 +646,6 @@ namespace Backend.CMS.Infrastructure.Services
                 await _fileRepository.SaveChangesAsync();
 
                 return true;
-            });
         }
 
         #endregion
@@ -698,14 +690,13 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> GenerateThumbnailAsync(int fileId)
         {
-            return await _fileRepository.ExecuteInTransactionAsync(async () =>
-            {
+
                 var file = await _fileRepository.GetByIdAsync(fileId);
                 if (file == null || file.FileType != FileType.Image)
                     return false;
 
                 return await GenerateThumbnailInternalAsync(file);
-            });
+
         }
 
         private async Task<bool> GenerateThumbnailInternalAsync(FileEntity file)
@@ -733,8 +724,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> ProcessFileAsync(int fileId)
         {
-            return await _fileRepository.ExecuteInTransactionAsync(async () =>
-            {
+          
                 var file = await _fileRepository.GetByIdAsync(fileId);
                 if (file == null)
                     return false;
@@ -754,7 +744,7 @@ namespace Backend.CMS.Infrastructure.Services
                 await _fileRepository.SaveChangesAsync();
 
                 return true;
-            });
+
         }
 
         #endregion
@@ -945,8 +935,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (fileIds?.Any() != true)
                 return false;
 
-            return await _fileRepository.ExecuteInTransactionAsync(async () =>
-            {
+
                 var currentUserId = _userSessionService.GetCurrentUserId();
                 var successCount = 0;
 
@@ -993,7 +982,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 return successCount == fileIds.Count;
-            });
+
         }
 
         public async Task<bool> BulkMoveFilesAsync(List<int> fileIds, int? destinationFolderId)
@@ -1001,8 +990,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (fileIds?.Any() != true)
                 return false;
 
-            return await _fileRepository.ExecuteInTransactionAsync(async () =>
-            {
+      
                 var currentUserId = _userSessionService.GetCurrentUserId();
                 var successCount = 0;
 
@@ -1038,14 +1026,13 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 return successCount == fileIds.Count;
-            });
+
         }
 
         public async Task<List<FileDto>> BulkCopyFilesAsync(List<int> fileIds, int? destinationFolderId)
         {
 
-            return await _fileRepository.ExecuteInTransactionAsync<List<FileDto>>(async () =>
-            {
+ 
                 var copiedFiles = new List<FileDto>();
                                                       
 
@@ -1069,7 +1056,7 @@ namespace Backend.CMS.Infrastructure.Services
                     }
                 }
                 return copiedFiles;
-            });
+
         }
 
         #endregion

@@ -10,7 +10,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class FolderRepository : Repository<Folder>, IFolderRepository
     {
-        public FolderRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
+        public FolderRepository(ApplicationDbContext context) : base(context)
         {
         }
 

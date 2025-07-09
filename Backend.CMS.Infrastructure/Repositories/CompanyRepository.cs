@@ -8,7 +8,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class CompanyRepository : Repository<Company>, ICompanyRepository
     {
-        public CompanyRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
+        public CompanyRepository(ApplicationDbContext context) : base(context)
         {
         }
 

@@ -9,7 +9,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class CategoryRepository : Repository<Category>, ICategoryRepository
     {
-        public CategoryRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
+        public CategoryRepository(ApplicationDbContext context) : base(context)
         {
         }
 

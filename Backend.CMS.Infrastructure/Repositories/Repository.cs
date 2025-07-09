@@ -1,568 +1,314 @@
-﻿using AutoMapper;
-using Backend.CMS.Application.DTOs;
+﻿using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Common;
-using Backend.CMS.Infrastructure.Cache;
-using Backend.CMS.Infrastructure.Caching;
 using Backend.CMS.Infrastructure.Data;
-using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
-using Backend.CMS.Infrastructure.Specifications;
-using EFCore.BulkExtensions;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Logging;
 using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Repositories
 {
-    /// <summary>
-    /// Enterprise-grade repository implementation
-    /// </summary>
-    /// <typeparam name="T">Entity type</typeparam>
     public class Repository<T> : IRepository<T> where T : BaseEntity
     {
         protected readonly ApplicationDbContext _context;
         protected readonly DbSet<T> _dbSet;
-        private readonly IUserSessionService _userSessionService;
-        private readonly IRepositoryCache _cache;
-        private readonly ILogger<Repository<T>> _logger;
-        private readonly string _entityName;
-        private readonly IMapper _mapper;
 
-        public Repository(
-            ApplicationDbContext context,
-            IUserSessionService userSessionService,
-            IRepositoryCache cache,
-            ILogger<Repository<T>> logger,
-            IMapper mapper)
+        public Repository(ApplicationDbContext context)
         {
-            _context = context ?? throw new ArgumentNullException(nameof(context));
-            _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
-            _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _context = context;
             _dbSet = context.Set<T>();
-            _entityName = typeof(T).Name;
-            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
-        #region Query Operations
-
-        public virtual async Task<T?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
+        public IQueryable<T> GetAllAsQueryable()
         {
-            var cacheKey = $"{_entityName}:Id:{id}";
-
-            return await _cache.GetOrSetAsync(
-                cacheKey,
-                async () => await _dbSet.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, cancellationToken),
-                TimeSpan.FromMinutes(5),
-                [_entityName, $"{_entityName}:Id:{id}"],
-                cancellationToken);
+            return _dbSet.AsNoTracking();
+        }
+        public virtual async Task<T?> GetByIdAsync(int id)
+        {
+            return await _dbSet.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
         }
 
-        public virtual async Task<T?> GetByIdTrackedAsync(int id, CancellationToken cancellationToken = default)
+        public virtual async Task<T?> GetByIdIncludeDeletedAsync(int id)
         {
-            return await _dbSet.FirstOrDefaultAsync(x => x.Id == id && !x.IsDeleted, cancellationToken);
+            return await _context.IncludeDeleted<T>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == id);
         }
 
-        public virtual async Task<T?> GetAsync(ISpecification<T> specification, CancellationToken cancellationToken = default)
+        public virtual async Task<IEnumerable<T>> GetAllAsync()
         {
-            var query = ApplySpecification(specification);
+            return await _dbSet.AsNoTracking().Where(e => !e.IsDeleted).ToListAsync();
+        }
 
-            if (!string.IsNullOrEmpty(specification.CacheKey))
+        public virtual async Task<IEnumerable<T>> GetAllIncludeDeletedAsync()
+        {
+            return await _context.IncludeDeleted<T>().AsNoTracking().ToListAsync();
+        }
+
+        public virtual async Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate)
+        {
+            return await _dbSet.AsNoTracking()
+                              .Where(e => !e.IsDeleted)
+                              .Where(predicate)
+                              .ToListAsync();
+        }
+
+        public virtual async Task<IEnumerable<T>> FindIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
+        {
+            return await _context.IncludeDeleted<T>()
+                                .AsNoTracking()
+                                .Where(predicate)
+                                .ToListAsync();
+        }
+
+        public virtual async Task<T?> FirstOrDefaultAsync(Expression<Func<T, bool>> predicate)
+        {
+            return await _dbSet.AsNoTracking()
+                              .Where(e => !e.IsDeleted)
+                              .FirstOrDefaultAsync(predicate);
+        }
+
+        public virtual async Task<T?> FirstOrDefaultIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
+        {
+            return await _context.IncludeDeleted<T>()
+                                .AsNoTracking()
+                                .FirstOrDefaultAsync(predicate);
+        }
+
+        public virtual async Task<bool> AnyAsync(Expression<Func<T, bool>> predicate)
+        {
+            return await _dbSet.Where(e => !e.IsDeleted).AnyAsync(predicate);
+        }
+
+        public virtual async Task<bool> AnyIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
+        {
+            return await _context.IncludeDeleted<T>().AnyAsync(predicate);
+        }
+
+        public virtual async Task<int> CountAsync()
+        {
+            return await _dbSet.Where(e => !e.IsDeleted).CountAsync();
+        }
+
+        public virtual async Task<int> CountAsync(Expression<Func<T, bool>> predicate)
+        {
+            return await _dbSet.Where(e => !e.IsDeleted).CountAsync(predicate);
+        }
+
+        public virtual async Task<int> CountIncludeDeletedAsync()
+        {
+            return await _context.IncludeDeleted<T>().CountAsync();
+        }
+
+        public virtual async Task<int> CountIncludeDeletedAsync(Expression<Func<T, bool>> predicate)
+        {
+            return await _context.IncludeDeleted<T>().CountAsync(predicate);
+        }
+
+        public virtual async Task<IEnumerable<T>> GetPagedAsync(int page, int pageSize)
+        {
+            return await _dbSet.AsNoTracking()
+                              .Where(e => !e.IsDeleted)
+                              .OrderBy(e => e.Id)
+                              .Skip((page - 1) * pageSize)
+                              .Take(pageSize)
+                              .ToListAsync();
+        }
+
+        public virtual async Task<IEnumerable<T>> GetPagedIncludeDeletedAsync(int page, int pageSize)
+        {
+            return await _context.IncludeDeleted<T>()
+                                .AsNoTracking()
+                                .OrderBy(e => e.Id)
+                                .Skip((page - 1) * pageSize)
+                                .Take(pageSize)
+                                .ToListAsync();
+        }
+
+        public virtual async Task AddAsync(T entity)
+        {
+            await _dbSet.AddAsync(entity);
+        }
+
+        public virtual async Task AddRangeAsync(IEnumerable<T> entities)
+        {
+            await _dbSet.AddRangeAsync(entities);
+        }
+
+        public virtual void Update(T entity)
+        {
+            _context.Entry(entity).State = EntityState.Modified;
+        }
+
+        public virtual void UpdateRange(IEnumerable<T> entities)
+        {
+            foreach (var entity in entities)
             {
-                return await _cache.GetOrSetAsync(
-                    specification.CacheKey,
-                    async () => await query.FirstOrDefaultAsync(cancellationToken),
-                    TimeSpan.FromSeconds(specification.CacheDurationSeconds),
-                    specification.CacheTags.Count != 0 ? specification.CacheTags : new[] { _entityName },
-                    cancellationToken);
+                _context.Entry(entity).State = EntityState.Modified;
             }
-
-            return await query.FirstOrDefaultAsync(cancellationToken);
         }
 
-        public virtual async Task<IReadOnlyList<T>> ListAsync(ISpecification<T> specification, CancellationToken cancellationToken = default)
+        public virtual void Remove(T entity)
         {
-            var query = ApplySpecification(specification);
-
-            if (!string.IsNullOrEmpty(specification.CacheKey))
-            {
-                return await _cache.GetOrSetAsync(
-                    specification.CacheKey,
-                    async () => (IReadOnlyList<T>)await query.ToListAsync(cancellationToken),
-                    TimeSpan.FromSeconds(specification.CacheDurationSeconds),
-                    specification.CacheTags.Any() ? specification.CacheTags : new[] { _entityName },
-                    cancellationToken);
-            }
-
-            return await query.ToListAsync(cancellationToken);
-        }
-
-        public virtual async Task<IReadOnlyList<T>> ListAllAsync(CancellationToken cancellationToken = default)
-        {
-            var cacheKey = $"{_entityName}:All";
-
-            return await _cache.GetOrSetAsync(
-                cacheKey,
-                async () => (IReadOnlyList<T>)await _dbSet.AsNoTracking().Where(x => !x.IsDeleted).ToListAsync(cancellationToken),
-                TimeSpan.FromMinutes(5),
-                [_entityName],
-                cancellationToken);
-        }
-
-        public virtual async Task<TResult?> GetProjectedAsync<TResult>(IProjectionSpecification<T, TResult> specification, CancellationToken cancellationToken = default)
-        {
-            var query = ApplySpecification(specification);
-            var projectedQuery = query.Select(specification.ProjectTo);
-
-            if (!string.IsNullOrEmpty(specification.CacheKey))
-            {
-                return await _cache.GetOrSetAsync(
-                    specification.CacheKey,
-                    async () => await projectedQuery.FirstOrDefaultAsync(cancellationToken),
-                    TimeSpan.FromSeconds(specification.CacheDurationSeconds),
-                    specification.CacheTags.Count != 0 ? specification.CacheTags : new[] { _entityName },
-                    cancellationToken);
-            }
-
-            return await projectedQuery.FirstOrDefaultAsync(cancellationToken);
-        }
-
-        public virtual async Task<IReadOnlyList<TResult>> ListProjectedAsync<TResult>(IProjectionSpecification<T, TResult> specification, CancellationToken cancellationToken = default)
-        {
-            var query = ApplySpecification(specification);
-            var projectedQuery = query.Select(specification.ProjectTo);
-
-            if (!string.IsNullOrEmpty(specification.CacheKey))
-            {
-                return await _cache.GetOrSetAsync(
-                    specification.CacheKey,
-                    async () => (IReadOnlyList<TResult>)await projectedQuery.ToListAsync(cancellationToken),
-                    TimeSpan.FromSeconds(specification.CacheDurationSeconds),
-                    specification.CacheTags.Count != 0 ? specification.CacheTags : new[] { _entityName },
-                    cancellationToken);
-            }
-
-            return await projectedQuery.ToListAsync(cancellationToken);
-        }
-
-        public virtual async Task<PagedResult<T>> GetPagedAsync(ISpecification<T> specification, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
-        {
-            var query = ApplySpecification(specification);
-            var totalCount = await query.CountAsync(cancellationToken);
-
-            var pagedQuery = query.Skip((pageNumber - 1) * pageSize).Take(pageSize);
-            var items = await pagedQuery.ToListAsync(cancellationToken);
-
-            return new PagedResult<T>(items, pageNumber, pageSize, totalCount);
-        }
-
-        public virtual async Task<PagedResult<TResult>> GetPagedProjectedAsync<TResult>(IProjectionSpecification<T, TResult> specification, int pageNumber, int pageSize, CancellationToken cancellationToken = default)
-        {
-            var query = ApplySpecification(specification);
-            var totalCount = await query.CountAsync(cancellationToken);
-
-            var projectedQuery = query.Select(specification.ProjectTo);
-            var pagedQuery = projectedQuery.Skip((pageNumber - 1) * pageSize).Take(pageSize);
-            var items = await pagedQuery.ToListAsync(cancellationToken);
-
-            return new PagedResult<TResult>(items, pageNumber, pageSize, totalCount);
-        }
-
-        public virtual async Task<int> CountAsync(ISpecification<T> specification, CancellationToken cancellationToken = default)
-        {
-            var query = ApplySpecification(specification);
-
-            if (!string.IsNullOrEmpty(specification.CacheKey))
-            {
-                var cacheKey = $"{specification.CacheKey}:Count";
-                return await _cache.GetOrSetAsync(
-                    cacheKey,
-                    async () => await query.CountAsync(cancellationToken),
-                    TimeSpan.FromSeconds(specification.CacheDurationSeconds),
-                    specification.CacheTags.Any() ? specification.CacheTags : new[] { _entityName },
-                    cancellationToken);
-            }
-
-            return await query.CountAsync(cancellationToken);
-        }
-
-        public virtual async Task<bool> AnyAsync(ISpecification<T> specification, CancellationToken cancellationToken = default)
-        {
-            var query = ApplySpecification(specification);
-            return await query.AnyAsync(cancellationToken);
-        }
-
-        #endregion
-
-        #region Command Operations
-
-        public virtual async Task<T> AddAsync(T entity, CancellationToken cancellationToken = default)
-        {
-            ArgumentNullException.ThrowIfNull(entity);
-
-            SetAuditFields(entity, isUpdate: false);
-
-            await _dbSet.AddAsync(entity, cancellationToken);
-            await _context.SaveChangesAsync(cancellationToken);
-
-            await InvalidateCacheAsync(_entityName);
-
-            _logger.LogDebug("Added {EntityName} with ID {EntityId}", _entityName, entity.Id);
-            return entity;
-        }
-
-        public virtual async Task<IReadOnlyList<T>> AddRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default)
-        {
-            ArgumentNullException.ThrowIfNull(entities);
-
-            var entityList = entities.ToList();
-            if (entityList.Count == 0) return entityList;
-
-            foreach (var entity in entityList)
-            {
-                SetAuditFields(entity, isUpdate: false);
-            }
-
-            await _dbSet.AddRangeAsync(entityList, cancellationToken);
-            await _context.SaveChangesAsync(cancellationToken);
-
-            await InvalidateCacheAsync(_entityName);
-
-            _logger.LogDebug("Added {Count} {EntityName} entities", entityList.Count, _entityName);
-            return entityList;
-        }
-
-        public virtual async Task<T> UpdateAsync(T entity, CancellationToken cancellationToken = default)
-        {
-            ArgumentNullException.ThrowIfNull(entity);
-
-            SetAuditFields(entity, isUpdate: true);
-
-            _dbSet.Update(entity);
-            await _context.SaveChangesAsync(cancellationToken);
-
-            await InvalidateCacheAsync(_entityName, $"{_entityName}:Id:{entity.Id}");
-
-            _logger.LogDebug("Updated {EntityName} with ID {EntityId}", _entityName, entity.Id);
-            return entity;
-        }
-
-        public virtual async Task<IReadOnlyList<T>> UpdateRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default)
-        {
-            ArgumentNullException.ThrowIfNull(entities);
-
-            var entityList = entities.ToList();
-            if (entityList.Count == 0) return entityList;
-
-            foreach (var entity in entityList)
-            {
-                SetAuditFields(entity, isUpdate: true);
-            }
-
-            _dbSet.UpdateRange(entityList);
-            await _context.SaveChangesAsync(cancellationToken);
-
-            await InvalidateCacheAsync(_entityName);
-
-            _logger.LogDebug("Updated {Count} {EntityName} entities", entityList.Count, _entityName);
-            return entityList;
-        }
-
-        public virtual async Task DeleteAsync(T entity, CancellationToken cancellationToken = default)
-        {
-            ArgumentNullException.ThrowIfNull(entity);
-
             _dbSet.Remove(entity);
-            await _context.SaveChangesAsync(cancellationToken);
-
-            await InvalidateCacheAsync(_entityName, $"{_entityName}:Id:{entity.Id}");
-
-            _logger.LogDebug("Deleted {EntityName} with ID {EntityId}", _entityName, entity.Id);
         }
 
-        public virtual async Task DeleteAsync(int id, CancellationToken cancellationToken = default)
+        public virtual void RemoveRange(IEnumerable<T> entities)
         {
-            var entity = await _dbSet.FindAsync(new object[] { id }, cancellationToken);
-            if (entity != null)
-            {
-                await DeleteAsync(entity, cancellationToken);
-            }
+            _dbSet.RemoveRange(entities);
         }
 
-        public virtual async Task DeleteRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default)
+        public virtual async Task<bool> SoftDeleteAsync(int id, int? deletedByUserId = null)
         {
-            ArgumentNullException.ThrowIfNull(entities);
+            var entity = await _dbSet.FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
+            if (entity == null) return false;
 
-            var entityList = entities.ToList();
-            if (entityList.Count == 0) return;
-
-            _dbSet.RemoveRange(entityList);
-            await _context.SaveChangesAsync(cancellationToken);
-
-            await InvalidateCacheAsync(_entityName);
-
-            _logger.LogDebug("Deleted {Count} {EntityName} entities", entityList.Count, _entityName);
+            return await SoftDeleteAsync(entity, deletedByUserId);
         }
 
-        public virtual async Task SoftDeleteAsync(T entity, CancellationToken cancellationToken = default)
+        public virtual async Task<bool> SoftDeleteAsync(T entity, int? deletedByUserId = null)
         {
-            ArgumentNullException.ThrowIfNull(entity);
-
             entity.IsDeleted = true;
             entity.DeletedAt = DateTime.UtcNow;
-            entity.DeletedByUserId = _userSessionService.GetCurrentUserId();
-            SetAuditFields(entity, isUpdate: true);
+            entity.DeletedByUserId = deletedByUserId;
+            entity.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedByUserId = deletedByUserId;
 
-            await _context.SaveChangesAsync(cancellationToken);
-
-            await InvalidateCacheAsync(_entityName, $"{_entityName}:Id:{entity.Id}");
-
-            _logger.LogDebug("Soft deleted {EntityName} with ID {EntityId}", _entityName, entity.Id);
+            Update(entity);
+            await SaveChangesAsync();
+            return true;
         }
 
-        public virtual async Task SoftDeleteAsync(int id, CancellationToken cancellationToken = default)
+        public virtual async Task<bool> SoftDeleteRangeAsync(IEnumerable<T> entities, int? deletedByUserId = null)
         {
-            var entity = await _dbSet.FindAsync(new object[] { id }, cancellationToken);
-            if (entity != null)
-            {
-                await SoftDeleteAsync(entity, cancellationToken);
-            }
-        }
-
-        public virtual async Task SoftDeleteRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default)
-        {
-            ArgumentNullException.ThrowIfNull(entities);
+            if (!entities.Any()) return true;
 
             var entityList = entities.ToList();
-            if (entityList.Count == 0) return;
-
             var now = DateTime.UtcNow;
-            var userId = _userSessionService.GetCurrentUserId();
 
             foreach (var entity in entityList)
             {
                 entity.IsDeleted = true;
                 entity.DeletedAt = now;
-                entity.DeletedByUserId = userId;
-                SetAuditFields(entity, isUpdate: true);
+                entity.DeletedByUserId = deletedByUserId;
+                entity.UpdatedAt = now;
+                entity.UpdatedByUserId = deletedByUserId;
             }
 
-            await _context.SaveChangesAsync(cancellationToken);
-
-            await InvalidateCacheAsync(_entityName);
-
-            _logger.LogDebug("Soft deleted {Count} {EntityName} entities", entityList.Count, _entityName);
+            UpdateRange(entityList);
+            await SaveChangesAsync();
+            return true;
         }
 
-        public virtual async Task RestoreAsync(T entity, CancellationToken cancellationToken = default)
+        public virtual async Task<bool> RestoreAsync(int id, int? restoredByUserId = null)
         {
-            ArgumentNullException.ThrowIfNull(entity);
+            var entity = await _context.IncludeDeleted<T>()
+                                     .FirstOrDefaultAsync(e => e.Id == id && e.IsDeleted);
+            if (entity == null) return false;
 
+            return await RestoreAsync(entity, restoredByUserId);
+        }
+
+        public virtual async Task<bool> RestoreAsync(T entity, int? restoredByUserId = null)
+        {
             entity.IsDeleted = false;
             entity.DeletedAt = null;
             entity.DeletedByUserId = null;
-            SetAuditFields(entity, isUpdate: true);
+            entity.UpdatedAt = DateTime.UtcNow;
+            entity.UpdatedByUserId = restoredByUserId;
 
-            await _context.SaveChangesAsync(cancellationToken);
-
-            await InvalidateCacheAsync(_entityName, $"{_entityName}:Id:{entity.Id}");
-
-            _logger.LogDebug("Restored {EntityName} with ID {EntityId}", _entityName, entity.Id);
+            Update(entity);
+            await SaveChangesAsync();
+            return true;
         }
 
-        public virtual async Task RestoreAsync(int id, CancellationToken cancellationToken = default)
+        public virtual async Task<int> SaveChangesAsync()
         {
-            var entity = await _dbSet.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
-            if (entity != null && entity.IsDeleted)
-            {
-                await RestoreAsync(entity, cancellationToken);
-            }
+            return await _context.SaveChangesAsync();
         }
 
-        #endregion
-
-        #region Bulk Operations
-
-        public virtual async Task<int> BulkInsertAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default)
+        public IQueryable<T> GetQueryable()
         {
-            ArgumentNullException.ThrowIfNull(entities);
+            return _dbSet.AsNoTracking().Where(e => !e.IsDeleted);
+        }
 
-            var entityList = entities.ToList();
-            if (entityList.Count == 0) return 0;
+        public async Task<IEnumerable<T>> FindWithOrderingAsync(
+            Expression<Func<T, bool>>? predicate = null,
+            Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy = null,
+            int? skip = null,
+            int? take = null)
+        {
+            IQueryable<T> query = GetQueryable();
 
-            foreach (var entity in entityList)
+            if (predicate != null)
             {
-                SetAuditFields(entity, isUpdate: false);
+                query = query.Where(predicate);
             }
 
-            await _dbSet.AddRangeAsync(entityList, cancellationToken);
-            var result = await _context.SaveChangesAsync(cancellationToken);
-
-            await InvalidateCacheAsync(_entityName);
-
-            _logger.LogDebug("Bulk inserted {Count} {EntityName} entities", entityList.Count, _entityName);
-            return result;
-        }
-        public virtual async Task<int> BulkUpdateAsync(
-            ISpecification<T> specification,
-            Expression<Func<T, T>> updateExpression,
-            CancellationToken cancellationToken = default)
-        {
-            var query = ApplySpecification(specification);
-
-            var entities = await query.ToListAsync(cancellationToken);
-            var compiledExpression = updateExpression.Compile();
-
-            foreach (var entity in entities)
+            if (orderBy != null)
             {
-                var updatedEntity = compiledExpression(entity);
-
-                _mapper.Map(updatedEntity, entity);
-
-                SetAuditFields(entity, isUpdate: true);
+                query = orderBy(query);
             }
 
-            await _context.BulkUpdateAsync(entities, cancellationToken: cancellationToken);
-
-            await InvalidateCacheAsync(_entityName);
-
-            _logger.LogDebug("Bulk updated {Count} {EntityName} entities using AutoMapper and EFCore.BulkExtensions", entities.Count, _entityName);
-
-            return entities.Count;
-        }
-
-
-
-        public virtual async Task<int> BulkDeleteAsync(ISpecification<T> specification, CancellationToken cancellationToken = default)
-        {
-            var query = ApplySpecification(specification);
-            var result = await query.ExecuteDeleteAsync(cancellationToken);
-
-            await InvalidateCacheAsync(_entityName);
-
-            _logger.LogDebug("Bulk deleted {Count} {EntityName} entities", result, _entityName);
-            return result;
-        }
-
-        public virtual async Task<int> BulkSoftDeleteAsync(ISpecification<T> specification, CancellationToken cancellationToken = default)
-        {
-            var query = ApplySpecification(specification);
-            var now = DateTime.UtcNow;
-            var userId = _userSessionService.GetCurrentUserId();
-
-            var result = await query.ExecuteUpdateAsync(s => s
-                .SetProperty(e => e.IsDeleted, true)
-                .SetProperty(e => e.DeletedAt, now)
-                .SetProperty(e => e.DeletedByUserId, userId)
-                .SetProperty(e => e.UpdatedAt, now)
-                .SetProperty(e => e.UpdatedByUserId, userId), cancellationToken);
-
-            await InvalidateCacheAsync(_entityName);
-
-            _logger.LogDebug("Bulk soft deleted {Count} {EntityName} entities", result, _entityName);
-            return result;
-        }
-
-        #endregion
-
-        #region Transaction Operations
-
-        public virtual async Task<TResult> ExecuteInTransactionAsync<TResult>(Func<Task<TResult>> operation, CancellationToken cancellationToken = default)
-        {
-            var strategy = _context.Database.CreateExecutionStrategy();
-            return await strategy.ExecuteAsync(async () =>
+            if (skip.HasValue)
             {
-                using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-                try
-                {
-                    var result = await operation();
-                    await transaction.CommitAsync(cancellationToken);
-                    return result;
-                }
-                catch
-                {
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
-        }
+                query = query.Skip(skip.Value);
+            }
 
-        public virtual async Task ExecuteInTransactionAsync(Func<Task> operation, CancellationToken cancellationToken = default)
-        {
-            var strategy = _context.Database.CreateExecutionStrategy();
-            await strategy.ExecuteAsync(async () =>
+            if (take.HasValue)
             {
-                using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
-                try
-                {
-                    await operation();
-                    await transaction.CommitAsync(cancellationToken);
-                }
-                catch
-                {
-                    await transaction.RollbackAsync(cancellationToken);
-                    throw;
-                }
-            });
+                query = query.Take(take.Value);
+            }
+
+            return await query.ToListAsync();
         }
 
-        #endregion
-
-        #region Cache Operations
-
-        public virtual async Task InvalidateCacheAsync(params string[] tags)
+        public virtual async Task<IEnumerable<T>> FindWithIncludesAsync<TProperty>(
+            Expression<Func<T, bool>> predicate,
+            params Expression<Func<T, TProperty>>[] includes)
         {
-            await _cache.RemoveByTagsAsync(tags);
-        }
+            IQueryable<T> query = _dbSet.AsNoTracking().Where(e => !e.IsDeleted);
 
-        public virtual async Task InvalidateCacheByPatternAsync(string pattern)
-        {
-            await _cache.RemoveByPatternAsync(pattern);
-        }
-
-        #endregion
-
-        #region Raw SQL Operations
-
-        public virtual async Task<IReadOnlyList<T>> FromSqlAsync(string sql, params object[] parameters)
-        {
-            return await _dbSet.FromSqlRaw(sql, parameters).AsNoTracking().ToListAsync();
-        }
-
-        public virtual async Task<int> ExecuteSqlAsync(string sql, params object[] parameters)
-        {
-            return await _context.Database.ExecuteSqlRawAsync(sql, parameters);
-        }
-
-        #endregion
-
-        #region Private Methods
-
-        private IQueryable<T> ApplySpecification(ISpecification<T> specification)
-        {
-            return SpecificationEvaluator.GetQuery(_dbSet.AsQueryable(), specification);
-        }
-
-        private void SetAuditFields(T entity, bool isUpdate)
-        {
-            var now = DateTime.UtcNow;
-            var userId = _userSessionService.GetCurrentUserId();
-
-            if (isUpdate)
+            foreach (var include in includes)
             {
-                entity.UpdatedAt = now;
-                entity.UpdatedByUserId = userId;
+                query = query.Include(include);
+            }
+
+            return await query.Where(predicate).ToListAsync();
+        }
+
+        public virtual async Task<PagedResult<T>> GetPagedResultAsync(
+            int page,
+            int pageSize,
+            Expression<Func<T, bool>>? predicate = null,
+            Func<IQueryable<T>, IOrderedQueryable<T>>? orderBy = null)
+        {
+            IQueryable<T> query = _dbSet.AsNoTracking().Where(e => !e.IsDeleted);
+
+            if (predicate != null)
+            {
+                query = query.Where(predicate);
+            }
+
+            var totalCount = await query.CountAsync();
+
+            if (orderBy != null)
+            {
+                query = orderBy(query);
             }
             else
             {
-                entity.CreatedAt = now;
-                entity.CreatedByUserId = userId;
-                entity.UpdatedAt = now;
-                entity.UpdatedByUserId = userId;
+                query = query.OrderBy(e => e.Id);
             }
-        }
 
-        #endregion
+            var items = await query.Skip((page - 1) * pageSize)
+                                  .Take(pageSize)
+                                  .ToListAsync();
+
+            return new PagedResult<T>
+            {
+                Data = items,
+                PageNumber = page,
+                PageSize = pageSize,
+                TotalCount = totalCount
+            };
+        }
     }
 }

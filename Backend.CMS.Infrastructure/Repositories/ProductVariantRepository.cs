@@ -12,7 +12,7 @@ namespace Backend.CMS.Infrastructure.Repositories
     /// </summary>
     public class ProductVariantRepository : Repository<ProductVariant>, IProductVariantRepository
     {
-        public ProductVariantRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
+        public ProductVariantRepository(ApplicationDbContext context) : base(context)
         {
         }
 

@@ -9,7 +9,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class FileRepository : Repository<FileEntity>, IFileRepository
     {
-        public FileRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
+        public FileRepository(ApplicationDbContext context) : base(context)
         {
         }
 

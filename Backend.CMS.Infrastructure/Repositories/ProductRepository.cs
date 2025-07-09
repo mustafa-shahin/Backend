@@ -14,7 +14,7 @@ namespace Backend.CMS.Infrastructure.Repositories
     /// </summary>
     public class ProductRepository : Repository<Product>, IProductRepository
     {
-        public ProductRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
+        public ProductRepository(ApplicationDbContext context) : base(context)
         {
         }
 

@@ -8,7 +8,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class LocationRepository : Repository<Location>, ILocationRepository
     {
-        public LocationRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
+        public LocationRepository(ApplicationDbContext context) : base(context)
         {
         }
 

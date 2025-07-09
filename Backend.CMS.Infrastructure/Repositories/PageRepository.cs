@@ -9,7 +9,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class PageRepository : Repository<Page>, IPageRepository
     {
-        public PageRepository(ApplicationDbContext context, IUserSessionService userSessionService) : base(context, userSessionService)
+        public PageRepository(ApplicationDbContext context) : base(context)
         {
         }
 
