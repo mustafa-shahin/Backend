@@ -12,10 +12,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class PermissionService : IPermissionService
     {
-        private readonly IRepository<Permission> _permissionRepository;
-        private readonly IRepository<RolePermission> _rolePermissionRepository;
-        private readonly IRepository<UserPermission> _userPermissionRepository;
-        private readonly IUserRepository _userRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
         private readonly IMemoryCache _cache;
@@ -26,19 +23,13 @@ namespace Backend.CMS.Infrastructure.Services
         private const int CACHE_EXPIRY_MINUTES = 30;
 
         public PermissionService(
-            IRepository<Permission> permissionRepository,
-            IRepository<RolePermission> rolePermissionRepository,
-            IRepository<UserPermission> userPermissionRepository,
-            IUserRepository userRepository,
+            IUnitOfWork unitOfWork,
             IMapper mapper,
             IUserSessionService userSessionService,
             IMemoryCache cache,
             ILogger<PermissionService> logger)
         {
-            _permissionRepository = permissionRepository;
-            _rolePermissionRepository = rolePermissionRepository;
-            _userPermissionRepository = userPermissionRepository;
-            _userRepository = userRepository;
+            _unitOfWork = unitOfWork;
             _mapper = mapper;
             _userSessionService = userSessionService;
             _cache = cache;
@@ -47,13 +38,13 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<PermissionDto>> GetAllPermissionsAsync()
         {
-            var permissions = await _permissionRepository.GetAllAsync();
+            var permissions = await _unitOfWork.GetRepository<Permission>().GetAllAsync();
             return _mapper.Map<List<PermissionDto>>(permissions.OrderBy(p => p.Category).ThenBy(p => p.SortOrder));
         }
 
         public async Task<List<PermissionCategoryDto>> GetPermissionsByCategoryAsync()
         {
-            var permissions = await _permissionRepository.FindAsync(p => p.IsActive);
+            var permissions = await _unitOfWork.GetRepository<Permission>().FindAsync(p => p.IsActive);
             var grouped = permissions.GroupBy(p => p.Category)
                 .OrderBy(g => g.Key)
                 .Select(g => new PermissionCategoryDto
@@ -82,14 +73,14 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<string>> GetEffectivePermissionsAsync(int userId)
         {
-            var user = await _userRepository.GetByIdAsync(userId);
+            var user = await _unitOfWork.Users.GetByIdAsync(userId);
             if (user == null) return new List<string>();
 
             // Get role permissions
             var rolePermissions = await GetRolePermissionsFromCacheAsync(user.Role);
 
             // Get user-specific permissions
-            var userPermissions = await _userPermissionRepository.FindAsync(up =>
+            var userPermissions = await _unitOfWork.GetRepository<UserPermission>().FindAsync(up =>
                 up.UserId == userId &&
                 up.IsGranted &&
                 (up.ExpiresAt == null || up.ExpiresAt > DateTime.UtcNow));
@@ -97,7 +88,7 @@ namespace Backend.CMS.Infrastructure.Services
             var userPermissionList = new List<string>();
             foreach (var up in userPermissions)
             {
-                var permission = await _permissionRepository.GetByIdAsync(up.PermissionId);
+                var permission = await _unitOfWork.GetRepository<Permission>().GetByIdAsync(up.PermissionId);
                 if (permission != null && permission.IsActive)
                 {
                     userPermissionList.Add(permission.Name);
@@ -111,12 +102,12 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<RolePermissionDto> GetRolePermissionsAsync(UserRole role)
         {
-            var rolePermissions = await _rolePermissionRepository.FindAsync(rp => rp.Role == role && rp.IsGranted);
+            var rolePermissions = await _unitOfWork.GetRepository<RolePermission>().FindAsync(rp => rp.Role == role && rp.IsGranted);
             var permissions = new List<PermissionDto>();
 
             foreach (var rp in rolePermissions)
             {
-                var permission = await _permissionRepository.GetByIdAsync(rp.PermissionId);
+                var permission = await _unitOfWork.GetRepository<Permission>().GetByIdAsync(rp.PermissionId);
                 if (permission != null && permission.IsActive)
                 {
                     permissions.Add(_mapper.Map<PermissionDto>(permission));
@@ -138,10 +129,10 @@ namespace Backend.CMS.Infrastructure.Services
                 var currentUserId = GetCurrentUserIdSafe();
 
                 // Remove existing role permissions
-                var existingPermissions = await _rolePermissionRepository.FindAsync(rp => rp.Role == updateRolePermissionsDto.Role);
+                var existingPermissions = await _unitOfWork.GetRepository<RolePermission>().FindAsync(rp => rp.Role == updateRolePermissionsDto.Role);
                 foreach (var existing in existingPermissions)
                 {
-                    await _rolePermissionRepository.SoftDeleteAsync(existing, currentUserId);
+                    await _unitOfWork.GetRepository<RolePermission>().SoftDeleteAsync(existing, currentUserId);
                 }
 
                 // Add new permissions
@@ -156,10 +147,10 @@ namespace Backend.CMS.Infrastructure.Services
                         UpdatedByUserId = currentUserId
                     };
 
-                    await _rolePermissionRepository.AddAsync(rolePermission);
+                    await _unitOfWork.GetRepository<RolePermission>().AddAsync(rolePermission);
                 }
 
-                await _rolePermissionRepository.SaveChangesAsync();
+                await _unitOfWork.GetRepository<RolePermission>().SaveChangesAsync();
 
                 // Clear cache
                 _cache.Remove(ROLE_PERMISSIONS_CACHE_KEY);
@@ -183,13 +174,13 @@ namespace Backend.CMS.Infrastructure.Services
                 var currentUserId = GetCurrentUserIdSafe();
 
                 // Remove existing permission if it exists
-                var existing = await _userPermissionRepository.FirstOrDefaultAsync(up =>
+                var existing = await _unitOfWork.GetRepository<UserPermission>().FirstOrDefaultAsync(up =>
                     up.UserId == assignPermissionDto.UserId &&
                     up.PermissionId == assignPermissionDto.PermissionId);
 
                 if (existing != null)
                 {
-                    await _userPermissionRepository.SoftDeleteAsync(existing, currentUserId);
+                    await _unitOfWork.GetRepository<UserPermission>().SoftDeleteAsync(existing, currentUserId);
                 }
 
                 // Add new permission
@@ -204,8 +195,8 @@ namespace Backend.CMS.Infrastructure.Services
                     UpdatedByUserId = currentUserId
                 };
 
-                await _userPermissionRepository.AddAsync(userPermission);
-                await _userPermissionRepository.SaveChangesAsync();
+                await _unitOfWork.GetRepository<UserPermission>().AddAsync(userPermission);
+                await _unitOfWork.GetRepository<UserPermission>().SaveChangesAsync();
 
                 // Clear user's permission cache
                 var cacheKey = string.Format(USER_PERMISSIONS_CACHE_KEY, assignPermissionDto.UserId);
@@ -225,7 +216,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var existingPermissions = await _permissionRepository.GetAllAsync();
+                var existingPermissions = await _unitOfWork.GetRepository<Permission>().GetAllAsync();
                 if (existingPermissions.Any()) return;
 
                 // Use system user ID of 1 for seeding, or null if not available
@@ -237,10 +228,10 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     permission.CreatedByUserId = systemUserId;
                     permission.UpdatedByUserId = systemUserId;
-                    await _permissionRepository.AddAsync(permission);
+                    await _unitOfWork.GetRepository<Permission>().AddAsync(permission);
                 }
 
-                await _permissionRepository.SaveChangesAsync();
+                await _unitOfWork.GetRepository<Permission>().SaveChangesAsync();
 
                 // Seed default role permissions
                 await SeedDefaultRolePermissionsAsync();
@@ -278,7 +269,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var systemUser = await _userRepository.FirstOrDefaultAsync(u => u.Role == UserRole.Dev);
+                var systemUser = await _unitOfWork.Users.FirstOrDefaultAsync(u => u.Role == UserRole.Dev);
                 return systemUser?.Id;
             }
             catch
@@ -357,7 +348,7 @@ namespace Backend.CMS.Infrastructure.Services
         private async Task SeedDefaultRolePermissionsAsync()
         {
             var systemUserId = await GetSystemUserIdAsync() ?? 1;
-            var permissions = await _permissionRepository.GetAllAsync();
+            var permissions = await _unitOfWork.GetRepository<Permission>().GetAllAsync();
 
             // Dev permissions (all permissions)
             var devPermissions = permissions.Select(p => new RolePermission
@@ -404,10 +395,10 @@ namespace Backend.CMS.Infrastructure.Services
                     UpdatedByUserId = systemUserId
                 });
 
-            await _rolePermissionRepository.AddRangeAsync(devPermissions);
-            await _rolePermissionRepository.AddRangeAsync(adminPermissions);
-            await _rolePermissionRepository.AddRangeAsync(customerPermissions);
-            await _rolePermissionRepository.SaveChangesAsync();
+            await _unitOfWork.GetRepository<RolePermission>().AddRangeAsync(devPermissions);
+            await _unitOfWork.GetRepository<RolePermission>().AddRangeAsync(adminPermissions);
+            await _unitOfWork.GetRepository<RolePermission>().AddRangeAsync(customerPermissions);
+            await _unitOfWork.GetRepository<RolePermission>().SaveChangesAsync();
         }
 
         // Implement other interface methods...
@@ -418,15 +409,15 @@ namespace Backend.CMS.Infrastructure.Services
             permission.CreatedByUserId = GetCurrentUserIdSafe();
             permission.UpdatedByUserId = GetCurrentUserIdSafe();
 
-            await _permissionRepository.AddAsync(permission);
-            await _permissionRepository.SaveChangesAsync();
+            await _unitOfWork.GetRepository<Permission>().AddAsync(permission);
+            await _unitOfWork.GetRepository<Permission>().SaveChangesAsync();
 
             return _mapper.Map<PermissionDto>(permission);
         }
 
         public async Task<PermissionDto> UpdatePermissionAsync(int permissionId, UpdatePermissionDto updatePermissionDto)
         {
-            var permission = await _permissionRepository.GetByIdAsync(permissionId);
+            var permission = await _unitOfWork.GetRepository<Permission>().GetByIdAsync(permissionId);
             if (permission == null)
                 throw new ArgumentException("Permission not found");
 
@@ -434,19 +425,19 @@ namespace Backend.CMS.Infrastructure.Services
             permission.UpdatedByUserId = GetCurrentUserIdSafe();
             permission.UpdatedAt = DateTime.UtcNow;
 
-            _permissionRepository.Update(permission);
-            await _permissionRepository.SaveChangesAsync();
+            _unitOfWork.GetRepository<Permission>().Update(permission);
+            await _unitOfWork.GetRepository<Permission>().SaveChangesAsync();
 
             return _mapper.Map<PermissionDto>(permission);
         }
 
         public async Task<bool> DeletePermissionAsync(int permissionId)
         {
-            var permission = await _permissionRepository.GetByIdAsync(permissionId);
+            var permission = await _unitOfWork.GetRepository<Permission>().GetByIdAsync(permissionId);
             if (permission == null || permission.IsSystemPermission)
                 return false;
 
-            return await _permissionRepository.SoftDeleteAsync(permissionId, GetCurrentUserIdSafe());
+            return await _unitOfWork.GetRepository<Permission>().SoftDeleteAsync(permissionId, GetCurrentUserIdSafe());
         }
 
         public async Task<List<RolePermissionDto>> GetAllRolePermissionsAsync()
@@ -461,18 +452,18 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<UserPermissionDto> GetUserPermissionsDetailAsync(int userId)
         {
-            var user = await _userRepository.GetByIdAsync(userId);
+            var user = await _unitOfWork.Users.GetByIdAsync(userId);
             if (user == null)
                 throw new ArgumentException("User not found");
 
             var effectivePermissions = await GetEffectivePermissionsAsync(userId);
-            var userSpecificPermissions = await _userPermissionRepository.FindAsync(up => up.UserId == userId);
+            var userSpecificPermissions = await _unitOfWork.GetRepository<UserPermission>().FindAsync(up => up.UserId == userId);
 
             var permissions = new List<PermissionAssignmentDto>();
 
             foreach (var permissionName in effectivePermissions)
             {
-                var permission = await _permissionRepository.FirstOrDefaultAsync(p => p.Name == permissionName);
+                var permission = await _unitOfWork.GetRepository<Permission>().FirstOrDefaultAsync(p => p.Name == permissionName);
                 if (permission != null)
                 {
                     var userSpecific = userSpecificPermissions.FirstOrDefault(up => up.PermissionId == permission.Id);
@@ -501,13 +492,13 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> RemovePermissionFromUserAsync(int userId, int permissionId)
         {
-            var userPermission = await _userPermissionRepository.FirstOrDefaultAsync(up =>
+            var userPermission = await _unitOfWork.GetRepository<UserPermission>().FirstOrDefaultAsync(up =>
                 up.UserId == userId && up.PermissionId == permissionId);
 
             if (userPermission == null)
                 return false;
 
-            var result = await _userPermissionRepository.SoftDeleteAsync(userPermission, GetCurrentUserIdSafe());
+            var result = await _unitOfWork.GetRepository<UserPermission>().SoftDeleteAsync(userPermission, GetCurrentUserIdSafe());
 
             if (result)
             {

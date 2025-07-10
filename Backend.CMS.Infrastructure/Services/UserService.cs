@@ -1,21 +1,17 @@
-﻿using AutoMapper;
+using AutoMapper;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Caching;
 using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Caching.Services;
-using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.Interfaces;
-using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using System.Data;
 
 namespace Backend.CMS.Infrastructure.Services
 {
-    // Wrapper classes for caching complex results
     public class UserSearchResult
     {
         public List<UserDto> Users { get; set; } = new();
@@ -30,41 +26,37 @@ namespace Backend.CMS.Infrastructure.Services
 
     public class UserService : IUserService
     {
-        private readonly IUserRepository _userRepository;
-        private readonly IRepository<Address> _addressRepository;
-        private readonly IRepository<ContactDetails> _contactDetailsRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly ILogger<UserService> _logger;
         private readonly IUserSessionService _userSessionService;
         private readonly ICacheService _cacheService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
         private readonly ICacheKeyService _cacheKeyService;
-        private readonly ApplicationDbContext _context;
         private readonly CacheOptions _cacheOptions;
 
+        // Pagination constants
+        private const int DEFAULT_PAGE_SIZE = 10;
+        private const int MAX_PAGE_SIZE = 100;
+        private const int MIN_PAGE_SIZE = 1;
+
         public UserService(
-            IUserRepository userRepository,
-            IRepository<Address> addressRepository,
-            IRepository<ContactDetails> contactDetailsRepository,
+            IUnitOfWork unitOfWork,
             IUserSessionService userSessionService,
             ICacheService cacheService,
             ICacheInvalidationService cacheInvalidationService,
             ICacheKeyService cacheKeyService,
             IMapper mapper,
             ILogger<UserService> logger,
-            ApplicationDbContext context,
             IOptions<CacheOptions> cacheOptions)
         {
-            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
-            _addressRepository = addressRepository ?? throw new ArgumentNullException(nameof(addressRepository));
-            _contactDetailsRepository = contactDetailsRepository ?? throw new ArgumentNullException(nameof(contactDetailsRepository));
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
             _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
             _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _context = context ?? throw new ArgumentNullException(nameof(context));
             _cacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
         }
 
@@ -75,7 +67,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Use cache extension for entities
                 var cachedUser = await _cacheService.GetEntityAsync<User>(_cacheKeyService, userId);
                 if (cachedUser != null)
                 {
@@ -83,17 +74,14 @@ namespace Backend.CMS.Infrastructure.Services
                     return _mapper.Map<UserDto>(cachedUser);
                 }
 
-                // Load from database
-                var user = await _userRepository.GetByIdAsync(userId);
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
                 if (user == null)
                 {
                     _logger.LogWarning("User {UserId} not found", userId);
                     throw new KeyNotFoundException($"User with ID {userId} not found");
                 }
 
-                // Cache the entity
                 await _cacheService.SetEntityAsync(_cacheKeyService, userId, user, _cacheOptions.DefaultExpiration);
-                // Also cache by email and username for faster lookups
                 await CacheUserByAlternateKeysAsync(user);
 
                 _logger.LogDebug("Cached user {UserId} for {CacheExpiration}", userId, _cacheOptions.DefaultExpiration);
@@ -116,8 +104,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Try cache first
-                var cacheKey = CacheKeys.UserByEmail(normalizedEmail);
+                var cacheKey = _cacheKeyService.GetCustomKey("user", "email", normalizedEmail);
                 var cachedUser = await _cacheService.GetAsync<User>(cacheKey);
                 if (cachedUser != null)
                 {
@@ -125,15 +112,13 @@ namespace Backend.CMS.Infrastructure.Services
                     return _mapper.Map<UserDto>(cachedUser);
                 }
 
-                // Load from database
-                var user = await _userRepository.GetByEmailAsync(normalizedEmail);
+                var user = await _unitOfWork.Users.GetByEmailAsync(normalizedEmail);
                 if (user == null)
                 {
                     _logger.LogWarning("User with email {Email} not found", normalizedEmail);
                     throw new KeyNotFoundException($"User with email {normalizedEmail} not found");
                 }
 
-                // Cache by email and other keys
                 await CacheUserByAllKeysAsync(user);
 
                 _logger.LogDebug("Cached user by email {Email} for {CacheExpiration}", normalizedEmail, _cacheOptions.DefaultExpiration);
@@ -156,8 +141,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Try cache first
-                var cacheKey = CacheKeys.UserByUsername(normalizedUsername);
+                var cacheKey = _cacheKeyService.GetCustomKey("user", "username", normalizedUsername);
                 var cachedUser = await _cacheService.GetAsync<User>(cacheKey);
                 if (cachedUser != null)
                 {
@@ -165,15 +149,13 @@ namespace Backend.CMS.Infrastructure.Services
                     return _mapper.Map<UserDto>(cachedUser);
                 }
 
-                // Load from database
-                var user = await _userRepository.GetByUsernameAsync(normalizedUsername);
+                var user = await _unitOfWork.Users.GetByUsernameAsync(normalizedUsername);
                 if (user == null)
                 {
                     _logger.LogWarning("User with username {Username} not found", normalizedUsername);
                     throw new KeyNotFoundException($"User with username {normalizedUsername} not found");
                 }
 
-                // Cache by username and other keys
                 await CacheUserByAllKeysAsync(user);
 
                 _logger.LogDebug("Cached user by username {Username} for {CacheExpiration}", normalizedUsername, _cacheOptions.DefaultExpiration);
@@ -187,58 +169,85 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<(List<UserDto> users, int totalCount)> GetUsersAsync(int page = 1, int pageSize = 10, string? search = null)
+        public async Task<PagedResult<UserDto>> GetUsersPagedAsync(int pageNumber = 1, int pageSize = DEFAULT_PAGE_SIZE, string? search = null)
         {
-            if (page <= 0)
-                throw new ArgumentException("Page must be greater than 0", nameof(page));
-
-            if (pageSize <= 0 || pageSize > 100)
-                throw new ArgumentException("Page size must be between 1 and 100", nameof(pageSize));
-
+            var validatedPageNumber = Math.Max(1, pageNumber);
+            var validatedPageSize = Math.Clamp(pageSize, MIN_PAGE_SIZE, MAX_PAGE_SIZE);
             var normalizedSearch = search?.Trim();
 
             try
             {
-                // Create cache key for search results
-                var cacheKey = string.IsNullOrEmpty(normalizedSearch)
-                    ? CacheKeys.UserList(page, pageSize)
-                    : CacheKeys.UserSearch(normalizedSearch, page, pageSize);
+                _logger.LogDebug("Getting paginated users: page {PageNumber}, size {PageSize}, search '{Search}'",
+                    validatedPageNumber, validatedPageSize, normalizedSearch);
 
-                // Try cache first
-                var cachedResult = await _cacheService.GetAsync<UserSearchResult>(cacheKey);
+                var cacheKey = string.IsNullOrEmpty(normalizedSearch)
+                    ? _cacheKeyService.GetCollectionKey<User>("list", validatedPageNumber, validatedPageSize)
+                    : _cacheKeyService.GetCollectionKey<User>("search", normalizedSearch, validatedPageNumber, validatedPageSize);
+
+                var cachedResult = await _cacheService.GetAsync<PagedResult<UserDto>>(cacheKey);
                 if (cachedResult != null)
                 {
-                    _logger.LogDebug("Retrieved users search results from cache for page {Page}, size {PageSize}, search '{Search}'",
-                        page, pageSize, normalizedSearch);
-                    return (cachedResult.Users, cachedResult.TotalCount);
+                    _logger.LogDebug("Retrieved paginated users from cache for page {Page}, size {PageSize}, search '{Search}'",
+                        validatedPageNumber, validatedPageSize, normalizedSearch);
+                    return cachedResult;
                 }
 
-                // Load from database
                 var totalCount = string.IsNullOrEmpty(normalizedSearch)
-                    ? await _userRepository.CountAsync()
-                    : await _userRepository.CountSearchAsync(normalizedSearch);
+                    ? await _unitOfWork.Users.CountAsync()
+                    : await _unitOfWork.Users.CountSearchAsync(normalizedSearch);
+
+                _logger.LogDebug("Total user count: {TotalCount}", totalCount);
+
+                if (totalCount == 0)
+                {
+                    var emptyResult = new PagedResult<UserDto>(
+                        new List<UserDto>(),
+                        validatedPageNumber,
+                        validatedPageSize,
+                        0);
+
+                    await _cacheService.SetAsync(cacheKey, emptyResult, _cacheOptions.ShortExpiration);
+                    return emptyResult;
+                }
+
+                var totalPages = (int)Math.Ceiling((double)totalCount / validatedPageSize);
+                var adjustedPageNumber = Math.Min(validatedPageNumber, totalPages);
+
+                _logger.LogDebug("Pagination metadata: totalPages {TotalPages}, adjustedPage {AdjustedPage}",
+                    totalPages, adjustedPageNumber);
 
                 var users = string.IsNullOrEmpty(normalizedSearch)
-                    ? await _userRepository.GetPagedWithRelatedAsync(page, pageSize)
-                    : await _userRepository.SearchUsersAsync(normalizedSearch, page, pageSize);
+                    ? await _unitOfWork.Users.GetPagedWithRelatedAsync(adjustedPageNumber, validatedPageSize)
+                    : await _unitOfWork.Users.SearchUsersAsync(normalizedSearch, adjustedPageNumber, validatedPageSize);
 
                 var userDtos = _mapper.Map<List<UserDto>>(users);
-                var result = new UserSearchResult { Users = userDtos, TotalCount = totalCount };
 
-                // Cache the result
-                await _cacheService.SetAsync(cacheKey, result, _cacheOptions.ShortExpiration);
-                _logger.LogDebug("Cached users search results for page {Page}, size {PageSize}, search '{Search}'",
-                    page, pageSize, normalizedSearch);
+                var result = new PagedResult<UserDto>(
+                    userDtos.AsReadOnly(),
+                    adjustedPageNumber,
+                    validatedPageSize,
+                    totalCount);
 
-                // Also cache individual users for faster access
+                var cacheExpiration = string.IsNullOrEmpty(normalizedSearch)
+                    ? _cacheOptions.DefaultExpiration
+                    : _cacheOptions.ShortExpiration;
+
+                await _cacheService.SetAsync(cacheKey, result, cacheExpiration);
+
+                _logger.LogDebug("Cached paginated users result for page {Page}, size {PageSize}, search '{Search}' with expiration {Expiration}",
+                    adjustedPageNumber, validatedPageSize, normalizedSearch, cacheExpiration);
+
                 await CacheIndividualUsersAsync(users);
 
-                return (userDtos, totalCount);
+                _logger.LogInformation("Successfully retrieved paginated users: {UserCount} users on page {Page} of {TotalPages} (total: {TotalCount})",
+                    userDtos.Count, adjustedPageNumber, result.TotalPages, totalCount);
+
+                return result;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving users for page {Page}, size {PageSize}, search '{Search}'",
-                    page, pageSize, normalizedSearch);
+                _logger.LogError(ex, "Error retrieving paginated users for page {Page}, size {PageSize}, search '{Search}'",
+                    validatedPageNumber, validatedPageSize, normalizedSearch);
                 throw;
             }
         }
@@ -254,55 +263,41 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                using var transaction = await _context.Database.BeginTransactionAsync();
-
-                try
+                return await _unitOfWork.ExecuteInTransactionAsync(async () =>
                 {
-                    // Create user
                     var user = _mapper.Map<User>(createUserDto);
                     user.CreatedByUserId = currentUserId;
                     user.UpdatedByUserId = currentUserId;
                     user.CreatedAt = DateTime.UtcNow;
                     user.UpdatedAt = DateTime.UtcNow;
 
-                    await _userRepository.AddAsync(user);
-                    await _userRepository.SaveChangesAsync();
+                    await _unitOfWork.Users.AddAsync(user);
+                    await _unitOfWork.SaveChangesAsync();
 
                     _logger.LogInformation("User {UserId} created with email {Email} by user {CurrentUserId}",
                         user.Id, user.Email, currentUserId);
 
-                    // Handle addresses if provided
                     if (createUserDto.Addresses?.Any() == true)
                     {
                         await CreateUserAddressesAsync(user.Id, createUserDto.Addresses, currentUserId);
                     }
 
-                    // Handle contact details if provided
                     if (createUserDto.ContactDetails?.Any() == true)
                     {
                         await CreateUserContactDetailsAsync(user.Id, createUserDto.ContactDetails, currentUserId);
                     }
 
-                    await transaction.CommitAsync();
+                    await _unitOfWork.SaveChangesAsync();
 
-                    // Cache the new user by all keys
                     await CacheUserByAllKeysAsync(user);
-
-                    // Invalidate relevant list caches
                     await InvalidateUserListCaches();
 
-                    // Return the created user with all related data
-                    var createdUser = await _userRepository.GetByIdAsync(user.Id);
+                    var createdUser = await _unitOfWork.Users.GetByIdAsync(user.Id);
                     var result = _mapper.Map<UserDto>(createdUser);
 
                     _logger.LogInformation("User {UserId} successfully created and cached", user.Id);
                     return result;
-                }
-                catch
-                {
-                    await transaction.RollbackAsync();
-                    throw;
-                }
+                });
             }
             catch (Exception ex)
             {
@@ -325,79 +320,61 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                using var transaction = await _context.Database.BeginTransactionAsync();
-
-                try
+                return await _unitOfWork.ExecuteInTransactionAsync(async () =>
                 {
-                    var user = await _userRepository.GetByIdAsync(userId);
+                    var user = await _unitOfWork.Users.GetByIdAsync(userId);
                     if (user == null)
                     {
                         throw new KeyNotFoundException($"User with ID {userId} not found");
                     }
 
-                    // Store original values for cache invalidation
                     var originalEmail = user.Email;
                     var originalUsername = user.Username;
 
-                    // Update user properties
                     _mapper.Map(updateUserDto, user);
                     user.UpdatedAt = DateTime.UtcNow;
                     user.UpdatedByUserId = currentUserId;
 
-                    _userRepository.Update(user);
+                    _unitOfWork.Users.Update(user);
 
-                    // Handle addresses update
                     if (updateUserDto.Addresses?.Any() == true)
                     {
                         await UpdateUserAddressesAsync(userId, updateUserDto.Addresses, currentUserId);
                     }
 
-                    // Handle contact details update
                     if (updateUserDto.ContactDetails?.Any() == true)
                     {
                         await UpdateUserContactDetailsAsync(userId, updateUserDto.ContactDetails, currentUserId);
                     }
 
-                    await _context.SaveChangesAsync();
-                    await transaction.CommitAsync();
+                    await _unitOfWork.SaveChangesAsync();
 
                     _logger.LogInformation("User {UserId} updated (email: {OriginalEmail} -> {NewEmail}) by user {CurrentUserId}",
                         userId, originalEmail, user.Email, currentUserId);
 
-                    // Invalidate old cache entries if email or username changed
                     if (originalEmail != user.Email)
                     {
-                        await _cacheService.RemoveAsync(CacheKeys.UserByEmail(originalEmail));
+                        await _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("user", "email", originalEmail));
                     }
                     if (originalUsername != user.Username)
                     {
-                        await _cacheService.RemoveAsync(CacheKeys.UserByUsername(originalUsername));
+                        await _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("user", "username", originalUsername));
                     }
 
-                    // Cache updated user by all keys
                     await CacheUserByAllKeysAsync(user);
 
-                    // Invalidate user permissions and sessions if role changed
                     if (originalEmail != user.Email || user.UpdatedAt > DateTime.UtcNow.AddMinutes(-1))
                     {
                         await InvalidateUserRelatedCaches(userId);
                     }
 
-                    // Invalidate list caches
                     await InvalidateUserListCaches();
 
-                    // If current user updated their own profile, refresh session
                     await RefreshSessionIfCurrentUser(userId);
 
-                    // Return updated user
-                    var updatedUser = await _userRepository.GetByIdAsync(userId);
+                    var updatedUser = await _unitOfWork.Users.GetByIdAsync(userId);
                     return _mapper.Map<UserDto>(updatedUser);
-                }
-                catch
-                {
-                    await transaction.RollbackAsync();
-                    throw;
-                }
+                });
             }
             catch (Exception ex) when (!(ex is KeyNotFoundException))
             {
@@ -413,7 +390,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             var currentUserId = await GetCurrentUserIdSafeAsync();
 
-            // Check if user can delete other users
             if (currentUserId != userId && !_userSessionService.CanManageUsers())
             {
                 throw new UnauthorizedAccessException("You don't have permission to delete other users");
@@ -421,33 +397,34 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user == null)
+                return await _unitOfWork.ExecuteInTransactionAsync(async () =>
                 {
-                    _logger.LogWarning("Attempted to delete non-existent user {UserId}", userId);
-                    return false;
-                }
+                    var user = await _unitOfWork.Users.GetByIdAsync(userId);
+                    if (user == null)
+                    {
+                        _logger.LogWarning("Attempted to delete non-existent user {UserId}", userId);
+                        return false;
+                    }
 
-                var userEmail = user.Email;
-                var username = user.Username;
-                var result = await _userRepository.SoftDeleteAsync(userId, currentUserId);
+                    var userEmail = user.Email;
+                    var username = user.Username;
+                    var result = await _unitOfWork.Users.SoftDeleteAsync(userId, currentUserId);
 
-                if (result)
-                {
-                    // Invalidate all caches for this user
-                    await _cacheInvalidationService.InvalidateEntityAsync<User>(userId);
-                    await _cacheService.RemoveAsync(CacheKeys.UserByEmail(userEmail));
-                    await _cacheService.RemoveAsync(CacheKeys.UserByUsername(username));
+                    if (result)
+                    {
+                        await _cacheInvalidationService.InvalidateEntityAsync<User>(userId);
+                        await _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("user", "email", userEmail));
+                        await _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("user", "username", username));
 
-                    // Invalidate related caches
-                    await InvalidateUserRelatedCaches(userId);
-                    await InvalidateUserListCaches();
+                        await InvalidateUserRelatedCaches(userId);
+                        await InvalidateUserListCaches();
 
-                    _logger.LogInformation("User {UserId} ({Email}) soft deleted by user {CurrentUserId}",
-                        userId, userEmail, currentUserId);
-                }
+                        _logger.LogInformation("User {UserId} ({Email}) soft deleted by user {CurrentUserId}",
+                            userId, userEmail, currentUserId);
+                    }
 
-                return result;
+                    return result;
+                });
             }
             catch (Exception ex)
             {
@@ -455,6 +432,103 @@ namespace Backend.CMS.Infrastructure.Services
                 throw;
             }
         }
+
+        public async Task<bool> ChangePasswordAsync(int userId, ChangePasswordDto changePasswordDto)
+        {
+            if (userId <= 0)
+                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
+
+            if (changePasswordDto == null)
+                throw new ArgumentNullException(nameof(changePasswordDto));
+
+            if (string.IsNullOrWhiteSpace(changePasswordDto.CurrentPassword))
+                throw new ArgumentException("Current password is required", nameof(changePasswordDto));
+
+            if (string.IsNullOrWhiteSpace(changePasswordDto.NewPassword))
+                throw new ArgumentException("New password is required", nameof(changePasswordDto));
+
+            ValidatePasswordStrength(changePasswordDto.NewPassword);
+
+            var currentUserId = await GetCurrentUserIdSafeAsync();
+
+            if (currentUserId != userId && !_userSessionService.CanManageUsers())
+            {
+                throw new UnauthorizedAccessException("You don't have permission to change passwords for other users");
+            }
+
+            try
+            {
+                return await _unitOfWork.ExecuteInTransactionAsync(async () =>
+                {
+                    var user = await _unitOfWork.Users.GetByIdAsync(userId);
+                    if (user == null)
+                    {
+                        _logger.LogWarning("Password change attempted for non-existent user {UserId}", userId);
+                        return false;
+                    }
+
+                    if (!BCrypt.Net.BCrypt.Verify(changePasswordDto.CurrentPassword, user.PasswordHash))
+                    {
+                        _logger.LogWarning("Invalid current password provided for user {UserId}", userId);
+                        return false;
+                    }
+
+                    user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(changePasswordDto.NewPassword);
+                    user.PasswordChangedAt = DateTime.UtcNow;
+                    user.UpdatedAt = DateTime.UtcNow;
+                    user.UpdatedByUserId = currentUserId;
+
+                    _unitOfWork.Users.Update(user);
+                    await _unitOfWork.SaveChangesAsync();
+
+                    await CacheUserByAllKeysAsync(user);
+                    await InvalidateUserRelatedCaches(userId);
+
+                    _logger.LogInformation("Password changed successfully for user {UserId}", userId);
+                    return true;
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error changing password for user {UserId}", userId);
+                throw;
+            }
+        }
+
+        public async Task<bool> ValidateUserCredentialsAsync(string email, string password)
+        {
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+                return false;
+
+            try
+            {
+                var normalizedEmail = email.Trim().ToLowerInvariant();
+
+                var cacheKey = _cacheKeyService.GetCustomKey("user", "email", normalizedEmail);
+                var user = await _cacheService.GetAsync<User>(cacheKey);
+
+                if (user == null)
+                {
+                    user = await _unitOfWork.Users.GetByEmailAsync(normalizedEmail);
+                    if (user != null)
+                    {
+                        await _cacheService.SetAsync(cacheKey, user, _cacheOptions.DefaultExpiration);
+                    }
+                }
+
+                if (user == null)
+                    return false;
+
+                return BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error validating credentials for email {Email}", email);
+                return false;
+            }
+        }
+
+        #region Status Management Methods
 
         public async Task<bool> ActivateUserAsync(int userId)
         {
@@ -495,271 +569,7 @@ namespace Backend.CMS.Infrastructure.Services
             });
         }
 
-        public async Task<bool> ChangePasswordAsync(int userId, ChangePasswordDto changePasswordDto)
-        {
-            if (userId <= 0)
-                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
-
-            if (changePasswordDto == null)
-                throw new ArgumentNullException(nameof(changePasswordDto));
-
-            if (string.IsNullOrWhiteSpace(changePasswordDto.CurrentPassword))
-                throw new ArgumentException("Current password is required", nameof(changePasswordDto));
-
-            if (string.IsNullOrWhiteSpace(changePasswordDto.NewPassword))
-                throw new ArgumentException("New password is required", nameof(changePasswordDto));
-
-            ValidatePasswordStrength(changePasswordDto.NewPassword);
-
-            var currentUserId = await GetCurrentUserIdSafeAsync();
-
-            // Check if user can change password for this user
-            if (currentUserId != userId && !_userSessionService.CanManageUsers())
-            {
-                throw new UnauthorizedAccessException("You don't have permission to change passwords for other users");
-            }
-
-            try
-            {
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user == null)
-                {
-                    _logger.LogWarning("Password change attempted for non-existent user {UserId}", userId);
-                    return false;
-                }
-
-                if (!BCrypt.Net.BCrypt.Verify(changePasswordDto.CurrentPassword, user.PasswordHash))
-                {
-                    _logger.LogWarning("Invalid current password provided for user {UserId}", userId);
-                    return false;
-                }
-
-                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(changePasswordDto.NewPassword);
-                user.PasswordChangedAt = DateTime.UtcNow;
-                user.UpdatedAt = DateTime.UtcNow;
-                user.UpdatedByUserId = currentUserId;
-
-                _userRepository.Update(user);
-                await _userRepository.SaveChangesAsync();
-
-                // Update user in cache
-                await CacheUserByAllKeysAsync(user);
-
-                // Invalidate sessions for security
-                await InvalidateUserRelatedCaches(userId);
-
-                _logger.LogInformation("Password changed successfully for user {UserId}", userId);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error changing password for user {UserId}", userId);
-                throw;
-            }
-        }
-
-        public async Task<bool> ResetPasswordAsync(string email)
-        {
-            if (string.IsNullOrWhiteSpace(email))
-                throw new ArgumentException("Email cannot be null or empty", nameof(email));
-
-            var normalizedEmail = email.Trim().ToLowerInvariant();
-
-            try
-            {
-                // Try cache first
-                var cacheKey = CacheKeys.UserByEmail(normalizedEmail);
-                var user = await _cacheService.GetAsync<User>(cacheKey);
-
-                if (user == null)
-                {
-                    user = await _userRepository.GetByEmailAsync(normalizedEmail);
-                    if (user != null)
-                    {
-                        await _cacheService.SetAsync(cacheKey, user, _cacheOptions.DefaultExpiration);
-                    }
-                }
-
-                if (user == null)
-                {
-                    _logger.LogInformation("Password reset requested for non-existent email {Email}", normalizedEmail);
-                    return true; // Don't reveal if email exists
-                }
-
-                _logger.LogInformation("Password reset requested for user {UserId} with email {Email}", user.Id, normalizedEmail);
-                // Implementation would involve sending reset email
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing password reset for email {Email}", normalizedEmail);
-                throw;
-            }
-        }
-
-        public async Task<bool> ValidateUserCredentialsAsync(string email, string password)
-        {
-            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
-                return false;
-
-            try
-            {
-                var normalizedEmail = email.Trim().ToLowerInvariant();
-
-                // Try cache first
-                var cacheKey = CacheKeys.UserByEmail(normalizedEmail);
-                var user = await _cacheService.GetAsync<User>(cacheKey);
-
-                if (user == null)
-                {
-                    user = await _userRepository.GetByEmailAsync(normalizedEmail);
-                    if (user != null)
-                    {
-                        await _cacheService.SetAsync(cacheKey, user, _cacheOptions.DefaultExpiration);
-                    }
-                }
-
-                if (user == null)
-                    return false;
-
-                return BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error validating credentials for email {Email}", email);
-                return false;
-            }
-        }
-
-        public async Task<UserDto> UpdateUserPreferencesAsync(int userId, Dictionary<string, object> preferences)
-        {
-            if (userId <= 0)
-                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
-
-            if (preferences == null)
-                throw new ArgumentNullException(nameof(preferences));
-
-            var currentUserId = await GetCurrentUserIdSafeAsync();
-
-            // Check if user can update preferences for this user
-            if (currentUserId != userId && !_userSessionService.CanManageUsers())
-            {
-                throw new UnauthorizedAccessException("You don't have permission to update preferences for other users");
-            }
-
-            try
-            {
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user == null)
-                {
-                    throw new KeyNotFoundException($"User with ID {userId} not found");
-                }
-
-                user.UpdatedAt = DateTime.UtcNow;
-                user.UpdatedByUserId = currentUserId;
-
-                _userRepository.Update(user);
-                await _userRepository.SaveChangesAsync();
-
-                // Update user in cache
-                await CacheUserByAllKeysAsync(user);
-                await RefreshSessionIfCurrentUser(userId);
-
-                _logger.LogInformation("Preferences updated for user {UserId}", userId);
-
-                return _mapper.Map<UserDto>(user);
-            }
-            catch (Exception ex) when (!(ex is KeyNotFoundException))
-            {
-                _logger.LogError(ex, "Error updating preferences for user {UserId}", userId);
-                throw;
-            }
-        }
-
-        public async Task<bool> VerifyEmailAsync(string token)
-        {
-            if (string.IsNullOrWhiteSpace(token))
-                throw new ArgumentException("Token cannot be null or empty", nameof(token));
-
-            var currentUserId = await GetCurrentUserIdSafeAsync();
-
-            try
-            {
-                var user = await _userRepository.GetByEmailVerificationTokenAsync(token);
-                if (user == null)
-                {
-                    _logger.LogWarning("Email verification attempted with invalid token");
-                    return false;
-                }
-
-                user.EmailVerifiedAt = DateTime.UtcNow;
-                user.EmailVerificationToken = null;
-                user.UpdatedAt = DateTime.UtcNow;
-                user.UpdatedByUserId = currentUserId;
-
-                _userRepository.Update(user);
-                await _userRepository.SaveChangesAsync();
-
-                // Update user in cache
-                await CacheUserByAllKeysAsync(user);
-
-                _logger.LogInformation("Email verified successfully for user {UserId}", user.Id);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error verifying email with token");
-                throw;
-            }
-        }
-
-        public async Task<bool> SendEmailVerificationAsync(int userId)
-        {
-            if (userId <= 0)
-                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
-
-            try
-            {
-                // Try cache first
-                var cachedUser = await _cacheService.GetEntityAsync<User>(_cacheKeyService, userId);
-                User? user = cachedUser ?? await _userRepository.GetByIdAsync(userId);
-
-                if (user == null)
-                {
-                    _logger.LogWarning("Email verification requested for non-existent user {UserId}", userId);
-                    return false;
-                }
-
-                // Implementation would involve sending verification email
-                _logger.LogInformation("Email verification sent for user {UserId}", userId);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error sending email verification for user {UserId}", userId);
-                throw;
-            }
-        }
-
-        public async Task<UserDto> UpdateUserAvatarAsync(int userId, int? pictureFileId)
-        {
-            return await UpdateUserFieldAsync(userId, user =>
-            {
-                if (pictureFileId.HasValue)
-                {
-                    ValidateAvatarFileAsync(pictureFileId.Value).Wait();
-                }
-                user.PictureFileId = pictureFileId;
-            }, "avatar updated");
-        }
-
-        public async Task<UserDto> RemoveUserAvatarAsync(int userId)
-        {
-            return await UpdateUserFieldAsync(userId, user =>
-            {
-                user.PictureFileId = null;
-            }, "avatar removed");
-        }
+        #endregion
 
         #region Private Helper Methods
 
@@ -767,14 +577,9 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                // Cache by ID (entity cache)
                 await _cacheService.SetEntityAsync(_cacheKeyService, user.Id, user, _cacheOptions.DefaultExpiration);
-
-                // Cache by email
-                await _cacheService.SetAsync(CacheKeys.UserByEmail(user.Email), user, _cacheOptions.DefaultExpiration);
-
-                // Cache by username
-                await _cacheService.SetAsync(CacheKeys.UserByUsername(user.Username), user, _cacheOptions.DefaultExpiration);
+                await _cacheService.SetAsync(_cacheKeyService.GetCustomKey("user", "email", user.Email), user, _cacheOptions.DefaultExpiration);
+                await _cacheService.SetAsync(_cacheKeyService.GetCustomKey("user", "username", user.Username), user, _cacheOptions.DefaultExpiration);
             }
             catch (Exception ex)
             {
@@ -786,11 +591,8 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                // Cache by email
-                await _cacheService.SetAsync(CacheKeys.UserByEmail(user.Email), user, _cacheOptions.DefaultExpiration);
-
-                // Cache by username
-                await _cacheService.SetAsync(CacheKeys.UserByUsername(user.Username), user, _cacheOptions.DefaultExpiration);
+                await _cacheService.SetAsync(_cacheKeyService.GetCustomKey("user", "email", user.Email), user, _cacheOptions.DefaultExpiration);
+                await _cacheService.SetAsync(_cacheKeyService.GetCustomKey("user", "username", user.Username), user, _cacheOptions.DefaultExpiration);
             }
             catch (Exception ex)
             {
@@ -815,9 +617,9 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                // Invalidate user list caches
-                await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.Pattern("user:list"));
-                await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.Pattern("user:search"));
+                await _cacheInvalidationService.InvalidateByPatternAsync(_cacheKeyService.GetEntityPattern<User>());
+                await _cacheInvalidationService.InvalidateByPatternAsync(_cacheKeyService.GetCustomKey("user", "search", "*"));
+                await _cacheInvalidationService.InvalidateByPatternAsync(_cacheKeyService.GetCustomKey("user", "advanced-search", "*"));
             }
             catch (Exception ex)
             {
@@ -829,11 +631,8 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                // Invalidate user permissions
-                await _cacheService.RemoveAsync(CacheKeys.UserPermissions(userId));
-
-                // Invalidate user sessions
-                await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.UserSessions(userId));
+                await _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("user", "permissions", userId));
+                await _cacheInvalidationService.InvalidateByPatternAsync(_cacheKeyService.GetCustomKey("user", "sessions", userId));
             }
             catch (Exception ex)
             {
@@ -848,7 +647,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             var currentUserId = await GetCurrentUserIdSafeAsync();
 
-            // Check if user can update status for this user
             if (currentUserId != userId && !_userSessionService.CanManageUsers())
             {
                 throw new UnauthorizedAccessException("You don't have permission to change status for other users");
@@ -856,28 +654,29 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user == null)
+                return await _unitOfWork.ExecuteInTransactionAsync(async () =>
                 {
-                    _logger.LogWarning("Status update attempted for non-existent user {UserId}", userId);
-                    return false;
-                }
+                    var user = await _unitOfWork.Users.GetByIdAsync(userId);
+                    if (user == null)
+                    {
+                        _logger.LogWarning("Status update attempted for non-existent user {UserId}", userId);
+                        return false;
+                    }
 
-                var action = updateAction(user);
-                user.UpdatedAt = DateTime.UtcNow;
-                user.UpdatedByUserId = currentUserId;
+                    var action = updateAction(user);
+                    user.UpdatedAt = DateTime.UtcNow;
+                    user.UpdatedByUserId = currentUserId;
 
-                _userRepository.Update(user);
-                await _userRepository.SaveChangesAsync();
+                    _unitOfWork.Users.Update(user);
+                    await _unitOfWork.SaveChangesAsync();
 
-                // Update user in cache
-                await CacheUserByAllKeysAsync(user);
+                    await CacheUserByAllKeysAsync(user);
+                    await InvalidateUserRelatedCaches(userId);
+                    await InvalidateUserListCaches();
 
-                // Invalidate related caches for status changes
-                await InvalidateUserRelatedCaches(userId);
-
-                _logger.LogInformation("User {UserId} {Action} by user {CurrentUserId}", userId, action, currentUserId);
-                return true;
+                    _logger.LogInformation("User {UserId} {Action} by user {CurrentUserId}", userId, action, currentUserId);
+                    return true;
+                });
             }
             catch (Exception ex)
             {
@@ -886,62 +685,14 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private async Task<UserDto> UpdateUserFieldAsync(int userId, Action<User> updateAction, string actionDescription)
-        {
-            if (userId <= 0)
-                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
-
-            var currentUserId = await GetCurrentUserIdSafeAsync();
-
-            // Check if user can update field for this user
-            if (currentUserId != userId && !_userSessionService.CanManageUsers())
-            {
-                throw new UnauthorizedAccessException($"You don't have permission to update {actionDescription} for other users");
-            }
-
-            try
-            {
-                var user = await _userRepository.GetByIdAsync(userId);
-                if (user == null)
-                {
-                    throw new KeyNotFoundException($"User with ID {userId} not found");
-                }
-
-                updateAction(user);
-                user.UpdatedAt = DateTime.UtcNow;
-                user.UpdatedByUserId = currentUserId;
-
-                _userRepository.Update(user);
-                await _userRepository.SaveChangesAsync();
-
-                // Update user in cache
-                await CacheUserByAllKeysAsync(user);
-
-                _logger.LogInformation("User {UserId} {ActionDescription}", userId, actionDescription);
-
-                return _mapper.Map<UserDto>(user);
-            }
-            catch (Exception ex) when (!(ex is KeyNotFoundException))
-            {
-                _logger.LogError(ex, "Error updating user {UserId} field: {ActionDescription}", userId, actionDescription);
-                throw;
-            }
-        }
-
         private async Task ValidateCreateUserDto(CreateUserDto createUserDto)
         {
-            if (await _userRepository.EmailExistsAsync(createUserDto.Email))
+            if (await _unitOfWork.Users.EmailExistsAsync(createUserDto.Email))
                 throw new InvalidOperationException("Email already exists");
 
-            if (await _userRepository.UsernameExistsAsync(createUserDto.Username))
+            if (await _unitOfWork.Users.UsernameExistsAsync(createUserDto.Username))
                 throw new InvalidOperationException("Username already exists");
 
-            if (createUserDto.PictureFileId.HasValue)
-            {
-                await ValidateAvatarFileAsync(createUserDto.PictureFileId.Value);
-            }
-
-            // Only admin/dev can create users
             if (!_userSessionService.CanManageUsers())
                 throw new UnauthorizedAccessException("You don't have permission to create users");
 
@@ -953,21 +704,15 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task ValidateUpdateUserDto(int userId, UpdateUserDto updateUserDto)
         {
-            if (await _userRepository.EmailExistsAsync(updateUserDto.Email, userId))
+            if (await _unitOfWork.Users.EmailExistsAsync(updateUserDto.Email, userId))
                 throw new InvalidOperationException("Email already exists");
 
-            if (await _userRepository.UsernameExistsAsync(updateUserDto.Username, userId))
+            if (await _unitOfWork.Users.UsernameExistsAsync(updateUserDto.Username, userId))
                 throw new InvalidOperationException("Username already exists");
-
-            if (updateUserDto.PictureFileId.HasValue)
-            {
-                await ValidateAvatarFileAsync(updateUserDto.PictureFileId.Value);
-            }
 
             var currentUserId = await GetCurrentUserIdSafeAsync();
             var isUpdatingSelf = currentUserId == userId;
 
-            // If updating someone else's profile, check permissions
             if (!isUpdatingSelf)
             {
                 if (!_userSessionService.CanManageUsers())
@@ -978,28 +723,13 @@ namespace Backend.CMS.Infrastructure.Services
             }
             else
             {
-                // If updating self, check if they're trying to change their role inappropriately
                 var currentUserRole = _userSessionService.GetCurrentUserRole();
                 if (currentUserRole != updateUserDto.Role)
                 {
-                    // Only allow role change if they have permission to create users with that role
                     if (!_userSessionService.CanCreateUserWithRole(updateUserDto.Role))
                         throw new UnauthorizedAccessException("You don't have permission to change your role to this level");
                 }
             }
-        }
-
-        private async Task ValidateAvatarFileAsync(int fileId)
-        {
-            var file = await _context.Files.FirstOrDefaultAsync(f => f.Id == fileId && !f.IsDeleted);
-            if (file == null)
-                throw new ArgumentException($"File with ID {fileId} not found");
-
-            if (file.FileType != FileType.Image)
-                throw new ArgumentException($"File with ID {fileId} is not an image");
-
-            if (file.FileSize > 5 * 1024 * 1024) // 5MB limit
-                throw new ArgumentException("Avatar image must be smaller than 5MB");
         }
 
         private static void ValidatePasswordStrength(string password)
@@ -1026,8 +756,7 @@ namespace Backend.CMS.Infrastructure.Services
                 address.CreatedAt = DateTime.UtcNow;
                 address.UpdatedAt = DateTime.UtcNow;
 
-                _context.Addresses.Add(address);
-                _context.Entry(address).Property("UserId").CurrentValue = userId;
+                await _unitOfWork.Addresses.AddAsync(address);
             }
         }
 
@@ -1041,27 +770,19 @@ namespace Backend.CMS.Infrastructure.Services
                 contact.CreatedAt = DateTime.UtcNow;
                 contact.UpdatedAt = DateTime.UtcNow;
 
-                _context.ContactDetails.Add(contact);
-                _context.Entry(contact).Property("UserId").CurrentValue = userId;
+                await _unitOfWork.ContactDetails.AddAsync(contact);
             }
         }
 
         private async Task UpdateUserAddressesAsync(int userId, List<UpdateAddressDto> addresses, int? currentUserId)
         {
-            // Soft delete existing addresses
-            var existingAddresses = await _context.Addresses
-                .Where(a => EF.Property<int?>(a, "UserId") == userId && !a.IsDeleted)
-                .ToListAsync();
+            var existingAddresses = await _unitOfWork.Addresses.GetAddressesByEntityAsync(userId, "User");
 
             foreach (var existingAddress in existingAddresses)
             {
-                existingAddress.IsDeleted = true;
-                existingAddress.DeletedAt = DateTime.UtcNow;
-                existingAddress.DeletedByUserId = currentUserId;
-                _context.Addresses.Update(existingAddress);
+                await _unitOfWork.Addresses.SoftDeleteAsync(existingAddress.Id, currentUserId);
             }
 
-            // Add new addresses
             foreach (var addressDto in addresses)
             {
                 var address = _mapper.Map<Address>(addressDto);
@@ -1070,27 +791,19 @@ namespace Backend.CMS.Infrastructure.Services
                 address.CreatedAt = DateTime.UtcNow;
                 address.UpdatedAt = DateTime.UtcNow;
 
-                _context.Addresses.Add(address);
-                _context.Entry(address).Property("UserId").CurrentValue = userId;
+                await _unitOfWork.Addresses.AddAsync(address);
             }
         }
 
         private async Task UpdateUserContactDetailsAsync(int userId, List<UpdateContactDetailsDto> contactDetails, int? currentUserId)
         {
-            // Soft delete existing contact details
-            var existingContacts = await _context.ContactDetails
-                .Where(c => EF.Property<int?>(c, "UserId") == userId && !c.IsDeleted)
-                .ToListAsync();
+            var existingContacts = await _unitOfWork.ContactDetails.GetContactDetailsByEntityAsync(userId, "User");
 
             foreach (var existingContact in existingContacts)
             {
-                existingContact.IsDeleted = true;
-                existingContact.DeletedAt = DateTime.UtcNow;
-                existingContact.DeletedByUserId = currentUserId;
-                _context.ContactDetails.Update(existingContact);
+                await _unitOfWork.ContactDetails.SoftDeleteAsync(existingContact.Id, currentUserId);
             }
 
-            // Add new contact details
             foreach (var contactDto in contactDetails)
             {
                 var contact = _mapper.Map<ContactDetails>(contactDto);
@@ -1099,8 +812,7 @@ namespace Backend.CMS.Infrastructure.Services
                 contact.CreatedAt = DateTime.UtcNow;
                 contact.UpdatedAt = DateTime.UtcNow;
 
-                _context.ContactDetails.Add(contact);
-                _context.Entry(contact).Property("UserId").CurrentValue = userId;
+                await _unitOfWork.ContactDetails.AddAsync(contact);
             }
         }
 
@@ -1136,6 +848,247 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _logger.LogWarning(ex, "Failed to refresh session for user {UserId}", userId);
             }
+        }
+
+        public async Task<PagedResult<UserDto>> SearchUsersPagedAsync(UserSearchDto searchDto)
+        {
+            if (searchDto == null)
+                throw new ArgumentNullException(nameof(searchDto));
+
+            var validatedPageNumber = Math.Max(1, searchDto.PageNumber);
+            var validatedPageSize = Math.Clamp(searchDto.PageSize, MIN_PAGE_SIZE, MAX_PAGE_SIZE);
+
+            try
+            {
+                _logger.LogDebug("Advanced user search: page {PageNumber}, size {PageSize}, term '{SearchTerm}', role {Role}",
+                    validatedPageNumber, validatedPageSize, searchDto.SearchTerm, searchDto.Role);
+
+                var cacheKey = _cacheKeyService.GetQueryKey<User>("advanced-search", searchDto);
+                var cachedResult = await _cacheService.GetAsync<PagedResult<UserDto>>(cacheKey);
+                if (cachedResult != null)
+                {
+                    _logger.LogDebug("Retrieved advanced search results from cache");
+                    return cachedResult;
+                }
+
+                // For now, use regular search with the search term from UserSearchDto
+                var users = await _unitOfWork.Users.SearchUsersAsync(searchDto.SearchTerm ?? "", validatedPageNumber, validatedPageSize);
+                var totalCount = await _unitOfWork.Users.CountSearchAsync(searchDto.SearchTerm ?? "");
+
+                var userDtos = _mapper.Map<List<UserDto>>(users);
+
+                var result = new PagedResult<UserDto>(
+                    userDtos.AsReadOnly(),
+                    validatedPageNumber,
+                    validatedPageSize,
+                    totalCount);
+
+                await _cacheService.SetAsync(cacheKey, result, _cacheOptions.ShortExpiration);
+                await CacheIndividualUsersAsync(users);
+
+                _logger.LogInformation("Advanced user search completed: {UserCount} users on page {Page} of {TotalPages} (total: {TotalCount})",
+                    userDtos.Count, validatedPageNumber, result.TotalPages, totalCount);
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error performing advanced user search");
+                throw;
+            }
+        }
+
+        public async Task<bool> ResetPasswordAsync(string email)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                throw new ArgumentException("Email cannot be null or empty", nameof(email));
+
+            try
+            {
+                var user = await _unitOfWork.Users.GetByEmailAsync(email.Trim().ToLowerInvariant());
+                if (user == null)
+                {
+                    _logger.LogWarning("Password reset requested for non-existent email {Email}", email);
+                    return false;
+                }
+
+                // Generate new password
+                var newPassword = GenerateRandomPassword();
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+                user.PasswordChangedAt = DateTime.UtcNow;
+                user.UpdatedAt = DateTime.UtcNow;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                // TODO: Send email with new password
+                _logger.LogInformation("Password reset completed for user {UserId}", user.Id);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resetting password for email {Email}", email);
+                throw;
+            }
+        }
+
+        public async Task<UserDto> UpdateUserPreferencesAsync(int userId, Dictionary<string, object> preferences)
+        {
+            if (userId <= 0)
+                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
+
+            if (preferences == null)
+                throw new ArgumentNullException(nameof(preferences));
+
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+                if (user == null)
+                {
+                    throw new KeyNotFoundException($"User with ID {userId} not found");
+                }
+
+                // TODO: Update user preferences - this depends on how preferences are stored
+                // For now, just update the timestamp
+                user.UpdatedAt = DateTime.UtcNow;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                await CacheUserByAllKeysAsync(user);
+
+                _logger.LogInformation("User preferences updated for user {UserId}", userId);
+                return _mapper.Map<UserDto>(user);
+            }
+            catch (Exception ex) when (!(ex is KeyNotFoundException))
+            {
+                _logger.LogError(ex, "Error updating user preferences for user {UserId}", userId);
+                throw;
+            }
+        }
+
+        public async Task<UserDto> UpdateUserAvatarAsync(int userId, int? pictureFileId)
+        {
+            if (userId <= 0)
+                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
+
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+                if (user == null)
+                {
+                    throw new KeyNotFoundException($"User with ID {userId} not found");
+                }
+
+                user.PictureFileId = pictureFileId;
+                user.UpdatedAt = DateTime.UtcNow;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                await CacheUserByAllKeysAsync(user);
+
+                _logger.LogInformation("User avatar updated for user {UserId}", userId);
+                return _mapper.Map<UserDto>(user);
+            }
+            catch (Exception ex) when (!(ex is KeyNotFoundException))
+            {
+                _logger.LogError(ex, "Error updating user avatar for user {UserId}", userId);
+                throw;
+            }
+        }
+
+        public async Task<UserDto> RemoveUserAvatarAsync(int userId)
+        {
+            return await UpdateUserAvatarAsync(userId, null);
+        }
+
+        public async Task<bool> VerifyEmailAsync(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                throw new ArgumentException("Token cannot be null or empty", nameof(token));
+
+            try
+            {
+                var user = await _unitOfWork.Users.GetByEmailVerificationTokenAsync(token);
+                if (user == null)
+                {
+                    _logger.LogWarning("Email verification attempted with invalid token");
+                    return false;
+                }
+
+                user.EmailVerifiedAt = DateTime.UtcNow;
+                user.EmailVerificationToken = null;
+                user.UpdatedAt = DateTime.UtcNow;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                await CacheUserByAllKeysAsync(user);
+
+                _logger.LogInformation("Email verified for user {UserId}", user.Id);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying email with token");
+                throw;
+            }
+        }
+
+        public async Task<bool> SendEmailVerificationAsync(int userId)
+        {
+            if (userId <= 0)
+                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
+
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+                if (user == null)
+                {
+                    _logger.LogWarning("Email verification send attempted for non-existent user {UserId}", userId);
+                    return false;
+                }
+
+                // Generate verification token
+                user.EmailVerificationToken = Guid.NewGuid().ToString();
+                user.UpdatedAt = DateTime.UtcNow;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                // TODO: Send email with verification token
+                _logger.LogInformation("Email verification sent for user {UserId}", userId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending email verification for user {UserId}", userId);
+                throw;
+            }
+        }
+
+        #endregion
+
+        #region Private Helper Methods (Additional)
+
+        private static string GenerateRandomPassword(int length = 12)
+        {
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+            var random = new Random();
+            return new string(Enumerable.Repeat(chars, length)
+                .Select(s => s[random.Next(s.Length)]).ToArray());
+        }
+
+        #endregion
+
+        #region Legacy/Obsolete Methods
+
+        [Obsolete("Use GetUsersPagedAsync instead")]
+        public async Task<(List<UserDto> users, int totalCount)> GetUsersAsync(int page = 1, int pageSize = 10, string? search = null)
+        {
+            var result = await GetUsersPagedAsync(page, pageSize, search);
+            return (result.Data.ToList(), result.TotalCount);
         }
 
         #endregion

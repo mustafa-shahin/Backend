@@ -1,10 +1,8 @@
 using Backend.CMS.API.Filters;
 using Backend.CMS.API.Middleware;
-using Backend.CMS.Application.Common;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Caching;
-using Backend.CMS.Infrastructure.Caching.Extensions;
 using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Data;
@@ -23,7 +21,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
@@ -34,6 +31,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
+using Asp.Versioning;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -42,6 +40,9 @@ ConfigureLogging(builder);
 
 // Configure rate limiting
 ConfigureRateLimiting(builder);
+
+// Configure API versioning
+ConfigureApiVersioning(builder);
 
 // Configure basic services
 ConfigureBasicServices(builder);
@@ -108,6 +109,31 @@ static void ConfigureLogging(WebApplicationBuilder builder)
     builder.Host.UseSerilog();
 }
 
+static void ConfigureApiVersioning(WebApplicationBuilder builder)
+{
+    builder.Services.AddApiVersioning(options =>
+    {
+        options.DefaultApiVersion = new ApiVersion(1, 0);
+        options.AssumeDefaultVersionWhenUnspecified = true;
+        options.ApiVersionReader = ApiVersionReader.Combine(
+            new UrlSegmentApiVersionReader(),
+            new QueryStringApiVersionReader("version"),
+            new HeaderApiVersionReader("X-Version"),
+            new MediaTypeApiVersionReader("ver")
+        );
+    }).AddApiExplorer(setup =>
+    {
+        setup.GroupNameFormat = "'v'VVV";
+        setup.SubstituteApiVersionInUrl = true;
+    });
+
+    builder.Services.Configure<RouteOptions>(options =>
+    {
+        options.LowercaseUrls = true;
+        options.LowercaseQueryStrings = true;
+    });
+}
+
 static void ConfigureRateLimiting(WebApplicationBuilder builder)
 {
     builder.Services.AddRateLimiter(options =>
@@ -125,6 +151,13 @@ static void ConfigureRateLimiting(WebApplicationBuilder builder)
             configure.PermitLimit = 100;
             configure.Window = TimeSpan.FromMinutes(1);
         });
+
+        // File upload rate limiting
+        options.AddFixedWindowLimiter("FileUploadPolicy", configure =>
+        {
+            configure.PermitLimit = 20;
+            configure.Window = TimeSpan.FromMinutes(1);
+        });
     });
 }
 
@@ -137,6 +170,7 @@ static void ConfigureBasicServices(WebApplicationBuilder builder)
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
     });
 
     builder.Services.AddHttpContextAccessor();
@@ -216,13 +250,13 @@ static void ConfigureCachingSystem(WebApplicationBuilder builder)
 
     builder.Services.AddSingleton<RedisCacheService>();
 
-    builder.Services.AddSingleton<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheService>(provider =>
+    builder.Services.AddSingleton<ICacheService>(provider =>
         provider.GetRequiredService<RedisCacheService>());
 
-    builder.Services.AddSingleton<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheInvalidationService>(provider =>
+    builder.Services.AddSingleton<ICacheInvalidationService>(provider =>
         provider.GetRequiredService<RedisCacheService>());
 
-    builder.Services.AddSingleton<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheMonitoringService>(provider =>
+    builder.Services.AddSingleton<ICacheMonitoringService>(provider =>
         provider.GetRequiredService<RedisCacheService>());
 
     // Register background services for cache management
@@ -518,34 +552,9 @@ static void RegisterServices(WebApplicationBuilder builder)
 
 static void RegisterRepositories(WebApplicationBuilder builder)
 {
-    // Generic repository
+    // Unit of Work - Provides access to all repositories
+    builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
     builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
-
-    // Specialized repositories
-    builder.Services.AddScoped<IPageRepository, PageRepository>();
-    builder.Services.AddScoped<IFolderRepository, FolderRepository>();
-    builder.Services.AddScoped<IFileRepository, FileRepository>();
-    builder.Services.AddScoped<IUserRepository, UserRepository>();
-    builder.Services.AddScoped<ILocationRepository, LocationRepository>();
-    builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
-
-    // Entity repositories
-    builder.Services.AddScoped<IRepository<UserSession>, Repository<UserSession>>();
-    builder.Services.AddScoped<IRepository<PasswordResetToken>, Repository<PasswordResetToken>>();
-    builder.Services.AddScoped<IRepository<Company>, Repository<Company>>();
-    builder.Services.AddScoped<IRepository<Location>, Repository<Location>>();
-    builder.Services.AddScoped<IRepository<LocationOpeningHour>, Repository<LocationOpeningHour>>();
-    builder.Services.AddScoped<IRepository<Address>, Repository<Address>>();
-    builder.Services.AddScoped<IRepository<ContactDetails>, Repository<ContactDetails>>();
-    builder.Services.AddScoped<IRepository<PageVersion>, Repository<PageVersion>>();
-    builder.Services.AddScoped<IRepository<FileEntity>, Repository<FileEntity>>();
-    builder.Services.AddScoped<IRepository<Folder>, Repository<Folder>>();
-    builder.Services.AddScoped<IRepository<Backend.CMS.Domain.Entities.FileAccess>, Repository<Backend.CMS.Domain.Entities.FileAccess>>();
-    builder.Services.AddScoped<IRepository<Permission>, Repository<Permission>>();
-    builder.Services.AddScoped<IRepository<RolePermission>, Repository<RolePermission>>();
-    builder.Services.AddScoped<IRepository<UserPermission>, Repository<UserPermission>>();
-    builder.Services.AddScoped<IRepository<SearchIndex>, Repository<SearchIndex>>();
-    builder.Services.AddScoped<IRepository<IndexingJob>, Repository<IndexingJob>>();
 }
 
 static void RegisterSocialAuthServices(WebApplicationBuilder builder)
@@ -568,7 +577,7 @@ static void RegisterBusinessServices(WebApplicationBuilder builder)
 {
     // Business services
     builder.Services.AddScoped<ICompanyService, CompanyService>();
-    builder.Services.AddScoped<ILocationService, LocationService>();
+    //builder.Services.AddScoped<ILocationService, LocationService>();
     builder.Services.AddScoped<IPageService, PageService>();
 
     builder.Services.AddScoped<IUserService, UserService>();
@@ -576,6 +585,7 @@ static void RegisterBusinessServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IPermissionService, PermissionService>();
     builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
+    builder.Services.AddScoped<ICachedRepositoryService, CachedRepositoryService>();
     builder.Services.AddScoped<IDesignerService, DesignerService>();
     builder.Services.AddScoped<IPageContentValidationService, PageContentValidationService>();
 }
@@ -588,8 +598,8 @@ static void RegisterSearchServices(WebApplicationBuilder builder)
 
 static void RegisterFileServices(WebApplicationBuilder builder)
 {
-    // Register base services
-    //builder.Services.AddScoped<FileService>();
+    // Register file URL builder first as it's a dependency
+    builder.Services.AddScoped<IFileUrlBuilder, FileUrlBuilder>();
 
     // Register additional file services
     builder.Services.AddScoped<IImageProcessingService, ImageProcessingService>();
@@ -637,6 +647,13 @@ static void ConfigureSwagger(WebApplicationBuilder builder)
             Description = "Multi-tenant CMS API with page builder functionality and job management"
         });
 
+        c.SwaggerDoc("v2", new OpenApiInfo
+        {
+            Title = "Backend CMS API",
+            Version = "v2",
+            Description = "Multi-tenant CMS API with enhanced features"
+        });
+
         // Add JWT authentication to Swagger
         c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
         {
@@ -661,6 +678,14 @@ static void ConfigureSwagger(WebApplicationBuilder builder)
                 Array.Empty<string>()
             }
         });
+
+        // Include XML comments
+        var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+        var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+        if (File.Exists(xmlPath))
+        {
+            c.IncludeXmlComments(xmlPath);
+        }
     });
 }
 #endregion
@@ -682,6 +707,7 @@ static void ConfigureRequestPipeline(WebApplication app)
         app.UseSwaggerUI(c =>
         {
             c.SwaggerEndpoint("/swagger/v1/swagger.json", "Backend CMS API V1");
+            c.SwaggerEndpoint("/swagger/v2/swagger.json", "Backend CMS API V2");
             c.RoutePrefix = "swagger";
         });
     }

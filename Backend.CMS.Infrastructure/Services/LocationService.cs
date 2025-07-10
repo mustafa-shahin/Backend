@@ -6,31 +6,26 @@ using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Services
 {
     public class LocationService : ILocationService
     {
-        private readonly ILocationRepository _locationRepository;
-        private readonly IRepository<Company> _companyRepository;
-        private readonly IRepository<LocationOpeningHour> _openingHourRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly ApplicationDbContext _context;
         private readonly IUserSessionService _userSessionService;
         private readonly IMapper _mapper;
         private readonly ILogger<LocationService> _logger;
 
         public LocationService(
-            ILocationRepository locationRepository,
-            IRepository<Company> companyRepository,
-            IRepository<LocationOpeningHour> openingHourRepository,
+            IUnitOfWork unitOfWork,
             ApplicationDbContext context,
             IUserSessionService userSessionService,
             IMapper mapper,
             ILogger<LocationService> logger)
         {
-            _locationRepository = locationRepository ?? throw new ArgumentNullException(nameof(locationRepository));
-            _companyRepository = companyRepository ?? throw new ArgumentNullException(nameof(companyRepository));
-            _openingHourRepository = openingHourRepository ?? throw new ArgumentNullException(nameof(openingHourRepository));
+            _unitOfWork = unitOfWork;
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
@@ -44,7 +39,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var location = await _locationRepository.GetWithAddressesAndContactsAsync(locationId);
+                var location = await _unitOfWork.Locations.GetWithAddressesAndContactsAsync(locationId);
                 if (location == null)
                 {
                     _logger.LogWarning("Location {LocationId} not found", locationId);
@@ -60,24 +55,48 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<List<LocationDto>> GetLocationsAsync(int page, int pageSize)
+        public async Task<PagedResult<LocationDto>> GetLocationsPagedAsync(LocationSearchDto searchDto)
         {
-            if (page <= 0)
-                throw new ArgumentException("Page must be greater than 0", nameof(page));
-
-            if (pageSize <= 0 || pageSize > 100)
-                throw new ArgumentException("Page size must be between 1 and 100", nameof(pageSize));
+            if (searchDto == null)
+                throw new ArgumentNullException(nameof(searchDto));
 
             try
             {
-                var locations = await _locationRepository.GetPagedWithRelatedAsync(page, pageSize);
-                return _mapper.Map<List<LocationDto>>(locations);
+                var query = BuildLocationQuery(searchDto);
+
+                var totalCount = await query.CountAsync();
+
+                // Apply sorting
+                query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
+
+                // Apply pagination
+                var locations = await query
+                    .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                    .Take(searchDto.PageSize)
+                    .Include(l => l.Addresses.Where(a => !a.IsDeleted))
+                    .Include(l => l.ContactDetails.Where(c => !c.IsDeleted))
+                    .Include(l => l.OpeningHours.Where(oh => !oh.IsDeleted))
+                    .ToListAsync();
+
+                var locationDtos = _mapper.Map<List<LocationDto>>(locations);
+
+                return new PagedResult<LocationDto>(
+                    locationDtos,
+                    searchDto.PageNumber,
+                    searchDto.PageSize,
+                    totalCount);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving locations for page {Page}, size {PageSize}", page, pageSize);
+                _logger.LogError(ex, "Error retrieving paged locations");
                 throw;
             }
+        }
+
+        public async Task<PagedResult<LocationDto>> SearchLocationsPagedAsync(LocationSearchDto searchDto)
+        {
+            // This method is the same as GetLocationsPagedAsync since filtering is already included
+            return await GetLocationsPagedAsync(searchDto);
         }
 
         public async Task<List<LocationDto>> GetLocationsByCompanyAsync(int companyId)
@@ -87,7 +106,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var locations = await _locationRepository.GetLocationsByCompanyAsync(companyId);
+                var locations = await  _unitOfWork.Locations.GetLocationsByCompanyAsync(companyId);
                 return _mapper.Map<List<LocationDto>>(locations);
             }
             catch (Exception ex)
@@ -105,7 +124,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var companies = await _companyRepository.GetAllAsync();
+                var companies = await _unitOfWork.Companies.GetAllAsync();
                 var company = companies.FirstOrDefault();
 
                 if (company == null)
@@ -116,7 +135,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Validate location code uniqueness
                 if (!string.IsNullOrEmpty(createLocationDto.LocationCode) &&
-                    await _locationRepository.LocationCodeExistsAsync(createLocationDto.LocationCode))
+                    await  _unitOfWork.Locations.LocationCodeExistsAsync(createLocationDto.LocationCode))
                 {
                     throw new ArgumentException("Location code already exists");
                 }
@@ -130,8 +149,8 @@ namespace Backend.CMS.Infrastructure.Services
                 location.CreatedAt = DateTime.UtcNow;
                 location.UpdatedAt = DateTime.UtcNow;
 
-                await _locationRepository.AddAsync(location);
-                await _locationRepository.SaveChangesAsync();
+                await  _unitOfWork.Locations.AddAsync(location);
+                await  _unitOfWork.Locations.SaveChangesAsync();
 
                 // Handle related data creation in parallel
                 var tasks = new List<Task>();
@@ -161,7 +180,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _logger.LogInformation("Location {LocationId} created by user {UserId}", location.Id, currentUserId);
 
-                var createdLocation = await _locationRepository.GetWithAddressesAndContactsAsync(location.Id);
+                var createdLocation = await  _unitOfWork.Locations.GetWithAddressesAndContactsAsync(location.Id);
                 return _mapper.Map<LocationDto>(createdLocation);
             }
             catch (Exception ex) when (!(ex is ArgumentException))
@@ -183,7 +202,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var location = await _locationRepository.GetByIdAsync(locationId);
+                var location = await  _unitOfWork.Locations.GetByIdAsync(locationId);
                 if (location == null)
                 {
                     _logger.LogWarning("Location {LocationId} not found for update", locationId);
@@ -192,7 +211,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Validate location code uniqueness
                 if (!string.IsNullOrEmpty(updateLocationDto.LocationCode) &&
-                    await _locationRepository.LocationCodeExistsAsync(updateLocationDto.LocationCode, locationId))
+                    await  _unitOfWork.Locations.LocationCodeExistsAsync(updateLocationDto.LocationCode, locationId))
                 {
                     throw new ArgumentException("Location code already exists");
                 }
@@ -203,7 +222,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _mapper.Map(updateLocationDto, location);
                 location.UpdatedAt = DateTime.UtcNow;
                 location.UpdatedByUserId = currentUserId;
-                _locationRepository.Update(location);
+                 _unitOfWork.Locations.Update(location);
 
                 // Handle related data updates in parallel
                 var tasks = new List<Task>();
@@ -233,7 +252,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _logger.LogInformation("Location {LocationId} updated by user {UserId}", locationId, currentUserId);
 
-                var updatedLocation = await _locationRepository.GetWithAddressesAndContactsAsync(locationId);
+                var updatedLocation = await  _unitOfWork.Locations.GetWithAddressesAndContactsAsync(locationId);
                 return _mapper.Map<LocationDto>(updatedLocation);
             }
             catch (Exception ex) when (!(ex is ArgumentException))
@@ -252,7 +271,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var result = await _locationRepository.SoftDeleteAsync(locationId, currentUserId);
+                var result = await  _unitOfWork.Locations.SoftDeleteAsync(locationId, currentUserId);
 
                 if (result)
                 {
@@ -280,7 +299,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var location = await _locationRepository.GetByIdAsync(locationId);
+                var location = await  _unitOfWork.Locations.GetByIdAsync(locationId);
                 if (location == null)
                 {
                     _logger.LogWarning("Location {LocationId} not found for setting as main", locationId);
@@ -290,7 +309,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var currentUserId = _userSessionService.GetCurrentUserId();
 
                 // Batch update all locations for the same company
-                var allLocations = await _locationRepository.FindAsync(l => l.CompanyId == location.CompanyId);
+                var allLocations = await  _unitOfWork.Locations.FindAsync(l => l.CompanyId == location.CompanyId);
                 var updateTime = DateTime.UtcNow;
 
                 foreach (var l in allLocations)
@@ -320,7 +339,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var mainLocation = await _locationRepository.GetMainLocationAsync();
+                var mainLocation = await  _unitOfWork.Locations.GetMainLocationAsync();
                 if (mainLocation == null)
                 {
                     _logger.LogWarning("Main location not found");
@@ -343,7 +362,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                return await _locationRepository.LocationCodeExistsAsync(locationCode, excludeLocationId);
+                return await  _unitOfWork.Locations.LocationCodeExistsAsync(locationCode, excludeLocationId);
             }
             catch (Exception ex)
             {
@@ -352,30 +371,188 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<List<LocationDto>> SearchLocationsAsync(string searchTerm, int page, int pageSize)
+        public async Task<List<LocationDto>> GetRecentLocationsAsync(int count)
         {
-            if (string.IsNullOrWhiteSpace(searchTerm))
-                throw new ArgumentException("Search term cannot be null or empty", nameof(searchTerm));
-
-            if (page <= 0)
-                throw new ArgumentException("Page must be greater than 0", nameof(page));
-
-            if (pageSize <= 0 || pageSize > 100)
-                throw new ArgumentException("Page size must be between 1 and 100", nameof(pageSize));
+            if (count <= 0 || count > 50)
+                throw new ArgumentException("Count must be between 1 and 50", nameof(count));
 
             try
             {
-                var locations = await _locationRepository.SearchLocationsAsync(searchTerm, page, pageSize);
+                var locations = await _context.Locations
+                    .Where(l => !l.IsDeleted)
+                    .Include(l => l.Addresses.Where(a => !a.IsDeleted))
+                    .Include(l => l.ContactDetails.Where(c => !c.IsDeleted))
+                    .OrderByDescending(l => l.CreatedAt)
+                    .Take(count)
+                    .ToListAsync();
+
                 return _mapper.Map<List<LocationDto>>(locations);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error searching locations with term '{SearchTerm}'", searchTerm);
+                _logger.LogError(ex, "Error getting recent locations");
+                throw;
+            }
+        }
+
+        public async Task<Dictionary<string, object>> GetLocationStatisticsAsync()
+        {
+            try
+            {
+                var totalLocations = await  _unitOfWork.Locations.CountAsync();
+                var activeLocations = await  _unitOfWork.Locations.CountAsync(l => l.IsActive);
+                var mainLocation = await  _unitOfWork.Locations.GetMainLocationAsync();
+                var locationsByType = await _context.Locations
+                    .Where(l => !l.IsDeleted)
+                    .GroupBy(l => l.LocationType)
+                    .Select(g => new { Type = g.Key, Count = g.Count() })
+                    .ToListAsync();
+
+                return new Dictionary<string, object>
+                {
+                    ["totalLocations"] = totalLocations,
+                    ["activeLocations"] = activeLocations,
+                    ["inactiveLocations"] = totalLocations - activeLocations,
+                    ["hasMainLocation"] = mainLocation != null,
+                    ["mainLocationId"] = mainLocation?.Id,
+                    ["locationsByType"] = locationsByType.ToDictionary(x => x.Type, x => x.Count),
+                    ["generatedAt"] = DateTime.UtcNow
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting location statistics");
+                throw;
+            }
+        }
+
+        public async Task<bool> BulkUpdateLocationsAsync(IEnumerable<int> locationIds, UpdateLocationDto updateDto)
+        {
+            if (!locationIds?.Any() == true)
+                throw new ArgumentException("Location IDs cannot be null or empty", nameof(locationIds));
+
+            if (updateDto == null)
+                throw new ArgumentNullException(nameof(updateDto));
+
+            using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var locations = await  _unitOfWork.Locations.FindAsync(l => locationIds.Contains(l.Id));
+                var updateTime = DateTime.UtcNow;
+
+                foreach (var location in locations)
+                {
+                    _mapper.Map(updateDto, location);
+                    location.UpdatedAt = updateTime;
+                    location.UpdatedByUserId = currentUserId;
+                }
+
+                _context.Locations.UpdateRange(locations);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _logger.LogInformation("Bulk updated {Count} locations by user {UserId}", locations.Count(), currentUserId);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error bulk updating locations");
+                throw;
+            }
+        }
+
+        public async Task<bool> BulkDeleteLocationsAsync(IEnumerable<int> locationIds)
+        {
+            if (!locationIds?.Any() == true)
+                throw new ArgumentException("Location IDs cannot be null or empty", nameof(locationIds));
+
+            try
+            {
+                var currentUserId = _userSessionService.GetCurrentUserId();
+                var locations = await  _unitOfWork.Locations.FindAsync(l => locationIds.Contains(l.Id));
+
+                await  _unitOfWork.Locations.SoftDeleteRangeAsync(locations, currentUserId);
+
+                _logger.LogInformation("Bulk deleted {Count} locations by user {UserId}", locations.Count(), currentUserId);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error bulk deleting locations");
                 throw;
             }
         }
 
         #region Private Helper Methods
+
+        private IQueryable<Location> BuildLocationQuery(LocationSearchDto searchDto)
+        {
+            var query = _context.Locations
+                .Where(l => !l.IsDeleted)
+                .AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
+            {
+                var searchTerm = searchDto.SearchTerm.ToLower();
+                query = query.Where(l =>
+                    l.Name.ToLower().Contains(searchTerm) ||
+                    (l.LocationCode != null && l.LocationCode.ToLower().Contains(searchTerm)) ||
+                    (l.Description != null && l.Description.ToLower().Contains(searchTerm)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchDto.LocationType))
+            {
+                query = query.Where(l => l.LocationType == searchDto.LocationType);
+            }
+
+            if (searchDto.IsActive.HasValue)
+            {
+                query = query.Where(l => l.IsActive == searchDto.IsActive.Value);
+            }
+
+            if (searchDto.IsMainLocation.HasValue)
+            {
+                query = query.Where(l => l.IsMainLocation == searchDto.IsMainLocation.Value);
+            }
+
+            if (searchDto.CompanyId.HasValue)
+            {
+                query = query.Where(l => l.CompanyId == searchDto.CompanyId.Value);
+            }
+
+            if (searchDto.CreatedAfter.HasValue)
+            {
+                query = query.Where(l => l.CreatedAt >= searchDto.CreatedAfter.Value);
+            }
+
+            if (searchDto.CreatedBefore.HasValue)
+            {
+                query = query.Where(l => l.CreatedAt <= searchDto.CreatedBefore.Value);
+            }
+
+            return query;
+        }
+
+        private static IQueryable<Location> ApplySorting(IQueryable<Location> query, string sortBy, string sortDirection)
+        {
+            var isDescending = sortDirection?.ToLower() == "desc";
+
+            return sortBy?.ToLower() switch
+            {
+                "name" => isDescending ? query.OrderByDescending(l => l.Name) : query.OrderBy(l => l.Name),
+                "locationcode" => isDescending ? query.OrderByDescending(l => l.LocationCode) : query.OrderBy(l => l.LocationCode),
+                "locationtype" => isDescending ? query.OrderByDescending(l => l.LocationType) : query.OrderBy(l => l.LocationType),
+                "isactive" => isDescending ? query.OrderByDescending(l => l.IsActive) : query.OrderBy(l => l.IsActive),
+                "ismainlocation" => isDescending ? query.OrderByDescending(l => l.IsMainLocation) : query.OrderBy(l => l.IsMainLocation),
+                "createdat" => isDescending ? query.OrderByDescending(l => l.CreatedAt) : query.OrderBy(l => l.CreatedAt),
+                "updatedat" => isDescending ? query.OrderByDescending(l => l.UpdatedAt) : query.OrderBy(l => l.UpdatedAt),
+                _ => isDescending ? query.OrderByDescending(l => l.Name) : query.OrderBy(l => l.Name)
+            };
+        }
 
         private async Task CreateLocationOpeningHoursAsync(int locationId, IEnumerable<CreateLocationOpeningHourDto> openingHourDtos, int? currentUserId)
         {
@@ -404,7 +581,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             if (openingHours.Any())
             {
-                await _openingHourRepository.AddRangeAsync(openingHours);
+                await _unitOfWork.GetRepository<LocationOpeningHour>().AddRangeAsync(openingHours);
                 _logger.LogDebug("Created {Count} opening hours for location {LocationId}", openingHours.Count, locationId);
             }
         }
@@ -472,12 +649,12 @@ namespace Backend.CMS.Infrastructure.Services
         private async Task UpdateLocationOpeningHoursAsync(int locationId, IEnumerable<UpdateLocationOpeningHourDto> openingHourDtos, int? currentUserId)
         {
             // Soft delete existing opening hours
-            var existingOpeningHours = await _openingHourRepository.FindAsync(oh => oh.LocationId == locationId);
+            var existingOpeningHours = await _unitOfWork.GetRepository<LocationOpeningHour>().FindAsync(oh => oh.LocationId == locationId);
             if (existingOpeningHours.Any())
             {
                 foreach (var existingHour in existingOpeningHours)
                 {
-                    await _openingHourRepository.SoftDeleteAsync(existingHour, currentUserId);
+                    await _unitOfWork.GetRepository<LocationOpeningHour>().SoftDeleteAsync(existingHour, currentUserId);
                 }
             }
 
@@ -507,7 +684,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             if (newOpeningHours.Any())
             {
-                await _openingHourRepository.AddRangeAsync(newOpeningHours);
+                await _unitOfWork.GetRepository<LocationOpeningHour>().AddRangeAsync(newOpeningHours);
                 _logger.LogDebug("Updated opening hours for location {LocationId}", locationId);
             }
         }

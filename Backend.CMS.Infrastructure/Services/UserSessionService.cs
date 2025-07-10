@@ -18,6 +18,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class UserSessionService : IUserSessionService, IDisposable
     {
+        private readonly IUnitOfWork _unitOfWork;   
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IConfiguration _configuration;
         private readonly ILogger<UserSessionService> _logger;
@@ -35,6 +36,7 @@ namespace Backend.CMS.Infrastructure.Services
         private bool _disposed = false;
 
         public UserSessionService(
+            IUnitOfWork unitOfWork,
             IHttpContextAccessor httpContextAccessor,
             IConfiguration configuration,
             ILogger<UserSessionService> logger,
@@ -43,6 +45,7 @@ namespace Backend.CMS.Infrastructure.Services
             ICacheKeyService cacheKeyService,
             IOptions<CacheOptions> cacheOptions)
         {
+            _unitOfWork = unitOfWork;
             _httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -222,7 +225,7 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     // Use scoped service to get user data
                     using var scope = _serviceProvider.CreateScope();
-                    var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                    var userRepository = _unitOfWork.Users;
                     var user = await userRepository.GetByIdAsync(session.UserId.Value);
 
                     if (user != null)
@@ -436,8 +439,7 @@ namespace Backend.CMS.Infrastructure.Services
                 else
                 {
                     // Use scoped service to ensure proper DbContext handling
-                    using var scope = _serviceProvider.CreateScope();
-                    var userRepository = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+                    var userRepository = _unitOfWork.Users;
 
                     user = await userRepository.GetByIdAsync(userId);
                     if (user != null)

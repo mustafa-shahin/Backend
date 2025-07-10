@@ -1,0 +1,327 @@
+﻿@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Interfaces
+@inject IStyleService StyleService
+@inject IFileService FileService
+
+<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+    <thead class="bg-gray-50 dark:bg-gray-900">
+        <tr>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">@GetFileTypeName()</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Name</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Size</th>
+            @if (ShowDurationColumn())
+            {
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Duration</th>
+            }
+            @if (ShowDimensionsColumn())
+            {
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Dimensions</th>
+            }
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Modified</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider text-right">Actions</th>
+        </tr>
+    </thead>
+    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+        @foreach (var file in Files)
+        {
+            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150">
+                <!-- File Preview/Icon -->
+                <td class="px-6 py-4 whitespace-nowrap">
+                    @if (FileType == Backend.CMS.Domain.Enums.FileType.Image)
+                    {
+                        <div class="w-16 h-16 rounded-lg overflow-hidden shadow-sm cursor-pointer"
+                             @onclick="() => OnPreviewFile.InvokeAsync(file)">
+                            <img src="@FileService.GetThumbnailUrl(file.Id)"
+                                 alt="@(file.Alt ?? file.OriginalFileName)"
+                                 class="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
+                                 loading="lazy"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                            <div class="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center" style="display: none;">
+                                <i class="fas fa-image text-gray-400"></i>
+                            </div>
+                        </div>
+                    }
+                    else if (FileType == Backend.CMS.Domain.Enums.FileType.Video)
+                    {
+                        <div class="w-16 h-16 rounded-lg overflow-hidden shadow-sm cursor-pointer relative bg-gray-900"
+                             @onclick="() => OnPreviewFile.InvokeAsync(file)">
+                            @if (!string.IsNullOrEmpty(FileService.GetThumbnailUrl(file.Id)))
+                            {
+                                <img src="@FileService.GetThumbnailUrl(file.Id)"
+                                     alt="@(file.Alt ?? file.OriginalFileName)"
+                                     class="w-full h-full object-cover hover:scale-105 transition-transform duration-200"
+                                     loading="lazy"
+                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                                <div class="w-16 h-16 bg-gray-900 rounded-lg flex items-center justify-center" style="display: none;">
+                                    <i class="fas fa-video text-white text-lg"></i>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="w-16 h-16 bg-gray-900 rounded-lg flex items-center justify-center">
+                                    <i class="fas fa-video text-white text-lg"></i>
+                                </div>
+                            }
+
+                            <!-- Play button overlay -->
+                            <div class="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 opacity-0 hover:opacity-100 transition-opacity duration-200">
+                                <div class="w-6 h-6 bg-white bg-opacity-90 rounded-full flex items-center justify-center">
+                                    <i class="fas fa-play text-gray-900 text-xs ml-0.5"></i>
+                                </div>
+                            </div>
+
+                            <!-- Duration badge -->
+                            @if (file.Duration.HasValue)
+                            {
+                                <div class="absolute bottom-1 right-1 bg-black bg-opacity-75 text-white text-xs px-1 py-0.5 rounded text-center" style="font-size: 10px;">
+                                    @GetShortDuration(file.Duration.Value)
+                                </div>
+                            }
+                        </div>
+                    }
+                    else if (FileType == Backend.CMS.Domain.Enums.FileType.Audio)
+                    {
+                        <div class="w-16 h-16 rounded-lg overflow-hidden shadow-sm cursor-pointer relative bg-gradient-to-br from-purple-500 to-purple-600"
+                             @onclick="() => OnPreviewFile.InvokeAsync(file)">
+                            <div class="w-full h-full flex items-center justify-center">
+                                <i class="fas fa-music text-white text-lg"></i>
+                            </div>
+
+                            <!-- Play button overlay -->
+                            <div class="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30 opacity-0 hover:opacity-100 transition-opacity duration-200">
+                                <div class="w-6 h-6 bg-white bg-opacity-90 rounded-full flex items-center justify-center">
+                                    <i class="fas fa-play text-gray-900 text-xs ml-0.5"></i>
+                                </div>
+                            </div>
+
+                            <!-- Duration badge -->
+                            @if (file.Duration.HasValue)
+                            {
+                                <div class="absolute bottom-1 right-1 bg-black bg-opacity-75 text-white text-xs px-1 py-0.5 rounded text-center" style="font-size: 10px;">
+                                    @GetShortDuration(file.Duration.Value)
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="w-12 h-12 rounded overflow-hidden @GetFileIconBackgroundClass() flex items-center justify-center">
+                            <i class="@StyleService.GetFileIcon(FileType) @StyleService.GetFileIconColor(FileType)"></i>
+                        </div>
+                    }
+                </td>
+
+                <!-- File Name and Extension -->
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm font-medium text-gray-900 dark:text-white">@file.OriginalFileName</div>
+                    <div class="text-sm text-gray-500 dark:text-gray-400 flex items-center space-x-2">
+                        <span class="flex items-center">
+                            @if (FileType == Backend.CMS.Domain.Enums.FileType.Video)
+                            {
+                                <i class="fas fa-video mr-1 text-blue-500"></i>
+                            }
+                            else if (FileType == Backend.CMS.Domain.Enums.FileType.Audio)
+                            {
+                                <i class="fas fa-music mr-1 text-purple-500"></i>
+                            }
+                            @file.FileExtension.ToUpper()
+                        </span>
+                        @if (file.IsPublic)
+                        {
+                            <span class="inline-flex items-center text-green-600 dark:text-green-400" title="Public">
+                                <i class="fas fa-globe text-xs"></i>
+                            </span>
+                        }
+                        else
+                        {
+                            <span class="inline-flex items-center text-red-600 dark:text-red-400" title="Private">
+                                <i class="fas fa-lock text-xs"></i>
+                            </span>
+                        }
+                    </div>
+                </td>
+
+                <!-- File Size -->
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                    @file.FileSizeFormatted
+                </td>
+
+                <!-- Duration (for video/audio) -->
+                @if (ShowDurationColumn())
+                {
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        @if (file.Duration.HasValue)
+                        {
+                            <div class="flex items-center">
+                                <i class="@(FileType == Backend.CMS.Domain.Enums.FileType.Video ? "fas fa-video" : "fas fa-music") mr-2 text-gray-400 text-xs"></i>
+                                <span>@FileService.FormatDuration(file.Duration.Value)</span>
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="text-gray-400">—</span>
+                        }
+                    </td>
+                }
+
+                <!-- Dimensions (for images/videos) -->
+                @if (ShowDimensionsColumn())
+                {
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                        @if (file.Width.HasValue && file.Height.HasValue)
+                        {
+                            <div class="flex items-center">
+                                <i class="fas fa-expand-arrows-alt mr-2 text-gray-400 text-xs"></i>
+                                <span>@file.Width × @file.Height px</span>
+                                @if (FileType == Backend.CMS.Domain.Enums.FileType.Video)
+                                {
+                                    <span class="ml-2 text-xs text-gray-500">(@GetAspectRatio(file.Width.Value, file.Height.Value))</span>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <span class="text-gray-400">—</span>
+                        }
+                    </td>
+                }
+
+                <!-- Modified Date -->
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
+                    <div class="flex flex-col">
+                        <span>@file.UpdatedAt.ToString("MMM dd, yyyy")</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400">@file.UpdatedAt.ToString("HH:mm")</span>
+                    </div>
+                </td>
+
+                <!-- Actions -->
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 text-right">
+                    <div class="flex items-center justify-end space-x-2">
+                        <!-- Preview/Play button (for previewable files) -->
+                        @if (CanPreview(file))
+                        {
+                            <button @onclick="() => OnPreviewFile.InvokeAsync(file)"
+                                    class="@StyleService.GetTableActionButtonClass("view") hover:bg-green-50 dark:hover:bg-green-900/20 rounded p-1"
+                                    title="@(file.FileType == FileType.Video || file.FileType == FileType.Audio ? "Play" : "Preview")">
+                                <i class="@(file.FileType == FileType.Video || file.FileType == FileType.Audio ? "fas fa-play" : "fas fa-eye") text-sm"></i>
+                            </button>
+                        }
+
+                        <!-- Download button -->
+                        <button @onclick="() => OnDownloadFile.InvokeAsync(file)"
+                                class="@StyleService.GetTableActionButtonClass() hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded p-1"
+                                title="Download">
+                            <i class="fas fa-download text-sm"></i>
+                        </button>
+
+                        <!-- Edit button -->
+                        <button @onclick="() => OnEditFile.InvokeAsync(file)"
+                                class="@StyleService.GetTableActionButtonClass("edit") hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded p-1"
+                                title="Edit">
+                            <i class="fas fa-edit text-sm"></i>
+                        </button>
+
+                        <!-- Delete button -->
+                        <button @onclick="() => OnDeleteFile.InvokeAsync(file)"
+                                class="@StyleService.GetTableActionButtonClass("delete") hover:bg-red-50 dark:hover:bg-red-900/20 rounded p-1"
+                                title="Delete">
+                            <i class="fas fa-trash text-sm"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public IEnumerable<FileDto> Files { get; set; } = new List<FileDto>();
+    [Parameter, EditorRequired] public FileType FileType { get; set; }
+    [Parameter] public EventCallback<FileDto> OnEditFile { get; set; }
+    [Parameter] public EventCallback<FileDto> OnDeleteFile { get; set; }
+    [Parameter] public EventCallback<FileDto> OnDownloadFile { get; set; }
+    [Parameter] public EventCallback<FileDto> OnPreviewFile { get; set; }
+
+    private string GetFileTypeName()
+    {
+        return FileType switch
+        {
+            FileType.Image => "Picture",
+            FileType.Video => "Video",
+            FileType.Audio => "Audio",
+            FileType.Document => "Document",
+            _ => "File"
+        };
+    }
+
+    private bool ShowDurationColumn()
+    {
+        return FileType == FileType.Video || FileType == FileType.Audio;
+    }
+
+    private bool ShowDimensionsColumn()
+    {
+        return FileType == FileType.Image || FileType == FileType.Video;
+    }
+
+    private bool CanPreview(FileDto file)
+    {
+        return FileType switch
+        {
+            FileType.Image => true,
+            FileType.Video => true,
+            FileType.Audio => true,
+            FileType.Document => file.FileExtension.ToLower() == ".pdf",
+            _ => false
+        };
+    }
+
+    private string GetFileIconBackgroundClass()
+    {
+        return FileType switch
+        {
+            FileType.Video => "bg-blue-100 dark:bg-blue-900/30",
+            FileType.Audio => "bg-purple-100 dark:bg-purple-900/30",
+            FileType.Document => "bg-red-100 dark:bg-red-900/30",
+            _ => "bg-gray-100 dark:bg-gray-700"
+        };
+    }
+
+    private string GetShortDuration(TimeSpan duration)
+    {
+        if (duration.TotalHours >= 1)
+        {
+            return duration.ToString(@"h\:mm");
+        }
+        return duration.ToString(@"m\:ss");
+    }
+
+    private string GetAspectRatio(int width, int height)
+    {
+        // Calculate GCD to simplify aspect ratio
+        var gcd = GreatestCommonDivisor(width, height);
+        var aspectWidth = width / gcd;
+        var aspectHeight = height / gcd;
+
+        // Common aspect ratios
+        if (aspectWidth == 16 && aspectHeight == 9) return "16:9";
+        if (aspectWidth == 4 && aspectHeight == 3) return "4:3";
+        if (aspectWidth == 1 && aspectHeight == 1) return "1:1";
+        if (aspectWidth == 21 && aspectHeight == 9) return "21:9";
+        if (aspectWidth == 3 && aspectHeight == 2) return "3:2";
+
+        return $"{aspectWidth}:{aspectHeight}";
+    }
+
+    private int GreatestCommonDivisor(int a, int b)
+    {
+        while (b != 0)
+        {
+            var temp = b;
+            b = a % b;
+            a = temp;
+        }
+        return a;
+    }
+}

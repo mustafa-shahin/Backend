@@ -11,8 +11,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class SearchService : ISearchService
     {
-        private readonly IRepository<SearchIndex> _searchIndexRepository;
-        private readonly IRepository<IndexingJob> _indexingJobRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IIndexingService _indexingService;
         private readonly ICacheService _cacheService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
@@ -21,8 +20,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ILogger<SearchService> _logger;
 
         public SearchService(
-            IRepository<SearchIndex> searchIndexRepository,
-            IRepository<IndexingJob> indexingJobRepository,
+            IUnitOfWork unitOfWork,
             IIndexingService indexingService,
             ICacheService cacheService,
             ICacheInvalidationService cacheInvalidationService,
@@ -30,8 +28,7 @@ namespace Backend.CMS.Infrastructure.Services
             IMapper mapper,
             ILogger<SearchService> logger)
         {
-            _searchIndexRepository = searchIndexRepository;
-            _indexingJobRepository = indexingJobRepository;
+            _unitOfWork = unitOfWork;
             _indexingService = indexingService;
             _cacheService = cacheService;
             _cacheInvalidationService = cacheInvalidationService;
@@ -55,7 +52,7 @@ namespace Backend.CMS.Infrastructure.Services
                     return cachedResult;
                 }
 
-                var query = await _searchIndexRepository.GetAllAsync();
+                var query = await _unitOfWork.GetRepository<SearchIndex>().GetAllAsync();
                 var searchIndexes = query.AsQueryable();
 
                 // Apply entity type filter
@@ -166,7 +163,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (cachedSuggestions != null)
                     return cachedSuggestions;
 
-                var searchIndexes = await _searchIndexRepository.GetAllAsync();
+                var searchIndexes = await _unitOfWork.GetRepository<SearchIndex>().GetAllAsync();
                 var suggestions = searchIndexes.AsQueryable()
                     .Where(si => si.IsPublic && si.Title.ToLowerInvariant().Contains(query.ToLowerInvariant()))
                     .OrderByDescending(si => si.Title.ToLowerInvariant().StartsWith(query.ToLowerInvariant()))
@@ -202,7 +199,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
-                    var jobs = await _indexingJobRepository.GetAllAsync();
+                    var jobs = await _unitOfWork.GetRepository<IndexingJob>().GetAllAsync();
                     var recentJobs = jobs.OrderByDescending(j => j.StartedAt)
                                        .Take(10)
                                        .ToList();
@@ -215,7 +212,7 @@ namespace Backend.CMS.Infrastructure.Services
                                                   .OrderByDescending(j => j.CompletedAt)
                                                   .FirstOrDefault()?.CompletedAt;
 
-                    var totalIndexedEntities = await _searchIndexRepository.CountAsync();
+                    var totalIndexedEntities = await _unitOfWork.GetRepository<SearchIndex>().CountAsync();
 
                     var runningJob = jobs.FirstOrDefault(j => j.Status == "Running");
                     var status = runningJob != null ? "Running" : "Idle";
@@ -243,7 +240,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 // Check if there's already a running job
-                var runningJob = await _indexingJobRepository.FirstOrDefaultAsync(j => j.Status == "Running");
+                var runningJob = await _unitOfWork.GetRepository<IndexingJob>().FirstOrDefaultAsync(j => j.Status == "Running");
                 if (runningJob != null)
                 {
                     _logger.LogWarning("Cannot start full index - another indexing job is already running");
@@ -272,7 +269,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 // Check if there's already a running job
-                var runningJob = await _indexingJobRepository.FirstOrDefaultAsync(j => j.Status == "Running");
+                var runningJob = await _unitOfWork.GetRepository<IndexingJob>().FirstOrDefaultAsync(j => j.Status == "Running");
                 if (runningJob != null)
                 {
                     _logger.LogWarning("Cannot start incremental index - another indexing job is already running");

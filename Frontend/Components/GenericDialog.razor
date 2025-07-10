@@ -1,101 +1,123 @@
 ﻿@using Frontend.Interfaces
-@inject IJSRuntime JS
 @inject IStyleService StyleService
+@inject IJSRuntime JSRuntime
+
 @if (IsVisible)
 {
-    <div class="fixed inset-0 z-50 overflow-y-auto">
-        <!-- Backdrop -->
-        <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity" @onclick="HandleBackdropClick"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="dialog-title" role="dialog" aria-modal="true">
+        <!-- Background overlay -->
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+                 @onclick="HandleBackdropClick"
+                 aria-hidden="true"></div>
 
-        <!-- Dialog -->
-        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
             <!-- This element is to trick the browser into centering the modal contents. -->
             <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
 
-            <div class="@StyleService.GetDialogSizeClass(Size) inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle animate-slide-up relative z-50"
+            <!-- Dialog panel -->
+            <div class="@GetDialogClasses()"
                  @onclick:stopPropagation="true">
 
                 <!-- Header -->
-                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-700 px-6 py-4 border-b border-gray-200 dark:border-gray-700 rounded-t-xl">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center space-x-3">
-                            <div class="flex-shrink-0">
-                                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow-sm">
-                                    <i class="@GetHeaderIcon() text-white text-lg"></i>
+                @if (ShowHeader)
+                {
+                    <div class="bg-white dark:bg-gray-800 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                        <div class="flex items-start justify-between">
+                            <div class="flex items-center">
+                                @if (!string.IsNullOrEmpty(HeaderIcon))
+                                {
+                                    <div class="flex-shrink-0 mr-4">
+                                        <div class="w-10 h-10 rounded-lg @GetHeaderIconBackground() flex items-center justify-center shadow-sm">
+                                            <i class="@HeaderIcon text-white text-lg"></i>
+                                        </div>
+                                    </div>
+                                }
+                                <div>
+                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white" id="dialog-title">
+                                        @Title
+                                    </h3>
+                                    @if (!string.IsNullOrEmpty(Description))
+                                    {
+                                        <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                                            @Description
+                                        </p>
+                                    }
                                 </div>
                             </div>
-                            <div class="flex-1 min-w-0">
-                                <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100">
-                                    @Title
-                                </h2>
-                                @if (!string.IsNullOrEmpty(Description))
-                                {
-                                    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                                        @Description
-                                    </p>
-                                }
-                            </div>
+                            @if (ShowCloseButton)
+                            {
+                                <button @onclick="HandleClose"
+                                        type="button"
+                                        disabled="@IsSaving"
+                                        class="rounded-md text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 p-2 transition-colors"
+                                        aria-label="Close">
+                                    <i class="fas fa-times text-xl"></i>
+                                </button>
+                            }
                         </div>
-                        <button @onclick="CloseDialog"
-                                type="button"
-                                class="flex-shrink-0 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-all duration-200"
-                                aria-label="Close modal"
-                                disabled="@IsSaving">
-                            <i class="fas fa-times text-lg"></i>
-                        </button>
                     </div>
-                </div>
+                }
 
-                <!-- Body -->
-                <div class="bg-white dark:bg-gray-800 @StyleService.GetBodyClass(Size)">
+                <!-- Content -->
+                <div class="@GetBodyClasses()">
                     @if (BodyContent != null)
                     {
                         @BodyContent
                     }
                     else
                     {
-                        <div class="flex items-center justify-center py-8">
-                            <p class="text-gray-500 dark:text-gray-400">No content provided.</p>
+                        <div class="text-center py-8">
+                            <div class="text-gray-500 dark:text-gray-400">
+                                No content provided
+                            </div>
                         </div>
                     }
                 </div>
 
                 <!-- Footer -->
-                @if (!HideFooter)
+                @if (ShowFooter)
                 {
-                    <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 flex justify-end space-x-3 border-t border-gray-200 dark:border-gray-700 rounded-b-xl">
+                    <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-3 space-y-3 space-y-reverse sm:space-y-0 border-t border-gray-200 dark:border-gray-700">
+                        <!-- Custom footer actions -->
                         @if (FooterContent != null)
                         {
                             @FooterContent
                         }
                         else
                         {
-                            <button @onclick="CloseDialog"
-                                    type="button"
-                                    class="btn-secondary"
-                                    disabled="@IsSaving">
-                                <i class="fas fa-times mr-2"></i>
-                                Cancel
-                            </button>
-
-                            @if (!HideSaveButton)
+                            <!-- Default footer buttons -->
+                            @if (ShowCancelButton)
                             {
-                                <button @onclick="SaveDialog"
+                                <button @onclick="HandleClose"
                                         type="button"
-                                        class="btn-primary"
-                                        disabled="@IsSaving">
+                                        disabled="@IsSaving"
+                                        class="@StyleService.GetButtonClass("secondary", "medium") w-full sm:w-auto">
+                                    @CancelText
+                                </button>
+                            }
+
+                            @if (ShowSaveButton)
+                            {
+                                <button @onclick="HandleSave"
+                                        type="button"
+                                        disabled="@(IsSaving || !CanSave)"
+                                        class="@GetSaveButtonClass() w-full sm:w-auto">
                                     @if (IsSaving)
                                     {
-                                        <i class="fas fa-spinner fa-spin mr-2"></i>
-                                        <span>@SavingText</span>
+                                        <div class="flex items-center justify-center">
+                                            <div class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                                            @SavingText
+                                        </div>
                                     }
                                     else
                                     {
-                                        @if (!string.IsNullOrEmpty(SaveIcon))
-                                        {
-                                            <i class="@SaveIcon mr-2"></i>
-                                        }
-                                        <span>@SaveText</span>
+                                        <div class="flex items-center justify-center">
+                                            @if (!string.IsNullOrEmpty(SaveIcon))
+                                            {
+                                                <i class="@SaveIcon mr-2"></i>
+                                            }
+                                            @SaveText
+                                        </div>
                                     }
                                 </button>
                             }
@@ -109,33 +131,60 @@
 
 @code {
     [Parameter] public string Title { get; set; } = "Dialog";
-    [Parameter] public string Description { get; set; } = string.Empty;
-    [Parameter] public string HeaderIcon { get; set; } = "fas fa-edit";
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public string? HeaderIcon { get; set; }
     [Parameter] public bool IsVisible { get; set; }
     [Parameter] public bool IsSaving { get; set; }
-    [Parameter] public bool HideFooter { get; set; }
-    [Parameter] public bool HideSaveButton { get; set; }
+    [Parameter] public string Size { get; set; } = "medium"; // xs, small, medium, large, xlarge, full
     [Parameter] public bool CloseOnBackdrop { get; set; } = true;
-    [Parameter] public string Size { get; set; } = "medium"; // small, medium, large, xlarge, full
+    [Parameter] public bool CanSave { get; set; } = true;
+
+    // Layout options
+    [Parameter] public bool ShowHeader { get; set; } = true;
+    [Parameter] public bool ShowFooter { get; set; } = true;
+    [Parameter] public bool ShowCloseButton { get; set; } = true;
+    [Parameter] public bool ShowCancelButton { get; set; } = true;
+    [Parameter] public bool ShowSaveButton { get; set; } = true;
+
+    // Button text and styling
     [Parameter] public string SaveText { get; set; } = "Save";
     [Parameter] public string SavingText { get; set; } = "Saving...";
-    [Parameter] public string SaveIcon { get; set; } = "fas fa-save";
+    [Parameter] public string CancelText { get; set; } = "Cancel";
+    [Parameter] public string? SaveIcon { get; set; }
+    [Parameter] public string SaveButtonVariant { get; set; } = "primary"; // primary, success, warning, danger
 
+    // Content
     [Parameter] public RenderFragment? BodyContent { get; set; }
     [Parameter] public RenderFragment? FooterContent { get; set; }
 
+    // Events
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnSave { get; set; }
 
-    private async Task CloseDialog()
+    // State management
+    private bool _isDisposing = false;
+    private DotNetObjectReference<GenericDialog>? _objRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _objRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("addEscapeKeyListener", _objRef);
+        }
+    }
+
+    private async Task HandleClose()
     {
         if (IsSaving) return;
+
         await OnClose.InvokeAsync();
     }
 
-    private async Task SaveDialog()
+    private async Task HandleSave()
     {
-        if (IsSaving) return;
+        if (IsSaving || !CanSave) return;
+
         await OnSave.InvokeAsync();
     }
 
@@ -143,31 +192,44 @@
     {
         if (CloseOnBackdrop && !IsSaving)
         {
-            await CloseDialog();
+            await HandleClose();
         }
     }
 
-
-
- 
-
-    private string GetHeaderIcon()
+    [JSInvokable]
+    public async Task HandleEscapeKey()
     {
-        return string.IsNullOrEmpty(HeaderIcon) ? "fas fa-edit" : HeaderIcon;
+        if (IsVisible && !IsSaving)
+        {
+            await HandleClose();
+        }
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private string GetDialogClasses()
     {
-        if (IsVisible)
+        var sizeClass = StyleService.GetDialogSizeClass(Size);
+        return $"inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle {sizeClass} animate-slide-up";
+    }
+
+    private string GetBodyClasses()
+    {
+        return StyleService.GetBodyClass(Size);
+    }
+
+    private string GetHeaderIconBackground()
+    {
+        return SaveButtonVariant.ToLower() switch
         {
-            // Prevent body scroll when modal is open
-            await JS.InvokeVoidAsync("document.body.classList.add", "overflow-hidden");
-        }
-        else
-        {
-            // Restore body scroll when modal is closed
-            await JS.InvokeVoidAsync("document.body.classList.remove", "overflow-hidden");
-        }
+            "success" => "bg-gradient-to-br from-green-500 to-green-600",
+            "warning" => "bg-gradient-to-br from-yellow-500 to-yellow-600",
+            "danger" => "bg-gradient-to-br from-red-500 to-red-600",
+            _ => "bg-gradient-to-br from-blue-500 to-blue-600"
+        };
+    }
+
+    private string GetSaveButtonClass()
+    {
+        return StyleService.GetButtonClass(SaveButtonVariant, "medium");
     }
 
     public void Show()
@@ -182,15 +244,64 @@
         StateHasChanged();
     }
 
-    public void Dispose()
+    // Configuration methods for common dialog types
+    public static GenericDialog CreateUploadDialog()
     {
-        try
+        return new GenericDialog
         {
-            JS.InvokeVoidAsync("document.body.classList.remove", "overflow-hidden");
-        }
-        catch
+            Title = "Upload Files",
+            HeaderIcon = "fas fa-upload",
+            SaveText = "Upload",
+            SavingText = "Uploading...",
+            SaveIcon = "fas fa-upload",
+            Size = "large"
+        };
+    }
+
+    public static GenericDialog CreateConfirmationDialog()
+    {
+        return new GenericDialog
         {
-            // Ignore disposal errors
+            Title = "Confirm Action",
+            HeaderIcon = "fas fa-exclamation-triangle",
+            SaveText = "Confirm",
+            SaveButtonVariant = "warning",
+            Size = "small"
+        };
+    }
+
+    public static GenericDialog CreateDeleteDialog()
+    {
+        return new GenericDialog
+        {
+            Title = "Delete Item",
+            HeaderIcon = "fas fa-trash",
+            SaveText = "Delete",
+            SaveButtonVariant = "danger",
+            SaveIcon = "fas fa-trash",
+            Size = "small"
+        };
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_isDisposing)
+        {
+            _isDisposing = true;
+
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("removeEscapeKeyListener");
+                _objRef?.Dispose();
+            }
+            catch (JSDisconnectedException)
+            {
+                // Browser has disconnected, ignore
+            }
+            catch (TaskCanceledException)
+            {
+                // Operation was cancelled, ignore
+            }
         }
     }
 }

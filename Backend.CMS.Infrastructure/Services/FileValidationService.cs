@@ -56,7 +56,7 @@ namespace Backend.CMS.Infrastructure.Services
             [".wav"] = new List<byte[]> { new byte[] { 0x52, 0x49, 0x46, 0x46 } },
             [".ogg"] = new List<byte[]> { new byte[] { 0x4F, 0x67, 0x67, 0x53 } },
             [".flac"] = new List<byte[]> { new byte[] { 0x66, 0x4C, 0x61, 0x43 } },
-
+            [".m4a"] = new List<byte[]> { new byte[] { 0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x4D, 0x34, 0x41, 0x20 } },
             // Archive formats
             [".zip"] = new List<byte[]> {
                 new byte[] { 0x50, 0x4B, 0x03, 0x04 },
@@ -390,23 +390,24 @@ namespace Backend.CMS.Infrastructure.Services
             // Basic content type validation - simplified for performance
             var validContentTypes = new Dictionary<string, string[]>
             {
-                [".jpg"] = new[] { "image/jpeg", "image/jpg" },
-                [".jpeg"] = new[] { "image/jpeg", "image/jpg" },
-                [".png"] = new[] { "image/png" },
-                [".gif"] = new[] { "image/gif" },
-                [".bmp"] = new[] { "image/bmp", "image/x-windows-bmp" },
-                [".webp"] = new[] { "image/webp" },
-                [".svg"] = new[] { "image/svg+xml", "text/xml", "application/xml" },
-                [".pdf"] = new[] { "application/pdf" },
-                [".doc"] = new[] { "application/msword" },
-                [".docx"] = new[] { "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
-                [".xls"] = new[] { "application/vnd.ms-excel" },
-                [".xlsx"] = new[] { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
-                [".txt"] = new[] { "text/plain" },
-                [".csv"] = new[] { "text/csv", "text/plain", "application/csv" },
-                [".mp4"] = new[] { "video/mp4" },
-                [".mp3"] = new[] { "audio/mpeg", "audio/mp3" },
-                [".zip"] = new[] { "application/zip", "application/x-zip-compressed" }
+                [".jpg"] = ["image/jpeg", "image/jpg"],
+                [".jpeg"] = ["image/jpeg", "image/jpg"],
+                [".png"] = ["image/png"],
+                [".gif"] = ["image/gif"],
+                [".bmp"] = ["image/bmp", "image/x-windows-bmp"],
+                [".webp"] = ["image/webp"],
+                [".svg"] = ["image/svg+xml", "text/xml", "application/xml"],
+                [".pdf"] = ["application/pdf"],
+                [".doc"] = ["application/msword"],
+                [".docx"] = ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+                [".xls"] = ["application/vnd.ms-excel"],
+                [".xlsx"] = ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+                [".txt"] = ["text/plain"],
+                [".csv"] = ["text/csv", "text/plain", "application/csv"],
+                [".mp4"] = ["video/mp4"],
+                [".mp3"] = ["audio/mpeg", "audio/mp3"],
+                [".m4a"] = ["audio/mp4", "audio/x-m4a"],
+                [".zip"] = ["application/zip", "application/x-zip-compressed"]
             };
 
             if (!validContentTypes.TryGetValue(extension, out var allowedTypes))
@@ -417,8 +418,8 @@ namespace Backend.CMS.Infrastructure.Services
 
         private static List<string> GetDefaultAllowedExtensions()
         {
-            return new List<string>
-            {
+            return
+            [
                 // Images
                 ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg",
                 
@@ -429,11 +430,11 @@ namespace Backend.CMS.Infrastructure.Services
                 ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm",
                 
                 // Audio
-                ".mp3", ".wav", ".ogg", ".flac",
+               ".mp3", ".wav", ".ogg", ".flac", ".m4a",
                 
                 // Archives
                 ".zip", ".rar", ".7z", ".tar", ".gz"
-            };
+            ];
         }
 
         private void CleanupCache(object? state)

@@ -9,22 +9,16 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class PermissionResolver : IPermissionResolver
     {
-        private readonly IRepository<Permission> _permissionRepository;
-        private readonly IRepository<RolePermission> _rolePermissionRepository;
-        private readonly IRepository<UserPermission> _userPermissionRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IMemoryCache _cache;
         private readonly ILogger<PermissionResolver> _logger;
 
         public PermissionResolver(
-            IRepository<Permission> permissionRepository,
-            IRepository<RolePermission> rolePermissionRepository,
-            IRepository<UserPermission> userPermissionRepository,
+            IUnitOfWork unitOfWork,
             IMemoryCache cache,
             ILogger<PermissionResolver> logger)
         {
-            _permissionRepository = permissionRepository;
-            _rolePermissionRepository = rolePermissionRepository;
-            _userPermissionRepository = userPermissionRepository;
+            _unitOfWork = unitOfWork;
             _cache = cache;
             _logger = logger;
         }
@@ -39,7 +33,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 // Get user to determine role
-                var userRepo = _permissionRepository.GetType().Assembly
+                var userRepo = _unitOfWork.GetRepository<Permission>().GetType().Assembly
                     .GetTypes()
                     .FirstOrDefault(t => t.Name == "UserRepository");
 
@@ -47,7 +41,7 @@ namespace Backend.CMS.Infrastructure.Services
                     return new List<string>();
 
                 // Get user permissions from database
-                var userPermissions = await _userPermissionRepository.FindAsync(up =>
+                var userPermissions = await _unitOfWork.GetRepository<UserPermission>().FindAsync(up =>
                     up.UserId == userId &&
                     up.IsGranted &&
                     (up.ExpiresAt == null || up.ExpiresAt > DateTime.UtcNow));
@@ -55,7 +49,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var permissions = new List<string>();
                 foreach (var up in userPermissions)
                 {
-                    var permission = await _permissionRepository.GetByIdAsync(up.PermissionId);
+                    var permission = await _unitOfWork.GetRepository<Permission>().GetByIdAsync(up.PermissionId);
                     if (permission != null && permission.IsActive)
                     {
                         permissions.Add(permission.Name);
@@ -81,13 +75,13 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var rolePermissions = await _rolePermissionRepository.FindAsync(rp =>
+                var rolePermissions = await _unitOfWork.GetRepository<RolePermission>().FindAsync(rp =>
                     rp.Role == role && rp.IsGranted);
 
                 var permissions = new List<string>();
                 foreach (var rp in rolePermissions)
                 {
-                    var permission = await _permissionRepository.GetByIdAsync(rp.PermissionId);
+                    var permission = await _unitOfWork.GetRepository<Permission>().GetByIdAsync(rp.PermissionId);
                     if (permission != null && permission.IsActive)
                     {
                         permissions.Add(permission.Name);

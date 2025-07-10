@@ -130,6 +130,52 @@ namespace Backend.CMS.Infrastructure.Caching.Services
         public static string UserList(int page, int pageSize) => $"user{SEPARATOR}list{SEPARATOR}page{SEPARATOR}{page}{SEPARATOR}size{SEPARATOR}{pageSize}";
         public static string UserSearch(string searchTerm, int page, int pageSize) => $"user{SEPARATOR}search{SEPARATOR}{GetSearchHash(searchTerm)}{SEPARATOR}{page}{SEPARATOR}{pageSize}";
         public static string UserPattern => "user:*";
+        /// <summary>
+        /// Cache key for advanced user search with multiple criteria
+        /// </summary>
+        /// <param name="searchTerm">Search term</param>
+        /// <param name="role">User role filter</param>
+        /// <param name="isActive">Active status filter</param>
+        /// <param name="page">Page number</param>
+        /// <param name="pageSize">Page size</param>
+        /// <returns>Cache key</returns>
+        public static string UserAdvancedSearch(string searchTerm, string role, bool? isActive, int page, int pageSize)
+        {
+            var criteria = new List<string>
+            {
+                $"term:{searchTerm?.Trim()?.ToLowerInvariant() ?? ""}",
+                $"role:{role?.ToLowerInvariant() ?? ""}",
+                $"active:{isActive?.ToString()?.ToLowerInvariant() ?? "null"}"
+            };
+
+            var criteriaString = string.Join("|", criteria);
+            var criteriaHash = CreateSearchHash(criteriaString);
+
+            return $"user:advanced-search:{criteriaHash}:p{page}:s{pageSize}";
+        }
+
+        /// <summary>
+        /// Creates a consistent hash for search criteria to use in cache keys
+        /// </summary>
+        /// <param name="input">Input string to hash</param>
+        /// <returns>Short hash suitable for cache keys</returns>
+        private static string CreateSearchHash(string input)
+        {
+            if (string.IsNullOrEmpty(input))
+                return "empty";
+
+            using var sha256 = SHA256.Create();
+            var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(input));
+
+            // Take first 8 bytes and convert to base64 for a short, URL-safe hash
+            var shortHash = Convert.ToBase64String(hashBytes.Take(8).ToArray())
+                .Replace('+', '-')
+                .Replace('/', '_')
+                .Replace("=", "");
+
+            return shortHash;
+        }
+
         #endregion
 
         #region Page Cache Keys
@@ -369,5 +415,7 @@ namespace Backend.CMS.Infrastructure.Caching.Services
             var key = keyService.GetCollectionKey<T>(operation, parameters);
             return cache.GetOrAddAsync(key, factory, expiration, cancellationToken);
         }
+
+
     }
 }

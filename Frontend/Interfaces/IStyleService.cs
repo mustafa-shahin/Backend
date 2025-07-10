@@ -58,6 +58,13 @@ namespace Frontend.Interfaces
         string GetFileIcon(string contentType);
         string GetDialogSizeClass(string size);
         string GetBodyClass(string size);
-        string GetFileIconColor(FileType fileType)
+        string GetFileIconColor(FileType fileType);
+        string GetViewToggleClass(bool isActive, bool isFirst);
+        string GetPrimaryButtonClass(FileType fileType);
+        string GetCountBadgeClass(FileType fileType);
+        string GetHeaderGradient(FileType fileType);
+        string GetFileTypeIcon(FileType fileType);
+        long GetMaxFileSize(FileType fileType);
+        string GetStatusBadgeClasses(PageStatus status);
     }
 }

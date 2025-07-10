@@ -43,7 +43,7 @@
                             </div>
                             <div class="flex items-center text-gray-600 dark:text-gray-300">
                                 <i class="fas fa-weight-hanging w-4 mr-2 text-green-500"></i>
-                                <span><strong>Size:</strong> @FormatFileSize(OriginalFile.FileSize)</span>
+                                <span><strong>Size:</strong> @OriginalFile.FileSizeFormatted</span>
                             </div>
                             <div class="flex items-center text-gray-600 dark:text-gray-300">
                                 <i class="fas fa-calendar w-4 mr-2 text-purple-500"></i>
@@ -333,18 +333,6 @@
         {
             // Handle silently
         }
-    }
-    private string FormatFileSize(long bytes)
-    {
-        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
-        double len = bytes;
-        int order = 0;
-        while (len >= 1024 && order < sizes.Length - 1)
-        {
-            order++;
-            len /= 1024;
-        }
-        return $"{len:0.##} {sizes[order]}";
     }
 
     private string FormatDuration(TimeSpan duration)

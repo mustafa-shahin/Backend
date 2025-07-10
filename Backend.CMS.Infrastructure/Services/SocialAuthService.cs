@@ -16,36 +16,27 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class SocialAuthService : ISocialAuthService
     {
-        private readonly IUserRepository _userRepository;
-        private readonly IRepository<UserExternalLogin> _externalLoginRepository;
-        private readonly IRepository<FileEntity> _fileRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IAuthService _authService;
         private readonly IUserService _userService;
         private readonly IHttpContextAccessor _httpContextAccessor;
-        private readonly IConfiguration _configuration;
         private readonly ILogger<SocialAuthService> _logger;
         private readonly IMapper _mapper;
         private readonly HttpClient _httpClient;
 
         public SocialAuthService(
-            IUserRepository userRepository,
-            IRepository<UserExternalLogin> externalLoginRepository,
-            IRepository<FileEntity> fileRepository,
+            IUnitOfWork unitOfWork,
             IAuthService authService,
             IUserService userService,
             IHttpContextAccessor httpContextAccessor,
-            IConfiguration configuration,
             ILogger<SocialAuthService> logger,
             IMapper mapper,
             HttpClient httpClient)
         {
-            _userRepository = userRepository;
-            _externalLoginRepository = externalLoginRepository;
-            _fileRepository = fileRepository;
+            _unitOfWork = unitOfWork;
             _authService = authService;
             _userService = userService;
             _httpContextAccessor = httpContextAccessor;
-            _configuration = configuration;
             _logger = logger;
             _mapper = mapper;
             _httpClient = httpClient;
@@ -71,12 +62,12 @@ namespace Backend.CMS.Infrastructure.Services
                     await UpdateExternalLoginAsync(existingUser.Id, socialLoginDto.Provider, socialLoginDto.AccessToken, socialUserInfo);
 
                     // Generate JWT tokens
-                    var user = await _userRepository.GetByIdAsync(existingUser.Id);
+                    var user = await _unitOfWork.Users.GetByIdAsync(existingUser.Id);
                     return await GenerateTokenResponseAsync(user!);
                 }
 
                 // Check if user exists by email
-                var userByEmail = await _userRepository.GetByEmailAsync(socialUserInfo.Email);
+                var userByEmail = await _unitOfWork.Users.GetByEmailAsync(socialUserInfo.Email);
 
                 if (userByEmail != null)
                 {
@@ -161,14 +152,14 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var user = await _userRepository.GetByIdAsync(userId);
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
                 if (user == null)
                     return false;
 
                 var socialUserInfo = await GetSocialUserInfoAsync(linkAccountDto.Provider, linkAccountDto.AccessToken);
 
                 // Check if this social account is already linked to another user
-                var existingLink = await _externalLoginRepository.FirstOrDefaultAsync(
+                var existingLink = await _unitOfWork.GetRepository<UserExternalLogin>().FirstOrDefaultAsync(
                     el => el.Provider == linkAccountDto.Provider && el.ExternalUserId == socialUserInfo.Id);
 
                 if (existingLink != null && existingLink.UserId != userId)
@@ -198,13 +189,13 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var externalLogin = await _externalLoginRepository.FirstOrDefaultAsync(
+                var externalLogin = await _unitOfWork.GetRepository<UserExternalLogin>().FirstOrDefaultAsync(
                     el => el.UserId == userId && el.Provider == provider);
 
                 if (externalLogin == null)
                     return false;
 
-                await _externalLoginRepository.SoftDeleteAsync(externalLogin);
+                await _unitOfWork.GetRepository<UserExternalLogin>().SoftDeleteAsync(externalLogin);
                 return true;
             }
             catch (Exception ex)
@@ -216,19 +207,19 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<UserExternalLogin>> GetUserSocialAccountsAsync(int userId)
         {
-            var externalLogins = await _externalLoginRepository.FindAsync(el => el.UserId == userId);
+            var externalLogins = await _unitOfWork.GetRepository<UserExternalLogin>().FindAsync(el => el.UserId == userId);
             return externalLogins.ToList();
         }
 
         public async Task<UserDto?> FindUserBySocialIdAsync(string provider, string externalUserId)
         {
-            var externalLogin = await _externalLoginRepository.FirstOrDefaultAsync(
+            var externalLogin = await _unitOfWork.GetRepository<UserExternalLogin>().FirstOrDefaultAsync(
                 el => el.Provider == provider && el.ExternalUserId == externalUserId);
 
             if (externalLogin == null)
                 return null;
 
-            var user = await _userRepository.GetByIdAsync(externalLogin.UserId);
+            var user = await _unitOfWork.Users.GetByIdAsync(externalLogin.UserId);
             return user != null ? _mapper.Map<UserDto>(user) : null;
         }
 
@@ -319,7 +310,7 @@ namespace Backend.CMS.Infrastructure.Services
             };
 
             var userDto = await _userService.CreateUserAsync(createUserDto);
-            var user = await _userRepository.GetByIdAsync(userDto.Id);
+            var user = await _unitOfWork.Users.GetByIdAsync(userDto.Id);
 
             if (user != null)
             {
@@ -328,8 +319,8 @@ namespace Backend.CMS.Infrastructure.Services
                 user.EmailVerifiedAt = DateTime.UtcNow;
                 // Note: Avatar file handling would be done separately if needed
                 user.UpdatedAt = DateTime.UtcNow;
-                _userRepository.Update(user);
-                await _userRepository.SaveChangesAsync();
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.Users.SaveChangesAsync();
 
                 // Create external login record
                 await CreateExternalLoginAsync(user.Id, provider, socialUserInfo, accessToken);
@@ -360,13 +351,13 @@ namespace Backend.CMS.Infrastructure.Services
                 UpdatedAt = DateTime.UtcNow
             };
 
-            await _externalLoginRepository.AddAsync(externalLogin);
-            await _externalLoginRepository.SaveChangesAsync();
+            await _unitOfWork.GetRepository<UserExternalLogin>().AddAsync(externalLogin);
+            await _unitOfWork.GetRepository<UserExternalLogin>().SaveChangesAsync();
         }
 
         private async Task UpdateExternalLoginAsync(int userId, string provider, string accessToken, SocialUserInfoDto socialUserInfo)
         {
-            var externalLogin = await _externalLoginRepository.FirstOrDefaultAsync(
+            var externalLogin = await _unitOfWork.GetRepository<UserExternalLogin>().FirstOrDefaultAsync(
                 el => el.UserId == userId && el.Provider == provider);
 
             if (externalLogin != null)
@@ -384,8 +375,8 @@ namespace Backend.CMS.Infrastructure.Services
                 };
                 externalLogin.UpdatedAt = DateTime.UtcNow;
 
-                _externalLoginRepository.Update(externalLogin);
-                await _externalLoginRepository.SaveChangesAsync();
+                _unitOfWork.GetRepository<UserExternalLogin>().Update(externalLogin);
+                await _unitOfWork.GetRepository<UserExternalLogin>().SaveChangesAsync();
             }
         }
 

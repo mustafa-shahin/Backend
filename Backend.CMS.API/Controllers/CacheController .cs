@@ -34,7 +34,7 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get comprehensive cache statistics
+        /// Get cache statistics
         /// </summary>
         [HttpGet("statistics")]
         public async Task<ActionResult<object>> GetCacheStatistics()

@@ -2,7 +2,6 @@
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
-using Backend.CMS.Infrastructure.IRepositories;
 using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -12,8 +11,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class DesignerService : IDesignerService
     {
-        private readonly IPageRepository _pageRepository;
-        private readonly IRepository<PageVersion> _versionRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly ICacheService _cacheService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
         private readonly ICacheKeyService _cacheKeyService;
@@ -24,8 +22,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly JsonSerializerOptions _jsonOptions;
 
         public DesignerService(
-            IPageRepository pageRepository,
-            IRepository<PageVersion> versionRepository,
+            IUnitOfWork unitOfWork,
             ICacheService cacheService,
             ICacheInvalidationService cacheInvalidationService,
             ICacheKeyService cacheKeyService,
@@ -34,8 +31,7 @@ namespace Backend.CMS.Infrastructure.Services
             IUserSessionService userSessionService,
             ILogger<DesignerService> logger)
         {
-            _pageRepository = pageRepository ?? throw new ArgumentNullException(nameof(pageRepository));
-            _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
             _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
             _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
@@ -59,14 +55,14 @@ namespace Backend.CMS.Infrastructure.Services
                 var cacheKey = _cacheKeyService.GetCustomKey("designer", "page", pageId);
                 return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
-                    var page = await _pageRepository.GetByIdAsync(pageId);
+                    var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
                     if (page == null)
                         throw new ArgumentException("Page not found");
 
                     var designerPage = _mapper.Map<DesignerPageDto>(page);
 
                     // Get current version number
-                    var versions = await _versionRepository.FindAsync(v => v.PageId == pageId);
+                    var versions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => v.PageId == pageId);
                     designerPage.CurrentVersion = versions.Any() ? versions.Max(v => v.VersionNumber) : 0;
 
                     return designerPage;
@@ -83,7 +79,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var page = await _pageRepository.GetByIdAsync(saveDto.PageId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(saveDto.PageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
@@ -106,8 +102,8 @@ namespace Backend.CMS.Infrastructure.Services
                 page.UpdatedAt = DateTime.UtcNow;
                 page.UpdatedByUserId = currentUserId;
 
-                _pageRepository.Update(page);
-                await _pageRepository.SaveChangesAsync();
+                _unitOfWork.Pages.Update(page);
+                await _unitOfWork.Pages.SaveChangesAsync();
 
                 // Invalidate related cache
                 await InvalidatePageCacheAsync(saveDto.PageId);
@@ -128,7 +124,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var success = await _pageRepository.SoftDeleteAsync(pageId, currentUserId);
+                var success = await _unitOfWork.Pages.SoftDeleteAsync(pageId, currentUserId);
 
                 if (success)
                 {
@@ -149,7 +145,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var page = await _pageRepository.GetByIdAsync(pageId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
@@ -219,7 +215,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var page = await _pageRepository.GetByIdAsync(publishDto.PageId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(publishDto.PageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
@@ -233,7 +229,7 @@ namespace Backend.CMS.Infrastructure.Services
                     // Mark version as published
                     version.IsPublished = true;
                     version.PublishedAt = publishDto.ScheduledAt ?? DateTime.UtcNow;
-                    _versionRepository.Update(version);
+                    _unitOfWork.GetRepository<PageVersion>().Update(version);
                 }
 
                 page.Status = PageStatus.Published;
@@ -242,8 +238,8 @@ namespace Backend.CMS.Infrastructure.Services
                 page.UpdatedAt = DateTime.UtcNow;
                 page.UpdatedByUserId = currentUserId;
 
-                _pageRepository.Update(page);
-                await _pageRepository.SaveChangesAsync();
+                _unitOfWork.Pages.Update(page);
+                await _unitOfWork.Pages.SaveChangesAsync();
 
                 await InvalidatePageCacheAsync(publishDto.PageId);
 
@@ -262,7 +258,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var page = await _pageRepository.GetByIdAsync(pageId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
@@ -272,8 +268,8 @@ namespace Backend.CMS.Infrastructure.Services
                 page.UpdatedAt = DateTime.UtcNow;
                 page.UpdatedByUserId = currentUserId;
 
-                _pageRepository.Update(page);
-                await _pageRepository.SaveChangesAsync();
+                _unitOfWork.Pages.Update(page);
+                await _unitOfWork.Pages.SaveChangesAsync();
 
                 await InvalidatePageCacheAsync(pageId);
 
@@ -292,12 +288,12 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var page = await _pageRepository.GetByIdAsync(pageId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var existingVersions = await _versionRepository.FindAsync(v => v.PageId == pageId);
+                var existingVersions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => v.PageId == pageId);
                 var nextVersionNumber = existingVersions.Any() ? existingVersions.Max(v => v.VersionNumber) + 1 : 1;
 
                 var pageSnapshot = CreatePageSnapshot(page);
@@ -319,8 +315,8 @@ namespace Backend.CMS.Infrastructure.Services
                     UpdatedByUserId = currentUserId
                 };
 
-                await _versionRepository.AddAsync(version);
-                await _versionRepository.SaveChangesAsync();
+                await _unitOfWork.GetRepository<PageVersion>().AddAsync(version);
+                await _unitOfWork.GetRepository<PageVersion>().SaveChangesAsync();
 
                 // Invalidate page versions cache
                 var versionsKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
@@ -344,7 +340,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var cacheKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
                 return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
-                    var versions = await _versionRepository.FindAsync(v => v.PageId == pageId);
+                    var versions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => v.PageId == pageId);
                     return versions.OrderByDescending(v => v.VersionNumber)
                                   .Select(v => _mapper.Map<PageVersionDto>(v))
                                   .ToList();
@@ -361,8 +357,8 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var page = await _pageRepository.GetByIdAsync(pageId);
-                var version = await _versionRepository.GetByIdAsync(versionId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
+                var version = await _unitOfWork.GetRepository<PageVersion>().GetByIdAsync(versionId);
 
                 if (page == null || version == null || version.PageId != pageId)
                     throw new ArgumentException("Page or version not found");
@@ -377,8 +373,8 @@ namespace Backend.CMS.Infrastructure.Services
 
                 page.UpdatedAt = DateTime.UtcNow;
                 page.UpdatedByUserId = currentUserId;
-                _pageRepository.Update(page);
-                await _pageRepository.SaveChangesAsync();
+                _unitOfWork.Pages.Update(page);
+                await _unitOfWork.Pages.SaveChangesAsync();
 
                 await InvalidatePageCacheAsync(pageId);
 

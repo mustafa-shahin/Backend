@@ -11,11 +11,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class IndexingService : IIndexingService, IDisposable
     {
-        private readonly IRepository<SearchIndex> _searchIndexRepository;
-        private readonly IRepository<IndexingJob> _indexingJobRepository;
-        private readonly IPageRepository _pageRepository;
-        private readonly IRepository<FileEntity> _fileRepository;
-        private readonly IUserRepository _userRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IUserSessionService _userSessionService;
         private readonly ILogger<IndexingService> _logger;
         private readonly SemaphoreSlim _indexingSemaphore;
@@ -26,20 +22,12 @@ namespace Backend.CMS.Infrastructure.Services
         private bool _disposed = false;
 
         public IndexingService(
-            IRepository<SearchIndex> searchIndexRepository,
-            IRepository<IndexingJob> indexingJobRepository,
-            IPageRepository pageRepository,
-            IRepository<FileEntity> fileRepository,
-            IUserRepository userRepository,
+            IUnitOfWork unitOfWork,
             IUserSessionService userSessionService,
             IConfiguration configuration,
             ILogger<IndexingService> logger)
         {
-            _searchIndexRepository = searchIndexRepository ?? throw new ArgumentNullException(nameof(searchIndexRepository));
-            _indexingJobRepository = indexingJobRepository ?? throw new ArgumentNullException(nameof(indexingJobRepository));
-            _pageRepository = pageRepository ?? throw new ArgumentNullException(nameof(pageRepository));
-            _fileRepository = fileRepository ?? throw new ArgumentNullException(nameof(fileRepository));
-            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+            _unitOfWork = unitOfWork;
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -63,8 +51,8 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var pages = pageIds?.Any() == true
-                    ? await _pageRepository.FindAsync(p => pageIds.Contains(p.Id))
-                    : await _pageRepository.GetAllAsync();
+                    ? await _unitOfWork.Pages.FindAsync(p => pageIds.Contains(p.Id))
+                    : await _unitOfWork.Pages.GetAllAsync();
 
                 var pagesList = pages.ToList();
                 if (!pagesList.Any())
@@ -123,12 +111,12 @@ namespace Backend.CMS.Infrastructure.Services
                         }
 
                         // Save in batches to avoid memory issues
-                        await _searchIndexRepository.SaveChangesAsync();
+                        await _unitOfWork.GetRepository<SearchIndex>().SaveChangesAsync();
                     }
                 }
 
                 // Final save
-                await _searchIndexRepository.SaveChangesAsync();
+                await _unitOfWork.GetRepository<SearchIndex>().SaveChangesAsync();
 
                 _logger.LogInformation("Page indexing completed - Success: {SuccessCount}, Errors: {ErrorCount}",
                     successCount, errorCount);
@@ -155,8 +143,8 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var files = fileIds?.Any() == true
-                    ? await _fileRepository.FindAsync(f => fileIds.Contains(f.Id))
-                    : await _fileRepository.GetAllAsync();
+                    ? await _unitOfWork.Files.FindAsync(f => fileIds.Contains(f.Id))
+                    : await _unitOfWork.Files.GetAllAsync();
 
                 var filesList = files.ToList();
                 if (!filesList.Any())
@@ -187,7 +175,7 @@ namespace Backend.CMS.Infrastructure.Services
                         }
                     }
 
-                    await _searchIndexRepository.SaveChangesAsync();
+                    await _unitOfWork.GetRepository<SearchIndex>().SaveChangesAsync();
                 }
 
                 _logger.LogInformation("File indexing completed - Success: {SuccessCount}, Errors: {ErrorCount}",
@@ -215,8 +203,8 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var users = userIds?.Any() == true
-                    ? await _userRepository.FindAsync(u => userIds.Contains(u.Id))
-                    : await _userRepository.GetAllAsync();
+                    ? await _unitOfWork.Users.FindAsync(u => userIds.Contains(u.Id))
+                    : await _unitOfWork.Users.GetAllAsync();
 
                 var usersList = users.ToList();
                 if (!usersList.Any())
@@ -247,7 +235,7 @@ namespace Backend.CMS.Infrastructure.Services
                         }
                     }
 
-                    await _searchIndexRepository.SaveChangesAsync();
+                    await _unitOfWork.GetRepository<SearchIndex>().SaveChangesAsync();
                 }
 
                 _logger.LogInformation("User indexing completed - Success: {SuccessCount}, Errors: {ErrorCount}",
@@ -275,13 +263,13 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var existingIndex = await _searchIndexRepository.FirstOrDefaultAsync(
+                var existingIndex = await _unitOfWork.GetRepository<SearchIndex>().FirstOrDefaultAsync(
                     si => si.EntityType == entityType && si.EntityId == entityId);
 
                 if (existingIndex != null)
                 {
-                    await _searchIndexRepository.SoftDeleteAsync(existingIndex, _userSessionService.GetCurrentUserId());
-                    await _searchIndexRepository.SaveChangesAsync();
+                    await _unitOfWork.GetRepository<SearchIndex>().SoftDeleteAsync(existingIndex, _userSessionService.GetCurrentUserId());
+                    await _unitOfWork.GetRepository<SearchIndex>().SaveChangesAsync();
 
                     _logger.LogDebug("Removed {EntityType} {EntityId} from search index", entityType, entityId);
                 }
@@ -312,7 +300,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                     // Mark existing indexes as deleted instead of physically deleting them
                     // This allows search to continue working during reindexing
-                    var existingIndexes = await _searchIndexRepository.GetAllAsync();
+                    var existingIndexes = await _unitOfWork.GetRepository<SearchIndex>().GetAllAsync();
                     var existingList = existingIndexes.ToList();
 
                     if (existingList.Any())
@@ -326,7 +314,7 @@ namespace Backend.CMS.Infrastructure.Services
                                 index.DeletedByUserId = _userSessionService.GetCurrentUserId();
                             }
                         }
-                        await _searchIndexRepository.SaveChangesAsync();
+                        await _unitOfWork.GetRepository<SearchIndex>().SaveChangesAsync();
                     }
 
                     var totalEntities = 0;
@@ -334,9 +322,9 @@ namespace Backend.CMS.Infrastructure.Services
                     var failedEntities = 0;
 
                     // Count total entities
-                    var pageCount = await _pageRepository.CountAsync();
-                    var fileCount = await _fileRepository.CountAsync();
-                    var userCount = await _userRepository.CountAsync();
+                    var pageCount = await _unitOfWork.Pages.CountAsync();
+                    var fileCount = await _unitOfWork.Files.CountAsync();
+                    var userCount = await _unitOfWork.Users.CountAsync();
                     totalEntities = pageCount + fileCount + userCount;
 
                     await UpdateIndexingJobAsync(job.Id, "Running", totalEntities: totalEntities);
@@ -430,7 +418,7 @@ namespace Backend.CMS.Infrastructure.Services
                     failedEntities += failed;
                 }
 
-                await _searchIndexRepository.SaveChangesAsync();
+                await _unitOfWork.GetRepository<SearchIndex>().SaveChangesAsync();
 
                 var success = failedEntities == 0;
                 await CompleteIndexingJobAsync(job.Id, success,
@@ -462,8 +450,8 @@ namespace Backend.CMS.Infrastructure.Services
                 UpdatedByUserId = currentUserId
             };
 
-            await _indexingJobRepository.AddAsync(job);
-            await _indexingJobRepository.SaveChangesAsync();
+            await _unitOfWork.GetRepository<IndexingJob>().AddAsync(job);
+            await _unitOfWork.GetRepository<IndexingJob>().SaveChangesAsync();
 
             _logger.LogInformation("Created indexing job {JobId} of type {JobType}", job.Id, jobType);
             return job;
@@ -474,7 +462,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var job = await _indexingJobRepository.GetByIdAsync(jobId);
+                var job = await _unitOfWork.GetRepository<IndexingJob>().GetByIdAsync(jobId);
                 if (job == null)
                 {
                     _logger.LogWarning("Indexing job {JobId} not found for update", jobId);
@@ -490,8 +478,8 @@ namespace Backend.CMS.Infrastructure.Services
                 job.UpdatedAt = DateTime.UtcNow;
                 job.UpdatedByUserId = currentUserId;
 
-                _indexingJobRepository.Update(job);
-                await _indexingJobRepository.SaveChangesAsync();
+                _unitOfWork.GetRepository<IndexingJob>().Update(job);
+                await _unitOfWork.GetRepository<IndexingJob>().SaveChangesAsync();
                 return true;
             }
             catch (Exception ex)
@@ -505,7 +493,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var job = await _indexingJobRepository.GetByIdAsync(jobId);
+                var job = await _unitOfWork.GetRepository<IndexingJob>().GetByIdAsync(jobId);
                 if (job == null)
                 {
                     _logger.LogWarning("Indexing job {JobId} not found for completion", jobId);
@@ -519,8 +507,8 @@ namespace Backend.CMS.Infrastructure.Services
                 job.UpdatedAt = DateTime.UtcNow;
                 job.UpdatedByUserId = currentUserId;
 
-                _indexingJobRepository.Update(job);
-                await _indexingJobRepository.SaveChangesAsync();
+                _unitOfWork.GetRepository<IndexingJob>().Update(job);
+                await _unitOfWork.GetRepository<IndexingJob>().SaveChangesAsync();
 
                 _logger.LogInformation("Completed indexing job {JobId} with status {Status}", jobId, job.Status);
                 return true;
@@ -536,7 +524,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task<(int processed, int failed)> IndexUpdatedPagesAsync(DateTime since)
         {
-            var updatedPages = await _pageRepository.FindAsync(p => p.UpdatedAt >= since);
+            var updatedPages = await _unitOfWork.Pages.FindAsync(p => p.UpdatedAt >= since);
             var processed = 0;
             var failed = 0;
 
@@ -559,7 +547,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task<(int processed, int failed)> IndexUpdatedFilesAsync(DateTime since)
         {
-            var updatedFiles = await _fileRepository.FindAsync(f => f.UpdatedAt >= since);
+            var updatedFiles = await _unitOfWork.Files.FindAsync(f => f.UpdatedAt >= since);
             var processed = 0;
             var failed = 0;
 
@@ -582,7 +570,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task<(int processed, int failed)> IndexUpdatedUsersAsync(DateTime since)
         {
-            var updatedUsers = await _userRepository.FindAsync(u => u.UpdatedAt >= since);
+            var updatedUsers = await _unitOfWork.Users.FindAsync(u => u.UpdatedAt >= since);
             var processed = 0;
             var failed = 0;
 
@@ -629,11 +617,11 @@ namespace Backend.CMS.Infrastructure.Services
 
             if (searchIndex.Id == 0)
             {
-                await _searchIndexRepository.AddAsync(searchIndex);
+                await _unitOfWork.GetRepository<SearchIndex>().AddAsync(searchIndex);
             }
             else
             {
-                _searchIndexRepository.Update(searchIndex);
+                _unitOfWork.GetRepository<SearchIndex>().Update(searchIndex);
             }
 
             _lastIndexedTimes[$"Page_{page.Id}"] = DateTime.UtcNow;
@@ -662,11 +650,11 @@ namespace Backend.CMS.Infrastructure.Services
 
             if (searchIndex.Id == 0)
             {
-                await _searchIndexRepository.AddAsync(searchIndex);
+                await _unitOfWork.GetRepository<SearchIndex>().AddAsync(searchIndex);
             }
             else
             {
-                _searchIndexRepository.Update(searchIndex);
+                _unitOfWork.GetRepository<SearchIndex>().Update(searchIndex);
             }
 
             _lastIndexedTimes[$"File_{file.Id}"] = DateTime.UtcNow;
@@ -695,11 +683,11 @@ namespace Backend.CMS.Infrastructure.Services
 
             if (searchIndex.Id == 0)
             {
-                await _searchIndexRepository.AddAsync(searchIndex);
+                await _unitOfWork.GetRepository<SearchIndex>().AddAsync(searchIndex);
             }
             else
             {
-                _searchIndexRepository.Update(searchIndex);
+                _unitOfWork.GetRepository<SearchIndex>().Update(searchIndex);
             }
 
             _lastIndexedTimes[$"User_{user.Id}"] = DateTime.UtcNow;
@@ -708,7 +696,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task<SearchIndex> GetOrCreateSearchIndexAsync(string entityType, int entityId)
         {
-            var existing = await _searchIndexRepository.FirstOrDefaultAsync(
+            var existing = await _unitOfWork.GetRepository<SearchIndex>().FirstOrDefaultAsync(
                 si => si.EntityType == entityType && si.EntityId == entityId && !si.IsDeleted);
 
             if (existing != null)
@@ -778,14 +766,14 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 // Remove indexes that have been marked as deleted for more than 24 hours
                 var cutoffDate = DateTime.UtcNow.AddDays(-1);
-                var oldDeletedIndexes = await _searchIndexRepository.FindAsync(
+                var oldDeletedIndexes = await _unitOfWork.GetRepository<SearchIndex>().FindAsync(
                     si => si.IsDeleted && si.DeletedAt.HasValue && si.DeletedAt.Value < cutoffDate);
 
                 var indexesToDelete = oldDeletedIndexes.ToList();
                 if (indexesToDelete.Any())
                 {
-                    _searchIndexRepository.RemoveRange(indexesToDelete);
-                    await _searchIndexRepository.SaveChangesAsync();
+                    _unitOfWork.GetRepository<SearchIndex>().RemoveRange(indexesToDelete);
+                    await _unitOfWork.GetRepository<SearchIndex>().SaveChangesAsync();
 
                     _logger.LogInformation("Cleaned up {Count} old deleted search indexes", indexesToDelete.Count);
                 }

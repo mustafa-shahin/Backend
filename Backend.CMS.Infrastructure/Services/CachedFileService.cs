@@ -80,9 +80,6 @@
 //            // Cleanup unused semaphores every 5 minutes
 //            _semaphoreCleanupTimer = new Timer(CleanupUnusedSemaphores, null,
 //                TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
-
-//            _logger.LogInformation("EnterpriseCachedFileService initialized with {MaxStreams} max concurrent streams, {MaxFileSize}MB max cacheable file size",
-//                _maxConcurrentStreams, _maxCacheableFileSize / 1024 / 1024);
 //        }
 
 //        #region Upload Operations (Invalidate cache after upload)

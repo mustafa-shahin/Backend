@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
+  <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>CMS Designer Dashboard</title>
@@ -11,529 +10,132 @@
     <script src="https://cdn.tailwindcss.com"></script>
 
     <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
 
     <!-- Custom Tailwind Configuration -->
     <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        primary: {
-                            50: '#eff6ff',
-                            100: '#dbeafe',
-                            200: '#bfdbfe',
-                            300: '#93c5fd',
-                            400: '#60a5fa',
-                            500: '#3b82f6',
-                            600: '#2563eb',
-                            700: '#1d4ed8',
-                            800: '#1e40af',
-                            900: '#1e3a8a',
-                        }
-                    },
-                    animation: {
-                        'fade-in': 'fadeIn 0.5s ease-in-out',
-                        'slide-up': 'slideUp 0.3s ease-out',
-                        'slide-down': 'slideDown 0.3s ease-out',
-                    },
-                    keyframes: {
-                        fadeIn: {
-                            '0%': { opacity: '0' },
-                            '100%': { opacity: '1' }
-                        },
-                        slideUp: {
-                            '0%': { transform: 'translateY(10px)', opacity: '0' },
-                            '100%': { transform: 'translateY(0)', opacity: '1' }
-                        },
-                        slideDown: {
-                            '0%': { transform: 'translateY(-10px)', opacity: '0' },
-                            '100%': { transform: 'translateY(0)', opacity: '1' }
-                        }
-                    }
-                }
-            }
-        }
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                50: "#eff6ff",
+                100: "#dbeafe",
+                200: "#bfdbfe",
+                300: "#93c5fd",
+                400: "#60a5fa",
+                500: "#3b82f6",
+                600: "#2563eb",
+                700: "#1d4ed8",
+                800: "#1e40af",
+                900: "#1e3a8a",
+              },
+            },
+            animation: {
+              "fade-in": "fadeIn 0.5s ease-in-out",
+              "slide-up": "slideUp 0.3s ease-out",
+              "slide-down": "slideDown 0.3s ease-out",
+            },
+            keyframes: {
+              fadeIn: {
+                "0%": { opacity: "0" },
+                "100%": { opacity: "1" },
+              },
+              slideUp: {
+                "0%": { transform: "translateY(10px)", opacity: "0" },
+                "100%": { transform: "translateY(0)", opacity: "1" },
+              },
+              slideDown: {
+                "0%": { transform: "translateY(-10px)", opacity: "0" },
+                "100%": { transform: "translateY(0)", opacity: "1" },
+              },
+            },
+          },
+        },
+      };
     </script>
 
     <link href="css/app.css" rel="stylesheet" />
     <link rel="icon" type="image/png" href="favicon.png" />
-</head>
+  </head>
 
-<body class="bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
+  <body class="bg-gray-50 dark:bg-gray-900 transition-colors duration-300">
     <div id="app">
-        <div class="flex items-center justify-center min-h-screen">
-            <div class="text-center max-w-md mx-auto px-4">
-                <div class="mb-8">
-                    <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg">
-                        <i class="fas fa-palette text-white text-2xl"></i>
-                    </div>
-                    <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">CMS Designer</h1>
-                    <p class="text-gray-600 dark:text-gray-400 mb-8">Initializing your creative workspace</p>
-                </div>
-
-                <div class="relative mb-6">
-                    <div class="w-12 h-12 border-4 border-blue-200 dark:border-blue-800 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin mx-auto"></div>
-                </div>
-
-                <div class="space-y-2">
-                    <div id="loading-status" class="text-sm text-gray-500 dark:text-gray-400">
-                        Starting application...
-                    </div>
-                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                        <div id="loading-progress" class="bg-blue-600 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
-                    </div>
-                </div>
+      <div class="flex items-center justify-center min-h-screen">
+        <div class="text-center max-w-md mx-auto px-4">
+          <div class="mb-8">
+            <div
+              class="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg"
+            >
+              <i class="fas fa-palette text-white text-2xl"></i>
             </div>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">
+              CMS Designer
+            </h1>
+            <p class="text-gray-600 dark:text-gray-400 mb-8">
+              Initializing your creative workspace
+            </p>
+          </div>
+
+          <div class="relative mb-6">
+            <div
+              class="w-12 h-12 border-4 border-blue-200 dark:border-blue-800 border-t-blue-600 dark:border-t-blue-400 rounded-full animate-spin mx-auto"
+            ></div>
+          </div>
+
+          <div class="space-y-2">
+            <div
+              id="loading-status"
+              class="text-sm text-gray-500 dark:text-gray-400"
+            >
+              Starting application...
+            </div>
+            <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+              <div
+                id="loading-progress"
+                class="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                style="width: 0%"
+              ></div>
+            </div>
+          </div>
         </div>
+      </div>
     </div>
 
-    <div id="blazor-error-ui" class="fixed bottom-4 right-4 max-w-sm bg-red-500 text-white rounded-lg shadow-lg p-4 z-50" style="display: none;">
-        <div class="flex items-center space-x-2">
-            <i class="fas fa-exclamation-triangle"></i>
-            <div class="flex-1">
-                <div class="font-medium">Application Error</div>
-                <div class="text-sm opacity-90">An unhandled error has occurred.</div>
-            </div>
-            <div class="flex space-x-2">
-                <button class="text-white hover:text-gray-200 p-1 rounded" onclick="location.reload()" title="Reload">
-                    <i class="fas fa-redo text-sm"></i>
-                </button>
-                <button class="text-white hover:text-gray-200 p-1 rounded" onclick="document.getElementById('blazor-error-ui').style.display = 'none'" title="Close">
-                    <i class="fas fa-times text-sm"></i>
-                </button>
-            </div>
+    <div
+      id="blazor-error-ui"
+      class="fixed bottom-4 right-4 max-w-sm bg-red-500 text-white rounded-lg shadow-lg p-4 z-50"
+      style="display: none"
+    >
+      <div class="flex items-center space-x-2">
+        <i class="fas fa-exclamation-triangle"></i>
+        <div class="flex-1">
+          <div class="font-medium">Application Error</div>
+          <div class="text-sm opacity-90">An unhandled error has occurred.</div>
         </div>
+        <div class="flex space-x-2">
+          <button
+            class="text-white hover:text-gray-200 p-1 rounded"
+            onclick="location.reload()"
+            title="Reload"
+          >
+            <i class="fas fa-redo text-sm"></i>
+          </button>
+          <button
+            class="text-white hover:text-gray-200 p-1 rounded"
+            onclick="document.getElementById('blazor-error-ui').style.display = 'none'"
+            title="Close"
+          >
+            <i class="fas fa-times text-sm"></i>
+          </button>
+        </div>
+      </div>
     </div>
-
-    <script>
-        // Enhanced loading feedback without blocking operations
-        let loadingSteps = [
-            'Starting application...',
-            'Loading Blazor WebAssembly...',
-            'Initializing components...',
-            'Connecting to services...',
-            'Almost ready...'
-        ];
-        let currentStep = 0;
-
-        function updateLoadingStatus(message, progress) {
-            const statusElement = document.getElementById('loading-status');
-            const progressElement = document.getElementById('loading-progress');
-
-            if (statusElement && message) {
-                statusElement.textContent = message;
-            }
-
-            if (progressElement && typeof progress === 'number') {
-                progressElement.style.width = progress + '%';
-            }
-        }
-
-        function advanceLoadingStep() {
-            if (currentStep < loadingSteps.length) {
-                updateLoadingStatus(loadingSteps[currentStep], (currentStep + 1) * 20);
-                currentStep++;
-            }
-        }
-
-        // Progress simulation
-        let progressInterval = setInterval(() => {
-            advanceLoadingStep();
-            if (currentStep >= loadingSteps.length) {
-                clearInterval(progressInterval);
-            }
-        }, 800);
-
-        // Blazor event handlers (non-blocking)
-        window.addEventListener('DOMContentLoaded', function () {
-            console.log('DOM loaded, initializing Blazor...');
-        });
-
-        // Error handling
-        window.addEventListener('error', function (e) {
-            console.error('Global error:', e.error);
-            updateLoadingStatus('Error loading application. Check console for details.', 0);
-            clearInterval(progressInterval);
-        });
-
-        window.addEventListener('unhandledrejection', function (e) {
-            console.error('Unhandled promise rejection:', e.reason);
-            updateLoadingStatus('Error loading application. Check console for details.', 0);
-            clearInterval(progressInterval);
-        });
-
-        // ===== FIXED FILE INPUT TRIGGER =====
-        window.triggerFileInput = function (element) {
-            try {
-                if (element && typeof element.click === 'function') {
-                    element.click();
-                    return true;
-                }
-                return false;
-            } catch (error) {
-                console.error('Failed to trigger file input:', error);
-                return false;
-            }
-        };
-
-        // ===== Essential Utilities Only =====
-
-        // Copy to clipboard
-        window.copyToClipboard = function (text) {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                return navigator.clipboard.writeText(text).then(() => {
-                    return true;
-                }).catch(() => {
-                    return fallbackCopyToClipboard(text);
-                });
-            } else {
-                return Promise.resolve(fallbackCopyToClipboard(text));
-            }
-        };
-
-        function fallbackCopyToClipboard(text) {
-            try {
-                const textArea = document.createElement('textarea');
-                textArea.value = text;
-                textArea.style.position = 'fixed';
-                textArea.style.left = '-999999px';
-                textArea.style.top = '-999999px';
-                document.body.appendChild(textArea);
-                textArea.focus();
-                textArea.select();
-                const result = document.execCommand('copy');
-                document.body.removeChild(textArea);
-                return result;
-            } catch (err) {
-                console.error('Fallback copy failed:', err);
-                return false;
-            }
-        }
-
-        // Theme detection
-        window.getSystemTheme = function () {
-            try {
-                return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-            } catch {
-                return 'light';
-            }
-        };
-
-        // Local storage helpers with error handling
-        window.setLocalStorage = function (key, value) {
-            try {
-                localStorage.setItem(key, JSON.stringify(value));
-                return true;
-            } catch {
-                return false;
-            }
-        };
-
-        window.getLocalStorage = function (key) {
-            try {
-                const item = localStorage.getItem(key);
-                return item ? JSON.parse(item) : null;
-            } catch {
-                return null;
-            }
-        };
-
-        window.removeLocalStorage = function (key) {
-            try {
-                localStorage.removeItem(key);
-                return true;
-            } catch {
-                return false;
-            }
-        };
-
-        // Focus element safely
-        window.focusElement = function (selector) {
-            try {
-                const element = document.querySelector(selector);
-                if (element && typeof element.focus === 'function') {
-                    element.focus();
-                }
-            } catch (err) {
-                console.warn('Focus failed:', err);
-            }
-        };
-
-        // ===== Modal/Dialog Utilities =====
-
-        // Global variables for escape key handling
-        let currentEscapeHandler = null;
-        let escapeKeyListener = null;
-
-        // Add escape key listener for modals
-        window.addEscapeKeyListener = function (dotNetRef) {
-            try {
-                // Remove existing listener first
-                removeEscapeKeyListener();
-
-                // Store the .NET reference
-                currentEscapeHandler = dotNetRef;
-
-                // Create the event handler
-                escapeKeyListener = function (event) {
-                    if (event.key === 'Escape' && currentEscapeHandler) {
-                        try {
-                            currentEscapeHandler.invokeMethodAsync('HandleEscapeKey');
-                        } catch (err) {
-                            console.warn('Failed to invoke escape key handler:', err);
-                        }
-                    }
-                };
-
-                // Add the listener
-                document.addEventListener('keydown', escapeKeyListener);
-            } catch (err) {
-                console.error('Failed to add escape key listener:', err);
-            }
-        };
-
-        // Remove escape key listener
-        window.removeEscapeKeyListener = function () {
-            try {
-                if (escapeKeyListener) {
-                    document.removeEventListener('keydown', escapeKeyListener);
-                    escapeKeyListener = null;
-                }
-                currentEscapeHandler = null;
-            } catch (err) {
-                console.error('Failed to remove escape key listener:', err);
-            }
-        };
-
-        // ===== End Modal/Dialog Utilities =====
-
-        // Clean up loading when Blazor starts
-        window.addEventListener('blazor:started', function () {
-            clearInterval(progressInterval);
-            updateLoadingStatus('Ready!', 100);
-
-            setTimeout(() => {
-                const appElement = document.getElementById('app');
-                if (appElement && appElement.children.length > 1) {
-                    // Remove loading screen when app is ready
-                    const loadingScreen = appElement.firstElementChild;
-                    if (loadingScreen) {
-                        loadingScreen.style.opacity = '0';
-                        loadingScreen.style.transition = 'opacity 0.3s ease-out';
-                        setTimeout(() => {
-                            if (loadingScreen.parentNode) {
-                                loadingScreen.parentNode.removeChild(loadingScreen);
-                            }
-                        }, 300);
-                    }
-                }
-            }, 500);
-        });
-
-        // Console styling for development
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            console.log(
-                '%c🎨 CMS Designer %c- Development Mode',
-                'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 8px 12px; border-radius: 4px; font-weight: bold;',
-                'color: #667eea; font-weight: normal;'
-            );
-        }
-
-        window.downloadFileWithAuth = async (url, filename) => {
-            try {
-                // Try fetch first to handle authentication
-                const response = await fetch(url, {
-                    method: 'GET',
-                    credentials: 'include', // Include cookies for authentication
-                    headers: {
-                        'Accept': '*/*'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                // Get the blob data
-                const blob = await response.blob();
-
-                // Create blob URL and download
-                const blobUrl = window.URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = blobUrl;
-                link.download = filename || 'download';
-
-                // Add to DOM, click, and remove
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-
-                // Clean up blob URL
-                window.URL.revokeObjectURL(blobUrl);
-
-                return true;
-            } catch (error) {
-                console.error('Download failed:', error);
-
-                // Fallback to simple link method
-                try {
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.download = filename || 'download';
-                    link.target = '_blank';
-
-                    document.body.appendChild(link);
-                    link.click();
-                    document.body.removeChild(link);
-
-                    return true;
-                } catch (fallbackError) {
-                    console.error('Fallback download failed:', fallbackError);
-                    return false;
-                }
-            }
-        };
-
-        // copy to clipboard with better error handling
-        window.copyToClipboard = async (text) => {
-            try {
-                if (navigator.clipboard && window.isSecureContext) {
-                    await navigator.clipboard.writeText(text);
-                    return true;
-                } else {
-                    // Fallback for older browsers
-                    return fallbackCopyToClipboard(text);
-                }
-            } catch (error) {
-                console.error('Failed to copy to clipboard:', error);
-                return fallbackCopyToClipboard(text);
-            }
-        };
-
-        function fallbackCopyToClipboard(text) {
-            try {
-                const textArea = document.createElement('textarea');
-                textArea.value = text;
-                textArea.style.position = 'fixed';
-                textArea.style.left = '-999999px';
-                textArea.style.top = '-999999px';
-                document.body.appendChild(textArea);
-                textArea.focus();
-                textArea.select();
-
-                const result = document.execCommand('copy');
-                document.body.removeChild(textArea);
-                return result;
-            } catch (err) {
-                console.error('Fallback copy failed:', err);
-                return false;
-            }
-        }
-
-        // Prevent modal backdrop issues
-        window.preventModalClose = (event) => {
-            event.stopPropagation();
-        };
-
-        // File preview helpers
-        window.previewFile = (url, contentType) => {
-            try {
-                if (contentType.startsWith('image/')) {
-                    // For images, open in new tab
-                    window.open(url, '_blank');
-                } else if (contentType.startsWith('video/') || contentType.startsWith('audio/')) {
-                    // For media files, open in new tab
-                    window.open(url, '_blank');
-                } else {
-                    // For other files, try to download
-                    window.downloadFileWithAuth(url, 'preview');
-                }
-            } catch (error) {
-                console.error('Preview failed:', error);
-                // Fallback to download
-                window.downloadFileWithAuth(url, 'preview');
-            }
-        };
-
-        // Utility to get file extension from filename
-        window.getFileExtension = (filename) => {
-            return filename.slice((filename.lastIndexOf('.') - 1 >>> 0) + 2);
-        };
-
-        // Utility to format file size
-        window.formatFileSize = (bytes) => {
-            if (bytes === 0) return '0 Bytes';
-
-            const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        };
-
-        window.showNotification = (message, type = 'info', duration = 5000) => {
-            const notification = document.createElement('div');
-            notification.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transition-all duration-300 transform translate-x-full`;
-
-            // Set notification style based on type
-            switch (type) {
-                case 'success':
-                    notification.className += ' bg-green-500 text-white';
-                    break;
-                case 'error':
-                    notification.className += ' bg-red-500 text-white';
-                    break;
-                case 'warning':
-                    notification.className += ' bg-yellow-500 text-black';
-                    break;
-                default:
-                    notification.className += ' bg-blue-500 text-white';
-            }
-
-            notification.innerHTML = `
-            <div class="flex items-center space-x-2">
-                <span>${message}</span>
-                <button onclick="this.parentElement.parentElement.remove()" class="ml-2 text-current opacity-70 hover:opacity-100">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-        `;
-
-            document.body.appendChild(notification);
-
-            // Animate in
-            setTimeout(() => {
-                notification.classList.remove('translate-x-full');
-            }, 100);
-
-            // Auto remove after duration
-            setTimeout(() => {
-                notification.classList.add('translate-x-full');
-                setTimeout(() => {
-                    if (notification.parentNode) {
-                        notification.parentNode.removeChild(notification);
-                    }
-                }, 300);
-            }, duration);
-        };
-
-        // Debug helpers for development
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-            window.debugFileService = {
-                testDownload: (fileId) => {
-                    console.log('Testing download for file:', fileId);
-                    return window.downloadFileWithAuth(`/api/file/${fileId}/download`, `test-file-${fileId}`);
-                },
-                testPreview: (fileId) => {
-                    console.log('Testing preview for file:', fileId);
-                    return window.previewFile(`/api/file/${fileId}/download`, 'application/octet-stream');
-                }
-            };
-        }
-    </script>
+    <script src="js/script.js"></script>
     <script src="_framework/blazor.webassembly.js"></script>
-</body>
-
+  </body>
 </html>

@@ -9,7 +9,7 @@ using System.Text.Json;
 namespace Backend.CMS.Infrastructure.Caching.Services
 {
     /// <summary>
-    /// Redis-based cache service implementation with comprehensive features
+    /// Redis-based cache service implementation
     /// </summary>
     public class RedisCacheService : ICacheService, ICacheInvalidationService, ICacheMonitoringService, IDisposable
     {

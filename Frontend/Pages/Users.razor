@@ -98,14 +98,14 @@
             </div>
         </div>
     }
-    else if (pagedResult.Items?.Any() == true)
+    else if (pagedResult.Data?.Any() == true)
     {
         @if (currentViewMode == ViewMode.Grid)
         {
             <!-- Grid View -->
             <div class="p-6">
                 <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                    @foreach (var user in pagedResult.Items)
+                    @foreach (var user in pagedResult.Data)
                     {
                         <div class="bg-white dark:bg-gray-800 rounded-lg shadow hover:shadow-lg transition-all duration-200 overflow-hidden group cursor-pointer border border-gray-200 dark:border-gray-700">
                             <!-- User Avatar -->
@@ -207,7 +207,7 @@
                         </tr>
                     </thead>
                     <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                        @foreach (var user in pagedResult.Items)
+                        @foreach (var user in pagedResult.Data)
                         {
                             <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors duration-150">
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">

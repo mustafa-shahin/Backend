@@ -21,11 +21,11 @@
         <p class="text-gray-600 dark:text-gray-400 mt-1">Overview of your media files and folders</p>
     </div>
     <div class="flex items-center space-x-3">
-<button @onclick="@(() => Navigation.NavigateTo("/media/folders"))"
-        class="@StyleService.GetButtonClass("secondary")">
-    <i class="fas fa-folder-plus mr-2"></i>
-    Manage Folders
-</button>
+        <button @onclick="@(() => Navigation.NavigateTo("/media/folders"))"
+                class="@StyleService.GetButtonClass("secondary")">
+            <i class="fas fa-folder-plus mr-2"></i>
+            Manage Folders
+        </button>
     </div>
 </div>
 
@@ -68,7 +68,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1">
         @foreach (var action in quickActions)
         {
-            <button @onclick="@(() => Navigation.NavigateTo(action.NavigateUrl))" 
+            <button @onclick="@(() => Navigation.NavigateTo(action.NavigateUrl))"
                     class="group p-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left">
                 <div class="flex items-center">
                     <div class="@GetActionIconContainerClass(action.Color)">
@@ -99,7 +99,7 @@
                 Your latest uploaded files
             </p>
         </div>
-        <button @onclick="RefreshData" 
+        <button @onclick="RefreshData"
                 class="@StyleService.GetButtonClass("secondary", "small")"
                 disabled="@isLoading">
             <i class="fas fa-refresh @(isLoading ? "fa-spin" : "") mr-2"></i>
@@ -130,19 +130,19 @@
                     <div class="flex items-center justify-between">
                         <div class="flex items-center space-x-4">
                             <div class="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                                @if (file.FileType == FileType.Image)
+                                @if (file.FileType == Backend.CMS.Domain.Enums.FileType.Image)
                                 {
                                     <img src="/api/file/@(file.Id)/thumbnail"
                                          alt="@(file.Alt ?? file.OriginalFileName)"
                                          class="w-12 h-12 object-cover"
                                          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
                                     <div class="w-12 h-12 flex items-center justify-center" style="display: none;">
-                                        <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType)"></i>
+                                        <i class="@StyleService.GetFileIcon(file.FileType) @StyleService.GetFileTypeColor(file.FileType)"></i>
                                     </div>
                                 }
                                 else
                                 {
-                                    <i class="@GetFileIcon(file.FileType) @GetFileTypeColor(file.FileType) text-xl"></i>
+                                    <i class="@StyleService.GetFileIcon(file.FileType) @StyleService.GetFileTypeColor(file.FileType) text-xl"></i>
                                 }
                             </div>
                             <div class="flex-1">
@@ -151,16 +151,16 @@
                                 </h3>
                                 <div class="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400 mt-1">
                                     <span class="inline-flex items-center">
-                                        <i class="@GetFileIcon(file.FileType) mr-1"></i>
+                                        <i class="@StyleService.GetFileIcon(file.FileType) mr-1"></i>
                                         @file.FileType
                                     </span>
-                                    <span>@FormatFileSize(file.FileSize)</span>
+                                    <span>@file.FileSize</span>
                                     <span>@file.CreatedAt.ToString("MMM dd, yyyy")</span>
                                 </div>
                             </div>
                         </div>
                         <div class="flex items-center space-x-2">
-                            <button @onclick="() => NavigateToFileType(file.FileType)" 
+                            <button @onclick="() => NavigateToFileType(file.FileType)"
                                     class="@StyleService.GetTableActionButtonClass("view")"
                                     title="View in @file.FileType section">
                                 <i class="fas fa-external-link-alt"></i>
@@ -221,58 +221,58 @@
             var folders = await FolderService.GetFoldersAsync(null);
 
             // Calculate stats
-            var imageCount = allFiles.Items.Count(f => f.FileType == FileType.Image);
-            var videoCount = allFiles.Items.Count(f => f.FileType == FileType.Video);
-            var audioCount = allFiles.Items.Count(f => f.FileType == FileType.Audio);
-            var documentCount = allFiles.Items.Count(f => f.FileType == FileType.Document);
+            var imageCount = allFiles.Data.Count(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Image);
+            var videoCount = allFiles.Data.Count(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Video);
+            var audioCount = allFiles.Data.Count(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Audio);
+            var documentCount = allFiles.Data.Count(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Document);
 
-            var imageSize = allFiles.Items.Where(f => f.FileType == FileType.Image).Sum(f => f.FileSize);
-            var videoSize = allFiles.Items.Where(f => f.FileType == FileType.Video).Sum(f => f.FileSize);
-            var audioSize = allFiles.Items.Where(f => f.FileType == FileType.Audio).Sum(f => f.FileSize);
-            var documentSize = allFiles.Items.Where(f => f.FileType == FileType.Document).Sum(f => f.FileSize);
+            var imageSize = allFiles.Data.Where(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Image).Sum(f => f.FileSize);
+            var videoSize = allFiles.Data.Where(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Video).Sum(f => f.FileSize);
+            var audioSize = allFiles.Data.Where(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Audio).Sum(f => f.FileSize);
+            var documentSize = allFiles.Data.Where(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Document).Sum(f => f.FileSize);
 
             statsCards = new List<StatCard>
             {
-                new StatCard 
-                { 
-                    Name = "Folders", 
-                    Count = folders.Count.ToString(), 
+                new StatCard
+                {
+                    Name = "Folders",
+                    Count = folders.Count.ToString(),
                     SizeFormatted = "Organized",
-                    Icon = "fas fa-folder", 
+                    Icon = "fas fa-folder",
                     Color = "blue",
                     NavigateUrl = "/media/folders"
                 },
-                new StatCard 
-                { 
-                    Name = "Pictures", 
-                    Count = imageCount.ToString(), 
+                new StatCard
+                {
+                    Name = "Pictures",
+                    Count = imageCount.ToString(),
                     SizeFormatted = FormatFileSize(imageSize),
-                    Icon = "fas fa-images", 
+                    Icon = "fas fa-images",
                     Color = "green",
                     NavigateUrl = "/media/pictures"
                 },
-                new StatCard 
-                { 
-                    Name = "Videos", 
-                    Count = videoCount.ToString(), 
+                new StatCard
+                {
+                    Name = "Videos",
+                    Count = videoCount.ToString(),
                     SizeFormatted = FormatFileSize(videoSize),
-                    Icon = "fas fa-video", 
+                    Icon = "fas fa-video",
                     Color = "blue",
                     NavigateUrl = "/media/videos"
                 },
-                new StatCard 
-                { 
-                    Name = "Audio", 
-                    Count = audioCount.ToString(), 
+                new StatCard
+                {
+                    Name = "Audio",
+                    Count = audioCount.ToString(),
                     SizeFormatted = FormatFileSize(audioSize),
-                    Icon = "fas fa-music", 
+                    Icon = "fas fa-music",
                     Color = "purple",
                     NavigateUrl = "/media/audio"
                 }
             };
 
             // Get recent files
-            recentFiles = allFiles.Items.OrderByDescending(f => f.CreatedAt).ToList();
+            recentFiles = allFiles.Data.OrderByDescending(f => f.CreatedAt).ToList();
         }
         catch (Exception ex)
         {
@@ -289,51 +289,51 @@
     {
         quickActions = new List<QuickAction>
         {
-            new QuickAction 
-            { 
-                Name = "Manage Folders", 
+            new QuickAction
+            {
+                Name = "Manage Folders",
                 Description = "Organize your files with folders",
-                Icon = "fas fa-folder-plus", 
+                Icon = "fas fa-folder-plus",
                 Color = "blue",
                 NavigateUrl = "/media/folders"
             },
-            new QuickAction 
-            { 
-                Name = "Upload Pictures", 
+            new QuickAction
+            {
+                Name = "Upload Pictures",
                 Description = "Add new images to your library",
-                Icon = "fas fa-images", 
+                Icon = "fas fa-images",
                 Color = "green",
                 NavigateUrl = "/media/pictures"
             },
-            new QuickAction 
-            { 
-                Name = "Upload Videos", 
+            new QuickAction
+            {
+                Name = "Upload Videos",
                 Description = "Add video content to your site",
-                Icon = "fas fa-video", 
+                Icon = "fas fa-video",
                 Color = "blue",
                 NavigateUrl = "/media/videos"
             },
-            new QuickAction 
-            { 
-                Name = "Upload Audio", 
+            new QuickAction
+            {
+                Name = "Upload Audio",
                 Description = "Add music and sound files",
-                Icon = "fas fa-music", 
+                Icon = "fas fa-music",
                 Color = "purple",
                 NavigateUrl = "/media/audio"
             },
-            new QuickAction 
-            { 
-                Name = "Upload Documents", 
+            new QuickAction
+            {
+                Name = "Upload Documents",
                 Description = "Add PDFs and other documents",
-                Icon = "fas fa-file-alt", 
+                Icon = "fas fa-file-alt",
                 Color = "red",
                 NavigateUrl = "/media/documents"
             },
-            new QuickAction 
-            { 
-                Name = "View All Files", 
+            new QuickAction
+            {
+                Name = "View All Files",
                 Description = "Browse all media in one place",
-                Icon = "fas fa-th-large", 
+                Icon = "fas fa-th-large",
                 Color = "gray",
                 NavigateUrl = "/media/pictures"
             }
@@ -345,14 +345,14 @@
         await LoadDashboardData();
     }
 
-    private void NavigateToFileType(FileType fileType)
+    private void NavigateToFileType(Backend.CMS.Domain.Enums.FileType fileType)
     {
         var url = fileType switch
         {
-            FileType.Image => "/media/pictures",
-            FileType.Video => "/media/videos",
-            FileType.Audio => "/media/audio",
-            FileType.Document => "/media/documents",
+            Backend.CMS.Domain.Enums.FileType.Image => "/media/pictures",
+            Backend.CMS.Domain.Enums.FileType.Video => "/media/videos",
+            Backend.CMS.Domain.Enums.FileType.Audio => "/media/audio",
+            Backend.CMS.Domain.Enums.FileType.Document => "/media/documents",
             _ => "/media/pictures"
         };
         Navigation.NavigateTo(url);
@@ -391,36 +391,10 @@
         return $"text-{color}-600 dark:text-{color}-400";
     }
 
-    private string GetFileIcon(FileType fileType)
-    {
-        return fileType switch
-        {
-            FileType.Image => "fas fa-image",
-            FileType.Video => "fas fa-video",
-            FileType.Audio => "fas fa-music",
-            FileType.Document => "fas fa-file-alt",
-            FileType.Archive => "fas fa-file-archive",
-            _ => "fas fa-file"
-        };
-    }
-
-    private string GetFileTypeColor(FileType fileType)
-    {
-        return fileType switch
-        {
-            FileType.Image => "text-green-600 dark:text-green-400",
-            FileType.Video => "text-blue-600 dark:text-blue-400",
-            FileType.Audio => "text-purple-600 dark:text-purple-400",
-            FileType.Document => "text-red-600 dark:text-red-400",
-            FileType.Archive => "text-yellow-600 dark:text-yellow-400",
-            _ => "text-gray-600 dark:text-gray-400"
-        };
-    }
-
     private string FormatFileSize(long bytes)
     {
         if (bytes == 0) return "0 B";
-        
+
         string[] sizes = { "B", "KB", "MB", "GB", "TB" };
         double len = bytes;
         int order = 0;

@@ -11,34 +11,25 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class ProductService : IProductService
     {
-        private readonly IProductRepository _productRepository;
-        private readonly IProductVariantRepository _variantRepository;
-        private readonly ICategoryRepository _categoryRepository;
-        private readonly IRepository<ProductImage> _productImageRepository;
-        private readonly IRepository<FileEntity> _fileRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly ICacheService _cacheService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
         private readonly ICacheKeyService _cacheKeyService;
         private readonly IMapper _mapper;
         private readonly ILogger<ProductService> _logger;
 
+        private const int DefaultPageSize = 10;
+        private const int MaxPageSize = 100;
+
         public ProductService(
-            IProductRepository productRepository,
-            IProductVariantRepository variantRepository,
-            ICategoryRepository categoryRepository,
-            IRepository<ProductImage> productImageRepository,
-            IRepository<FileEntity> fileRepository,
+            IUnitOfWork unitOfWork,
             ICacheService cacheService,
             ICacheInvalidationService cacheInvalidationService,
             ICacheKeyService cacheKeyService,
             IMapper mapper,
             ILogger<ProductService> logger)
         {
-            _productRepository = productRepository;
-            _variantRepository = variantRepository;
-            _categoryRepository = categoryRepository;
-            _productImageRepository = productImageRepository;
-            _fileRepository = fileRepository;
+            _unitOfWork = unitOfWork;
             _cacheService = cacheService;
             _cacheInvalidationService = cacheInvalidationService;
             _cacheKeyService = cacheKeyService;
@@ -54,7 +45,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
-                    var product = await _productRepository.GetWithDetailsAsync(productId);
+                    var product = await _unitOfWork.Products.GetWithDetailsAsync(productId);
                     if (product == null)
                     {
                         _logger.LogDebug("GetProductByIdAsync for ID '{ProductId}' completed. Product not found", productId);
@@ -78,39 +69,93 @@ namespace Backend.CMS.Infrastructure.Services
             var cacheKey = _cacheKeyService.GetCustomKey("product", "slug", slug.ToLowerInvariant());
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var product = await _productRepository.GetBySlugAsync(slug);
+                var product = await _unitOfWork.Products.GetBySlugAsync(slug);
                 return product != null ? _mapper.Map<ProductDto>(product) : null;
             });
         }
 
-        public async Task<List<ProductDto>> GetProductsAsync()
+        public async Task<PagedResult<ProductDto>> GetProductsAsync(int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("all");
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
+
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("paged", page, pageSize);
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.GetAllAsync();
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Get paginated result using the repository's built-in pagination
+                    var pagedResult = await _unitOfWork.Products.GetPagedResultAsync(
+                        page,
+                        pageSize,
+                        predicate: null,
+                        orderBy: query => query.OrderBy(p => p.Name)
+                    );
+
+                    // Map entities to DTOs
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated products for page {Page}, pageSize {PageSize}", page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
-        public async Task<List<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 20)
+        public async Task<PagedResult<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 10)
         {
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
+
             var cacheKey = _cacheKeyService.GetCollectionKey<Product>("by_category", categoryId, page, pageSize);
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.GetByCategoryAsync(categoryId, page, pageSize);
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Use the repository's dedicated pagination method for categories
+                    var pagedResult = await _unitOfWork.Products.GetPagedByCategoryAsync(categoryId, page, pageSize);
+
+                    // Map entities to DTOs
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated products by category {CategoryId} for page {Page}, pageSize {PageSize}",
+                        categoryId, page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
         public async Task<ProductDto> CreateProductAsync(CreateProductDto createProductDto)
         {
             // Validate slug uniqueness
-            if (await _productRepository.SlugExistsAsync(createProductDto.Slug))
+            if (await _unitOfWork.Products.SlugExistsAsync(createProductDto.Slug))
                 throw new ArgumentException($"Product with slug '{createProductDto.Slug}' already exists");
 
             // Validate SKU uniqueness
-            if (await _productRepository.SKUExistsAsync(createProductDto.SKU))
+            if (await _unitOfWork.Products.SKUExistsAsync(createProductDto.SKU))
                 throw new ArgumentException($"Product with SKU '{createProductDto.SKU}' already exists");
 
             // Validate categories
@@ -118,7 +163,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 foreach (var categoryId in createProductDto.CategoryIds)
                 {
-                    var categoryExists = await _categoryRepository.GetByIdAsync(categoryId);
+                    var categoryExists = await _unitOfWork.Categories.GetByIdAsync(categoryId);
                     if (categoryExists == null)
                         throw new ArgumentException($"Category with ID {categoryId} not found");
                 }
@@ -136,8 +181,8 @@ namespace Backend.CMS.Infrastructure.Services
             if (product.Status == ProductStatus.Active)
                 product.PublishedAt = DateTime.UtcNow;
 
-            await _productRepository.AddAsync(product);
-            await _productRepository.SaveChangesAsync();
+            await _unitOfWork.Products.AddAsync(product);
+            await _unitOfWork.Products.SaveChangesAsync();
 
             // Add category associations
             if (createProductDto.CategoryIds.Any())
@@ -151,9 +196,9 @@ namespace Backend.CMS.Infrastructure.Services
 
                 foreach (var pc in productCategories)
                 {
-                    await _productRepository.AddProductCategoryAsync(pc);
+                    await _unitOfWork.Products.AddProductCategoryAsync(pc);
                 }
-                await _productRepository.SaveChangesAsync();
+                await _unitOfWork.Products.SaveChangesAsync();
             }
 
             // Add images
@@ -169,9 +214,9 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     var variant = _mapper.Map<ProductVariant>(variantDto);
                     variant.ProductId = product.Id;
-                    await _variantRepository.AddAsync(variant);
+                    await _unitOfWork.ProductVariants.AddAsync(variant);
                 }
-                await _variantRepository.SaveChangesAsync();
+                await _unitOfWork.ProductVariants.SaveChangesAsync();
             }
 
             await InvalidateProductCacheAsync();
@@ -179,22 +224,22 @@ namespace Backend.CMS.Infrastructure.Services
             _logger.LogInformation("Created product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
 
             // Return the complete product with all relations
-            var createdProduct = await _productRepository.GetWithDetailsAsync(product.Id);
+            var createdProduct = await _unitOfWork.Products.GetWithDetailsAsync(product.Id);
             return _mapper.Map<ProductDto>(createdProduct!);
         }
 
         public async Task<ProductDto> UpdateProductAsync(int productId, UpdateProductDto updateProductDto)
         {
-            var product = await _productRepository.GetWithDetailsAsync(productId);
+            var product = await _unitOfWork.Products.GetWithDetailsAsync(productId);
             if (product == null)
                 throw new ArgumentException($"Product with ID {productId} not found");
 
             // Validate slug uniqueness
-            if (await _productRepository.SlugExistsAsync(updateProductDto.Slug, productId))
+            if (await _unitOfWork.Products.SlugExistsAsync(updateProductDto.Slug, productId))
                 throw new ArgumentException($"Product with slug '{updateProductDto.Slug}' already exists");
 
             // Validate SKU uniqueness
-            if (await _productRepository.SKUExistsAsync(updateProductDto.SKU, productId))
+            if (await _unitOfWork.Products.SKUExistsAsync(updateProductDto.SKU, productId))
                 throw new ArgumentException($"Product with SKU '{updateProductDto.SKU}' already exists");
 
             // Validate images
@@ -212,10 +257,10 @@ namespace Backend.CMS.Infrastructure.Services
             else if (product.Status != ProductStatus.Active)
                 product.PublishedAt = null;
 
-            _productRepository.Update(product);
+            _unitOfWork.Products.Update(product);
 
             // Update category associations
-            await _productRepository.RemoveProductCategoriesAsync(product.Id);
+            await _unitOfWork.Products.RemoveProductCategoriesAsync(product.Id);
 
             if (updateProductDto.CategoryIds.Any())
             {
@@ -228,14 +273,14 @@ namespace Backend.CMS.Infrastructure.Services
 
                 foreach (var pc in productCategories)
                 {
-                    await _productRepository.AddProductCategoryAsync(pc);
+                    await _unitOfWork.Products.AddProductCategoryAsync(pc);
                 }
             }
 
             // Update images
             await UpdateProductImagesAsync(productId, updateProductDto.Images);
 
-            await _productRepository.SaveChangesAsync();
+            await _unitOfWork.Products.SaveChangesAsync();
 
             await InvalidateProductCacheAsync();
             await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
@@ -243,16 +288,16 @@ namespace Backend.CMS.Infrastructure.Services
             _logger.LogInformation("Updated product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
 
             // Return the complete updated product
-            var updatedProduct = await _productRepository.GetWithDetailsAsync(product.Id);
+            var updatedProduct = await _unitOfWork.Products.GetWithDetailsAsync(product.Id);
             return _mapper.Map<ProductDto>(updatedProduct!);
         }
 
         public async Task<bool> DeleteProductAsync(int productId)
         {
-            var product = await _productRepository.GetByIdAsync(productId);
+            var product = await _unitOfWork.Products.GetByIdAsync(productId);
             if (product == null) return false;
 
-            await _productRepository.SoftDeleteAsync(product);
+            await _unitOfWork.Products.SoftDeleteAsync(product);
             await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
             await InvalidateProductCacheAsync();
 
@@ -260,23 +305,44 @@ namespace Backend.CMS.Infrastructure.Services
             return true;
         }
 
-        public async Task<List<ProductDto>> SearchProductsAsync(ProductSearchDto searchDto)
+        public async Task<PagedResult<ProductDto>> SearchProductsAsync(ProductSearchDto searchDto)
         {
-            var cacheKey = _cacheKeyService.GetQueryKey<Product>("search", searchDto);
+            // Validate and normalize pagination parameters
+            var page = Math.Max(1, searchDto.Page);
+            var pageSize = searchDto.PageSize <= 0 ? DefaultPageSize : Math.Min(searchDto.PageSize, MaxPageSize);
+
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "search", searchDto.SearchTerm ?? "all", page.ToString(), pageSize.ToString());
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.SearchProductsAsync(searchDto);
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Use the repository's search method that returns a paged result
+                    var pagedResult = await _unitOfWork.Products.SearchProductsPagedAsync(searchDto);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error searching products with criteria: {@SearchDto}", searchDto);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
         public async Task<int> GetSearchCountAsync(ProductSearchDto searchDto)
         {
-            // For primitive return types, we need to wrap in a class
-            var cacheKey = _cacheKeyService.GetQueryKey<Product>("search_count", searchDto);
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "search_count", searchDto.SearchTerm ?? "all");
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var count = await _productRepository.GetSearchCountAsync(searchDto);
+                var count = await _unitOfWork.Products.GetSearchCountAsync(searchDto);
                 return new CountWrapper { Value = count };
             });
 
@@ -285,24 +351,24 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> ValidateSlugAsync(string slug, int? excludeProductId = null)
         {
-            return !await _productRepository.SlugExistsAsync(slug, excludeProductId);
+            return !await _unitOfWork.Products.SlugExistsAsync(slug, excludeProductId);
         }
 
         public async Task<bool> ValidateSKUAsync(string sku, int? excludeProductId = null)
         {
-            return !await _productRepository.SKUExistsAsync(sku, excludeProductId);
+            return !await _unitOfWork.Products.SKUExistsAsync(sku, excludeProductId);
         }
 
         public async Task<ProductDto> PublishProductAsync(int productId)
         {
-            var product = await _productRepository.GetByIdAsync(productId);
+            var product = await _unitOfWork.Products.GetByIdAsync(productId);
             if (product == null)
                 throw new ArgumentException($"Product with ID {productId} not found");
 
             product.Status = ProductStatus.Active;
             product.PublishedAt = DateTime.UtcNow;
-            _productRepository.Update(product);
-            await _productRepository.SaveChangesAsync();
+            _unitOfWork.Products.Update(product);
+            await _unitOfWork.Products.SaveChangesAsync();
 
             await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
             await InvalidateProductCacheAsync();
@@ -313,14 +379,14 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<ProductDto> UnpublishProductAsync(int productId)
         {
-            var product = await _productRepository.GetByIdAsync(productId);
+            var product = await _unitOfWork.Products.GetByIdAsync(productId);
             if (product == null)
                 throw new ArgumentException($"Product with ID {productId} not found");
 
             product.Status = ProductStatus.Draft;
             product.PublishedAt = null;
-            _productRepository.Update(product);
-            await _productRepository.SaveChangesAsync();
+            _unitOfWork.Products.Update(product);
+            await _unitOfWork.Products.SaveChangesAsync();
 
             await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
             await InvalidateProductCacheAsync();
@@ -331,13 +397,13 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<ProductDto> ArchiveProductAsync(int productId)
         {
-            var product = await _productRepository.GetByIdAsync(productId);
+            var product = await _unitOfWork.Products.GetByIdAsync(productId);
             if (product == null)
                 throw new ArgumentException($"Product with ID {productId} not found");
 
             product.Status = ProductStatus.Archived;
-            _productRepository.Update(product);
-            await _productRepository.SaveChangesAsync();
+            _unitOfWork.Products.Update(product);
+            await _unitOfWork.Products.SaveChangesAsync();
 
             await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
             await InvalidateProductCacheAsync();
@@ -348,7 +414,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<ProductDto> DuplicateProductAsync(int productId, string newName)
         {
-            var originalProduct = await _productRepository.GetWithDetailsAsync(productId);
+            var originalProduct = await _unitOfWork.Products.GetWithDetailsAsync(productId);
             if (originalProduct == null)
                 throw new ArgumentException($"Product with ID {productId} not found");
 
@@ -384,8 +450,8 @@ namespace Backend.CMS.Infrastructure.Services
                 SEOSettings = new Dictionary<string, object>(originalProduct.SEOSettings)
             };
 
-            await _productRepository.AddAsync(duplicatedProduct);
-            await _productRepository.SaveChangesAsync();
+            await _unitOfWork.Products.AddAsync(duplicatedProduct);
+            await _unitOfWork.Products.SaveChangesAsync();
 
             // Duplicate category associations
             foreach (var pc in originalProduct.ProductCategories)
@@ -396,7 +462,7 @@ namespace Backend.CMS.Infrastructure.Services
                     CategoryId = pc.CategoryId,
                     SortOrder = pc.SortOrder
                 };
-                await _productRepository.AddProductCategoryAsync(newPc);
+                await _unitOfWork.Products.AddProductCategoryAsync(newPc);
             }
 
             // Duplicate images
@@ -411,57 +477,114 @@ namespace Backend.CMS.Infrastructure.Services
                     Position = image.Position,
                     IsFeatured = image.IsFeatured
                 };
-                await _productImageRepository.AddAsync(newImage);
+                await _unitOfWork.GetRepository<ProductImage>().AddAsync(newImage);
             }
 
-            await _productRepository.SaveChangesAsync();
+            await _unitOfWork.Products.SaveChangesAsync();
             await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Duplicated product: {OriginalProductName} -> {NewProductName} (ID: {ProductId})",
                 originalProduct.Name, newName, duplicatedProduct.Id);
 
-            var createdProduct = await _productRepository.GetWithDetailsAsync(duplicatedProduct.Id);
+            var createdProduct = await _unitOfWork.Products.GetWithDetailsAsync(duplicatedProduct.Id);
             return _mapper.Map<ProductDto>(createdProduct!);
         }
 
-        public async Task<List<ProductDto>> GetFeaturedProductsAsync(int count = 10)
+        public async Task<PagedResult<ProductDto>> GetFeaturedProductsAsync(int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("featured", count);
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
+
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("featured", page, pageSize);
 
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 try
                 {
-                    var products = await _productRepository.GetFeaturedProductsAsync(count);
-                    var productDtos = _mapper.Map<List<ProductDto>>(products);
-                    return productDtos ?? [];
+                    // Use the repository's dedicated pagination method for featured products
+                    var pagedResult = await _unitOfWork.Products.GetFeaturedProductsPagedAsync(page, pageSize);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error fetching or mapping featured products");
+                    _logger.LogError(ex, "Error fetching paginated featured products for page {Page}, pageSize {PageSize}", page, pageSize);
                     throw;
                 }
-            }) ?? [];
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
-        public async Task<List<ProductDto>> GetRelatedProductsAsync(int productId, int count = 4)
+        public async Task<PagedResult<ProductDto>> GetRelatedProductsAsync(int productId, int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("related", productId, count);
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
+
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("related", productId, page, pageSize);
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.GetRelatedProductsAsync(productId, count);
-                return products != null ? _mapper.Map<List<ProductDto>>(products) : new List<ProductDto>();
-            }) ?? [];
+                try
+                {
+                    // Use the repository's dedicated pagination method for related products
+                    var pagedResult = await _unitOfWork.Products.GetRelatedProductsPagedAsync(productId, page, pageSize);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated related products for product {ProductId}, page {Page}, pageSize {PageSize}",
+                        productId, page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
-        public async Task<List<ProductDto>> GetRecentProductsAsync(int count = 10)
+        public async Task<PagedResult<ProductDto>> GetRecentProductsAsync(int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("recent", count);
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
+
+            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("recent", page, pageSize);
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.GetRecentProductsAsync(count);
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Use the repository's dedicated pagination method for recent products
+                    var pagedResult = await _unitOfWork.Products.GetRecentProductsPagedAsync(page, pageSize);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated recent products for page {Page}, pageSize {PageSize}", page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
         public async Task<Dictionary<string, object>> GetProductStatisticsAsync()
@@ -469,10 +592,10 @@ namespace Backend.CMS.Infrastructure.Services
             var cacheKey = _cacheKeyService.GetCustomKey("product", "statistics");
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var totalProducts = await _productRepository.CountAsync();
-                var activeProducts = await _productRepository.CountAsync(p => p.Status == ProductStatus.Active);
-                var draftProducts = await _productRepository.CountAsync(p => p.Status == ProductStatus.Draft);
-                var archivedProducts = await _productRepository.CountAsync(p => p.Status == ProductStatus.Archived);
+                var totalProducts = await _unitOfWork.Products.CountAsync();
+                var activeProducts = await _unitOfWork.Products.CountAsync(p => p.Status == ProductStatus.Active);
+                var draftProducts = await _unitOfWork.Products.CountAsync(p => p.Status == ProductStatus.Draft);
+                var archivedProducts = await _unitOfWork.Products.CountAsync(p => p.Status == ProductStatus.Archived);
 
                 return new Dictionary<string, object>
                 {
@@ -490,8 +613,8 @@ namespace Backend.CMS.Infrastructure.Services
             var cacheKey = _cacheKeyService.GetCustomKey("product", "price_range");
             var priceRange = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var min = await _productRepository.GetMinPriceAsync();
-                var max = await _productRepository.GetMaxPriceAsync();
+                var min = await _unitOfWork.Products.GetMinPriceAsync();
+                var max = await _unitOfWork.Products.GetMaxPriceAsync();
                 return new PriceRange { Min = min, Max = max };
             });
 
@@ -505,7 +628,7 @@ namespace Backend.CMS.Infrastructure.Services
             var cacheKey = _cacheKeyService.GetCustomKey("product", "vendors");
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var vendors = await _productRepository.GetVendorsAsync();
+                var vendors = await _unitOfWork.Products.GetVendorsAsync();
                 return vendors.ToList();
             }) ?? [];
         }
@@ -515,7 +638,7 @@ namespace Backend.CMS.Infrastructure.Services
             var cacheKey = _cacheKeyService.GetCustomKey("product", "tags");
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var tags = await _productRepository.GetTagsAsync();
+                var tags = await _unitOfWork.Products.GetTagsAsync();
                 return tags.ToList();
             }) ?? [];
         }
@@ -524,16 +647,16 @@ namespace Backend.CMS.Infrastructure.Services
         {
             if (variantId.HasValue)
             {
-                await _variantRepository.UpdateStockAsync(variantId.Value, newQuantity);
+                await _unitOfWork.ProductVariants.UpdateStockAsync(variantId.Value, newQuantity);
             }
             else
             {
-                var product = await _productRepository.GetByIdAsync(productId);
+                var product = await _unitOfWork.Products.GetByIdAsync(productId);
                 if (product != null)
                 {
                     product.Quantity = newQuantity;
-                    _productRepository.Update(product);
-                    await _productRepository.SaveChangesAsync();
+                    _unitOfWork.Products.Update(product);
+                    await _unitOfWork.Products.SaveChangesAsync();
                 }
             }
 
@@ -541,32 +664,75 @@ namespace Backend.CMS.Infrastructure.Services
             await InvalidateProductCacheAsync();
         }
 
-        public async Task<List<ProductDto>> GetLowStockProductsAsync(int threshold = 5)
+        public async Task<PagedResult<ProductDto>> GetLowStockProductsAsync(int threshold = 5, int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "low_stock", threshold);
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
+
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "low_stock", threshold.ToString(), page.ToString(), pageSize.ToString());
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.FindAsync(p =>
-                    p.TrackQuantity && p.Quantity <= threshold && p.Quantity > 0);
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Use the repository's dedicated pagination method for low stock products
+                    var pagedResult = await _unitOfWork.Products.GetLowStockProductsPagedAsync(threshold, page, pageSize);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated low stock products for threshold {Threshold}, page {Page}, pageSize {PageSize}",
+                        threshold, page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
-        public async Task<List<ProductDto>> GetOutOfStockProductsAsync()
+        public async Task<PagedResult<ProductDto>> GetOutOfStockProductsAsync(int page = 1, int pageSize = 10)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "out_of_stock");
+            // Validate and normalize pagination parameters
+            page = Math.Max(1, page);
+            pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
+
+            var cacheKey = _cacheKeyService.GetCustomKey("product", "out_of_stock", page.ToString(), pageSize.ToString());
+
             return await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var products = await _productRepository.FindAsync(p =>
-                    p.TrackQuantity && p.Quantity <= 0);
-                return _mapper.Map<List<ProductDto>>(products);
-            }) ?? [];
+                try
+                {
+                    // Use the repository's dedicated pagination method for out of stock products
+                    var pagedResult = await _unitOfWork.Products.GetOutOfStockProductsPagedAsync(page, pageSize);
+                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+
+                    return new PagedResult<ProductDto>
+                    {
+                        Data = productDtos,
+                        PageNumber = pagedResult.PageNumber,
+                        PageSize = pagedResult.PageSize,
+                        TotalCount = pagedResult.TotalCount
+                    };
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error fetching paginated out of stock products for page {Page}, pageSize {PageSize}", page, pageSize);
+                    throw;
+                }
+            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
         }
 
         // Image management methods
         public async Task<ProductImageDto> AddProductImageAsync(int productId, CreateProductImageDto createImageDto)
         {
-            var product = await _productRepository.GetByIdAsync(productId);
+            var product = await _unitOfWork.Products.GetByIdAsync(productId);
             if (product == null)
                 throw new ArgumentException($"Product with ID {productId} not found");
 
@@ -581,8 +747,8 @@ namespace Backend.CMS.Infrastructure.Services
                 await RemoveFeaturedFlagFromOtherProductImagesAsync(productId);
             }
 
-            await _productImageRepository.AddAsync(productImage);
-            await _productImageRepository.SaveChangesAsync();
+            await _unitOfWork.GetRepository<ProductImage>().AddAsync(productImage);
+            await _unitOfWork.GetRepository<ProductImage>().SaveChangesAsync();
 
             await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
             await InvalidateProductCacheAsync();
@@ -593,7 +759,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<ProductImageDto> UpdateProductImageAsync(int imageId, UpdateProductImageDto updateImageDto)
         {
-            var productImage = await _productImageRepository.GetByIdAsync(imageId);
+            var productImage = await _unitOfWork.GetRepository<ProductImage>().GetByIdAsync(imageId);
             if (productImage == null)
                 throw new ArgumentException($"Product image with ID {imageId} not found");
 
@@ -608,8 +774,8 @@ namespace Backend.CMS.Infrastructure.Services
                 await RemoveFeaturedFlagFromOtherProductImagesAsync(productImage.ProductId, imageId);
             }
 
-            _productImageRepository.Update(productImage);
-            await _productImageRepository.SaveChangesAsync();
+            _unitOfWork.GetRepository<ProductImage>().Update(productImage);
+            await _unitOfWork.GetRepository<ProductImage>().SaveChangesAsync();
 
             await _cacheInvalidationService.InvalidateEntityAsync<Product>(productImage.ProductId);
             await InvalidateProductCacheAsync();
@@ -620,11 +786,11 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> DeleteProductImageAsync(int imageId)
         {
-            var productImage = await _productImageRepository.GetByIdAsync(imageId);
+            var productImage = await _unitOfWork.GetRepository<ProductImage>().GetByIdAsync(imageId);
             if (productImage == null) return false;
 
             var productId = productImage.ProductId;
-            await _productImageRepository.SoftDeleteAsync(productImage);
+            await _unitOfWork.GetRepository<ProductImage>().SoftDeleteAsync(productImage);
 
             await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
             await InvalidateProductCacheAsync();
@@ -636,7 +802,7 @@ namespace Backend.CMS.Infrastructure.Services
         public async Task<List<ProductImageDto>> ReorderProductImagesAsync(int productId, List<(int ImageId, int Position)> imageOrders)
         {
             var imageIds = imageOrders.Select(io => io.ImageId).ToList();
-            var images = await _productImageRepository.FindAsync(i => i.ProductId == productId && imageIds.Contains(i.Id));
+            var images = await _unitOfWork.GetRepository<ProductImage>().FindAsync(i => i.ProductId == productId && imageIds.Contains(i.Id));
 
             foreach (var image in images)
             {
@@ -644,8 +810,8 @@ namespace Backend.CMS.Infrastructure.Services
                 image.Position = newPosition;
             }
 
-            _productImageRepository.UpdateRange(images);
-            await _productImageRepository.SaveChangesAsync();
+            _unitOfWork.GetRepository<ProductImage>().UpdateRange(images);
+            await _unitOfWork.GetRepository<ProductImage>().SaveChangesAsync();
 
             await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
             await InvalidateProductCacheAsync();
@@ -663,7 +829,7 @@ namespace Backend.CMS.Infrastructure.Services
             var slug = baseSlug;
             var counter = 1;
 
-            while (await _productRepository.SlugExistsAsync(slug))
+            while (await _unitOfWork.Products.SlugExistsAsync(slug))
             {
                 slug = $"{baseSlug}-{counter}";
                 counter++;
@@ -677,7 +843,7 @@ namespace Backend.CMS.Infrastructure.Services
             var sku = baseSku;
             var counter = 1;
 
-            while (await _productRepository.SKUExistsAsync(sku))
+            while (await _unitOfWork.Products.SKUExistsAsync(sku))
             {
                 sku = $"{baseSku}-{counter}";
                 counter++;
@@ -696,7 +862,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task ValidateImageAsync(int fileId)
         {
-            var file = await _fileRepository.GetByIdAsync(fileId);
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
             if (file == null)
                 throw new ArgumentException($"File with ID {fileId} not found");
 
@@ -711,19 +877,19 @@ namespace Backend.CMS.Infrastructure.Services
                 var productImage = _mapper.Map<ProductImage>(imageDto);
                 productImage.ProductId = productId;
 
-                await _productImageRepository.AddAsync(productImage);
+                await _unitOfWork.GetRepository<ProductImage>().AddAsync(productImage);
             }
 
             // Ensure only one image is marked as featured
             await EnsureSingleFeaturedProductImageAsync(productId);
-            await _productImageRepository.SaveChangesAsync();
+            await _unitOfWork.GetRepository<ProductImage>().SaveChangesAsync();
         }
 
         private async Task UpdateProductImagesAsync(int productId, List<UpdateProductImageDto> images)
         {
             // Remove existing images
-            var existingImages = await _productImageRepository.FindAsync(i => i.ProductId == productId);
-            await _productImageRepository.SoftDeleteRangeAsync(existingImages);
+            var existingImages = await _unitOfWork.GetRepository<ProductImage>().FindAsync(i => i.ProductId == productId);
+            await _unitOfWork.GetRepository<ProductImage>().SoftDeleteRangeAsync(existingImages);
 
             // Add new images
             foreach (var imageDto in images)
@@ -738,7 +904,7 @@ namespace Backend.CMS.Infrastructure.Services
                     IsFeatured = imageDto.IsFeatured
                 };
 
-                await _productImageRepository.AddAsync(productImage);
+                await _unitOfWork.GetRepository<ProductImage>().AddAsync(productImage);
             }
 
             // Ensure only one image is marked as featured
@@ -747,7 +913,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task RemoveFeaturedFlagFromOtherProductImagesAsync(int productId, int? excludeImageId = null)
         {
-            var otherImages = await _productImageRepository.FindAsync(i =>
+            var otherImages = await _unitOfWork.GetRepository<ProductImage>().FindAsync(i =>
                 i.ProductId == productId &&
                 i.IsFeatured &&
                 (excludeImageId == null || i.Id != excludeImageId));
@@ -757,12 +923,12 @@ namespace Backend.CMS.Infrastructure.Services
                 image.IsFeatured = false;
             }
 
-            _productImageRepository.UpdateRange(otherImages);
+            _unitOfWork.GetRepository<ProductImage>().UpdateRange(otherImages);
         }
 
         private async Task EnsureSingleFeaturedProductImageAsync(int productId)
         {
-            var featuredImages = await _productImageRepository.FindAsync(i => i.ProductId == productId && i.IsFeatured);
+            var featuredImages = await _unitOfWork.GetRepository<ProductImage>().FindAsync(i => i.ProductId == productId && i.IsFeatured);
             var featuredImagesList = featuredImages.ToList();
 
             if (featuredImagesList.Count > 1)
@@ -773,16 +939,16 @@ namespace Backend.CMS.Infrastructure.Services
                     featuredImagesList[i].IsFeatured = false;
                 }
 
-                _productImageRepository.UpdateRange(featuredImagesList.Skip(1));
+                _unitOfWork.GetRepository<ProductImage>().UpdateRange(featuredImagesList.Skip(1));
             }
             else if (!featuredImagesList.Any())
             {
                 // If no featured image, make the first one featured
-                var firstImage = await _productImageRepository.FirstOrDefaultAsync(i => i.ProductId == productId);
+                var firstImage = await _unitOfWork.GetRepository<ProductImage>().FirstOrDefaultAsync(i => i.ProductId == productId);
                 if (firstImage != null)
                 {
                     firstImage.IsFeatured = true;
-                    _productImageRepository.Update(firstImage);
+                    _unitOfWork.GetRepository<ProductImage>().Update(firstImage);
                 }
             }
         }

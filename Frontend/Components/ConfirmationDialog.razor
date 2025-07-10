@@ -1,4 +1,7 @@
-﻿@if (IsVisible)
+﻿@using Frontend.Interfaces
+@inject IStyleService StyleService
+
+@if (IsVisible)
 {
     <div class="fixed inset-0 z-50 overflow-y-auto">
         <!-- Backdrop -->
@@ -44,16 +47,16 @@
                 <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 flex justify-end space-x-3">
                     <button @onclick="Cancel"
                             type="button"
-                            class="btn-secondary"
-                            disabled="@IsProcessing">
+                            class="@StyleService.GetButtonClass("secondary", "medium")"
+                            disabled="@IsProcessingInternal">
                         @CancelText
                     </button>
 
                     <button @onclick="Confirm"
                             type="button"
-                            class="@ConfirmClass"
-                            disabled="@IsProcessing">
-                        @if (IsProcessing)
+                            class="@StyleService.GetButtonClass("danger", "medium")"
+                            disabled="@IsProcessingInternal">
+                        @if (IsProcessingInternal)
                         {
                             <i class="fas fa-spinner fa-spin mr-2"></i>
                             <span>@ProcessingText</span>
@@ -92,37 +95,93 @@
     [Parameter] public EventCallback OnConfirm { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
 
+    // Internal state to track processing
+    private bool _internalProcessing = false;
+    private bool _wasVisible = false;
+    private bool _confirmInProgress = false;
+
+    // Combined processing state
+    private bool IsProcessingInternal => IsProcessing || _internalProcessing;
+
+    protected override void OnParametersSet()
+    {
+        // Reset internal processing state when dialog becomes visible after being hidden
+        if (IsVisible && !_wasVisible)
+        {
+            _internalProcessing = false;
+            _confirmInProgress = false;
+        }
+
+        // Reset internal processing when external processing finishes
+        if (!IsProcessing && _internalProcessing && !_confirmInProgress)
+        {
+            _internalProcessing = false;
+        }
+
+        _wasVisible = IsVisible;
+        base.OnParametersSet();
+    }
+
     private async Task Confirm()
     {
-        if (IsProcessing) return;
-
-        IsProcessing = true;
-        StateHasChanged();
+        if (IsProcessingInternal || _confirmInProgress) return;
 
         try
         {
-            await OnConfirm.InvokeAsync();
+            _confirmInProgress = true;
+            _internalProcessing = true;
+            StateHasChanged();
+
+            if (OnConfirm.HasDelegate)
+            {
+                await OnConfirm.InvokeAsync();
+            }
+
+            // If we reach here and no external processing is managing the state,
+            // and the dialog is still visible, reset our internal state
+            if (!IsProcessing && IsVisible)
+            {
+                _internalProcessing = false;
+                _confirmInProgress = false;
+                StateHasChanged();
+            }
         }
-        finally
+        catch (Exception ex)
         {
-            IsProcessing = false;
-            IsVisible = false;
+            Console.Error.WriteLine($"Error in confirmation action: {ex.Message}");
+            _internalProcessing = false;
+            _confirmInProgress = false;
             StateHasChanged();
         }
     }
 
     private async Task Cancel()
     {
-        if (IsProcessing) return;
+        if (IsProcessingInternal) return;
 
-        IsVisible = false;
-        await OnCancel.InvokeAsync();
-        StateHasChanged();
+        try
+        {
+            _internalProcessing = false;
+            _confirmInProgress = false;
+
+            if (OnCancel.HasDelegate)
+            {
+                await OnCancel.InvokeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Error in cancel action: {ex.Message}");
+        }
+        finally
+        {
+            StateHasChanged();
+        }
     }
 
     private async Task HandleBackdropClick()
     {
-        if (CloseOnBackdrop && !IsProcessing)
+        if (CloseOnBackdrop && !IsProcessingInternal)
         {
             await Cancel();
         }
@@ -143,12 +202,38 @@
     public void Show()
     {
         IsVisible = true;
+        _internalProcessing = false;
+        _confirmInProgress = false;
         StateHasChanged();
     }
 
     public void Hide()
     {
         IsVisible = false;
+        _internalProcessing = false;
+        _confirmInProgress = false;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Force close the dialog and reset all states
+    /// </summary>
+    public void ForceClose()
+    {
+        IsVisible = false;
+        _internalProcessing = false;
+        _confirmInProgress = false;
+        _wasVisible = false;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Reset the dialog state without changing visibility
+    /// </summary>
+    public void ResetState()
+    {
+        _internalProcessing = false;
+        _confirmInProgress = false;
         StateHasChanged();
     }
 }
