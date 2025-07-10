@@ -1,16 +1,12 @@
-using Backend.CMS.API.Authorization;
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Interfaces;
-using Backend.CMS.Infrastructure.IRepositories;
-using Backend.CMS.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Asp.Versioning;
 using System.ComponentModel.DataAnnotations;
-using System.Net;
+
 
 namespace Backend.CMS.API.Controllers
 {
@@ -18,7 +14,7 @@ namespace Backend.CMS.API.Controllers
     /// File management controller providing file operations
     /// </summary> 
     [ApiController]
-    [Route("api/v{version:apiVersion}/file")]
+    [Route("api/{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
 
     [Authorize]

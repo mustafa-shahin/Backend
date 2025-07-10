@@ -1,3 +1,4 @@
+using Asp.Versioning;
 using Backend.CMS.API.Authorization;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
@@ -9,7 +10,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Backend.CMS.API.Controllers
 {
     [ApiController]
-    [Route("api/designer")]
+    [Route("api/{version:apiVersion}/[controller]")]
+    [ApiVersion("1.0")]
     [Authorize]
     public class DesignerController : ControllerBase
     {

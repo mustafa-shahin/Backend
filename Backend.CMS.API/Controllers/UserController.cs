@@ -14,9 +14,9 @@ namespace Backend.CMS.API.Controllers
     /// User management controller providing user operations with pagination
     /// </summary>
     [ApiController]
-    [Route("api/v{version:apiVersion}/user")]
+    [Route("api/{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
-     
+
     [AdminOrDev]
     [EnableRateLimiting("ApiPolicy")]
     public class UserController : ControllerBase

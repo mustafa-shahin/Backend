@@ -1,3 +1,4 @@
+using Asp.Versioning;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -6,7 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace Backend.CMS.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/{version:apiVersion}[controller]")]
+    [ApiVersion("1.0")]
     public class SearchController : ControllerBase
     {
         private readonly ISearchService _searchService;

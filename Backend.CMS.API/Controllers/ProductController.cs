@@ -13,9 +13,9 @@ namespace Backend.CMS.API.Controllers
     /// Product management controller providing product operations
     /// </summary>
     [ApiController]
-    [Route("api/v{version:apiVersion}/product")]
+    [Route("api/{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
-     
+
     [EnableRateLimiting("ApiPolicy")]
     public class ProductController : ControllerBase
     {

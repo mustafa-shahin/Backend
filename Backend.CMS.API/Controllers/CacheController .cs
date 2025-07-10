@@ -1,3 +1,4 @@
+using Asp.Versioning;
 using Backend.CMS.API.Authorization;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Caching.Interfaces;
@@ -9,7 +10,8 @@ using StackExchange.Redis;
 namespace Backend.CMS.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/{version:apiVersion}/[controller]")]
+    [ApiVersion("1.0")]
     [AdminOrDev]
     public class CacheController : ControllerBase
     {

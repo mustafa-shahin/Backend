@@ -13,9 +13,9 @@ namespace Backend.CMS.API.Controllers
     /// Folder management controller providing folder operations with pagination
     /// </summary>
     [ApiController]
-    [Route("api/v{version:apiVersion}/folder")]
+    [Route("api/{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
-     
+
     [Authorize]
     [EnableRateLimiting("ApiPolicy")]
     public class FolderController : ControllerBase

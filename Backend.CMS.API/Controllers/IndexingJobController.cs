@@ -1,18 +1,20 @@
+using Asp.Versioning;
 using Backend.CMS.API.Authorization;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
+using Backend.CMS.Infrastructure.Extensions;
+using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Backend.CMS.Infrastructure.Jobs;
-using Backend.CMS.Infrastructure.Extensions;
 using Hangfire;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Backend.CMS.Infrastructure.Interfaces;
 
 namespace Backend.CMS.API.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/{version:apiVersion}/[controller]")]
+    [ApiVersion("1.0")]
     [AdminOrDev]
     public class IndexingJobController : ControllerBase
     {

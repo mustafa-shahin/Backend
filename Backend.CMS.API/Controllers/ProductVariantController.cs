@@ -12,9 +12,9 @@ namespace Backend.CMS.API.Controllers
     /// Product variant management controller providing variant operations
     /// </summary>
     [ApiController]
-    [Route("api/v{version:apiVersion}/product-variant")]
+    [Route("api/{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
-     
+
     [EnableRateLimiting("ApiPolicy")]
     public class ProductVariantController : ControllerBase
     {
