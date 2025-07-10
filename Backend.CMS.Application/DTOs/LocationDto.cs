@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
+
 namespace Backend.CMS.Application.DTOs
 {
     public class LocationDto
@@ -118,5 +119,15 @@ namespace Backend.CMS.Application.DTOs
 
         [MaxLength(1000)]
         public string? Notes { get; set; }
+    }
+    public class LocationSearchDto : PagedSearchDto
+    {
+        public string? SearchTerm { get; set; }
+        public string? LocationType { get; set; }
+        public bool? IsActive { get; set; }
+        public bool? IsMainLocation { get; set; }
+        public int? CompanyId { get; set; }
+        public DateTime? CreatedAfter { get; set; }
+        public DateTime? CreatedBefore { get; set; }
     }
 }

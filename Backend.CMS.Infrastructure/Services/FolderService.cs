@@ -16,7 +16,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class FolderService : IFolderService, IDisposable
     {
-        private readonly IFolderRepository _folderRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IUserSessionService _userSessionService;
         private readonly ICacheService _cacheService;
         private readonly ICacheKeyService _cacheKeyService;
@@ -51,7 +51,7 @@ namespace Backend.CMS.Infrastructure.Services
         private bool _disposed = false;
 
         public FolderService(
-            IFolderRepository folderRepository,
+            IUnitOfWork unitOfWork,
             IUserSessionService userSessionService,
             ICacheService cacheService,
             ICacheKeyService cacheKeyService,
@@ -60,7 +60,7 @@ namespace Backend.CMS.Infrastructure.Services
             ILogger<FolderService> logger,
             IConfiguration configuration)
         {
-            _folderRepository = folderRepository ?? throw new ArgumentNullException(nameof(folderRepository));
+            _unitOfWork = unitOfWork;
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
             _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
@@ -115,8 +115,8 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     // Get all folders for the parent (this will be optimized with repository-level pagination in production)
                     var allFolders = parentFolderId.HasValue
-                        ? await _folderRepository.GetSubFoldersAsync(parentFolderId.Value)
-                        : await _folderRepository.GetRootFoldersAsync();
+                        ? await _unitOfWork.Folders.GetSubFoldersAsync(parentFolderId.Value)
+                        : await _unitOfWork.Folders.GetRootFoldersAsync();
 
                     var totalCount = allFolders.Count();
 
@@ -168,7 +168,7 @@ namespace Backend.CMS.Infrastructure.Services
                 try
                 {
                     // Get all matching folders
-                    var allFolders = await _folderRepository.SearchFoldersByNameAsync(searchTerm);
+                    var allFolders = await _unitOfWork.Folders.SearchFoldersByNameAsync(searchTerm);
                     var totalCount = allFolders.Count();
 
                     // Apply server-side pagination
@@ -216,8 +216,8 @@ namespace Backend.CMS.Infrastructure.Services
             // Generate unique path
             folder.Path = await GenerateUniqueFolderPathAsync(createDto.Name, createDto.ParentFolderId);
 
-            await _folderRepository.AddAsync(folder);
-            await _folderRepository.SaveChangesAsync();
+            await _unitOfWork.Folders.AddAsync(folder);
+            await _unitOfWork.Folders.SaveChangesAsync();
 
             var result = _mapper.Map<FolderDto>(folder);
             await PopulateFolderStatistics(result);
@@ -234,7 +234,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (updateDto == null)
                 throw new ArgumentNullException(nameof(updateDto));
 
-            var folder = await _folderRepository.GetByIdAsync(folderId);
+            var folder = await _unitOfWork.Folders.GetByIdAsync(folderId);
             if (folder == null)
                 throw new ArgumentException("Folder not found");
 
@@ -245,8 +245,8 @@ namespace Backend.CMS.Infrastructure.Services
             folder.UpdatedAt = DateTime.UtcNow;
             folder.UpdatedByUserId = currentUserId;
 
-            _folderRepository.Update(folder);
-            await _folderRepository.SaveChangesAsync();
+            _unitOfWork.Folders.Update(folder);
+            await _unitOfWork.Folders.SaveChangesAsync();
 
             var result = _mapper.Map<FolderDto>(folder);
             await PopulateFolderStatistics(result);
@@ -264,7 +264,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> DeleteFolderAsync(int folderId, bool deleteFiles = false)
         {
-            var folder = await _folderRepository.GetByIdAsync(folderId);
+            var folder = await _unitOfWork.Folders.GetByIdAsync(folderId);
             if (folder == null)
                 return false;
 
@@ -272,12 +272,12 @@ namespace Backend.CMS.Infrastructure.Services
             var currentUserId = _userSessionService.GetCurrentUserId();
 
             // Check if folder can be deleted
-            if (!deleteFiles && (await _folderRepository.HasFilesAsync(folderId) || await _folderRepository.HasSubFoldersAsync(folderId)))
+            if (!deleteFiles && (await _unitOfWork.Folders.HasFilesAsync(folderId) || await _unitOfWork.Folders.HasSubFoldersAsync(folderId)))
             {
                 throw new InvalidOperationException("Cannot delete folder that contains files or subfolders unless deleteFiles is true");
             }
 
-            var success = await _folderRepository.SoftDeleteAsync(folderId, currentUserId);
+            var success = await _unitOfWork.Folders.SoftDeleteAsync(folderId, currentUserId);
             if (success)
             {
                 await Task.WhenAll(
@@ -295,23 +295,23 @@ namespace Backend.CMS.Infrastructure.Services
             if (moveDto == null)
                 throw new ArgumentNullException(nameof(moveDto));
 
-            var folder = await _folderRepository.GetByIdAsync(moveDto.FolderId);
+            var folder = await _unitOfWork.Folders.GetByIdAsync(moveDto.FolderId);
             if (folder == null)
                 throw new ArgumentException("Folder not found");
 
             var originalParentId = folder.ParentFolderId;
 
             // Prevent moving folder to its own descendant
-            if (moveDto.NewParentFolderId.HasValue && await _folderRepository.IsDescendantOfAsync(moveDto.NewParentFolderId.Value, moveDto.FolderId))
+            if (moveDto.NewParentFolderId.HasValue && await _unitOfWork.Folders.IsDescendantOfAsync(moveDto.NewParentFolderId.Value, moveDto.FolderId))
             {
                 throw new InvalidOperationException("Cannot move folder to its own descendant");
             }
 
-            var success = await _folderRepository.MoveFolderAsync(moveDto.FolderId, moveDto.NewParentFolderId);
+            var success = await _unitOfWork.Folders.MoveFolderAsync(moveDto.FolderId, moveDto.NewParentFolderId);
             if (!success)
                 throw new InvalidOperationException("Failed to move folder");
 
-            var updatedFolder = await _folderRepository.GetByIdAsync(moveDto.FolderId);
+            var updatedFolder = await _unitOfWork.Folders.GetByIdAsync(moveDto.FolderId);
             var result = _mapper.Map<FolderDto>(updatedFolder!);
             await PopulateFolderStatistics(result);
 
@@ -331,7 +331,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(newName))
                 return false;
 
-            var folder = await _folderRepository.GetByIdAsync(folderId);
+            var folder = await _unitOfWork.Folders.GetByIdAsync(folderId);
             if (folder == null)
                 return false;
 
@@ -344,8 +344,8 @@ namespace Backend.CMS.Infrastructure.Services
             // Update path
             folder.Path = await GenerateUniqueFolderPathAsync(newName, folder.ParentFolderId);
 
-            _folderRepository.Update(folder);
-            await _folderRepository.SaveChangesAsync();
+            _unitOfWork.Folders.Update(folder);
+            await _unitOfWork.Folders.SaveChangesAsync();
 
             await Task.WhenAll(
                 InvalidateFolderMetadataCacheAsync(folderId),
@@ -358,7 +358,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FolderDto> CopyFolderAsync(int folderId, int? destinationFolderId, string? newName = null)
         {
-            var originalFolder = await _folderRepository.GetByIdAsync(folderId);
+            var originalFolder = await _unitOfWork.Folders.GetByIdAsync(folderId);
             if (originalFolder == null)
                 throw new ArgumentException("Folder not found");
 
@@ -379,8 +379,8 @@ namespace Backend.CMS.Infrastructure.Services
 
             newFolder.Path = await GenerateUniqueFolderPathAsync(folderName, destinationFolderId);
 
-            await _folderRepository.AddAsync(newFolder);
-            await _folderRepository.SaveChangesAsync();
+            await _unitOfWork.Folders.AddAsync(newFolder);
+            await _unitOfWork.Folders.SaveChangesAsync();
 
             var result = _mapper.Map<FolderDto>(newFolder);
             await PopulateFolderStatistics(result);
@@ -408,7 +408,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _logger.LogDebug("Cache miss for folder metadata: {FolderId}", folderId);
 
-                var folder = await _folderRepository.GetByIdAsync(folderId);
+                var folder = await _unitOfWork.Folders.GetByIdAsync(folderId);
                 if (folder == null)
                     return null;
 
@@ -427,8 +427,8 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogDebug("Cache miss for folder list: parent {ParentFolderId}", parentFolderId);
 
                 var folders = parentFolderId.HasValue
-                    ? await _folderRepository.GetSubFoldersAsync(parentFolderId.Value)
-                    : await _folderRepository.GetRootFoldersAsync();
+                    ? await _unitOfWork.Folders.GetSubFoldersAsync(parentFolderId.Value)
+                    : await _unitOfWork.Folders.GetRootFoldersAsync();
 
                 var folderDtos = await MapFoldersToDto(folders);
 
@@ -465,7 +465,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _logger.LogDebug("Cache miss for folder search: {SearchTerm}", searchTerm);
 
-                var folders = await _folderRepository.SearchFoldersByNameAsync(searchTerm);
+                var folders = await _unitOfWork.Folders.SearchFoldersByNameAsync(searchTerm);
                 var folderDtos = await MapFoldersToDto(folders);
 
                 // Cache individual folder metadata
@@ -484,7 +484,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var folder = await _folderRepository.GetByIdAsync(folderId);
+                var folder = await _unitOfWork.Folders.GetByIdAsync(folderId);
                 return new StringWrapper(folder?.Path ?? string.Empty);
             }, _folderMetadataCacheTTL);
 
@@ -499,7 +499,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _logger.LogDebug("Cache miss for folder breadcrumbs: {FolderId}", folderId);
 
-                var ancestors = await _folderRepository.GetAncestorsAsync(folderId);
+                var ancestors = await _unitOfWork.Folders.GetAncestorsAsync(folderId);
                 return await MapFoldersToDto(ancestors);
             }, _breadcrumbsCacheTTL) ?? new List<FolderDto>();
         }
@@ -515,7 +515,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _logger.LogDebug("Cache miss for folder by path: {Path}", path);
 
-                var folder = await _folderRepository.GetByPathAsync(path);
+                var folder = await _unitOfWork.Folders.GetByPathAsync(path);
                 if (folder == null)
                     return null;
 
@@ -533,11 +533,11 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _logger.LogDebug("Cache miss for folder statistics: {FolderId}", folderId);
 
-                var fileCount = await _folderRepository.GetTotalFileCountAsync(folderId, includeSubfolders: false);
-                var subFolderCount = (await _folderRepository.GetSubFoldersAsync(folderId)).Count();
-                var totalSize = await _folderRepository.GetTotalSizeAsync(folderId, includeSubfolders: false);
-                var totalSizeWithSubfolders = await _folderRepository.GetTotalSizeAsync(folderId, includeSubfolders: true);
-                var depth = await _folderRepository.GetDepthAsync(folderId);
+                var fileCount = await _unitOfWork.Folders.GetTotalFileCountAsync(folderId, includeSubfolders: false);
+                var subFolderCount = (await _unitOfWork.Folders.GetSubFoldersAsync(folderId)).Count();
+                var totalSize = await _unitOfWork.Folders.GetTotalSizeAsync(folderId, includeSubfolders: false);
+                var totalSizeWithSubfolders = await _unitOfWork.Folders.GetTotalSizeAsync(folderId, includeSubfolders: true);
+                var depth = await _unitOfWork.Folders.GetDepthAsync(folderId);
 
                 return new Dictionary<string, object>
                 {
@@ -566,7 +566,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var exists = await _folderRepository.AnyAsync(f => f.Id == folderId);
+                var exists = await _unitOfWork.Folders.AnyAsync(f => f.Id == folderId);
                 return new BoolWrapper(exists);
             }, _folderValidationCacheTTL);
 
@@ -586,7 +586,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var isValid = await _folderRepository.IsPathUniqueAsync(name, excludeFolderId);
+                var isValid = await _unitOfWork.Folders.IsPathUniqueAsync(name, excludeFolderId);
                 return new BoolWrapper(isValid);
             }, _folderValidationCacheTTL);
 
@@ -603,7 +603,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
-                var isSubFolder = await _folderRepository.IsDescendantOfAsync(childFolderId, parentFolderId);
+                var isSubFolder = await _unitOfWork.Folders.IsDescendantOfAsync(childFolderId, parentFolderId);
                 return new BoolWrapper(isSubFolder);
             }, _folderValidationCacheTTL);
 
@@ -622,7 +622,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _logger.LogDebug("Cache miss for system folder: {FolderType}", folderType);
 
-                var existingFolder = (await _folderRepository.GetFoldersByTypeAsync(folderType)).FirstOrDefault();
+                var existingFolder = (await _unitOfWork.Folders.GetFoldersByTypeAsync(folderType)).FirstOrDefault();
                 if (existingFolder != null)
                 {
                     var dto = _mapper.Map<FolderDto>(existingFolder);
@@ -653,7 +653,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var userAvatarsFolder = await GetOrCreateSystemFolderAsync(FolderType.UserAvatars);
 
-                var userFolder = (await _folderRepository.GetSubFoldersAsync(userAvatarsFolder.Id))
+                var userFolder = (await _unitOfWork.Folders.GetSubFoldersAsync(userAvatarsFolder.Id))
                     .FirstOrDefault(f => f.Name.Equals($"user_{userId}", StringComparison.OrdinalIgnoreCase));
 
                 if (userFolder != null)
@@ -731,14 +731,14 @@ namespace Backend.CMS.Infrastructure.Services
         private async Task<FolderTreeDto> BuildFolderTreeAsync(int? rootFolderId)
         {
             var folders = rootFolderId.HasValue
-                ? await _folderRepository.GetSubFoldersAsync(rootFolderId.Value)
-                : await _folderRepository.GetRootFoldersAsync();
+                ? await _unitOfWork.Folders.GetSubFoldersAsync(rootFolderId.Value)
+                : await _unitOfWork.Folders.GetRootFoldersAsync();
 
             var treeDto = new FolderTreeDto();
 
             if (rootFolderId.HasValue)
             {
-                var rootFolder = await _folderRepository.GetByIdAsync(rootFolderId.Value);
+                var rootFolder = await _unitOfWork.Folders.GetByIdAsync(rootFolderId.Value);
                 if (rootFolder != null)
                 {
                     treeDto.Id = rootFolder.Id;
@@ -768,13 +768,13 @@ namespace Backend.CMS.Infrastructure.Services
                     ParentFolderId = folder.ParentFolderId,
                     FolderType = folder.FolderType,
                     IsPublic = folder.IsPublic,
-                    FileCount = await _folderRepository.GetTotalFileCountAsync(folder.Id),
-                    HasSubFolders = await _folderRepository.HasSubFoldersAsync(folder.Id)
+                    FileCount = await _unitOfWork.Folders.GetTotalFileCountAsync(folder.Id),
+                    HasSubFolders = await _unitOfWork.Folders.HasSubFoldersAsync(folder.Id)
                 };
 
                 if (child.HasSubFolders)
                 {
-                    var subFolders = await _folderRepository.GetSubFoldersAsync(folder.Id);
+                    var subFolders = await _unitOfWork.Folders.GetSubFoldersAsync(folder.Id);
                     child.Children = await BuildFolderTreeChildren(subFolders);
                 }
 
@@ -790,14 +790,14 @@ namespace Backend.CMS.Infrastructure.Services
 
             if (parentFolderId.HasValue)
             {
-                var parent = await _folderRepository.GetByIdAsync(parentFolderId.Value);
+                var parent = await _unitOfWork.Folders.GetByIdAsync(parentFolderId.Value);
                 if (parent != null)
                 {
                     basePath = $"{parent.Path}/{basePath}";
                 }
             }
 
-            return await _folderRepository.GenerateUniquePathAsync(basePath, parentFolderId);
+            return await _unitOfWork.Folders.GenerateUniquePathAsync(basePath, parentFolderId);
         }
 
         private static string GetSystemFolderName(FolderType folderType)

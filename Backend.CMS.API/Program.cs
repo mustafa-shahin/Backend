@@ -1,10 +1,8 @@
 using Backend.CMS.API.Filters;
 using Backend.CMS.API.Middleware;
-using Backend.CMS.Application.Common;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Caching;
-using Backend.CMS.Infrastructure.Caching.Extensions;
 using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Data;
@@ -23,7 +21,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
@@ -253,13 +250,13 @@ static void ConfigureCachingSystem(WebApplicationBuilder builder)
 
     builder.Services.AddSingleton<RedisCacheService>();
 
-    builder.Services.AddSingleton<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheService>(provider =>
+    builder.Services.AddSingleton<ICacheService>(provider =>
         provider.GetRequiredService<RedisCacheService>());
 
-    builder.Services.AddSingleton<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheInvalidationService>(provider =>
+    builder.Services.AddSingleton<ICacheInvalidationService>(provider =>
         provider.GetRequiredService<RedisCacheService>());
 
-    builder.Services.AddSingleton<Backend.CMS.Infrastructure.Caching.Interfaces.ICacheMonitoringService>(provider =>
+    builder.Services.AddSingleton<ICacheMonitoringService>(provider =>
         provider.GetRequiredService<RedisCacheService>());
 
     // Register background services for cache management
@@ -555,34 +552,9 @@ static void RegisterServices(WebApplicationBuilder builder)
 
 static void RegisterRepositories(WebApplicationBuilder builder)
 {
-    // Generic repository
+    // Unit of Work - Provides access to all repositories
+    builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
     builder.Services.AddScoped(typeof(IRepository<>), typeof(Repository<>));
-
-    // Specialized repositories
-    builder.Services.AddScoped<IPageRepository, PageRepository>();
-    builder.Services.AddScoped<IFolderRepository, FolderRepository>();
-    builder.Services.AddScoped<IFileRepository, FileRepository>();
-    builder.Services.AddScoped<IUserRepository, UserRepository>();
-    builder.Services.AddScoped<ILocationRepository, LocationRepository>();
-    builder.Services.AddScoped<ICompanyRepository, CompanyRepository>();
-
-    // Entity repositories
-    builder.Services.AddScoped<IRepository<UserSession>, Repository<UserSession>>();
-    builder.Services.AddScoped<IRepository<PasswordResetToken>, Repository<PasswordResetToken>>();
-    builder.Services.AddScoped<IRepository<Company>, Repository<Company>>();
-    builder.Services.AddScoped<IRepository<Location>, Repository<Location>>();
-    builder.Services.AddScoped<IRepository<LocationOpeningHour>, Repository<LocationOpeningHour>>();
-    builder.Services.AddScoped<IRepository<Address>, Repository<Address>>();
-    builder.Services.AddScoped<IRepository<ContactDetails>, Repository<ContactDetails>>();
-    builder.Services.AddScoped<IRepository<PageVersion>, Repository<PageVersion>>();
-    builder.Services.AddScoped<IRepository<FileEntity>, Repository<FileEntity>>();
-    builder.Services.AddScoped<IRepository<Folder>, Repository<Folder>>();
-    builder.Services.AddScoped<IRepository<Backend.CMS.Domain.Entities.FileAccess>, Repository<Backend.CMS.Domain.Entities.FileAccess>>();
-    builder.Services.AddScoped<IRepository<Permission>, Repository<Permission>>();
-    builder.Services.AddScoped<IRepository<RolePermission>, Repository<RolePermission>>();
-    builder.Services.AddScoped<IRepository<UserPermission>, Repository<UserPermission>>();
-    builder.Services.AddScoped<IRepository<SearchIndex>, Repository<SearchIndex>>();
-    builder.Services.AddScoped<IRepository<IndexingJob>, Repository<IndexingJob>>();
 }
 
 static void RegisterSocialAuthServices(WebApplicationBuilder builder)
@@ -605,14 +577,15 @@ static void RegisterBusinessServices(WebApplicationBuilder builder)
 {
     // Business services
     builder.Services.AddScoped<ICompanyService, CompanyService>();
-    builder.Services.AddScoped<ILocationService, LocationService>();
-    builder.Services.AddScoped<IPageService, PageService>();
+    //builder.Services.AddScoped<ILocationService, LocationService>();
+    //builder.Services.AddScoped<IPageService, PageService>();
 
     builder.Services.AddScoped<IUserService, UserService>();
 
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<IPermissionService, PermissionService>();
     builder.Services.AddScoped<IPermissionResolver, PermissionResolver>();
+    builder.Services.AddScoped<ICachedRepositoryService, CachedRepositoryService>();
     builder.Services.AddScoped<IDesignerService, DesignerService>();
     builder.Services.AddScoped<IPageContentValidationService, PageContentValidationService>();
 }

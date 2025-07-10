@@ -17,10 +17,10 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<bool> HasSubCategoriesAsync(int categoryId);
         Task<bool> CanDeleteAsync(int categoryId);
 
-        // Paginated methods with proper return types
-        Task<(IEnumerable<Category> categories, int totalCount)> GetCategoriesPagedAsync(CategorySearchDto searchDto);
-        Task<(IEnumerable<Category> categories, int totalCount)> GetRootCategoriesPagedAsync(int pageNumber, int pageSize);
-        Task<(IEnumerable<Category> categories, int totalCount)> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize);
-        Task<(IEnumerable<Category> categories, int totalCount)> SearchCategoriesPagedAsync(CategorySearchDto searchDto);
+        // Paginated methods with PagedResult
+        Task<PagedResult<Category>> GetCategoriesPagedAsync(CategorySearchDto searchDto);
+        Task<PagedResult<Category>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize);
+        Task<PagedResult<Category>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize);
+        Task<PagedResult<Category>> SearchCategoriesPagedAsync(CategorySearchDto searchDto);
     }
 }

@@ -12,7 +12,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class ContactDetailsService : IContactDetailsService
     {
-        private readonly IRepository<ContactDetails> _contactDetailsRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly ApplicationDbContext _context;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
@@ -24,13 +24,13 @@ namespace Backend.CMS.Infrastructure.Services
         };
 
         public ContactDetailsService(
-            IRepository<ContactDetails> contactDetailsRepository,
+            IUnitOfWork unitOfWork,
             ApplicationDbContext context,
             IUserSessionService userSessionService,
             IMapper mapper,
             ILogger<ContactDetailsService> logger)
         {
-            _contactDetailsRepository = contactDetailsRepository ?? throw new ArgumentNullException(nameof(contactDetailsRepository));
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
@@ -44,7 +44,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var contactDetails = await _contactDetailsRepository.GetByIdAsync(contactId);
+                var contactDetails = await _unitOfWork.ContactDetails.GetByIdAsync(contactId);
                 if (contactDetails == null)
                 {
                     _logger.LogWarning("Contact details {ContactId} not found", contactId);
@@ -192,7 +192,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var contactDetails = await _contactDetailsRepository.GetByIdAsync(contactId);
+                var contactDetails = await  _unitOfWork.ContactDetails.GetByIdAsync(contactId);
                 if (contactDetails == null)
                 {
                     _logger.LogWarning("Contact details {ContactId} not found for update", contactId);
@@ -205,8 +205,8 @@ namespace Backend.CMS.Infrastructure.Services
                 contactDetails.UpdatedAt = DateTime.UtcNow;
                 contactDetails.UpdatedByUserId = currentUserId;
 
-                _contactDetailsRepository.Update(contactDetails);
-                await _contactDetailsRepository.SaveChangesAsync();
+                 _unitOfWork.ContactDetails.Update(contactDetails);
+                await  _unitOfWork.ContactDetails.SaveChangesAsync();
                 await transaction.CommitAsync();
 
                 _logger.LogInformation("Contact details {ContactId} updated by user {UserId}", contactId, currentUserId);
@@ -229,7 +229,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var result = await _contactDetailsRepository.SoftDeleteAsync(contactId, currentUserId);
+                var result = await  _unitOfWork.ContactDetails.SoftDeleteAsync(contactId, currentUserId);
 
                 if (result)
                 {
@@ -266,7 +266,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var contactDetails = await _contactDetailsRepository.GetByIdAsync(contactId);
+                var contactDetails = await  _unitOfWork.ContactDetails.GetByIdAsync(contactId);
                 if (contactDetails == null)
                 {
                     _logger.LogWarning("Contact details {ContactId} not found for setting default", contactId);
@@ -351,17 +351,17 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var totalContactDetails = await _contactDetailsRepository.CountAsync();
-                var defaultContactDetails = await _contactDetailsRepository.CountAsync(c => c.IsDefault);
+                var totalContactDetails = await  _unitOfWork.ContactDetails.CountAsync();
+                var defaultContactDetails = await  _unitOfWork.ContactDetails.CountAsync(c => c.IsDefault);
                 var contactDetailsByType = await _context.ContactDetails
                     .Where(c => !c.IsDeleted)
                     .GroupBy(c => c.ContactType ?? "Default")
                     .Select(g => new { Type = g.Key, Count = g.Count() })
                     .ToListAsync();
 
-                var contactDetailsWithEmail = await _contactDetailsRepository.CountAsync(c => !string.IsNullOrEmpty(c.Email));
-                var contactDetailsWithPhone = await _contactDetailsRepository.CountAsync(c => !string.IsNullOrEmpty(c.PrimaryPhone));
-                var contactDetailsWithWebsite = await _contactDetailsRepository.CountAsync(c => !string.IsNullOrEmpty(c.Website));
+                var contactDetailsWithEmail = await  _unitOfWork.ContactDetails.CountAsync(c => !string.IsNullOrEmpty(c.Email));
+                var contactDetailsWithPhone = await  _unitOfWork.ContactDetails.CountAsync(c => !string.IsNullOrEmpty(c.PrimaryPhone));
+                var contactDetailsWithWebsite = await  _unitOfWork.ContactDetails.CountAsync(c => !string.IsNullOrEmpty(c.Website));
 
                 return new Dictionary<string, object>
                 {
@@ -393,7 +393,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var contactDetails = await _contactDetailsRepository.FindAsync(c => contactIds.Contains(c.Id));
+                var contactDetails = await  _unitOfWork.ContactDetails.FindAsync(c => contactIds.Contains(c.Id));
                 var updateTime = DateTime.UtcNow;
 
                 foreach (var contact in contactDetails)
@@ -427,9 +427,9 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var contactDetails = await _contactDetailsRepository.FindAsync(c => contactIds.Contains(c.Id));
+                var contactDetails = await  _unitOfWork.ContactDetails.FindAsync(c => contactIds.Contains(c.Id));
 
-                await _contactDetailsRepository.SoftDeleteRangeAsync(contactDetails, currentUserId);
+                await  _unitOfWork.ContactDetails.SoftDeleteRangeAsync(contactDetails, currentUserId);
 
                 _logger.LogInformation("Bulk deleted {Count} contact details by user {UserId}", contactDetails.Count(), currentUserId);
 

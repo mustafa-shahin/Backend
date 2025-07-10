@@ -12,7 +12,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class AddressService : IAddressService
     {
-        private readonly IRepository<Address> _addressRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly ApplicationDbContext _context;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
@@ -24,13 +24,13 @@ namespace Backend.CMS.Infrastructure.Services
         };
 
         public AddressService(
-            IRepository<Address> addressRepository,
+           IUnitOfWork unitOfWork,
             ApplicationDbContext context,
             IUserSessionService userSessionService,
             IMapper mapper,
             ILogger<AddressService> logger)
         {
-            _addressRepository = addressRepository ?? throw new ArgumentNullException(nameof(addressRepository));
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
@@ -44,7 +44,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var address = await _addressRepository.GetByIdAsync(addressId);
+                var address = await _unitOfWork.Addresses.GetByIdAsync(addressId);
                 if (address == null)
                 {
                     _logger.LogWarning("Address {AddressId} not found", addressId);
@@ -191,7 +191,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var address = await _addressRepository.GetByIdAsync(addressId);
+                var address = await _unitOfWork.Addresses.GetByIdAsync(addressId);
                 if (address == null)
                 {
                     _logger.LogWarning("Address {AddressId} not found for update", addressId);
@@ -204,8 +204,8 @@ namespace Backend.CMS.Infrastructure.Services
                 address.UpdatedAt = DateTime.UtcNow;
                 address.UpdatedByUserId = currentUserId;
 
-                _addressRepository.Update(address);
-                await _addressRepository.SaveChangesAsync();
+                _unitOfWork.Addresses.Update(address);
+                await _unitOfWork.Addresses.SaveChangesAsync();
                 await transaction.CommitAsync();
 
                 _logger.LogInformation("Address {AddressId} updated by user {UserId}", addressId, currentUserId);
@@ -228,7 +228,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var result = await _addressRepository.SoftDeleteAsync(addressId, currentUserId);
+                var result = await _unitOfWork.Addresses.SoftDeleteAsync(addressId, currentUserId);
 
                 if (result)
                 {
@@ -265,7 +265,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var address = await _addressRepository.GetByIdAsync(addressId);
+                var address = await _unitOfWork.Addresses.GetByIdAsync(addressId);
                 if (address == null)
                 {
                     _logger.LogWarning("Address {AddressId} not found for setting default", addressId);
@@ -350,8 +350,8 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var totalAddresses = await _addressRepository.CountAsync();
-                var defaultAddresses = await _addressRepository.CountAsync(a => a.IsDefault);
+                var totalAddresses = await _unitOfWork.Addresses.CountAsync();
+                var defaultAddresses = await _unitOfWork.Addresses.CountAsync(a => a.IsDefault);
                 var addressesByType = await _context.Addresses
                     .Where(a => !a.IsDeleted)
                     .GroupBy(a => a.AddressType ?? "Default")
@@ -394,7 +394,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var addresses = await _addressRepository.FindAsync(a => addressIds.Contains(a.Id));
+                var addresses = await _unitOfWork.Addresses.FindAsync(a => addressIds.Contains(a.Id));
                 var updateTime = DateTime.UtcNow;
 
                 foreach (var address in addresses)
@@ -428,9 +428,9 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var addresses = await _addressRepository.FindAsync(a => addressIds.Contains(a.Id));
+                var addresses = await _unitOfWork.Addresses.FindAsync(a => addressIds.Contains(a.Id));
 
-                await _addressRepository.SoftDeleteRangeAsync(addresses, currentUserId);
+                await _unitOfWork.Addresses.SoftDeleteRangeAsync(addresses, currentUserId);
 
                 _logger.LogInformation("Bulk deleted {Count} addresses by user {UserId}", addresses.Count(), currentUserId);
 

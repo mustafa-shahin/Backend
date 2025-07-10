@@ -12,8 +12,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class PageService : IPageService
     {
-        private readonly IPageRepository _pageRepository;
-        private readonly IRepository<PageVersion> _versionRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly ICacheService _cacheService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
         private readonly ICacheKeyService _cacheKeyService;
@@ -23,8 +22,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly JsonSerializerOptions _jsonOptions;
 
         public PageService(
-            IPageRepository pageRepository,
-            IRepository<PageVersion> versionRepository,
+            IUnitOfWork unitOfWork,
             ICacheService cacheService,
             ICacheInvalidationService cacheInvalidationService,
             ICacheKeyService cacheKeyService,
@@ -32,8 +30,7 @@ namespace Backend.CMS.Infrastructure.Services
             IMapper mapper,
             ILogger<PageService> logger)
         {
-            _pageRepository = pageRepository ?? throw new ArgumentNullException(nameof(pageRepository));
-            _versionRepository = versionRepository ?? throw new ArgumentNullException(nameof(versionRepository));
+            _unitOfWork = unitOfWork;
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
             _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
             _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
@@ -59,7 +56,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var cacheKey = _cacheKeyService.GetEntityKey<Page>(pageId);
                 return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
-                    var page = await _pageRepository.GetByIdAsync(pageId);
+                    var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
                     if (page == null)
                         throw new ArgumentException("Page not found");
 
@@ -86,7 +83,7 @@ namespace Backend.CMS.Infrastructure.Services
                 return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
                     // For public access, only get published pages
-                    var page = await _pageRepository.GetPublishedBySlugAsync(normalizedSlug);
+                    var page = await _unitOfWork.Pages.GetPublishedBySlugAsync(normalizedSlug);
                     if (page == null)
                         throw new ArgumentException("Page not found");
 
@@ -113,15 +110,15 @@ namespace Backend.CMS.Infrastructure.Services
                 return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
                     var pages = string.IsNullOrWhiteSpace(searchTerm)
-                        ? await _pageRepository.GetPagedAsync(page, pageSize)
-                        : await _pageRepository.SearchPagesAsync(searchTerm, page, pageSize);
+                        ? await _unitOfWork.Pages.GetPagedAsync(page, pageSize)
+                        : await _unitOfWork.Pages.SearchPagesAsync(searchTerm, page, pageSize);
 
                     var pageList = pages.ToList();
                     var pageDtos = _mapper.Map<List<PageListDto>>(pageList);
 
                     // Enhance with version information efficiently
                     var pageIds = pageList.Select(p => p.Id).ToList();
-                    var allVersions = await _versionRepository.FindAsync(v => pageIds.Contains(v.PageId));
+                    var allVersions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => pageIds.Contains(v.PageId));
                     var versionGroups = allVersions.GroupBy(v => v.PageId).ToDictionary(g => g.Key, g => g.ToList());
 
                     foreach (var pageDto in pageDtos)
@@ -150,7 +147,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var cacheKey = _cacheKeyService.GetCollectionKey<Page>("hierarchy");
                 return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
-                    var pages = await _pageRepository.GetPageHierarchyAsync();
+                    var pages = await _unitOfWork.Pages.GetPageHierarchyAsync();
                     return _mapper.Map<List<PageDto>>(pages);
                 }, TimeSpan.FromMinutes(30));
             }
@@ -168,7 +165,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var cacheKey = _cacheKeyService.GetCollectionKey<Page>("published");
                 return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
-                    var pages = await _pageRepository.GetPublishedPagesAsync();
+                    var pages = await _unitOfWork.Pages.GetPublishedPagesAsync();
                     return _mapper.Map<List<PageDto>>(pages);
                 }, TimeSpan.FromMinutes(20));
             }
@@ -187,12 +184,12 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var normalizedSlug = NormalizeSlug(createPageDto.Slug);
 
-                if (await _pageRepository.SlugExistsAsync(normalizedSlug))
+                if (await _unitOfWork.Pages.SlugExistsAsync(normalizedSlug))
                     throw new ArgumentException("A page with this slug already exists");
 
                 if (createPageDto.ParentPageId.HasValue)
                 {
-                    var parentPage = await _pageRepository.GetByIdAsync(createPageDto.ParentPageId.Value);
+                    var parentPage = await _unitOfWork.Pages.GetByIdAsync(createPageDto.ParentPageId.Value);
                     if (parentPage == null)
                         throw new ArgumentException("Parent page not found");
                 }
@@ -209,8 +206,8 @@ namespace Backend.CMS.Infrastructure.Services
                 // Validate content
                 ValidatePageContent(page);
 
-                await _pageRepository.AddAsync(page);
-                await _pageRepository.SaveChangesAsync();
+                await _unitOfWork.Pages.AddAsync(page);
+                await _unitOfWork.Pages.SaveChangesAsync();
 
                 // Create initial version
                 await CreatePageVersionAsync(page.Id, "Initial page creation");
@@ -234,12 +231,12 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var page = await _pageRepository.GetByIdAsync(pageId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
                 var normalizedSlug = NormalizeSlug(updatePageDto.Slug);
-                if (await _pageRepository.SlugExistsAsync(normalizedSlug, pageId))
+                if (await _unitOfWork.Pages.SlugExistsAsync(normalizedSlug, pageId))
                     throw new ArgumentException("A page with this slug already exists");
 
                 if (updatePageDto.ParentPageId.HasValue)
@@ -247,7 +244,7 @@ namespace Backend.CMS.Infrastructure.Services
                     if (updatePageDto.ParentPageId == pageId)
                         throw new ArgumentException("A page cannot be its own parent");
 
-                    var parentPage = await _pageRepository.GetByIdAsync(updatePageDto.ParentPageId.Value);
+                    var parentPage = await _unitOfWork.Pages.GetByIdAsync(updatePageDto.ParentPageId.Value);
                     if (parentPage == null)
                         throw new ArgumentException("Parent page not found");
 
@@ -269,8 +266,8 @@ namespace Backend.CMS.Infrastructure.Services
                 // Validate content
                 ValidatePageContent(page);
 
-                _pageRepository.Update(page);
-                await _pageRepository.SaveChangesAsync();
+                _unitOfWork.Pages.Update(page);
+                await _unitOfWork.Pages.SaveChangesAsync();
 
                 await InvalidatePageCacheAsync(pageId);
 
@@ -292,7 +289,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var page = await _pageRepository.GetByIdAsync(savePageStructureDto.PageId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(savePageStructureDto.PageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
@@ -316,8 +313,8 @@ namespace Backend.CMS.Infrastructure.Services
                 // Validate content
                 ValidatePageContent(page);
 
-                _pageRepository.Update(page);
-                await _pageRepository.SaveChangesAsync();
+                _unitOfWork.Pages.Update(page);
+                await _unitOfWork.Pages.SaveChangesAsync();
 
                 await InvalidatePageCacheAsync(savePageStructureDto.PageId);
 
@@ -339,12 +336,12 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var childPages = await _pageRepository.GetChildPagesAsync(pageId);
+                var childPages = await _unitOfWork.Pages.GetChildPagesAsync(pageId);
                 if (childPages.Any())
                     throw new InvalidOperationException("Cannot delete a page that has child pages. Delete or move child pages first.");
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var success = await _pageRepository.SoftDeleteAsync(pageId, currentUserId);
+                var success = await _unitOfWork.Pages.SoftDeleteAsync(pageId, currentUserId);
 
                 if (success)
                 {
@@ -368,7 +365,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var page = await _pageRepository.GetByIdAsync(pageId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
@@ -380,7 +377,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var version = await CreatePageVersionAsync(pageId, "Page published");
                 version.IsPublished = true;
                 version.PublishedAt = DateTime.UtcNow;
-                _versionRepository.Update(version);
+                _unitOfWork.GetRepository<PageVersion>().Update(version);
 
                 page.Status = PageStatus.Published;
                 page.PublishedOn = DateTime.UtcNow;
@@ -388,8 +385,8 @@ namespace Backend.CMS.Infrastructure.Services
                 page.UpdatedAt = DateTime.UtcNow;
                 page.UpdatedByUserId = currentUserId;
 
-                _pageRepository.Update(page);
-                await _pageRepository.SaveChangesAsync();
+                _unitOfWork.Pages.Update(page);
+                await _unitOfWork.Pages.SaveChangesAsync();
 
                 await InvalidatePageCacheAsync(pageId);
 
@@ -411,7 +408,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var page = await _pageRepository.GetByIdAsync(pageId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
@@ -424,8 +421,8 @@ namespace Backend.CMS.Infrastructure.Services
                 page.UpdatedAt = DateTime.UtcNow;
                 page.UpdatedByUserId = currentUserId;
 
-                _pageRepository.Update(page);
-                await _pageRepository.SaveChangesAsync();
+                _unitOfWork.Pages.Update(page);
+                await _unitOfWork.Pages.SaveChangesAsync();
 
                 await InvalidatePageCacheAsync(pageId);
 
@@ -450,7 +447,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var originalPage = await _pageRepository.GetByIdAsync(pageId);
+                var originalPage = await _unitOfWork.Pages.GetByIdAsync(pageId);
                 if (originalPage == null)
                     throw new ArgumentException("Page not found");
 
@@ -487,8 +484,8 @@ namespace Backend.CMS.Infrastructure.Services
                 // Validate content
                 ValidatePageContent(duplicatedPage);
 
-                await _pageRepository.AddAsync(duplicatedPage);
-                await _pageRepository.SaveChangesAsync();
+                await _unitOfWork.Pages.AddAsync(duplicatedPage);
+                await _unitOfWork.Pages.SaveChangesAsync();
 
                 // Create initial version for duplicated page
                 await CreatePageVersionAsync(duplicatedPage.Id, $"Duplicated from page {originalPage.Name}");
@@ -517,7 +514,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var cacheKey = _cacheKeyService.GetCustomKey("page", "children", parentPageId);
                 return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
-                    var pages = await _pageRepository.GetChildPagesAsync(parentPageId);
+                    var pages = await _unitOfWork.Pages.GetChildPagesAsync(parentPageId);
                     return _mapper.Map<List<PageDto>>(pages);
                 }, TimeSpan.FromMinutes(20));
             }
@@ -536,7 +533,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var normalizedSlug = NormalizeSlug(slug);
-                return !await _pageRepository.SlugExistsAsync(normalizedSlug, excludePageId);
+                return !await _unitOfWork.Pages.SlugExistsAsync(normalizedSlug, excludePageId);
             }
             catch (Exception ex)
             {
@@ -549,13 +546,13 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var page = await _pageRepository.GetByIdAsync(pageId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
                 if (page == null)
                     throw new ArgumentException("Page not found");
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
 
-                var existingVersions = await _versionRepository.FindAsync(v => v.PageId == pageId);
+                var existingVersions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => v.PageId == pageId);
                 var nextVersionNumber = existingVersions.Any() ? existingVersions.Max(v => v.VersionNumber) + 1 : 1;
 
                 var pageSnapshot = new Dictionary<string, object>
@@ -598,8 +595,8 @@ namespace Backend.CMS.Infrastructure.Services
                     UpdatedByUserId = currentUserId
                 };
 
-                await _versionRepository.AddAsync(version);
-                await _versionRepository.SaveChangesAsync();
+                await _unitOfWork.GetRepository<PageVersion>().AddAsync(version);
+                await _unitOfWork.GetRepository<PageVersion>().SaveChangesAsync();
 
                 // Clear version cache
                 var versionsKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
@@ -624,7 +621,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var cacheKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
                 return await _cacheService.GetOrAddAsync(cacheKey, async () =>
                 {
-                    var versions = await _versionRepository.FindAsync(v => v.PageId == pageId);
+                    var versions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => v.PageId == pageId);
                     return versions.OrderByDescending(v => v.VersionNumber)
                                   .Select(v => _mapper.Map<PageVersionDto>(v))
                                   .ToList();
@@ -647,8 +644,8 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var page = await _pageRepository.GetByIdAsync(pageId);
-                var version = await _versionRepository.GetByIdAsync(versionId);
+                var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
+                var version = await _unitOfWork.GetRepository<PageVersion>().GetByIdAsync(versionId);
 
                 if (page == null || version == null || version.PageId != pageId)
                     throw new ArgumentException("Page or version not found");
@@ -667,8 +664,8 @@ namespace Backend.CMS.Infrastructure.Services
                 // Validate content after restoration
                 ValidatePageContent(page);
 
-                _pageRepository.Update(page);
-                await _pageRepository.SaveChangesAsync();
+                _unitOfWork.Pages.Update(page);
+                await _unitOfWork.Pages.SaveChangesAsync();
 
                 await InvalidatePageCacheAsync(pageId);
 
@@ -756,7 +753,7 @@ namespace Backend.CMS.Infrastructure.Services
             var slug = baseSlug;
             var counter = 1;
 
-            while (await _pageRepository.SlugExistsAsync(slug))
+            while (await _unitOfWork.Pages.SlugExistsAsync(slug))
             {
                 slug = $"{baseSlug}-{counter}";
                 counter++;
@@ -774,7 +771,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (currentParentId == pageId)
                     return true;
 
-                var parentPage = await _pageRepository.GetByIdAsync(currentParentId.Value);
+                var parentPage = await _unitOfWork.Pages.GetByIdAsync(currentParentId.Value);
                 currentParentId = parentPage?.ParentPageId;
             }
 

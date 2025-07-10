@@ -28,21 +28,21 @@ namespace Backend.CMS.API.Controllers
         private readonly IFileService _fileService;
         private readonly IDownloadTokenService _downloadTokenService;
         private readonly ILogger<FileController> _logger;
-        private readonly IRepository<FileEntity> _fileRepository;
         private readonly IImageProcessingService _imageProcessingService;
+        private readonly IUnitOfWork _unitOfWork;
 
         public FileController(
             IFileService fileService,
             IDownloadTokenService downloadTokenService,
             ILogger<FileController> logger,
-            IRepository<FileEntity> fileRepository,
-            IImageProcessingService imageProcessingService)
+            IImageProcessingService imageProcessingService,
+            IUnitOfWork unitOfWork)
         {
             _fileService = fileService ?? throw new ArgumentNullException(nameof(fileService));
             _downloadTokenService = downloadTokenService ?? throw new ArgumentNullException(nameof(downloadTokenService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _fileRepository = fileRepository ?? throw new ArgumentNullException(nameof(fileRepository));
             _imageProcessingService = imageProcessingService ?? throw new ArgumentNullException(nameof(imageProcessingService));
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
         }
 
         /// <summary>
@@ -265,7 +265,7 @@ namespace Backend.CMS.API.Controllers
                 }
 
                 // Get file entity to access content
-                var fileEntity = await _fileRepository.GetByIdAsync(id);
+                var fileEntity = await _unitOfWork.Files.GetByIdAsync(id);
                 if (fileEntity?.FileContent == null || fileEntity.FileContent.Length == 0)
                 {
                     return NotFound(new { Message = "File content not found" });
@@ -346,7 +346,7 @@ namespace Backend.CMS.API.Controllers
                 }
 
                 // Get file entity to access content
-                var fileEntity = await _fileRepository.GetByIdAsync(fileId);
+                var fileEntity = await _unitOfWork.Files.GetByIdAsync(fileId);
                 if (fileEntity?.FileContent == null || fileEntity.FileContent.Length == 0)
                 {
                     return NotFound(new { Message = "File content not found" });
@@ -1020,7 +1020,7 @@ namespace Backend.CMS.API.Controllers
             try
             {
                 // Get file info
-                var file = await _fileRepository.GetByIdAsync(id);
+                var file = await _unitOfWork.Files.GetByIdAsync(id);
                 if (file == null)
                 {
                     return NotFound(new { Message = "File not found" });

@@ -1,5 +1,6 @@
 ﻿using Backend.CMS.Application.DTOs;
 
+
 namespace Backend.CMS.Infrastructure.Interfaces
 {
     public interface ILocationService

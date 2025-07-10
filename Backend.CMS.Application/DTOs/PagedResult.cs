@@ -73,6 +73,13 @@
             TotalCount = Math.Max(0, totalCount);
         }
 
+        // Deconstruct method to allow for easy destructuring of the PagedResult object
+        public void Deconstruct(out IReadOnlyList<T> data, out int totalCount)
+        {
+            data = Data;
+            totalCount = TotalCount;
+        }
+
         /// <summary>
         /// Creates a paged result from a list of items
         /// </summary>

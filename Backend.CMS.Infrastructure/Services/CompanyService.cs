@@ -11,31 +11,32 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class CompanyService : ICompanyService
     {
-        private readonly ICompanyRepository _companyRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly ApplicationDbContext _context;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
         private readonly ILogger<CompanyService> _logger;
 
         public CompanyService(
-            ICompanyRepository companyRepository,
+            IUnitOfWork unitOfWork,
             ApplicationDbContext context,
             IUserSessionService userSessionService,
             IMapper mapper,
             ILogger<CompanyService> logger)
         {
-            _companyRepository = companyRepository ?? throw new ArgumentNullException(nameof(companyRepository));
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
         }
 
         public async Task<CompanyDto> GetCompanyAsync()
         {
             try
             {
-                var company = await _companyRepository.GetCompanyWithDetailsAsync();
+                var company = await _unitOfWork.Companies.GetCompanyWithDetailsAsync();
 
                 if (company == null)
                 {
@@ -60,7 +61,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var companies = await _companyRepository.GetAllAsync();
+                var companies = await _unitOfWork.Companies.GetAllAsync();
                 var company = companies.FirstOrDefault();
 
                 if (company == null)
@@ -76,8 +77,8 @@ namespace Backend.CMS.Infrastructure.Services
                 company.UpdatedAt = DateTime.UtcNow;
                 company.UpdatedByUserId = currentUserId;
 
-                _companyRepository.Update(company);
-                await _companyRepository.SaveChangesAsync();
+                _unitOfWork.Companies.Update(company);
+                await _unitOfWork.Companies.SaveChangesAsync();
 
                 // Handle related data updates in parallel
                 var tasks = new List<Task>();
@@ -103,7 +104,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogInformation("Company {CompanyId} updated by user {UserId}", company.Id, currentUserId);
 
                 // Return updated company with details
-                var updatedCompany = await _companyRepository.GetCompanyWithDetailsAsync(company.Id);
+                var updatedCompany = await _unitOfWork.Companies.GetCompanyWithDetailsAsync(company.Id);
                 return _mapper.Map<CompanyDto>(updatedCompany);
             }
             catch (Exception ex) when (!(ex is ArgumentException))
@@ -134,8 +135,8 @@ namespace Backend.CMS.Infrastructure.Services
                 UpdatedAt = DateTime.UtcNow
             };
 
-            await _companyRepository.AddAsync(company);
-            await _companyRepository.SaveChangesAsync();
+            await _unitOfWork.Companies.AddAsync(company);
+            await _unitOfWork.Companies.SaveChangesAsync();
 
             _logger.LogInformation("Default company created by user {UserId}", currentUserId);
 

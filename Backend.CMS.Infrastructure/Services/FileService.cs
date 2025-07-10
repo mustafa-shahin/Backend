@@ -17,8 +17,7 @@ namespace Backend.CMS.Infrastructure.Services
 {
     public class FileService : IFileService, IDisposable
     {
-        private readonly IFileRepository _fileRepository;
-        private readonly IRepository<Backend.CMS.Domain.Entities.FileAccess> _fileAccessRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IImageProcessingService _imageProcessingService;
         private readonly IFileValidationService _fileValidationService;
         private readonly IUserSessionService _userSessionService;
@@ -33,8 +32,7 @@ namespace Backend.CMS.Infrastructure.Services
         private bool _disposed = false;
 
         public FileService(
-            IFileRepository fileRepository,
-            IRepository<Backend.CMS.Domain.Entities.FileAccess> fileAccessRepository,
+            IUnitOfWork unitOfWork,
             IImageProcessingService imageProcessingService,
             IFileValidationService fileValidationService,
             IUserSessionService userSessionService,
@@ -43,8 +41,7 @@ namespace Backend.CMS.Infrastructure.Services
             ILogger<FileService> logger,
             IConfiguration configuration)
         {
-            _fileRepository = fileRepository ?? throw new ArgumentNullException(nameof(fileRepository));
-            _fileAccessRepository = fileAccessRepository ?? throw new ArgumentNullException(nameof(fileAccessRepository));
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _imageProcessingService = imageProcessingService ?? throw new ArgumentNullException(nameof(imageProcessingService));
             _fileValidationService = fileValidationService ?? throw new ArgumentNullException(nameof(fileValidationService));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
@@ -121,49 +118,56 @@ namespace Backend.CMS.Infrastructure.Services
                         throw new InvalidOperationException("Uploaded file appears to be corrupted or is not a valid image");
                     }
 
-                    // Create file entity
-                    var fileEntity = new FileEntity
+                    // Create file entity and save to database within transaction
+                    var fileEntity = await _unitOfWork.ExecuteInTransactionAsync(async () =>
                     {
-                        OriginalFileName = originalFileName,
-                        StoredFileName = storedFileName,
-                        FileContent = fileContent,
-                        ContentType = uploadDto.File.ContentType,
-                        FileSize = uploadDto.File.Length,
-                        FileExtension = fileExtension,
-                        FileType = fileType,
-                        Description = uploadDto.Description,
-                        Alt = uploadDto.Alt,
-                        IsPublic = uploadDto.IsPublic,
-                        FolderId = uploadDto.FolderId,
-                        Hash = fileHash,
-                        Tags = uploadDto.Tags ?? new Dictionary<string, object>(),
-                        CreatedByUserId = currentUserId,
-                        UpdatedByUserId = currentUserId,
-                        IsProcessed = false,
-                        ProcessingStatus = "Pending"
-                    };
+                        var entity = new FileEntity
+                        {
+                            OriginalFileName = originalFileName,
+                            StoredFileName = storedFileName,
+                            FileContent = fileContent,
+                            ContentType = uploadDto.File.ContentType,
+                            FileSize = uploadDto.File.Length,
+                            FileExtension = fileExtension,
+                            FileType = fileType,
+                            Description = uploadDto.Description,
+                            Alt = uploadDto.Alt,
+                            IsPublic = uploadDto.IsPublic,
+                            FolderId = uploadDto.FolderId,
+                            Hash = fileHash,
+                            Tags = uploadDto.Tags ?? new Dictionary<string, object>(),
+                            CreatedByUserId = currentUserId,
+                            UpdatedByUserId = currentUserId,
+                            IsProcessed = false,
+                            ProcessingStatus = "Pending"
+                        };
 
-                    await _fileRepository.AddAsync(fileEntity);
-                    await _fileRepository.SaveChangesAsync();
+                        await _unitOfWork.Files.AddAsync(entity);
+                        await _unitOfWork.SaveChangesAsync();
 
-                    // Verify file was saved correctly
-                    var savedFile = await _fileRepository.GetByIdAsync(fileEntity.Id);
-                    if (savedFile?.FileContent?.Length != fileContent.Length)
-                    {
-                        throw new InvalidOperationException("File save failed - integrity check failed");
-                    }
+                        // Verify file was saved correctly
+                        var savedFile = await _unitOfWork.Files.GetByIdAsync(entity.Id);
+                        if (savedFile?.FileContent?.Length != fileContent.Length)
+                        {
+                            throw new InvalidOperationException("File save failed - integrity check failed");
+                        }
+
+                        // Process immediately if requested
+                        if (uploadDto.ProcessImmediately && fileType != FileType.Image)
+                        {
+                            entity.IsProcessed = true;
+                            entity.ProcessingStatus = "Completed";
+                            _unitOfWork.Files.Update(entity);
+                            await _unitOfWork.SaveChangesAsync();
+                        }
+
+                        return entity;
+                    });
 
                     // Process image after saving to database
                     if (fileType == FileType.Image && uploadDto.ProcessImmediately)
                     {
                         await ProcessImageFileAsync(fileEntity, uploadDto.GenerateThumbnail);
-                    }
-                    else if (uploadDto.ProcessImmediately)
-                    {
-                        fileEntity.IsProcessed = true;
-                        fileEntity.ProcessingStatus = "Completed";
-                        _fileRepository.Update(fileEntity);
-                        await _fileRepository.SaveChangesAsync();
                     }
 
                     var fileDto = await MapFileToDto(fileEntity);
@@ -367,7 +371,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FileDto> GetFileByIdAsync(int fileId)
         {
-            var file = await _fileRepository.GetByIdAsync(fileId);
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
             if (file == null)
                 throw new ArgumentException("File not found");
 
@@ -380,7 +384,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<(Stream stream, string contentType, string fileName)> GetFileStreamAsync(int fileId)
         {
-            var file = await _fileRepository.GetByIdAsync(fileId);
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
             if (file == null)
                 throw new ArgumentException("File not found");
 
@@ -394,7 +398,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<ThumbnailResult> GetThumbnailStreamAsync(int fileId)
         {
-            var file = await _fileRepository.GetByIdAsync(fileId);
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
 
             if (file == null)
                 return new ThumbnailResult { Reason = "NotFound" };
@@ -422,8 +426,9 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FileDto> UpdateFileAsync(int fileId, UpdateFileDto updateDto)
         {
-
-                var file = await _fileRepository.GetByIdAsync(fileId);
+            return await _unitOfWork.ExecuteInTransactionAsync(async () =>
+            {
+                var file = await _unitOfWork.Files.GetByIdAsync(fileId);
                 if (file == null)
                     throw new ArgumentException("File not found");
 
@@ -452,11 +457,11 @@ namespace Backend.CMS.Infrastructure.Services
                     await GenerateThumbnailInternalAsync(file);
                 }
 
-                _fileRepository.Update(file);
-                await _fileRepository.SaveChangesAsync();
+                _unitOfWork.Files.Update(file);
+                await _unitOfWork.SaveChangesAsync();
 
                 return await MapFileToDto(file);
-            
+            });
         }
 
         public async Task<bool> DeleteFileAsync(int fileId)
@@ -468,7 +473,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var currentUserId = _userSessionService.GetCurrentUserId();
 
                 // Use single repository call to avoid nested semaphore acquisition
-                var success = await _fileRepository.SoftDeleteAsync(fileId, currentUserId);
+                var success = await _unitOfWork.Files.SoftDeleteAsync(fileId, currentUserId);
 
                 if (success)
                 {
@@ -513,7 +518,7 @@ namespace Backend.CMS.Infrastructure.Services
                         {
                             try
                             {
-                                var success = await _fileRepository.SoftDeleteAsync(fileId, currentUserId);
+                                var success = await _unitOfWork.Files.SoftDeleteAsync(fileId, currentUserId);
                                 if (success)
                                 {
                                     Interlocked.Increment(ref successCount);
@@ -548,8 +553,9 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FileDto> MoveFileAsync(MoveFileDto moveDto)
         {
-
-                var file = await _fileRepository.GetByIdAsync(moveDto.FileId);
+            return await _unitOfWork.ExecuteInTransactionAsync(async () =>
+            {
+                var file = await _unitOfWork.Files.GetByIdAsync(moveDto.FileId);
                 if (file == null)
                     throw new ArgumentException("File not found");
 
@@ -566,17 +572,18 @@ namespace Backend.CMS.Infrastructure.Services
                     file.Metadata["movedBy"] = currentUserId;
                 }
 
-                _fileRepository.Update(file);
-                await _fileRepository.SaveChangesAsync();
+                _unitOfWork.Files.Update(file);
+                await _unitOfWork.SaveChangesAsync();
 
                 return await MapFileToDto(file);
-   
+            });
         }
 
         public async Task<FileDto> CopyFileAsync(CopyFileDto copyDto)
         {
-
-                var originalFile = await _fileRepository.GetByIdAsync(copyDto.FileId);
+            return await _unitOfWork.ExecuteInTransactionAsync(async () =>
+            {
+                var originalFile = await _unitOfWork.Files.GetByIdAsync(copyDto.FileId);
                 if (originalFile == null)
                     throw new ArgumentException("File not found");
 
@@ -622,17 +629,18 @@ namespace Backend.CMS.Infrastructure.Services
                     newFile.ThumbnailContent = (byte[])originalFile.ThumbnailContent.Clone();
                 }
 
-                await _fileRepository.AddAsync(newFile);
-                await _fileRepository.SaveChangesAsync();
+                await _unitOfWork.Files.AddAsync(newFile);
+                await _unitOfWork.SaveChangesAsync();
 
                 return await MapFileToDto(newFile);
-         
+            });
         }
 
         public async Task<bool> RenameFileAsync(int fileId, string newName)
         {
-   
-                var file = await _fileRepository.GetByIdAsync(fileId);
+            return await _unitOfWork.ExecuteInTransactionAsync(async () =>
+            {
+                var file = await _unitOfWork.Files.GetByIdAsync(fileId);
                 if (file == null)
                     return false;
 
@@ -642,10 +650,11 @@ namespace Backend.CMS.Infrastructure.Services
                 file.UpdatedAt = DateTime.UtcNow;
                 file.UpdatedByUserId = currentUserId;
 
-                _fileRepository.Update(file);
-                await _fileRepository.SaveChangesAsync();
+                _unitOfWork.Files.Update(file);
+                await _unitOfWork.SaveChangesAsync();
 
                 return true;
+            });
         }
 
         #endregion
@@ -654,7 +663,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<FilePreviewDto> GetFilePreviewAsync(int fileId)
         {
-            var file = await _fileRepository.GetByIdAsync(fileId);
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
             if (file == null)
                 throw new ArgumentException("File not found");
 
@@ -690,13 +699,14 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> GenerateThumbnailAsync(int fileId)
         {
-
-                var file = await _fileRepository.GetByIdAsync(fileId);
+            return await _unitOfWork.ExecuteInTransactionAsync(async () =>
+            {
+                var file = await _unitOfWork.Files.GetByIdAsync(fileId);
                 if (file == null || file.FileType != FileType.Image)
                     return false;
 
                 return await GenerateThumbnailInternalAsync(file);
-
+            });
         }
 
         private async Task<bool> GenerateThumbnailInternalAsync(FileEntity file)
@@ -710,8 +720,8 @@ namespace Backend.CMS.Infrastructure.Services
                 file.UpdatedAt = DateTime.UtcNow;
                 file.UpdatedByUserId = currentUserId;
 
-                _fileRepository.Update(file);
-                await _fileRepository.SaveChangesAsync();
+                _unitOfWork.Files.Update(file);
+                await _unitOfWork.SaveChangesAsync();
 
                 return true;
             }
@@ -724,8 +734,9 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> ProcessFileAsync(int fileId)
         {
-          
-                var file = await _fileRepository.GetByIdAsync(fileId);
+            return await _unitOfWork.ExecuteInTransactionAsync(async () =>
+            {
+                var file = await _unitOfWork.Files.GetByIdAsync(fileId);
                 if (file == null)
                     return false;
 
@@ -740,11 +751,11 @@ namespace Backend.CMS.Infrastructure.Services
                 file.UpdatedAt = DateTime.UtcNow;
                 file.UpdatedByUserId = currentUserId;
 
-                _fileRepository.Update(file);
-                await _fileRepository.SaveChangesAsync();
+                _unitOfWork.Files.Update(file);
+                await _unitOfWork.SaveChangesAsync();
 
                 return true;
-
+            });
         }
 
         #endregion
@@ -767,8 +778,8 @@ namespace Backend.CMS.Infrastructure.Services
                     UpdatedByUserId = currentUserId
                 };
 
-                await _fileAccessRepository.AddAsync(fileAccess);
-                await _fileAccessRepository.SaveChangesAsync();
+                await _unitOfWork.GetRepository<Backend.CMS.Domain.Entities.FileAccess>().AddAsync(fileAccess);
+                await _unitOfWork.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -779,7 +790,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<FileDto>> GetRecentFilesAsync(int count = 10)
         {
-            var query = _fileRepository.GetQueryable()
+            var query = _unitOfWork.Files.GetQueryable()
                 .OrderByDescending(f => f.CreatedAt)
                 .Take(Math.Clamp(count, 1, 50));
 
@@ -789,7 +800,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<Dictionary<string, object>> GetFileStatisticsAsync()
         {
-            var query = _fileRepository.GetQueryable();
+            var query = _unitOfWork.Files.GetQueryable();
 
             var totalFiles = await query.CountAsync();
             var totalSize = await query.SumAsync(f => f.FileSize);
@@ -849,12 +860,12 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> FileExistsAsync(int fileId)
         {
-            return await _fileRepository.AnyAsync(f => f.Id == fileId);
+            return await _unitOfWork.Files.AnyAsync(f => f.Id == fileId);
         }
 
         public async Task<long> GetTotalFileSizeAsync(int? folderId = null)
         {
-            var query = _fileRepository.GetQueryable();
+            var query = _unitOfWork.Files.GetQueryable();
 
             if (folderId.HasValue)
             {
@@ -872,7 +883,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var file = await _fileRepository.GetByIdAsync(fileId);
+                var file = await _unitOfWork.Files.GetByIdAsync(fileId);
                 if (file == null)
                 {
                     _logger.LogWarning("File verification failed - file not found: {FileId}", fileId);
@@ -935,7 +946,8 @@ namespace Backend.CMS.Infrastructure.Services
             if (fileIds?.Any() != true)
                 return false;
 
-
+            return await _unitOfWork.ExecuteInTransactionAsync(async () =>
+            {
                 var currentUserId = _userSessionService.GetCurrentUserId();
                 var successCount = 0;
 
@@ -945,7 +957,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 foreach (var batch in batches)
                 {
-                    var query = _fileRepository.GetQueryable()
+                    var query = _unitOfWork.Files.GetQueryable()
                         .Where(f => batch.Contains(f.Id));
 
                     var files = await query.ToListAsync();
@@ -969,7 +981,7 @@ namespace Backend.CMS.Infrastructure.Services
                                 }
                             }
 
-                            _fileRepository.Update(file);
+                            _unitOfWork.Files.Update(file);
                             successCount++;
                         }
                         catch (Exception ex)
@@ -978,11 +990,11 @@ namespace Backend.CMS.Infrastructure.Services
                         }
                     }
 
-                    await _fileRepository.SaveChangesAsync();
+                    await _unitOfWork.SaveChangesAsync();
                 }
 
                 return successCount == fileIds.Count;
-
+            });
         }
 
         public async Task<bool> BulkMoveFilesAsync(List<int> fileIds, int? destinationFolderId)
@@ -990,7 +1002,8 @@ namespace Backend.CMS.Infrastructure.Services
             if (fileIds?.Any() != true)
                 return false;
 
-      
+            return await _unitOfWork.ExecuteInTransactionAsync(async () =>
+            {
                 var currentUserId = _userSessionService.GetCurrentUserId();
                 var successCount = 0;
 
@@ -1002,7 +1015,7 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     try
                     {
-                        var query = _fileRepository.GetQueryable()
+                        var query = _unitOfWork.Files.GetQueryable()
                             .Where(f => batch.Contains(f.Id));
 
                         var files = await query.ToListAsync();
@@ -1013,11 +1026,11 @@ namespace Backend.CMS.Infrastructure.Services
                             file.UpdatedAt = DateTime.UtcNow;
                             file.UpdatedByUserId = currentUserId;
 
-                            _fileRepository.Update(file);
+                            _unitOfWork.Files.Update(file);
                             successCount++;
                         }
 
-                        await _fileRepository.SaveChangesAsync();
+                        await _unitOfWork.SaveChangesAsync();
                     }
                     catch (Exception ex)
                     {
@@ -1026,7 +1039,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 return successCount == fileIds.Count;
-
+            });
         }
 
         public async Task<List<FileDto>> BulkCopyFilesAsync(List<int> fileIds, int? destinationFolderId)
@@ -1065,7 +1078,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         private IQueryable<FileEntity> BuildFileQuery(FileSearchDto searchDto)
         {
-            var query = _fileRepository.GetQueryable();
+            var query = _unitOfWork.Files.GetQueryable();
 
             // Apply filters efficiently at database level
             if (!string.IsNullOrEmpty(searchDto.SearchTerm))
@@ -1198,8 +1211,8 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 file.DownloadCount++;
                 file.LastAccessedAt = DateTime.UtcNow;
-                _fileRepository.Update(file);
-                await _fileRepository.SaveChangesAsync();
+                _unitOfWork.Files.Update(file);
+                await _unitOfWork.SaveChangesAsync();
             }
             catch (Exception ex)
             {
@@ -1209,7 +1222,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task<FileDto?> FindDuplicateFileAsync(string hash)
         {
-            var file = await _fileRepository.FirstOrDefaultAsync(f => f.Hash == hash);
+            var file = await _unitOfWork.Files.FirstOrDefaultAsync(f => f.Hash == hash);
             return file != null ? await MapFileToDto(file) : null;
         }
 
@@ -1220,8 +1233,8 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 file.ProcessingStatus = "Processing";
-                _fileRepository.Update(file);
-                await _fileRepository.SaveChangesAsync();
+                _unitOfWork.Files.Update(file);
+                await _unitOfWork.SaveChangesAsync();
 
                 if (await _imageProcessingService.IsImageFromBytesAsync(file.FileContent))
                 {
@@ -1240,8 +1253,8 @@ namespace Backend.CMS.Infrastructure.Services
                 file.UpdatedAt = DateTime.UtcNow;
                 file.UpdatedByUserId = currentUserId;
 
-                _fileRepository.Update(file);
-                await _fileRepository.SaveChangesAsync();
+                _unitOfWork.Files.Update(file);
+                await _unitOfWork.SaveChangesAsync();
 
                 return true;
             }
@@ -1253,8 +1266,8 @@ namespace Backend.CMS.Infrastructure.Services
                 file.IsProcessed = false;
                 file.UpdatedAt = DateTime.UtcNow;
                 file.UpdatedByUserId = currentUserId;
-                _fileRepository.Update(file);
-                await _fileRepository.SaveChangesAsync();
+                _unitOfWork.Files.Update(file);
+                await _unitOfWork.SaveChangesAsync();
 
                 return false;
             }

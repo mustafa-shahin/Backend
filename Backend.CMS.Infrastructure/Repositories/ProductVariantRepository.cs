@@ -18,7 +18,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         #region Override Base Methods
 
-        public override async Task<ProductVariant?> GetByIdAsync(int id)
+        public override async Task<ProductVariant?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
         {
             return await _dbSet
                 .Include(v => v.Product)
@@ -27,7 +27,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .FirstOrDefaultAsync(v => v.Id == id && !v.IsDeleted);
         }
 
-        public override async Task<IEnumerable<ProductVariant>> GetAllAsync()
+        public override async Task<IEnumerable<ProductVariant>> GetAllAsync(CancellationToken cancellationToken = default)
         {
             return await _dbSet
                 .Include(v => v.Product)

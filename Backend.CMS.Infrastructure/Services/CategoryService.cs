@@ -5,15 +5,14 @@ using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
+using Backend.CMS.Infrastructure.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Backend.CMS.Infrastructure.Services
 {
     public class CategoryService : ICategoryService
     {
-        private readonly ICategoryRepository _categoryRepository;
-        private readonly IRepository<CategoryImage> _categoryImageRepository;
-        private readonly IRepository<FileEntity> _fileRepository;
+        private readonly IUnitOfWork _unitOfWork;
         private readonly ICacheService _cacheService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
         private readonly ICacheKeyService _cacheKeyService;
@@ -25,23 +24,19 @@ namespace Backend.CMS.Infrastructure.Services
         private const int MinPageSize = 1;
 
         public CategoryService(
-            ICategoryRepository categoryRepository,
-            IRepository<CategoryImage> categoryImageRepository,
-            IRepository<FileEntity> fileRepository,
             ICacheService cacheService,
             ICacheInvalidationService cacheInvalidationService,
             ICacheKeyService cacheKeyService,
             IMapper mapper,
-            ILogger<CategoryService> logger)
+            ILogger<CategoryService> logger,
+            IUnitOfWork unitOfWork)
         {
-            _categoryRepository = categoryRepository;
-            _categoryImageRepository = categoryImageRepository;
-            _fileRepository = fileRepository;
             _cacheService = cacheService;
             _cacheInvalidationService = cacheInvalidationService;
             _cacheKeyService = cacheKeyService;
             _mapper = mapper;
             _logger = logger;
+            _unitOfWork = unitOfWork;
         }
 
         #region Paginated Methods
@@ -78,7 +73,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
-                    var (categories, totalCount) = await _categoryRepository.GetCategoriesPagedAsync(searchDto);
+                    var (categories, totalCount) = await _unitOfWork.Categories.GetCategoriesPagedAsync(searchDto);
 
                     if (!categories.Any())
                     {
@@ -122,13 +117,13 @@ namespace Backend.CMS.Infrastructure.Services
             normalizedPageSize = DefaultPageSize;
 
             var cacheKey = _cacheKeyService.GetCollectionKey<Category>("root_categories_paged",
-                new object[] { normalizedPageNumber, normalizedPageSize });
+                [normalizedPageNumber, normalizedPageSize]);
 
             var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
             {
                 try
                 {
-                    var (categories, totalCount) = await _categoryRepository.GetRootCategoriesPagedAsync(normalizedPageNumber, normalizedPageSize);
+                    var (categories, totalCount) = await _unitOfWork.Categories.GetRootCategoriesPagedAsync(normalizedPageNumber, normalizedPageSize);
 
                     if (!categories.Any())
                     {
@@ -174,14 +169,14 @@ namespace Backend.CMS.Infrastructure.Services
                 try
                 {
                     // Validate parent category exists
-                    var parentExists = await _categoryRepository.GetByIdAsync(parentCategoryId);
+                    var parentExists = await _unitOfWork.Categories.GetByIdAsync(parentCategoryId);
                     if (parentExists == null)
                     {
                         _logger.LogWarning("Parent category {ParentCategoryId} not found", parentCategoryId);
                         return PagedResult<CategoryDto>.Empty(normalizedPageNumber, normalizedPageSize);
                     }
 
-                    var (categories, totalCount) = await _categoryRepository.GetSubCategoriesPagedAsync(parentCategoryId, normalizedPageNumber, normalizedPageSize);
+                    var (categories, totalCount) = await _unitOfWork.Categories.GetSubCategoriesPagedAsync(parentCategoryId, normalizedPageNumber, normalizedPageSize);
 
                     if (!categories.Any())
                     {
@@ -230,7 +225,9 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
-                    var (categories, totalCount) = await _categoryRepository.SearchCategoriesPagedAsync(searchDto);
+                    var pagedResult = await _unitOfWork.Categories.SearchCategoriesPagedAsync(searchDto);
+                    var categories = pagedResult.Data;
+                    var totalCount = pagedResult.TotalCount;
 
                     if (!categories.Any())
                     {
@@ -284,7 +281,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
-                    var category = await _categoryRepository.GetWithSubCategoriesAsync(categoryId);
+                    var category = await _unitOfWork.Categories.GetWithSubCategoriesAsync(categoryId);
                     if (category == null)
                     {
                         _logger.LogDebug("Category with ID {CategoryId} not found", categoryId);
@@ -292,7 +289,7 @@ namespace Backend.CMS.Infrastructure.Services
                     }
 
                     var categoryDto = _mapper.Map<CategoryDto>(category);
-                    categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(categoryId, true);
+                    categoryDto.ProductCount = await _unitOfWork.Categories.GetProductCountAsync(categoryId, true);
 
                     _logger.LogDebug("Retrieved category {CategoryName} (ID: {CategoryId})", category.Name, categoryId);
                     return categoryDto;
@@ -325,7 +322,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
-                    var category = await _categoryRepository.GetBySlugAsync(normalizedSlug);
+                    var category = await _unitOfWork.Categories.GetBySlugAsync(normalizedSlug);
                     if (category == null)
                     {
                         _logger.LogDebug("Category with slug '{Slug}' not found", normalizedSlug);
@@ -333,7 +330,7 @@ namespace Backend.CMS.Infrastructure.Services
                     }
 
                     var categoryDto = _mapper.Map<CategoryDto>(category);
-                    categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(category.Id, true);
+                    categoryDto.ProductCount = await _unitOfWork.Categories.GetProductCountAsync(category.Id, true);
 
                     _logger.LogDebug("Retrieved category {CategoryName} by slug '{Slug}'", category.Name, normalizedSlug);
                     return categoryDto;
@@ -357,7 +354,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
-                    var rootCategories = await _categoryRepository.GetCategoryTreeAsync();
+                    var rootCategories = await _unitOfWork.Categories.GetCategoryTreeAsync();
                     if (!rootCategories.Any())
                     {
                         _logger.LogDebug("No categories found for tree structure");
@@ -394,13 +391,13 @@ namespace Backend.CMS.Infrastructure.Services
                 throw new ArgumentException("Category slug is required", nameof(createCategoryDto));
 
             // Validate slug uniqueness
-            if (await _categoryRepository.SlugExistsAsync(createCategoryDto.Slug))
+            if (await _unitOfWork.Categories.SlugExistsAsync(createCategoryDto.Slug))
                 throw new ArgumentException($"Category with slug '{createCategoryDto.Slug}' already exists");
 
             // Validate parent category if specified
             if (createCategoryDto.ParentCategoryId.HasValue)
             {
-                var parentExists = await _categoryRepository.GetByIdAsync(createCategoryDto.ParentCategoryId.Value);
+                var parentExists = await _unitOfWork.Categories.GetByIdAsync(createCategoryDto.ParentCategoryId.Value);
                 if (parentExists == null)
                     throw new ArgumentException($"Parent category with ID {createCategoryDto.ParentCategoryId.Value} not found");
             }
@@ -414,8 +411,8 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var category = _mapper.Map<Category>(createCategoryDto);
-                await _categoryRepository.AddAsync(category);
-                await _categoryRepository.SaveChangesAsync();
+                await _unitOfWork.Categories.AddAsync(category);
+                await _unitOfWork.Categories.SaveChangesAsync();
 
                 // Add images
                 if (createCategoryDto.Images.Any())
@@ -428,7 +425,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogInformation("Created category: {CategoryName} (ID: {CategoryId})", category.Name, category.Id);
 
                 // Return the complete category with all relations
-                var createdCategory = await _categoryRepository.GetWithSubCategoriesAsync(category.Id);
+                var createdCategory = await _unitOfWork.Categories.GetWithSubCategoriesAsync(category.Id);
                 return _mapper.Map<CategoryDto>(createdCategory!);
             }
             catch (Exception ex)
@@ -446,12 +443,12 @@ namespace Backend.CMS.Infrastructure.Services
             if (updateCategoryDto == null)
                 throw new ArgumentNullException(nameof(updateCategoryDto));
 
-            var category = await _categoryRepository.GetByIdAsync(categoryId);
+            var category = await _unitOfWork.Categories.GetByIdAsync(categoryId);
             if (category == null)
                 throw new ArgumentException($"Category with ID {categoryId} not found");
 
             // Validate slug uniqueness
-            if (await _categoryRepository.SlugExistsAsync(updateCategoryDto.Slug, categoryId))
+            if (await _unitOfWork.Categories.SlugExistsAsync(updateCategoryDto.Slug, categoryId))
                 throw new ArgumentException($"Category with slug '{updateCategoryDto.Slug}' already exists");
 
             // Validate parent category if specified
@@ -460,7 +457,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (updateCategoryDto.ParentCategoryId.Value == categoryId)
                     throw new ArgumentException("Category cannot be its own parent");
 
-                var parentExists = await _categoryRepository.GetByIdAsync(updateCategoryDto.ParentCategoryId.Value);
+                var parentExists = await _unitOfWork.Categories.GetByIdAsync(updateCategoryDto.ParentCategoryId.Value);
                 if (parentExists == null)
                     throw new ArgumentException($"Parent category with ID {updateCategoryDto.ParentCategoryId.Value} not found");
 
@@ -478,18 +475,18 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 _mapper.Map(updateCategoryDto, category);
-                _categoryRepository.Update(category);
+                _unitOfWork.Categories.Update(category);
 
                 // Update images
                 await UpdateCategoryImagesAsync(categoryId, updateCategoryDto.Images);
 
-                await _categoryRepository.SaveChangesAsync();
+                await _unitOfWork.Categories.SaveChangesAsync();
                 await InvalidateCategoryCacheAsync();
 
                 _logger.LogInformation("Updated category: {CategoryName} (ID: {CategoryId})", category.Name, category.Id);
 
                 // Return the complete updated category
-                var updatedCategory = await _categoryRepository.GetWithSubCategoriesAsync(category.Id);
+                var updatedCategory = await _unitOfWork.Categories.GetWithSubCategoriesAsync(category.Id);
                 return _mapper.Map<CategoryDto>(updatedCategory!);
             }
             catch (Exception ex)
@@ -504,19 +501,19 @@ namespace Backend.CMS.Infrastructure.Services
             if (categoryId <= 0)
                 throw new ArgumentException("Category ID must be greater than 0", nameof(categoryId));
 
-            var category = await _categoryRepository.GetByIdAsync(categoryId);
+            var category = await _unitOfWork.Categories.GetByIdAsync(categoryId);
             if (category == null)
             {
                 _logger.LogWarning("Attempted to delete non-existent category: {CategoryId}", categoryId);
                 return false;
             }
 
-            if (!await _categoryRepository.CanDeleteAsync(categoryId))
+            if (!await _unitOfWork.Categories.CanDeleteAsync(categoryId))
                 throw new InvalidOperationException("Cannot delete category that has products or subcategories");
 
             try
             {
-                await _categoryRepository.SoftDeleteAsync(category);
+                await _unitOfWork.Categories.SoftDeleteAsync(category);
                 await InvalidateCategoryCacheAsync();
 
                 _logger.LogInformation("Deleted category: {CategoryName} (ID: {CategoryId})", category.Name, category.Id);
@@ -534,7 +531,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (categoryId <= 0)
                 throw new ArgumentException("Category ID must be greater than 0", nameof(categoryId));
 
-            var category = await _categoryRepository.GetByIdAsync(categoryId);
+            var category = await _unitOfWork.Categories.GetByIdAsync(categoryId);
             if (category == null)
                 throw new ArgumentException($"Category with ID {categoryId} not found");
 
@@ -543,7 +540,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (newParentCategoryId.Value == categoryId)
                     throw new ArgumentException("Category cannot be its own parent");
 
-                var parentExists = await _categoryRepository.GetByIdAsync(newParentCategoryId.Value);
+                var parentExists = await _unitOfWork.Categories.GetByIdAsync(newParentCategoryId.Value);
                 if (parentExists == null)
                     throw new ArgumentException($"Parent category with ID {newParentCategoryId.Value} not found");
 
@@ -554,8 +551,8 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 category.ParentCategoryId = newParentCategoryId;
-                _categoryRepository.Update(category);
-                await _categoryRepository.SaveChangesAsync();
+                _unitOfWork.Categories.Update(category);
+                await _unitOfWork.Categories.SaveChangesAsync();
 
                 await InvalidateCategoryCacheAsync();
 
@@ -577,7 +574,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var categoryIds = categoryOrders.Select(co => co.CategoryId).ToList();
-                var categories = await _categoryRepository.FindAsync(c => categoryIds.Contains(c.Id));
+                var categories = await _unitOfWork.Categories.FindAsync(c => categoryIds.Contains(c.Id));
 
                 foreach (var category in categories)
                 {
@@ -585,8 +582,8 @@ namespace Backend.CMS.Infrastructure.Services
                     category.SortOrder = newOrder;
                 }
 
-                _categoryRepository.UpdateRange(categories);
-                await _categoryRepository.SaveChangesAsync();
+                _unitOfWork.Categories.UpdateRange(categories);
+                await _unitOfWork.Categories.SaveChangesAsync();
 
                 await InvalidateCategoryCacheAsync();
 
@@ -614,7 +611,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(validationKey, async () =>
             {
-                var exists = await _categoryRepository.SlugExistsAsync(normalizedSlug, excludeCategoryId);
+                var exists = await _unitOfWork.Categories.SlugExistsAsync(normalizedSlug, excludeCategoryId);
                 return new BoolWrapper(!exists);
             }, CacheExpiration.ForDataType(CacheDataVolatility.HighlyVolatile));
 
@@ -630,7 +627,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(deleteValidationKey, async () =>
             {
-                var canDelete = await _categoryRepository.CanDeleteAsync(categoryId);
+                var canDelete = await _unitOfWork.Categories.CanDeleteAsync(categoryId);
                 return new BoolWrapper(canDelete);
             }, CacheExpiration.ForDataType(CacheDataVolatility.HighlyVolatile));
 
@@ -649,7 +646,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (createImageDto == null)
                 throw new ArgumentNullException(nameof(createImageDto));
 
-            var category = await _categoryRepository.GetByIdAsync(categoryId);
+            var category = await _unitOfWork.Categories.GetByIdAsync(categoryId);
             if (category == null)
                 throw new ArgumentException($"Category with ID {categoryId} not found");
 
@@ -666,8 +663,8 @@ namespace Backend.CMS.Infrastructure.Services
                     await RemoveFeaturedFlagFromOtherImagesAsync(categoryId);
                 }
 
-                await _categoryImageRepository.AddAsync(categoryImage);
-                await _categoryImageRepository.SaveChangesAsync();
+                await _unitOfWork.GetRepository<CategoryImage>().AddAsync(categoryImage);
+                await _unitOfWork.GetRepository<CategoryImage>().SaveChangesAsync();
 
                 await InvalidateCategoryCacheAsync();
 
@@ -689,7 +686,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (updateImageDto == null)
                 throw new ArgumentNullException(nameof(updateImageDto));
 
-            var categoryImage = await _categoryImageRepository.GetByIdAsync(imageId);
+            var categoryImage = await _unitOfWork.GetRepository<CategoryImage>().GetByIdAsync(imageId);
             if (categoryImage == null)
                 throw new ArgumentException($"Category image with ID {imageId} not found");
 
@@ -706,8 +703,8 @@ namespace Backend.CMS.Infrastructure.Services
                     await RemoveFeaturedFlagFromOtherImagesAsync(categoryImage.CategoryId, imageId);
                 }
 
-                _categoryImageRepository.Update(categoryImage);
-                await _categoryImageRepository.SaveChangesAsync();
+                _unitOfWork.GetRepository<CategoryImage>().Update(categoryImage);
+                await _unitOfWork.GetRepository<CategoryImage>().SaveChangesAsync();
 
                 await InvalidateCategoryCacheAsync();
 
@@ -726,7 +723,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (imageId <= 0)
                 throw new ArgumentException("Image ID must be greater than 0", nameof(imageId));
 
-            var categoryImage = await _categoryImageRepository.GetByIdAsync(imageId);
+            var categoryImage = await _unitOfWork.GetRepository<CategoryImage>().GetByIdAsync(imageId);
             if (categoryImage == null)
             {
                 _logger.LogWarning("Attempted to delete non-existent category image: {ImageId}", imageId);
@@ -736,7 +733,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var categoryId = categoryImage.CategoryId;
-                await _categoryImageRepository.SoftDeleteAsync(categoryImage);
+                await _unitOfWork.GetRepository<CategoryImage>().SoftDeleteAsync(categoryImage);
 
                 await InvalidateCategoryCacheAsync();
 
@@ -761,7 +758,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var imageIds = imageOrders.Select(io => io.ImageId).ToList();
-                var images = await _categoryImageRepository.FindAsync(i => i.CategoryId == categoryId && imageIds.Contains(i.Id));
+                var images = await _unitOfWork.GetRepository<CategoryImage>().FindAsync(i => i.CategoryId == categoryId && imageIds.Contains(i.Id));
 
                 foreach (var image in images)
                 {
@@ -769,8 +766,8 @@ namespace Backend.CMS.Infrastructure.Services
                     image.Position = newPosition;
                 }
 
-                _categoryImageRepository.UpdateRange(images);
-                await _categoryImageRepository.SaveChangesAsync();
+                _unitOfWork.GetRepository<CategoryImage>().UpdateRange(images);
+                await _unitOfWork.GetRepository<CategoryImage>().SaveChangesAsync();
 
                 await InvalidateCategoryCacheAsync();
 
@@ -892,7 +889,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var productCountTasks = categoryDtos.Select(async categoryDto =>
                 {
-                    categoryDto.ProductCount = await _categoryRepository.GetProductCountAsync(categoryDto.Id, true);
+                    categoryDto.ProductCount = await _unitOfWork.Categories.GetProductCountAsync(categoryDto.Id, true);
                 });
 
                 await Task.WhenAll(productCountTasks);
@@ -926,7 +923,7 @@ namespace Backend.CMS.Infrastructure.Services
                     IsActive = category.IsActive,
                     SortOrder = category.SortOrder,
                     FeaturedImageUrl = category.FeaturedImageUrl,
-                    ProductCount = await _categoryRepository.GetProductCountAsync(category.Id, true),
+                    ProductCount = await _unitOfWork.Categories.GetProductCountAsync(category.Id, true),
                     Children = await BuildCategoryTreeAsync(category.SubCategories),
                     Level = 0, // Will be calculated separately if needed
                     Path = category.Slug,
@@ -948,14 +945,14 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(circularCheckKey, async () =>
             {
-                var currentCategory = await _categoryRepository.GetByIdAsync(potentialParentId);
+                var currentCategory = await _unitOfWork.Categories.GetByIdAsync(potentialParentId);
 
                 while (currentCategory?.ParentCategoryId.HasValue == true)
                 {
                     if (currentCategory.ParentCategoryId.Value == categoryId)
                         return new BoolWrapper(true);
 
-                    currentCategory = await _categoryRepository.GetByIdAsync(currentCategory.ParentCategoryId.Value);
+                    currentCategory = await _unitOfWork.Categories.GetByIdAsync(currentCategory.ParentCategoryId.Value);
                 }
 
                 return new BoolWrapper(false);
@@ -984,7 +981,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             var result = await _cacheService.GetOrAddAsync(validationKey, async () =>
             {
-                var file = await _fileRepository.GetByIdAsync(fileId);
+                var file = await _unitOfWork.Files.GetByIdAsync(fileId);
                 if (file == null)
                     throw new ArgumentException($"File with ID {fileId} not found");
 
@@ -1010,12 +1007,12 @@ namespace Backend.CMS.Infrastructure.Services
                 var categoryImage = _mapper.Map<CategoryImage>(imageDto);
                 categoryImage.CategoryId = categoryId;
 
-                await _categoryImageRepository.AddAsync(categoryImage);
+                await _unitOfWork.GetRepository<CategoryImage>().AddAsync(categoryImage);
             }
 
             // Ensure only one image is marked as featured
             await EnsureSingleFeaturedImageAsync(categoryId);
-            await _categoryImageRepository.SaveChangesAsync();
+            await _unitOfWork.GetRepository<CategoryImage>().SaveChangesAsync();
         }
 
         /// <summary>
@@ -1024,10 +1021,10 @@ namespace Backend.CMS.Infrastructure.Services
         private async Task UpdateCategoryImagesAsync(int categoryId, List<UpdateCategoryImageDto> images)
         {
             // Remove existing images (soft delete)
-            var existingImages = await _categoryImageRepository.FindAsync(i => i.CategoryId == categoryId);
+            var existingImages = await _unitOfWork.GetRepository<CategoryImage>().FindAsync(i => i.CategoryId == categoryId);
             if (existingImages.Any())
             {
-                await _categoryImageRepository.SoftDeleteRangeAsync(existingImages);
+                await _unitOfWork.GetRepository<CategoryImage>().SoftDeleteRangeAsync(existingImages);
             }
 
             // Add new images
@@ -1043,7 +1040,7 @@ namespace Backend.CMS.Infrastructure.Services
                     IsFeatured = imageDto.IsFeatured
                 };
 
-                await _categoryImageRepository.AddAsync(categoryImage);
+                await _unitOfWork.GetRepository<CategoryImage>().AddAsync(categoryImage);
             }
 
             // Ensure only one image is marked as featured
@@ -1055,7 +1052,7 @@ namespace Backend.CMS.Infrastructure.Services
         /// </summary>
         private async Task RemoveFeaturedFlagFromOtherImagesAsync(int categoryId, int? excludeImageId = null)
         {
-            var otherImages = await _categoryImageRepository.FindAsync(i =>
+            var otherImages = await _unitOfWork.GetRepository<CategoryImage>().FindAsync(i =>
                 i.CategoryId == categoryId &&
                 i.IsFeatured &&
                 (excludeImageId == null || i.Id != excludeImageId));
@@ -1067,7 +1064,7 @@ namespace Backend.CMS.Infrastructure.Services
                     image.IsFeatured = false;
                 }
 
-                _categoryImageRepository.UpdateRange(otherImages);
+                _unitOfWork.GetRepository<CategoryImage>().UpdateRange(otherImages);
             }
         }
 
@@ -1076,7 +1073,7 @@ namespace Backend.CMS.Infrastructure.Services
         /// </summary>
         private async Task EnsureSingleFeaturedImageAsync(int categoryId)
         {
-            var featuredImages = await _categoryImageRepository.FindAsync(i => i.CategoryId == categoryId && i.IsFeatured);
+            var featuredImages = await _unitOfWork.GetRepository<CategoryImage>().FindAsync(i => i.CategoryId == categoryId && i.IsFeatured);
             var featuredImagesList = featuredImages.ToList();
 
             if (featuredImagesList.Count > 1)
@@ -1087,16 +1084,16 @@ namespace Backend.CMS.Infrastructure.Services
                     featuredImagesList[i].IsFeatured = false;
                 }
 
-                _categoryImageRepository.UpdateRange(featuredImagesList.Skip(1));
+                _unitOfWork.GetRepository<CategoryImage>().UpdateRange(featuredImagesList.Skip(1));
             }
             else if (!featuredImagesList.Any())
             {
                 // If no featured image, make the first one featured
-                var firstImage = await _categoryImageRepository.FirstOrDefaultAsync(i => i.CategoryId == categoryId);
+                var firstImage = await _unitOfWork.GetRepository<CategoryImage>().FirstOrDefaultAsync(i => i.CategoryId == categoryId);
                 if (firstImage != null)
                 {
                     firstImage.IsFeatured = true;
-                    _categoryImageRepository.Update(firstImage);
+                    _unitOfWork.GetRepository<CategoryImage>().Update(firstImage);
                 }
             }
         }
