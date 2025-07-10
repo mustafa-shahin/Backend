@@ -28,8 +28,7 @@ namespace Backend.CMS.Infrastructure.Services
 
     public class AuthService : IAuthService, IDisposable
     {
-
-        private readonly IUnitOfWork _unitOfWork; 
+        private readonly IUnitOfWork _unitOfWork;
         private readonly IConfiguration _configuration;
         private readonly IMapper _mapper;
         private readonly IHttpContextAccessor _httpContextAccessor;
@@ -37,6 +36,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ICacheService _cacheService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
         private readonly ICacheKeyService _cacheKeyService;
+        private readonly IUserCacheService _userCacheService;
         private readonly ILogger<AuthService> _logger;
         private readonly CacheOptions _cacheOptions;
 
@@ -53,8 +53,7 @@ namespace Backend.CMS.Infrastructure.Services
         private bool _disposed = false;
 
         public AuthService(
-            
-            IUnitOfWork unitOfWork, 
+            IUnitOfWork unitOfWork,
             IConfiguration configuration,
             IMapper mapper,
             IHttpContextAccessor httpContextAccessor,
@@ -62,6 +61,7 @@ namespace Backend.CMS.Infrastructure.Services
             ICacheService cacheService,
             ICacheInvalidationService cacheInvalidationService,
             ICacheKeyService cacheKeyService,
+            IUserCacheService userCacheService,
             IOptions<CacheOptions> cacheOptions,
             ILogger<AuthService> logger)
         {
@@ -73,6 +73,7 @@ namespace Backend.CMS.Infrastructure.Services
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
             _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
             _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
+            _userCacheService = userCacheService ?? throw new ArgumentNullException(nameof(userCacheService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _cacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
 
@@ -109,9 +110,10 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new UnauthorizedAccessException("Too many failed login attempts. Please try again later.");
                 }
 
-                var user = await _unitOfWork.Users.GetByEmailAsync(normalizedEmail);
+                // Always get user from database for authentication to ensure we have password hash
+                var user = await _userCacheService.GetUserForAuthenticationAsync(normalizedEmail);
 
-                if (user == null || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
+                if (user == null || string.IsNullOrEmpty(user.PasswordHash) || !BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
                 {
                     await HandleFailedLoginAttemptAsync(user, clientIp);
 
@@ -181,12 +183,12 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 // Try to get session from cache first
                 var sessionCacheKey = CacheKeys.SessionByToken(refreshTokenDto.RefreshToken);
-                var cachedSession = await _cacheService.GetAsync<UserSession>(sessionCacheKey);
+                var cachedSession = await _cacheService.GetAsync<UserSessionCacheDto>(sessionCacheKey);
 
                 UserSession? session = null;
                 if (cachedSession != null && !cachedSession.IsRevoked && cachedSession.ExpiresAt > DateTime.UtcNow)
                 {
-                    session = cachedSession;
+                    session = _mapper.Map<UserSession>(cachedSession);
                 }
                 else
                 {
@@ -199,7 +201,8 @@ namespace Backend.CMS.Infrastructure.Services
                     if (session != null)
                     {
                         // Cache the valid session
-                        await _cacheService.SetAsync(sessionCacheKey, session, _cacheOptions.DefaultExpiration);
+                        var sessionDto = _mapper.Map<UserSessionCacheDto>(session);
+                        await _cacheService.SetAsync(sessionCacheKey, sessionDto, _cacheOptions.DefaultExpiration);
                     }
                 }
 
@@ -209,18 +212,8 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new UnauthorizedAccessException("Invalid or expired refresh token");
                 }
 
-                // Try to get user from cache first
-                var userCacheKey = CacheKeys.UserById(session.UserId);
-                var user = await _cacheService.GetAsync<User>(userCacheKey);
-
-                if (user == null)
-                {
-                    user = await _unitOfWork.Users.GetByIdAsync(session.UserId);
-                    if (user != null)
-                    {
-                        await _cacheService.SetAsync(userCacheKey, user, _cacheOptions.DefaultExpiration);
-                    }
-                }
+                // Get user from database for refresh token operations (need to verify user status)
+                var user = await _userCacheService.GetUserByIdForAuthenticationAsync(session.UserId);
 
                 if (user == null || !user.IsActive)
                 {
@@ -232,7 +225,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                     // Remove from cache
                     await _cacheService.RemoveAsync(sessionCacheKey);
-                    await _cacheService.RemoveAsync(userCacheKey);
+                    await _userCacheService.InvalidateUserCacheAsync(session.UserId);
 
                     _logger.LogWarning("Refresh token used for invalid/inactive user {UserId} from IP {ClientIP}",
                         session.UserId, clientIp);
@@ -266,7 +259,8 @@ namespace Backend.CMS.Infrastructure.Services
                 // Update cache with new session data
                 await _cacheService.RemoveAsync(sessionCacheKey); // Remove old token cache
                 var newSessionCacheKey = CacheKeys.SessionByToken(newRefreshToken);
-                await _cacheService.SetAsync(newSessionCacheKey, session, _cacheOptions.DefaultExpiration);
+                var newSessionDto = _mapper.Map<UserSessionCacheDto>(session);
+                await _cacheService.SetAsync(newSessionCacheKey, newSessionDto, _cacheOptions.DefaultExpiration);
 
                 var userDto = _mapper.Map<UserDto>(user);
 
@@ -292,6 +286,7 @@ namespace Backend.CMS.Infrastructure.Services
                 throw;
             }
         }
+
 
         public async Task<bool> LogoutAsync(string refreshToken)
         {
@@ -423,21 +418,20 @@ namespace Backend.CMS.Infrastructure.Services
                 if (!userId.HasValue)
                     throw new UnauthorizedAccessException("No authenticated user found");
 
-                // Try cache first
-                var userCacheKey = CacheKeys.UserById(userId.Value);
-                var cachedUser = await _cacheService.GetAsync<User>(userCacheKey);
+                // For current user operations, we can use cache since we don't need password hash
+                var cachedUser = await _userCacheService.GetUserByIdAsync(userId.Value);
 
                 User? user = null;
                 if (cachedUser != null)
                 {
-                    user = cachedUser;
+                    user = _mapper.Map<User>(cachedUser);
                 }
                 else
                 {
                     user = await _unitOfWork.Users.GetByIdAsync(userId.Value);
                     if (user != null)
                     {
-                        await _cacheService.SetAsync(userCacheKey, user, _cacheOptions.DefaultExpiration);
+                        await _userCacheService.SetUserAsync(user);
                     }
                 }
 
@@ -452,9 +446,18 @@ namespace Backend.CMS.Infrastructure.Services
 
                 if (user.IsLocked)
                 {
-                    await CheckAndUnlockUserAsync(user);
-                    if (user.IsLocked)
-                        throw new UnauthorizedAccessException("Account is locked");
+                    // For lock check, we need the full user data from database
+                    var fullUser = await _userCacheService.GetUserByIdForAuthenticationAsync(userId.Value);
+                    if (fullUser != null)
+                    {
+                        await CheckAndUnlockUserAsync(fullUser);
+                        if (fullUser.IsLocked)
+                            throw new UnauthorizedAccessException("Account is locked");
+
+                        // Update cache with unlocked status
+                        await _userCacheService.SetUserAsync(fullUser);
+                        user = fullUser;
+                    }
                 }
 
                 return _mapper.Map<UserDto>(user);
@@ -469,7 +472,6 @@ namespace Backend.CMS.Infrastructure.Services
                 throw new UnauthorizedAccessException($"Failed to get current user: {ex.Message}");
             }
         }
-
         public async Task<bool> ForgotPasswordAsync(string email)
         {
             if (string.IsNullOrWhiteSpace(email))
@@ -480,18 +482,8 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Try cache first
-                var userCacheKey = CacheKeys.UserByEmail(normalizedEmail);
-                var user = await _cacheService.GetAsync<User>(userCacheKey);
-
-                if (user == null)
-                {
-                    user = await _unitOfWork.Users.GetByEmailAsync(normalizedEmail);
-                    if (user != null)
-                    {
-                        await _cacheService.SetAsync(userCacheKey, user, _cacheOptions.DefaultExpiration);
-                    }
-                }
+                // For password reset, always get from database to ensure we have complete user data
+                var user = await _userCacheService.GetUserForAuthenticationAsync(normalizedEmail);
 
                 if (user == null)
                 {
@@ -615,7 +607,7 @@ namespace Backend.CMS.Infrastructure.Services
                 await _unitOfWork.SaveChangesAsync();
 
                 // Update user in cache
-                await _cacheInvalidationService.InvalidateEntityAsync<User>(user.Id);
+                await _userCacheService.SetUserAsync(user);
 
                 // Remove used token from cache
                 await _cacheService.RemoveAsync(tokenCacheKey);
@@ -663,7 +655,7 @@ namespace Backend.CMS.Infrastructure.Services
                 await _unitOfWork.Users.SaveChangesAsync();
 
                 // Update user in cache
-                await _cacheInvalidationService.InvalidateEntityAsync<User>(userId);
+                await _userCacheService.SetUserAsync(user);
 
                 _logger.LogInformation("Recovery codes generated for user {UserId}", userId);
 
@@ -701,7 +693,7 @@ namespace Backend.CMS.Infrastructure.Services
                 await _unitOfWork.Users.SaveChangesAsync();
 
                 // Update user in cache
-                await _cacheInvalidationService.InvalidateEntityAsync<User>(userId);
+                await _userCacheService.SetUserAsync(user);
 
                 _logger.LogInformation("Recovery code used for user {UserId}", userId);
 
@@ -753,17 +745,13 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                // Cache user data
-                var userCacheKey = CacheKeys.UserById(user.Id);
-                await _cacheService.SetAsync(userCacheKey, user, _cacheOptions.DefaultExpiration);
+                // Use the new UserCacheService instead of direct caching
+                await _userCacheService.SetUserAsync(user);
 
-                // Cache session
+                // Cache session separately (sessions don't have circular references)
                 var sessionCacheKey = CacheKeys.SessionByToken(session.RefreshToken);
-                await _cacheService.SetAsync(sessionCacheKey, session, _cacheOptions.DefaultExpiration);
-
-                // Cache user by email for faster lookups
-                var emailCacheKey = CacheKeys.UserByEmail(user.Email);
-                await _cacheService.SetAsync(emailCacheKey, user, _cacheOptions.DefaultExpiration);
+                var sessionDto = _mapper.Map<UserSessionCacheDto>(session);
+                await _cacheService.SetAsync(sessionCacheKey, sessionDto, _cacheOptions.DefaultExpiration);
             }
             catch (Exception ex)
             {
@@ -800,8 +788,8 @@ namespace Backend.CMS.Infrastructure.Services
                 _unitOfWork.Users.Update(user);
                 await _unitOfWork.Users.SaveChangesAsync();
 
-                // Invalidate user cache
-                await _cacheInvalidationService.InvalidateEntityAsync<User>(user.Id);
+                // Update user in cache
+                await _userCacheService.SetUserAsync(user);
             }
         }
 
@@ -838,10 +826,10 @@ namespace Backend.CMS.Infrastructure.Services
                 user.UpdatedByUserId = user.Id;
 
                 _unitOfWork.Users.Update(user);
-                await _unitOfWork.Users.SaveChangesAsync(); 
+                await _unitOfWork.Users.SaveChangesAsync();
 
                 // Update user in cache
-                await _cacheInvalidationService.InvalidateEntityAsync<User>(user.Id);
+                await _userCacheService.SetUserAsync(user);
 
                 _logger.LogInformation("User {UserId} automatically unlocked after lockout period expired", user.Id);
             }
@@ -858,7 +846,7 @@ namespace Backend.CMS.Infrastructure.Services
             await _unitOfWork.Users.SaveChangesAsync();
 
             // Update user in cache
-            await _cacheInvalidationService.InvalidateEntityAsync<User>(user.Id);
+            await _userCacheService.SetUserAsync(user);
 
             // Clear IP-based attempts on successful login
             if (_enableBruteForceProtection)
@@ -924,7 +912,6 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task InvalidateExistingPasswordResetTokensAsync(int userId)
         {
-
             var existingTokens = await _unitOfWork.GetRepository<PasswordResetToken>().FindAsync(t => t.UserId == userId && !t.IsUsed);
             foreach (var existingToken in existingTokens)
             {

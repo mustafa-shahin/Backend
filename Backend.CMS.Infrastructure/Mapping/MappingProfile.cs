@@ -74,6 +74,22 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.ContactDetails, opt => opt.Ignore())
                 .ForMember(dest => dest.Sessions, opt => opt.Ignore())
                 .ForMember(dest => dest.PasswordResetTokens, opt => opt.Ignore());
+            CreateMap<User, UserCacheDto>()
+                .ForMember(dest => dest.RecoveryCodes, opt => opt.MapFrom(src => src.RecoveryCodes ?? new List<string>()));
+
+            CreateMap<UserCacheDto, User>()
+               .ForMember(dest => dest.Sessions, opt => opt.Ignore())
+               .ForMember(dest => dest.PasswordResetTokens, opt => opt.Ignore())
+               .ForMember(dest => dest.Addresses, opt => opt.Ignore())
+               .ForMember(dest => dest.ContactDetails, opt => opt.Ignore())
+               .ForMember(dest => dest.UserPermissions, opt => opt.Ignore())
+               .ForMember(dest => dest.UserPermissions, opt => opt.Ignore())
+               .ForMember(dest => dest.ExternalLogins, opt => opt.Ignore())
+               .ForMember(dest => dest.Picture, opt => opt.Ignore());
+
+            CreateMap<UserSession, UserSessionCacheDto>();
+            CreateMap<UserSessionCacheDto, UserSession>()
+                .ForMember(dest => dest.User, opt => opt.Ignore());
         }
 
         private void ConfigureCompanyMappings()

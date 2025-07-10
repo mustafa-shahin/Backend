@@ -33,6 +33,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ICacheService _cacheService;
         private readonly ICacheInvalidationService _cacheInvalidationService;
         private readonly ICacheKeyService _cacheKeyService;
+        private readonly IUserCacheService _userCacheService;
         private readonly CacheOptions _cacheOptions;
 
         // Pagination constants
@@ -46,6 +47,7 @@ namespace Backend.CMS.Infrastructure.Services
             ICacheService cacheService,
             ICacheInvalidationService cacheInvalidationService,
             ICacheKeyService cacheKeyService,
+            IUserCacheService userCacheService,
             IMapper mapper,
             ILogger<UserService> logger,
             IOptions<CacheOptions> cacheOptions)
@@ -55,6 +57,7 @@ namespace Backend.CMS.Infrastructure.Services
             _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
             _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
             _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
+            _userCacheService = userCacheService ?? throw new ArgumentNullException(nameof(userCacheService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _cacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
@@ -67,7 +70,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var cachedUser = await _cacheService.GetEntityAsync<User>(_cacheKeyService, userId);
+                var cachedUser = await _userCacheService.GetUserByIdAsync(userId);
                 if (cachedUser != null)
                 {
                     _logger.LogDebug("Retrieved user {UserId} from cache", userId);
@@ -81,8 +84,7 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new KeyNotFoundException($"User with ID {userId} not found");
                 }
 
-                await _cacheService.SetEntityAsync(_cacheKeyService, userId, user, _cacheOptions.DefaultExpiration);
-                await CacheUserByAlternateKeysAsync(user);
+                await _userCacheService.SetUserAsync(user);
 
                 _logger.LogDebug("Cached user {UserId} for {CacheExpiration}", userId, _cacheOptions.DefaultExpiration);
 
@@ -104,8 +106,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var cacheKey = _cacheKeyService.GetCustomKey("user", "email", normalizedEmail);
-                var cachedUser = await _cacheService.GetAsync<User>(cacheKey);
+                var cachedUser = await _userCacheService.GetUserByEmailAsync(normalizedEmail);
                 if (cachedUser != null)
                 {
                     _logger.LogDebug("Retrieved user by email {Email} from cache", normalizedEmail);
@@ -119,7 +120,7 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new KeyNotFoundException($"User with email {normalizedEmail} not found");
                 }
 
-                await CacheUserByAllKeysAsync(user);
+                await _userCacheService.SetUserAsync(user);
 
                 _logger.LogDebug("Cached user by email {Email} for {CacheExpiration}", normalizedEmail, _cacheOptions.DefaultExpiration);
 
@@ -141,8 +142,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var cacheKey = _cacheKeyService.GetCustomKey("user", "username", normalizedUsername);
-                var cachedUser = await _cacheService.GetAsync<User>(cacheKey);
+                var cachedUser = await _userCacheService.GetUserByUsernameAsync(normalizedUsername);
                 if (cachedUser != null)
                 {
                     _logger.LogDebug("Retrieved user by username {Username} from cache", normalizedUsername);
@@ -156,7 +156,7 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new KeyNotFoundException($"User with username {normalizedUsername} not found");
                 }
 
-                await CacheUserByAllKeysAsync(user);
+                await _userCacheService.SetUserAsync(user);
 
                 _logger.LogDebug("Cached user by username {Username} for {CacheExpiration}", normalizedUsername, _cacheOptions.DefaultExpiration);
 
@@ -289,7 +289,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                     await _unitOfWork.SaveChangesAsync();
 
-                    await CacheUserByAllKeysAsync(user);
+                    await _userCacheService.SetUserAsync(user);
                     await InvalidateUserListCaches();
 
                     var createdUser = await _unitOfWork.Users.GetByIdAsync(user.Id);
@@ -352,16 +352,18 @@ namespace Backend.CMS.Infrastructure.Services
                     _logger.LogInformation("User {UserId} updated (email: {OriginalEmail} -> {NewEmail}) by user {CurrentUserId}",
                         userId, originalEmail, user.Email, currentUserId);
 
+                    // Remove old cache entries if email or username changed
                     if (originalEmail != user.Email)
                     {
-                        await _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("user", "email", originalEmail));
+                        await _userCacheService.RemoveUserByEmailAsync(originalEmail);
                     }
                     if (originalUsername != user.Username)
                     {
-                        await _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("user", "username", originalUsername));
+                        await _userCacheService.RemoveUserByUsernameAsync(originalUsername);
                     }
 
-                    await CacheUserByAllKeysAsync(user);
+                    // Update cache with new user data
+                    await _userCacheService.SetUserAsync(user);
 
                     if (originalEmail != user.Email || user.UpdatedAt > DateTime.UtcNow.AddMinutes(-1))
                     {
@@ -412,9 +414,9 @@ namespace Backend.CMS.Infrastructure.Services
 
                     if (result)
                     {
-                        await _cacheInvalidationService.InvalidateEntityAsync<User>(userId);
-                        await _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("user", "email", userEmail));
-                        await _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("user", "username", username));
+                        await _userCacheService.InvalidateUserCacheAsync(userId);
+                        await _userCacheService.RemoveUserByEmailAsync(userEmail);
+                        await _userCacheService.RemoveUserByUsernameAsync(username);
 
                         await InvalidateUserRelatedCaches(userId);
                         await InvalidateUserListCaches();
@@ -481,7 +483,7 @@ namespace Backend.CMS.Infrastructure.Services
                     _unitOfWork.Users.Update(user);
                     await _unitOfWork.SaveChangesAsync();
 
-                    await CacheUserByAllKeysAsync(user);
+                    await _userCacheService.SetUserAsync(user);
                     await InvalidateUserRelatedCaches(userId);
 
                     _logger.LogInformation("Password changed successfully for user {UserId}", userId);
@@ -504,19 +506,10 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var normalizedEmail = email.Trim().ToLowerInvariant();
 
-                var cacheKey = _cacheKeyService.GetCustomKey("user", "email", normalizedEmail);
-                var user = await _cacheService.GetAsync<User>(cacheKey);
+                // Always get from database for password verification
+                var user = await _userCacheService.GetUserForAuthenticationAsync(normalizedEmail);
 
-                if (user == null)
-                {
-                    user = await _unitOfWork.Users.GetByEmailAsync(normalizedEmail);
-                    if (user != null)
-                    {
-                        await _cacheService.SetAsync(cacheKey, user, _cacheOptions.DefaultExpiration);
-                    }
-                }
-
-                if (user == null)
+                if (user == null || string.IsNullOrEmpty(user.PasswordHash))
                     return false;
 
                 return BCrypt.Net.BCrypt.Verify(password, user.PasswordHash);
@@ -571,40 +564,239 @@ namespace Backend.CMS.Infrastructure.Services
 
         #endregion
 
+        #region Additional Interface Methods
+
+        public async Task<PagedResult<UserDto>> SearchUsersPagedAsync(UserSearchDto searchDto)
+        {
+            if (searchDto == null)
+                throw new ArgumentNullException(nameof(searchDto));
+
+            var validatedPageNumber = Math.Max(1, searchDto.PageNumber);
+            var validatedPageSize = Math.Clamp(searchDto.PageSize, MIN_PAGE_SIZE, MAX_PAGE_SIZE);
+
+            try
+            {
+                _logger.LogDebug("Advanced user search: page {PageNumber}, size {PageSize}, term '{SearchTerm}', role {Role}",
+                    validatedPageNumber, validatedPageSize, searchDto.SearchTerm, searchDto.Role);
+
+                var cacheKey = _cacheKeyService.GetQueryKey<User>("advanced-search", searchDto);
+                var cachedResult = await _cacheService.GetAsync<PagedResult<UserDto>>(cacheKey);
+                if (cachedResult != null)
+                {
+                    _logger.LogDebug("Retrieved advanced search results from cache");
+                    return cachedResult;
+                }
+
+                // For now, use regular search with the search term from UserSearchDto
+                var users = await _unitOfWork.Users.SearchUsersAsync(searchDto.SearchTerm ?? "", validatedPageNumber, validatedPageSize);
+                var totalCount = await _unitOfWork.Users.CountSearchAsync(searchDto.SearchTerm ?? "");
+
+                var userDtos = _mapper.Map<List<UserDto>>(users);
+
+                var result = new PagedResult<UserDto>(
+                    userDtos.AsReadOnly(),
+                    validatedPageNumber,
+                    validatedPageSize,
+                    totalCount);
+
+                await _cacheService.SetAsync(cacheKey, result, _cacheOptions.ShortExpiration);
+                await CacheIndividualUsersAsync(users);
+
+                _logger.LogInformation("Advanced user search completed: {UserCount} users on page {Page} of {TotalPages} (total: {TotalCount})",
+                    userDtos.Count, validatedPageNumber, result.TotalPages, totalCount);
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error performing advanced user search");
+                throw;
+            }
+        }
+
+        public async Task<bool> ResetPasswordAsync(string email)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                throw new ArgumentException("Email cannot be null or empty", nameof(email));
+
+            try
+            {
+                var user = await _unitOfWork.Users.GetByEmailAsync(email.Trim().ToLowerInvariant());
+                if (user == null)
+                {
+                    _logger.LogWarning("Password reset requested for non-existent email {Email}", email);
+                    return false;
+                }
+
+                // Generate new password
+                var newPassword = GenerateRandomPassword();
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+                user.PasswordChangedAt = DateTime.UtcNow;
+                user.UpdatedAt = DateTime.UtcNow;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                await _userCacheService.SetUserAsync(user);
+
+                // TODO: Send email with new password
+                _logger.LogInformation("Password reset completed for user {UserId}", user.Id);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resetting password for email {Email}", email);
+                throw;
+            }
+        }
+
+        public async Task<UserDto> UpdateUserPreferencesAsync(int userId, Dictionary<string, object> preferences)
+        {
+            if (userId <= 0)
+                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
+
+            if (preferences == null)
+                throw new ArgumentNullException(nameof(preferences));
+
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+                if (user == null)
+                {
+                    throw new KeyNotFoundException($"User with ID {userId} not found");
+                }
+
+                // TODO: Update user preferences - this depends on how preferences are stored
+                // For now, just update the timestamp
+                user.UpdatedAt = DateTime.UtcNow;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                await _userCacheService.SetUserAsync(user);
+
+                _logger.LogInformation("User preferences updated for user {UserId}", userId);
+                return _mapper.Map<UserDto>(user);
+            }
+            catch (Exception ex) when (!(ex is KeyNotFoundException))
+            {
+                _logger.LogError(ex, "Error updating user preferences for user {UserId}", userId);
+                throw;
+            }
+        }
+
+        public async Task<UserDto> UpdateUserAvatarAsync(int userId, int? pictureFileId)
+        {
+            if (userId <= 0)
+                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
+
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+                if (user == null)
+                {
+                    throw new KeyNotFoundException($"User with ID {userId} not found");
+                }
+
+                user.PictureFileId = pictureFileId;
+                user.UpdatedAt = DateTime.UtcNow;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                await _userCacheService.SetUserAsync(user);
+
+                _logger.LogInformation("User avatar updated for user {UserId}", userId);
+                return _mapper.Map<UserDto>(user);
+            }
+            catch (Exception ex) when (!(ex is KeyNotFoundException))
+            {
+                _logger.LogError(ex, "Error updating user avatar for user {UserId}", userId);
+                throw;
+            }
+        }
+
+        public async Task<UserDto> RemoveUserAvatarAsync(int userId)
+        {
+            return await UpdateUserAvatarAsync(userId, null);
+        }
+
+        public async Task<bool> VerifyEmailAsync(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                throw new ArgumentException("Token cannot be null or empty", nameof(token));
+
+            try
+            {
+                var user = await _unitOfWork.Users.GetByEmailVerificationTokenAsync(token);
+                if (user == null)
+                {
+                    _logger.LogWarning("Email verification attempted with invalid token");
+                    return false;
+                }
+
+                user.EmailVerifiedAt = DateTime.UtcNow;
+                user.EmailVerificationToken = null;
+                user.UpdatedAt = DateTime.UtcNow;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                await _userCacheService.SetUserAsync(user);
+
+                _logger.LogInformation("Email verified for user {UserId}", user.Id);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error verifying email with token");
+                throw;
+            }
+        }
+
+        public async Task<bool> SendEmailVerificationAsync(int userId)
+        {
+            if (userId <= 0)
+                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
+
+            try
+            {
+                var user = await _unitOfWork.Users.GetByIdAsync(userId);
+                if (user == null)
+                {
+                    _logger.LogWarning("Email verification send attempted for non-existent user {UserId}", userId);
+                    return false;
+                }
+
+                // Generate verification token
+                user.EmailVerificationToken = Guid.NewGuid().ToString();
+                user.UpdatedAt = DateTime.UtcNow;
+
+                _unitOfWork.Users.Update(user);
+                await _unitOfWork.SaveChangesAsync();
+
+                await _userCacheService.SetUserAsync(user);
+
+                // TODO: Send email with verification token
+                _logger.LogInformation("Email verification sent for user {UserId}", userId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error sending email verification for user {UserId}", userId);
+                throw;
+            }
+        }
+
+        #endregion
+
         #region Private Helper Methods
-
-        private async Task CacheUserByAllKeysAsync(User user)
-        {
-            try
-            {
-                await _cacheService.SetEntityAsync(_cacheKeyService, user.Id, user, _cacheOptions.DefaultExpiration);
-                await _cacheService.SetAsync(_cacheKeyService.GetCustomKey("user", "email", user.Email), user, _cacheOptions.DefaultExpiration);
-                await _cacheService.SetAsync(_cacheKeyService.GetCustomKey("user", "username", user.Username), user, _cacheOptions.DefaultExpiration);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to cache user {UserId} by all keys", user.Id);
-            }
-        }
-
-        private async Task CacheUserByAlternateKeysAsync(User user)
-        {
-            try
-            {
-                await _cacheService.SetAsync(_cacheKeyService.GetCustomKey("user", "email", user.Email), user, _cacheOptions.DefaultExpiration);
-                await _cacheService.SetAsync(_cacheKeyService.GetCustomKey("user", "username", user.Username), user, _cacheOptions.DefaultExpiration);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to cache user {UserId} by alternate keys", user.Id);
-            }
-        }
 
         private async Task CacheIndividualUsersAsync(IEnumerable<User> users)
         {
             try
             {
-                var tasks = users.Select(user => CacheUserByAllKeysAsync(user));
+                var tasks = users.Select(user => _userCacheService.SetUserAsync(user));
                 await Task.WhenAll(tasks);
             }
             catch (Exception ex)
@@ -670,7 +862,7 @@ namespace Backend.CMS.Infrastructure.Services
                     _unitOfWork.Users.Update(user);
                     await _unitOfWork.SaveChangesAsync();
 
-                    await CacheUserByAllKeysAsync(user);
+                    await _userCacheService.SetUserAsync(user);
                     await InvalidateUserRelatedCaches(userId);
                     await InvalidateUserListCaches();
 
@@ -850,245 +1042,12 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<UserDto>> SearchUsersPagedAsync(UserSearchDto searchDto)
-        {
-            if (searchDto == null)
-                throw new ArgumentNullException(nameof(searchDto));
-
-            var validatedPageNumber = Math.Max(1, searchDto.PageNumber);
-            var validatedPageSize = Math.Clamp(searchDto.PageSize, MIN_PAGE_SIZE, MAX_PAGE_SIZE);
-
-            try
-            {
-                _logger.LogDebug("Advanced user search: page {PageNumber}, size {PageSize}, term '{SearchTerm}', role {Role}",
-                    validatedPageNumber, validatedPageSize, searchDto.SearchTerm, searchDto.Role);
-
-                var cacheKey = _cacheKeyService.GetQueryKey<User>("advanced-search", searchDto);
-                var cachedResult = await _cacheService.GetAsync<PagedResult<UserDto>>(cacheKey);
-                if (cachedResult != null)
-                {
-                    _logger.LogDebug("Retrieved advanced search results from cache");
-                    return cachedResult;
-                }
-
-                // For now, use regular search with the search term from UserSearchDto
-                var users = await _unitOfWork.Users.SearchUsersAsync(searchDto.SearchTerm ?? "", validatedPageNumber, validatedPageSize);
-                var totalCount = await _unitOfWork.Users.CountSearchAsync(searchDto.SearchTerm ?? "");
-
-                var userDtos = _mapper.Map<List<UserDto>>(users);
-
-                var result = new PagedResult<UserDto>(
-                    userDtos.AsReadOnly(),
-                    validatedPageNumber,
-                    validatedPageSize,
-                    totalCount);
-
-                await _cacheService.SetAsync(cacheKey, result, _cacheOptions.ShortExpiration);
-                await CacheIndividualUsersAsync(users);
-
-                _logger.LogInformation("Advanced user search completed: {UserCount} users on page {Page} of {TotalPages} (total: {TotalCount})",
-                    userDtos.Count, validatedPageNumber, result.TotalPages, totalCount);
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error performing advanced user search");
-                throw;
-            }
-        }
-
-        public async Task<bool> ResetPasswordAsync(string email)
-        {
-            if (string.IsNullOrWhiteSpace(email))
-                throw new ArgumentException("Email cannot be null or empty", nameof(email));
-
-            try
-            {
-                var user = await _unitOfWork.Users.GetByEmailAsync(email.Trim().ToLowerInvariant());
-                if (user == null)
-                {
-                    _logger.LogWarning("Password reset requested for non-existent email {Email}", email);
-                    return false;
-                }
-
-                // Generate new password
-                var newPassword = GenerateRandomPassword();
-                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
-                user.PasswordChangedAt = DateTime.UtcNow;
-                user.UpdatedAt = DateTime.UtcNow;
-
-                _unitOfWork.Users.Update(user);
-                await _unitOfWork.SaveChangesAsync();
-
-                // TODO: Send email with new password
-                _logger.LogInformation("Password reset completed for user {UserId}", user.Id);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error resetting password for email {Email}", email);
-                throw;
-            }
-        }
-
-        public async Task<UserDto> UpdateUserPreferencesAsync(int userId, Dictionary<string, object> preferences)
-        {
-            if (userId <= 0)
-                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
-
-            if (preferences == null)
-                throw new ArgumentNullException(nameof(preferences));
-
-            try
-            {
-                var user = await _unitOfWork.Users.GetByIdAsync(userId);
-                if (user == null)
-                {
-                    throw new KeyNotFoundException($"User with ID {userId} not found");
-                }
-
-                // TODO: Update user preferences - this depends on how preferences are stored
-                // For now, just update the timestamp
-                user.UpdatedAt = DateTime.UtcNow;
-
-                _unitOfWork.Users.Update(user);
-                await _unitOfWork.SaveChangesAsync();
-
-                await CacheUserByAllKeysAsync(user);
-
-                _logger.LogInformation("User preferences updated for user {UserId}", userId);
-                return _mapper.Map<UserDto>(user);
-            }
-            catch (Exception ex) when (!(ex is KeyNotFoundException))
-            {
-                _logger.LogError(ex, "Error updating user preferences for user {UserId}", userId);
-                throw;
-            }
-        }
-
-        public async Task<UserDto> UpdateUserAvatarAsync(int userId, int? pictureFileId)
-        {
-            if (userId <= 0)
-                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
-
-            try
-            {
-                var user = await _unitOfWork.Users.GetByIdAsync(userId);
-                if (user == null)
-                {
-                    throw new KeyNotFoundException($"User with ID {userId} not found");
-                }
-
-                user.PictureFileId = pictureFileId;
-                user.UpdatedAt = DateTime.UtcNow;
-
-                _unitOfWork.Users.Update(user);
-                await _unitOfWork.SaveChangesAsync();
-
-                await CacheUserByAllKeysAsync(user);
-
-                _logger.LogInformation("User avatar updated for user {UserId}", userId);
-                return _mapper.Map<UserDto>(user);
-            }
-            catch (Exception ex) when (!(ex is KeyNotFoundException))
-            {
-                _logger.LogError(ex, "Error updating user avatar for user {UserId}", userId);
-                throw;
-            }
-        }
-
-        public async Task<UserDto> RemoveUserAvatarAsync(int userId)
-        {
-            return await UpdateUserAvatarAsync(userId, null);
-        }
-
-        public async Task<bool> VerifyEmailAsync(string token)
-        {
-            if (string.IsNullOrWhiteSpace(token))
-                throw new ArgumentException("Token cannot be null or empty", nameof(token));
-
-            try
-            {
-                var user = await _unitOfWork.Users.GetByEmailVerificationTokenAsync(token);
-                if (user == null)
-                {
-                    _logger.LogWarning("Email verification attempted with invalid token");
-                    return false;
-                }
-
-                user.EmailVerifiedAt = DateTime.UtcNow;
-                user.EmailVerificationToken = null;
-                user.UpdatedAt = DateTime.UtcNow;
-
-                _unitOfWork.Users.Update(user);
-                await _unitOfWork.SaveChangesAsync();
-
-                await CacheUserByAllKeysAsync(user);
-
-                _logger.LogInformation("Email verified for user {UserId}", user.Id);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error verifying email with token");
-                throw;
-            }
-        }
-
-        public async Task<bool> SendEmailVerificationAsync(int userId)
-        {
-            if (userId <= 0)
-                throw new ArgumentException("User ID must be greater than 0", nameof(userId));
-
-            try
-            {
-                var user = await _unitOfWork.Users.GetByIdAsync(userId);
-                if (user == null)
-                {
-                    _logger.LogWarning("Email verification send attempted for non-existent user {UserId}", userId);
-                    return false;
-                }
-
-                // Generate verification token
-                user.EmailVerificationToken = Guid.NewGuid().ToString();
-                user.UpdatedAt = DateTime.UtcNow;
-
-                _unitOfWork.Users.Update(user);
-                await _unitOfWork.SaveChangesAsync();
-
-                // TODO: Send email with verification token
-                _logger.LogInformation("Email verification sent for user {UserId}", userId);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error sending email verification for user {UserId}", userId);
-                throw;
-            }
-        }
-
-        #endregion
-
-        #region Private Helper Methods (Additional)
-
         private static string GenerateRandomPassword(int length = 12)
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
             var random = new Random();
             return new string(Enumerable.Repeat(chars, length)
                 .Select(s => s[random.Next(s.Length)]).ToArray());
-        }
-
-        #endregion
-
-        #region Legacy/Obsolete Methods
-
-        [Obsolete("Use GetUsersPagedAsync instead")]
-        public async Task<(List<UserDto> users, int totalCount)> GetUsersAsync(int page = 1, int pageSize = 10, string? search = null)
-        {
-            var result = await GetUsersPagedAsync(page, pageSize, search);
-            return (result.Data.ToList(), result.TotalCount);
         }
 
         #endregion

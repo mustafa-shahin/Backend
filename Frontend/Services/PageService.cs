@@ -27,7 +27,7 @@ namespace Frontend.Services
         {
             try
             {
-                var query = $"/api/v1.0/page?pageNumber={page}&pageSize={pageSize}";
+                var query = $"/api/v1/page?pageNumber={page}&pageSize={pageSize}";
                 if (!string.IsNullOrEmpty(search))
                 {
                     query += $"&search={Uri.EscapeDataString(search)}";
@@ -53,7 +53,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/v1.0/page/{id}");
+                var response = await _httpClient.GetAsync($"/api/v1/page/{id}");
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -77,7 +77,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("/api/v1.0/page", createPageDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("/api/v1/page", createPageDto, _jsonOptions);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -97,7 +97,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PutAsJsonAsync($"/api/v1.0/page/{id}", updatePageDto, _jsonOptions);
+                var response = await _httpClient.PutAsJsonAsync($"/api/v1/page/{id}", updatePageDto, _jsonOptions);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -117,7 +117,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.DeleteAsync($"/api/v1.0/page/{id}");
+                var response = await _httpClient.DeleteAsync($"/api/v1/page/{id}");
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -130,7 +130,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"/api/v1.0/page/{id}/publish", null);
+                var response = await _httpClient.PostAsync($"/api/v1/page/{id}/publish", null);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -150,7 +150,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"/api/v1.0/page/{id}/unpublish", null);
+                var response = await _httpClient.PostAsync($"/api/v1/page/{id}/unpublish", null);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -170,7 +170,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync($"/api/v1.0/page/{id}/duplicate",
+                var response = await _httpClient.PostAsJsonAsync($"/api/v1/page/{id}/duplicate",
                     new DuplicatePageDto { NewName = newName }, _jsonOptions);
 
                 if (response.IsSuccessStatusCode)
@@ -191,7 +191,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/v1.0/page/{pageId}/versions");
+                var response = await _httpClient.GetAsync($"/api/v1/page/{pageId}/versions");
 
                 if (response.IsSuccessStatusCode)
                 {

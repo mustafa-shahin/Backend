@@ -571,6 +571,7 @@ static void RegisterCoreServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IEmailService, EmailService>();
     builder.Services.AddScoped<IAddressService, AddressService>();
     builder.Services.AddScoped<IContactDetailsService, ContactDetailsService>();
+    builder.Services.AddScoped<IUserCacheService, UserCacheService>();
 }
 
 static void RegisterBusinessServices(WebApplicationBuilder builder)

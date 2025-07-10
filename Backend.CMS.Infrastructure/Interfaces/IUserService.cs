@@ -50,12 +50,6 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// <returns>Paginated search results</returns>
         Task<PagedResult<UserDto>> SearchUsersPagedAsync(UserSearchDto searchDto);
 
-        /// <summary>
-        /// Legacy method for backward compatibility - redirects to paginated implementation
-        /// </summary>
-        [Obsolete("Use GetUsersPagedAsync instead")]
-        Task<(List<UserDto> users, int totalCount)> GetUsersAsync(int page = 1, int pageSize = 10, string? search = null);
-
         #endregion
 
         #region User Management Operations

@@ -49,7 +49,7 @@ namespace Backend.CMS.Infrastructure.Caching.Services
                 DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
                 PropertyNameCaseInsensitive = true
             };
-
+            _jsonOptions = _options.JsonOptions ?? CacheOptions.GetDefaultJsonOptions();
             // Cleanup unused locks every 5 minutes
             _cleanupTimer = new Timer(CleanupUnusedLocks, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
 

@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Backend.CMS.Infrastructure.Caching
 {
@@ -19,5 +20,23 @@ namespace Backend.CMS.Infrastructure.Caching
         public TimeSpan LockTimeout { get; set; } = TimeSpan.FromSeconds(30);
         public int RetryAttempts { get; set; } = 3;
         public TimeSpan RetryDelay { get; set; } = TimeSpan.FromMilliseconds(100);
+
+        /// <summary>
+        /// Get default JsonSerializerOptions optimized for caching
+        /// </summary>
+        public static JsonSerializerOptions GetDefaultJsonOptions()
+        {
+            return new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = false,
+                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+                PropertyNameCaseInsensitive = true,
+                ReferenceHandler = ReferenceHandler.IgnoreCycles,
+                MaxDepth = 32,
+                IgnoreReadOnlyProperties = true,
+                IgnoreReadOnlyFields = true
+            };
+        }
     }
 }
