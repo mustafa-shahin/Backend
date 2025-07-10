@@ -14,7 +14,6 @@ namespace Backend.CMS.API.Controllers
     [ApiController]
     [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
-    [ApiVersion("2.0")]
     [Authorize]
     [EnableRateLimiting("ApiPolicy")]
     public class CompanyController : ControllerBase
@@ -415,22 +414,6 @@ namespace Backend.CMS.API.Controllers
                 _logger.LogError(ex, "Error bulk deleting locations");
                 return StatusCode(500, new { Message = "An error occurred while deleting locations" });
             }
-        }
-
-        // Supporting DTOs for controller actions
-        public class BulkUpdateLocationsDto
-        {
-            [Required]
-            public List<int> LocationIds { get; set; } = new();
-
-            [Required]
-            public UpdateLocationDto UpdateDto { get; set; } = null!;
-        }
-
-        public class BulkDeleteLocationsDto
-        {
-            [Required]
-            public List<int> LocationIds { get; set; } = new();
         }
     }
 }
