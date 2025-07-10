@@ -180,19 +180,40 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get locations by company
+        /// Get locations by company with pagination
         /// </summary>
         /// <param name="companyId">Company ID</param>
-        /// <returns>List of locations for the specified company</returns>
+        /// <param name="pageNumber">Page number (1-based, default: 1)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <param name="searchTerm">Optional search term for location name, code, or description</param>
+        /// <param name="sortBy">Sort field (default: Name)</param>
+        /// <param name="sortDirection">Sort direction (Asc/Desc, default: Asc)</param>
+        /// <returns>Paginated list of locations for the specified company</returns>
         [HttpGet("company/{companyId:int}")]
-        [ProducesResponseType(typeof(List<LocationDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PagedResult<LocationDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<List<LocationDto>>> GetLocationsByCompany(int companyId)
+        public async Task<ActionResult<PagedResult<LocationDto>>> GetLocationsByCompany(
+            int companyId,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? searchTerm = null,
+            [FromQuery] string sortBy = "Name",
+            [FromQuery] string sortDirection = "Asc")
         {
             try
             {
-                var locations = await _locationService.GetLocationsByCompanyAsync(companyId);
+                var searchDto = new LocationSearchDto
+                {
+                    CompanyId = companyId,
+                    PageNumber = pageNumber,
+                    PageSize = pageSize,
+                    SearchTerm = searchTerm,
+                    SortBy = sortBy,
+                    SortDirection = sortDirection
+                };
+
+                var locations = await _locationService.GetLocationsPagedAsync(searchDto);
                 return Ok(locations);
             }
             catch (ArgumentException ex)
@@ -324,19 +345,41 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get recent locations (non-paginated for quick access)
+        /// Get recent locations with pagination
         /// </summary>
-        /// <param name="count">Number of recent locations to retrieve (default: 10, max: 50)</param>
-        /// <returns>List of recent locations</returns>
+        /// <param name="pageNumber">Page number (1-based, default: 1)</param>
+        /// <param name="pageSize">Number of items per page (1-50, default: 10)</param>
+        /// <param name="sortBy">Sort field (default: CreatedAt)</param>
+        /// <param name="sortDirection">Sort direction (Asc/Desc, default: Desc)</param>
+        /// <returns>Paginated list of recent locations</returns>
         [HttpGet("recent")]
-        [ProducesResponseType(typeof(List<LocationDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PagedResult<LocationDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<List<LocationDto>>> GetRecentLocations([FromQuery] int count = 10)
+        public async Task<ActionResult<PagedResult<LocationDto>>> GetRecentLocations(
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string sortBy = "CreatedAt",
+            [FromQuery] string sortDirection = "Desc")
         {
             try
             {
-                var locations = await _locationService.GetRecentLocationsAsync(Math.Clamp(count, 1, 50));
+                var searchDto = new LocationSearchDto
+                {
+                    PageNumber = pageNumber,
+                    PageSize = Math.Clamp(pageSize, 1, 50),
+                    SortBy = sortBy,
+                    SortDirection = sortDirection,
+                    CreatedAfter = DateTime.UtcNow.AddMonths(-6)
+                };
+
+                var locations = await _locationService.GetLocationsPagedAsync(searchDto);
                 return Ok(locations);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid request parameters for getting recent locations");
+                return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
             {

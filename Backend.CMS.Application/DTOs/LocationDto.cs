@@ -120,14 +120,33 @@ namespace Backend.CMS.Application.DTOs
         [MaxLength(1000)]
         public string? Notes { get; set; }
     }
-    public class LocationSearchDto : PagedSearchDto
+    public class LocationSearchDto
     {
+        public int PageNumber { get; set; } = 1;
+        public int PageSize { get; set; } = 10;
         public string? SearchTerm { get; set; }
         public string? LocationType { get; set; }
         public bool? IsActive { get; set; }
         public bool? IsMainLocation { get; set; }
         public int? CompanyId { get; set; }
+        public string SortBy { get; set; } = "Name";
+        public string SortDirection { get; set; } = "Asc";
         public DateTime? CreatedAfter { get; set; }
         public DateTime? CreatedBefore { get; set; }
+    }
+
+    public class BulkUpdateLocationsDto
+    {
+        [Required]
+        public List<int> LocationIds { get; set; } = new();
+
+        [Required]
+        public UpdateLocationDto UpdateDto { get; set; } = null!;
+    }
+
+    public class BulkDeleteLocationsDto
+    {
+        [Required]
+        public List<int> LocationIds { get; set; } = new();
     }
 }
