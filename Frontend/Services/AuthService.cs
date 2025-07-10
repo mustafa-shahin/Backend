@@ -36,7 +36,7 @@ namespace Frontend.Services
 
                 // Add timeout to prevent hanging
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                var response = await _httpClient.PostAsJsonAsync("/api/auth/login", loginDto, cts.Token);
+                var response = await _httpClient.PostAsJsonAsync("/api/v1/auth/login", loginDto, cts.Token);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -134,7 +134,7 @@ namespace Frontend.Services
                         if (!string.IsNullOrEmpty(refreshToken))
                         {
                             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                            await _httpClient.PostAsJsonAsync("/api/auth/logout", new { RefreshToken = refreshToken }, cts.Token);
+                            await _httpClient.PostAsJsonAsync("/api/v1/auth/logout", new { RefreshToken = refreshToken }, cts.Token);
                         }
                     }
                     catch (Exception ex)
@@ -190,7 +190,7 @@ namespace Frontend.Services
                 }
 
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                var response = await _httpClient.PostAsJsonAsync("/api/auth/refresh",
+                var response = await _httpClient.PostAsJsonAsync("/api/v1/auth/refresh",
                     new RefreshTokenDto { RefreshToken = refreshToken }, cts.Token);
 
                 if (response.IsSuccessStatusCode)

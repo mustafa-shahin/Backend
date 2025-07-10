@@ -13,7 +13,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Backend.CMS.API.Controllers
 {
     [ApiController]
-    [Route("api/{version:apiVersion}/[controller]")]
+    [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
     [AdminOrDev]
     public class IndexingJobController : ControllerBase

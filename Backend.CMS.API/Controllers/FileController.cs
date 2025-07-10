@@ -14,7 +14,7 @@ namespace Backend.CMS.API.Controllers
     /// File management controller providing file operations
     /// </summary> 
     [ApiController]
-    [Route("api/{version:apiVersion}/[controller]")]
+    [Route("api/v{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
 
     [Authorize]
