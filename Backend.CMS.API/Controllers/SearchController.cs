@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Backend.CMS.API.Controllers
 {
     [ApiController]
-    [Route("api/{version:apiVersion}[controller]")]
+    [Route("api/{version:apiVersion}/[controller]")]
     [ApiVersion("1.0")]
     public class SearchController : ControllerBase
     {
