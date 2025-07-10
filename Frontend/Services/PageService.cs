@@ -1,7 +1,9 @@
 ﻿using Backend.CMS.Application.DTOs;
 using Frontend.Interface;
+using System;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Frontend.Services
 {
@@ -16,7 +18,8 @@ namespace Frontend.Services
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
             };
         }
 
@@ -24,7 +27,7 @@ namespace Frontend.Services
         {
             try
             {
-                var query = $"/api/page?page={page}&pageSize={pageSize}";
+                var query = $"/api/v1.0/page?pageNumber={page}&pageSize={pageSize}";
                 if (!string.IsNullOrEmpty(search))
                 {
                     query += $"&search={Uri.EscapeDataString(search)}";
@@ -50,7 +53,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/page/{id}");
+                var response = await _httpClient.GetAsync($"/api/v1.0/page/{id}");
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -74,7 +77,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync("/api/page", createPageDto, _jsonOptions);
+                var response = await _httpClient.PostAsJsonAsync("/api/v1.0/page", createPageDto, _jsonOptions);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -94,7 +97,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PutAsJsonAsync($"/api/page/{id}", updatePageDto, _jsonOptions);
+                var response = await _httpClient.PutAsJsonAsync($"/api/v1.0/page/{id}", updatePageDto, _jsonOptions);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -114,7 +117,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.DeleteAsync($"/api/page/{id}");
+                var response = await _httpClient.DeleteAsync($"/api/v1.0/page/{id}");
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -127,7 +130,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"/api/page/{id}/publish", null);
+                var response = await _httpClient.PostAsync($"/api/v1.0/page/{id}/publish", null);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -147,7 +150,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsync($"/api/page/{id}/unpublish", null);
+                var response = await _httpClient.PostAsync($"/api/v1.0/page/{id}/unpublish", null);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -167,7 +170,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.PostAsJsonAsync($"/api/page/{id}/duplicate",
+                var response = await _httpClient.PostAsJsonAsync($"/api/v1.0/page/{id}/duplicate",
                     new DuplicatePageDto { NewName = newName }, _jsonOptions);
 
                 if (response.IsSuccessStatusCode)
@@ -188,7 +191,7 @@ namespace Frontend.Services
         {
             try
             {
-                var response = await _httpClient.GetAsync($"/api/page/{pageId}/versions");
+                var response = await _httpClient.GetAsync($"/api/v1.0/page/{pageId}/versions");
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -208,7 +211,7 @@ namespace Frontend.Services
         {
             try
             {
-                var query = $"/api/page/validate-slug?slug={Uri.EscapeDataString(slug)}";
+                var query = $"/api/v1.0/page/validate-slug?slug={Uri.EscapeDataString(slug)}";
                 if (excludePageId.HasValue)
                 {
                     query += $"&excludePageId={excludePageId.Value}";

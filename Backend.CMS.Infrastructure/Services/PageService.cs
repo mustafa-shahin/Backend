@@ -2,10 +2,12 @@
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
-using Backend.CMS.Infrastructure.IRepositories;
 using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Interfaces;
+using Backend.CMS.Infrastructure.IRepositories;
+using Backend.CMS.Infrastructure.Repositories;
 using Microsoft.Extensions.Logging;
+using System.Linq.Expressions;
 using System.Text.Json;
 
 namespace Backend.CMS.Infrastructure.Services
@@ -139,7 +141,118 @@ namespace Backend.CMS.Infrastructure.Services
                 throw;
             }
         }
+        public async Task<PagedResult<PageListDto>> GetPagesPagedAsync(PageSearchDto searchDto)
+        {
+            try
+            {
+                searchDto.PageNumber = Math.Max(1, searchDto.PageNumber);
+                searchDto.PageSize = Math.Clamp(searchDto.PageSize, 1, 100);
 
+                var cacheKey = _cacheKeyService.GetQueryKey<Page>("paged_search", searchDto);
+
+                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+                {
+                    // Build predicate for filtering
+                    Expression<Func<Page, bool>>? predicate = null;
+                    if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm) ||
+                        searchDto.Status.HasValue ||
+                        searchDto.ParentPageId.HasValue ||
+                        searchDto.RequiresLogin.HasValue ||
+                        searchDto.AdminOnly.HasValue ||
+                        searchDto.CreatedFrom.HasValue ||
+                        searchDto.CreatedTo.HasValue ||
+                        searchDto.UpdatedFrom.HasValue ||
+                        searchDto.UpdatedTo.HasValue ||
+                        !string.IsNullOrWhiteSpace(searchDto.Template) ||
+                        searchDto.IsPublished.HasValue)
+                    {
+                        predicate = p =>
+                            (string.IsNullOrWhiteSpace(searchDto.SearchTerm) ||
+                             p.Name.Contains(searchDto.SearchTerm) ||
+                             p.Title.Contains(searchDto.SearchTerm) ||
+                             p.Description != null && p.Description.Contains(searchDto.SearchTerm) ||
+                             p.Slug.Contains(searchDto.SearchTerm)) &&
+                            (!searchDto.Status.HasValue || p.Status == searchDto.Status.Value) &&
+                            (!searchDto.ParentPageId.HasValue || p.ParentPageId == searchDto.ParentPageId.Value) &&
+                            (!searchDto.RequiresLogin.HasValue || p.RequiresLogin == searchDto.RequiresLogin.Value) &&
+                            (!searchDto.AdminOnly.HasValue || p.AdminOnly == searchDto.AdminOnly.Value) &&
+                            (!searchDto.CreatedFrom.HasValue || p.CreatedAt >= searchDto.CreatedFrom.Value) &&
+                            (!searchDto.CreatedTo.HasValue || p.CreatedAt <= searchDto.CreatedTo.Value) &&
+                            (!searchDto.UpdatedFrom.HasValue || p.UpdatedAt >= searchDto.UpdatedFrom.Value) &&
+                            (!searchDto.UpdatedTo.HasValue || p.UpdatedAt <= searchDto.UpdatedTo.Value) &&
+                            (string.IsNullOrWhiteSpace(searchDto.Template) || p.Template == searchDto.Template) &&
+                            (!searchDto.IsPublished.HasValue ||
+                             (searchDto.IsPublished.Value && p.Status == PageStatus.Published) ||
+                             (!searchDto.IsPublished.Value && p.Status != PageStatus.Published));
+                    }
+
+                    // Build ordering
+                    Func<IQueryable<Page>, IOrderedQueryable<Page>>? orderBy = null;
+                    orderBy = searchDto.SortBy.ToLowerInvariant() switch
+                    {
+                        "name" => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                            ? q => q.OrderBy(p => p.Name)
+                            : q => q.OrderByDescending(p => p.Name),
+                        "title" => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                            ? q => q.OrderBy(p => p.Title)
+                            : q => q.OrderByDescending(p => p.Title),
+                        "status" => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                            ? q => q.OrderBy(p => p.Status)
+                            : q => q.OrderByDescending(p => p.Status),
+                        "createdat" => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                            ? q => q.OrderBy(p => p.CreatedAt)
+                            : q => q.OrderByDescending(p => p.CreatedAt),
+                        "publishedon" => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                            ? q => q.OrderBy(p => p.PublishedOn)
+                            : q => q.OrderByDescending(p => p.PublishedOn),
+                        _ => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                            ? q => q.OrderBy(p => p.UpdatedAt)
+                            : q => q.OrderByDescending(p => p.UpdatedAt)
+                    };
+
+                    var pagedResult = await _unitOfWork.Pages.GetPagedResultAsync(
+                        searchDto.PageNumber,
+                        searchDto.PageSize,
+                        predicate,
+                        orderBy);
+
+                    var pageListDtos = _mapper.Map<List<PageListDto>>(pagedResult.Data);
+
+                    // Enhance with version information efficiently
+                    if (pageListDtos.Any())
+                    {
+                        var pageIds = pageListDtos.Select(p => p.Id).ToList();
+                        var allVersions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => pageIds.Contains(v.PageId));
+                        var versionGroups = allVersions.GroupBy(v => v.PageId).ToDictionary(g => g.Key, g => g.ToList());
+
+                        foreach (var pageDto in pageListDtos)
+                        {
+                            if (versionGroups.TryGetValue(pageDto.Id, out var versions))
+                            {
+                                pageDto.VersionCount = versions.Count;
+                                pageDto.CurrentVersion = versions.Any() ? versions.Max(v => v.VersionNumber) : 0;
+                            }
+                        }
+                    }
+
+                    return new PagedResult<PageListDto>(
+                        pageListDtos,
+                        pagedResult.PageNumber,
+                        pagedResult.PageSize,
+                        pagedResult.TotalCount);
+
+                }, TimeSpan.FromMinutes(10));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting paged pages with search criteria");
+                throw;
+            }
+        }
+        public async Task<PagedResult<PageListDto>> SearchPagesPagedAsync(PageSearchDto searchDto)
+        {
+            return await GetPagesPagedAsync(searchDto);
+        }
         public async Task<List<PageDto>> GetPageHierarchyAsync()
         {
             try

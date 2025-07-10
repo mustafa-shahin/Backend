@@ -1,14 +1,23 @@
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using Asp.Versioning;
+using System.ComponentModel.DataAnnotations;
 
 namespace Backend.CMS.API.Controllers
 {
+    /// <summary>
+    /// Page management controller providing CRUD operations for pages
+    /// </summary>
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/page")]
+    [ApiVersion("1.0")]
     [Authorize]
+    [EnableRateLimiting("ApiPolicy")]
     public class PageController : ControllerBase
     {
         private readonly IPageService _pageService;
@@ -23,8 +32,13 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get page by ID with full structure
         /// </summary>
+        /// <param name="id">Page ID</param>
+        /// <returns>Page information with full structure</returns>
         [HttpGet("{id:int}")]
-        public async Task<ActionResult<PageDto>> GetPage(int id)
+        [ProducesResponseType(typeof(PageDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PageDto>> GetPage([FromRoute] int id)
         {
             try
             {
@@ -46,9 +60,14 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get page by slug (public endpoint for frontend) - returns only published pages
         /// </summary>
+        /// <param name="slug">Page slug</param>
+        /// <returns>Published page information</returns>
         [HttpGet("by-slug/{slug}")]
         [AllowAnonymous]
-        public async Task<ActionResult<PageDto>> GetPageBySlug(string slug)
+        [ProducesResponseType(typeof(PageDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PageDto>> GetPageBySlug([FromRoute] string slug)
         {
             try
             {
@@ -68,28 +87,73 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get paginated list of pages for admin
+        /// Get paginated list of pages with advanced filtering and sorting
         /// </summary>
+        /// <param name="pageNumber">Page number (1-based)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <param name="search">Optional search term</param>
+        /// <param name="status">Optional status filter</param>
+        /// <param name="parentPageId">Optional parent page filter</param>
+        /// <param name="requiresLogin">Optional requires login filter</param>
+        /// <param name="adminOnly">Optional admin only filter</param>
+        /// <param name="template">Optional template filter</param>
+        /// <param name="isPublished">Optional published filter</param>
+        /// <param name="sortBy">Sort field (default: UpdatedAt)</param>
+        /// <param name="sortDirection">Sort direction (Asc/Desc, default: Desc)</param>
+        /// <param name="createdFrom">Optional created from date filter</param>
+        /// <param name="createdTo">Optional created to date filter</param>
+        /// <param name="updatedFrom">Optional updated from date filter</param>
+        /// <param name="updatedTo">Optional updated to date filter</param>
+        /// <returns>Paginated list of pages</returns>
         [HttpGet]
+        [ProducesResponseType(typeof(PagedResult<PageListDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<PagedResult<PageListDto>>> GetPages(
-            [FromQuery] int page = 1,
+            [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
-            [FromQuery] string? search = null)
+            [FromQuery] string? search = null,
+            [FromQuery] PageStatus? status = null,
+            [FromQuery] int? parentPageId = null,
+            [FromQuery] bool? requiresLogin = null,
+            [FromQuery] bool? adminOnly = null,
+            [FromQuery] string? template = null,
+            [FromQuery] bool? isPublished = null,
+            [FromQuery] string sortBy = "UpdatedAt",
+            [FromQuery] string sortDirection = "Desc",
+            [FromQuery] DateTime? createdFrom = null,
+            [FromQuery] DateTime? createdTo = null,
+            [FromQuery] DateTime? updatedFrom = null,
+            [FromQuery] DateTime? updatedTo = null)
         {
             try
             {
-                var pages = await _pageService.GetPagesAsync(page, pageSize, search);
-
-                // Calculate total count (this should ideally come from the service)
-                var totalCount = pages.Count; // This is a simplified approach
-
-                return Ok(new PagedResult<PageListDto>
+                var searchDto = new PageSearchDto
                 {
-                    Items = pages,
-                    Page = page,
+                    PageNumber = pageNumber,
                     PageSize = pageSize,
-                    TotalCount = totalCount
-                });
+                    SearchTerm = search,
+                    Status = status,
+                    ParentPageId = parentPageId,
+                    RequiresLogin = requiresLogin,
+                    AdminOnly = adminOnly,
+                    Template = template,
+                    IsPublished = isPublished,
+                    SortBy = sortBy,
+                    SortDirection = sortDirection,
+                    CreatedFrom = createdFrom,
+                    CreatedTo = createdTo,
+                    UpdatedFrom = updatedFrom,
+                    UpdatedTo = updatedTo
+                };
+
+                var result = await _pageService.GetPagesPagedAsync(searchDto);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid request parameters for getting pages");
+                return BadRequest(new { Message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -99,9 +163,45 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
+        /// Advanced page search with filtering options
+        /// </summary>
+        /// <param name="searchDto">Search criteria</param>
+        /// <returns>Paginated search results</returns>
+        [HttpPost("search")]
+        [ProducesResponseType(typeof(PagedResult<PageListDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PagedResult<PageListDto>>> SearchPages([FromBody] PageSearchDto searchDto)
+        {
+            try
+            {
+                if (searchDto == null)
+                {
+                    return BadRequest(new { Message = "Search criteria is required" });
+                }
+
+                var result = await _pageService.SearchPagesPagedAsync(searchDto);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "Invalid search criteria");
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error searching pages");
+                return StatusCode(500, new { Message = "An error occurred while searching pages" });
+            }
+        }
+
+        /// <summary>
         /// Get page hierarchy for navigation
         /// </summary>
+        /// <returns>Hierarchical list of pages</returns>
         [HttpGet("hierarchy")]
+        [ProducesResponseType(typeof(List<PageDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<PageDto>>> GetPageHierarchy()
         {
             try
@@ -119,8 +219,11 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get published pages (public endpoint)
         /// </summary>
+        /// <returns>List of published pages accessible to current user</returns>
         [HttpGet("published")]
         [AllowAnonymous]
+        [ProducesResponseType(typeof(List<PageDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<PageDto>>> GetPublishedPages()
         {
             try
@@ -142,7 +245,12 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Create a new page
         /// </summary>
+        /// <param name="createPageDto">Page creation data</param>
+        /// <returns>Created page information</returns>
         [HttpPost]
+        [ProducesResponseType(typeof(PageDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<PageDto>> CreatePage([FromBody] CreatePageDto createPageDto)
         {
             try
@@ -165,9 +273,16 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Update an existing page
         /// </summary>
+        /// <param name="id">Page ID</param>
+        /// <param name="updatePageDto">Page update data</param>
+        /// <returns>Updated page information</returns>
         [HttpPut("{id:int}")]
-        [Authorize(Roles = "Admin")]
-        public async Task<ActionResult<PageDto>> UpdatePage(int id, [FromBody] UpdatePageDto updatePageDto)
+        [Authorize(Roles = "Admin, Dev")]
+        [ProducesResponseType(typeof(PageDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PageDto>> UpdatePage([FromRoute] int id, [FromBody] UpdatePageDto updatePageDto)
         {
             try
             {
@@ -189,8 +304,15 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Save page structure (components and layout) - Used by the page designer
         /// </summary>
+        /// <param name="id">Page ID</param>
+        /// <param name="savePageStructureDto">Page structure data</param>
+        /// <returns>Updated page information</returns>
         [HttpPost("{id:int}/structure")]
-        public async Task<ActionResult<PageDto>> SavePageStructure(int id, [FromBody] SavePageStructureDto savePageStructureDto)
+        [ProducesResponseType(typeof(PageDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PageDto>> SavePageStructure([FromRoute] int id, [FromBody] SavePageStructureDto savePageStructureDto)
         {
             try
             {
@@ -213,9 +335,14 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Delete a page
         /// </summary>
+        /// <param name="id">Page ID</param>
+        /// <returns>Deletion confirmation</returns>
         [HttpDelete("{id:int}")]
         [Authorize(Roles = "Admin")]
-        public async Task<ActionResult> DeletePage(int id)
+        [ProducesResponseType(StatusCodes.Status204NoContent)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult> DeletePage([FromRoute] int id)
         {
             try
             {
@@ -236,8 +363,14 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Publish a page
         /// </summary>
+        /// <param name="id">Page ID</param>
+        /// <returns>Published page information</returns>
         [HttpPost("{id:int}/publish")]
-        public async Task<ActionResult<PageDto>> PublishPage(int id)
+        [ProducesResponseType(typeof(PageDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PageDto>> PublishPage([FromRoute] int id)
         {
             try
             {
@@ -259,8 +392,14 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Unpublish a page
         /// </summary>
+        /// <param name="id">Page ID</param>
+        /// <returns>Unpublished page information</returns>
         [HttpPost("{id:int}/unpublish")]
-        public async Task<ActionResult<PageDto>> UnpublishPage(int id)
+        [ProducesResponseType(typeof(PageDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PageDto>> UnpublishPage([FromRoute] int id)
         {
             try
             {
@@ -282,8 +421,15 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Duplicate a page
         /// </summary>
+        /// <param name="id">Page ID to duplicate</param>
+        /// <param name="duplicatePageDto">Duplication parameters</param>
+        /// <returns>Newly created page information</returns>
         [HttpPost("{id:int}/duplicate")]
-        public async Task<ActionResult<PageDto>> DuplicatePage(int id, [FromBody] DuplicatePageDto duplicatePageDto)
+        [ProducesResponseType(typeof(PageDto), StatusCodes.Status201Created)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PageDto>> DuplicatePage([FromRoute] int id, [FromBody] DuplicatePageDto duplicatePageDto)
         {
             try
             {
@@ -305,8 +451,13 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Validate page slug availability
         /// </summary>
+        /// <param name="slug">Slug to validate</param>
+        /// <param name="excludePageId">Optional page ID to exclude from validation</param>
+        /// <returns>Validation result</returns>
         [HttpGet("validate-slug")]
-        public async Task<ActionResult<bool>> ValidateSlug([FromQuery] string slug, [FromQuery] int? excludePageId = null)
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<object>> ValidateSlug([FromQuery][Required] string slug, [FromQuery] int? excludePageId = null)
         {
             try
             {
@@ -323,8 +474,15 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Create page version
         /// </summary>
+        /// <param name="id">Page ID</param>
+        /// <param name="createVersionDto">Version creation data</param>
+        /// <returns>Updated page information</returns>
         [HttpPost("{id:int}/versions")]
-        public async Task<ActionResult<PageDto>> CreatePageVersion(int id, [FromBody] CreatePageVersionDto createVersionDto)
+        [ProducesResponseType(typeof(PageDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PageDto>> CreatePageVersion([FromRoute] int id, [FromBody] CreatePageVersionDto createVersionDto)
         {
             try
             {
@@ -347,8 +505,13 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Get page versions
         /// </summary>
+        /// <param name="id">Page ID</param>
+        /// <returns>List of page versions</returns>
         [HttpGet("{id:int}/versions")]
-        public async Task<ActionResult<List<PageVersionDto>>> GetPageVersions(int id)
+        [ProducesResponseType(typeof(List<PageVersionDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<List<PageVersionDto>>> GetPageVersions([FromRoute] int id)
         {
             try
             {
@@ -365,8 +528,15 @@ namespace Backend.CMS.API.Controllers
         /// <summary>
         /// Restore page from version
         /// </summary>
+        /// <param name="id">Page ID</param>
+        /// <param name="versionId">Version ID to restore</param>
+        /// <returns>Restored page information</returns>
         [HttpPost("{id:int}/versions/{versionId:int}/restore")]
-        public async Task<ActionResult<PageDto>> RestorePageVersion(int id, int versionId)
+        [ProducesResponseType(typeof(PageDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PageDto>> RestorePageVersion([FromRoute] int id, [FromRoute] int versionId)
         {
             try
             {

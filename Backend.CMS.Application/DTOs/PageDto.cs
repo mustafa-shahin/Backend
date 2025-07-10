@@ -129,4 +129,22 @@ namespace Backend.CMS.Application.DTOs
         public DateTime? PublishedAt { get; set; }
         public Dictionary<string, object> Metadata { get; set; } = new();
     }
+    public class PageSearchDto
+    {
+        public int PageNumber { get; set; } = 1;
+        public int PageSize { get; set; } = 10;
+        public string? SearchTerm { get; set; }
+        public PageStatus? Status { get; set; }
+        public int? ParentPageId { get; set; }
+        public bool? RequiresLogin { get; set; }
+        public bool? AdminOnly { get; set; }
+        public string SortBy { get; set; } = "UpdatedAt";
+        public string SortDirection { get; set; } = "Desc";
+        public DateTime? CreatedFrom { get; set; }
+        public DateTime? CreatedTo { get; set; }
+        public DateTime? UpdatedFrom { get; set; }
+        public DateTime? UpdatedTo { get; set; }
+        public string? Template { get; set; }
+        public bool? IsPublished { get; set; }
+    }
 }

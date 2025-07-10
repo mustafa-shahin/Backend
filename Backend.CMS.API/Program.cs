@@ -170,7 +170,7 @@ static void ConfigureBasicServices(WebApplicationBuilder builder)
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
-        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
     });
 
     builder.Services.AddHttpContextAccessor();
@@ -578,7 +578,7 @@ static void RegisterBusinessServices(WebApplicationBuilder builder)
     // Business services
     builder.Services.AddScoped<ICompanyService, CompanyService>();
     //builder.Services.AddScoped<ILocationService, LocationService>();
-    //builder.Services.AddScoped<IPageService, PageService>();
+    builder.Services.AddScoped<IPageService, PageService>();
 
     builder.Services.AddScoped<IUserService, UserService>();
 
