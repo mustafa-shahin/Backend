@@ -29,7 +29,7 @@ namespace Frontend.Interfaces
         string GetNotificationProgressBarClass(NotificationType type);
 
         // Form methods
-        string GetFormInputClass(bool hasError = false);
+        string GetFormInputClass(bool hasError = false, string? addtionalClasses = null);
 
 
         // Icon and color methods

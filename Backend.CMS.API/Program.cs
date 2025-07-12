@@ -1,5 +1,6 @@
 using Backend.CMS.API.Filters;
 using Backend.CMS.API.Middleware;
+using Backend.CMS.API.Converters; 
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Caching;
@@ -170,7 +171,12 @@ static void ConfigureBasicServices(WebApplicationBuilder builder)
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
-        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        options.JsonSerializerOptions.Converters.Add(new SelectiveEnumConverter());
+
+        // Configure additional JSON options for better API compatibility
+        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        options.JsonSerializerOptions.AllowTrailingCommas = true;
+        options.JsonSerializerOptions.ReadCommentHandling = JsonCommentHandling.Skip;
     });
 
     builder.Services.AddHttpContextAccessor();
@@ -689,6 +695,7 @@ static void ConfigureSwagger(WebApplicationBuilder builder)
         }
     });
 }
+
 #endregion
 
 #region Middleware Configuration

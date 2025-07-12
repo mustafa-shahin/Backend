@@ -2,10 +2,13 @@
 @using Backend.CMS.Application.DTOs
 @using Backend.CMS.Domain.Enums
 @using Frontend.Interface
+@using Frontend.Interfaces
 @inject IPageService PageService
 @inject INotificationService NotificationService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
+@inject IStyleService StyleService
+
 
 <PageTitle>Pages - CMS Designer</PageTitle>
 
@@ -169,7 +172,7 @@
                             <i class="fas fa-file-alt mr-2"></i>
                             Page Name *
                         </label>
-                        <InputText @bind-Value="pageModel.Name" class="form-input bg-gray-200 rounded-lg h-10 pr-2 pl-2" placeholder="Enter page name" />
+                        <InputText @bind-Value="pageModel.Name" class="@StyleService.GetFormInputClass(addtionalClasses:"mt-2")" placeholder="Enter page name" />
                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Internal name for the page (not visible to visitors)</p>
                         <ValidationMessage For="@(() => pageModel.Name)" class="text-red-500 text-sm mt-1" />
                     </div>
@@ -180,7 +183,7 @@
                             <i class="fas fa-heading mr-2"></i>
                             Page Title *
                         </label>
-                        <InputText @bind-Value="pageModel.Title" class="form-input bg-gray-200 rounded-lg h-10 pr-2 pl-2" placeholder="Enter page title" />
+                        <InputText @bind-Value="pageModel.Title" class="@StyleService.GetFormInputClass(addtionalClasses: "mt-2")" placeholder="Enter page title" />
                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Title displayed to visitors and in browser tabs</p>
                         <ValidationMessage For="@(() => pageModel.Title)" class="text-red-500 text-sm mt-1" />
                     </div>
@@ -192,7 +195,7 @@
                         <i class="fas fa-link mr-2"></i>
                         URL Slug *
                     </label>
-                    <InputText @bind-Value="pageModel.Slug" @oninput="OnSlugChange" class="form-input bg-gray-200 rounded-lg h-10 pr-2 pl-2" placeholder="page-url-slug" />
+                    <InputText @bind-Value="pageModel.Slug" @oninput="OnSlugChange" class="@StyleService.GetFormInputClass(addtionalClasses: "mt-2")" placeholder="page-url-slug" />
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">URL-friendly version (e.g., about-us)</p>
                     <ValidationMessage For="@(() => pageModel.Slug)" class="text-red-500 text-sm mt-1" />
                     @if (!string.IsNullOrEmpty(slugValidationMessage))
@@ -204,7 +207,7 @@
                 <!-- Description -->
                 <div class="flex flex-col">
                     <label class="form-label dark:text-white">Description</label>
-                    <InputTextArea @bind-Value="pageModel.Description" class="form-input bg-gray-200 rounded-lg h-40 pr-2 pl-2" rows="3" placeholder="Brief description of the page content" />
+                    <InputTextArea @bind-Value="pageModel.Description" class="@StyleService.GetFormInputClass(addtionalClasses: "mt-2")" rows="3" placeholder="Brief description of the page content" />
                     <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Brief description of the page content</p>
                 </div>
 
@@ -213,10 +216,10 @@
                     <!-- Status -->
                     <div class="flex flex-col dark:text-white">
                         <label class="form-label">Status</label>
-                        <InputSelect @bind-Value="pageModel.Status" class="form-input rounded-lg h-10 pr-2 pl-2 dark:text-black">
-                            <option class="dark:text-black rounded-lg h-10 pr-2 pl-2" value="@PageStatus.Draft">Draft</option>
-                            <option class="dark:text-black rounded-lg h-10 pr-2 pl-2" value="@PageStatus.Published">Published</option>
-                            <option class="dark:text-black rounded-lg h-10 pr-2 pl-2" value="@PageStatus.Archived">Archived</option>
+                        <InputSelect @bind-Value="pageModel.Status" class="@StyleService.GetFormInputClass(addtionalClasses: "mt-2")">
+                            <option class="dark:text-white rounded-lg h-10 pr-2 pl-2" value="@PageStatus.Draft">Draft</option>
+                            <option class="dark:text-white rounded-lg h-10 pr-2 pl-2" value="@PageStatus.Published">Published</option>
+                            <option class="dark:text-white rounded-lg h-10 pr-2 pl-2" value="@PageStatus.Archived">Archived</option>
                         </InputSelect>
                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Current status of the page</p>
                     </div>
@@ -224,14 +227,14 @@
                     <!-- Priority -->
                     <div class="flex flex-col">
                         <label class="form-label dark:text-white">Priority</label>
-                        <InputNumber @bind-Value="pageModel.Priority" class="form-input bg-gray-200 rounded-lg h-10 pr-2 pl-2" placeholder="0" />
+                        <InputNumber @bind-Value="pageModel.Priority" class="@StyleService.GetFormInputClass(addtionalClasses: "mt-2")" placeholder="0" />
                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Higher numbers have higher priority in navigation</p>
                     </div>
 
                     <!-- Template -->
                     <div class="flex flex-col">
                         <label class="form-label dark:text-white">Template</label>
-                        <InputText @bind-Value="pageModel.Template" class="form-input bg-gray-200 rounded-lg h-10 pr-2 pl-2" placeholder="Enter template name (optional)" />
+                        <InputText @bind-Value="pageModel.Template" class="@StyleService.GetFormInputClass(addtionalClasses: "mt-2")" placeholder="Enter template name (optional)" />
                         <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Template to use for rendering this page</p>
                     </div>
                 </div>
@@ -272,19 +275,19 @@
                     <div class="grid grid-cols-1 gap-4">
                         <div class="flex flex-col">
                             <label class="form-label dark:text-white">Meta Title</label>
-                            <InputText @bind-Value="pageModel.MetaTitle" class="form-input rounded-lg h-10 pr-2 pl-2" placeholder="SEO title for search engines" />
+                            <InputText @bind-Value="pageModel.MetaTitle" class="@StyleService.GetFormInputClass(addtionalClasses: "mt-2")" placeholder="SEO title for search engines" />
                             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Title for search engines (if different from page title)</p>
                         </div>
 
                         <div class="flex flex-col">
                             <label class="form-label dark:text-white">Meta Description</label>
-                            <InputTextArea @bind-Value="pageModel.MetaDescription" class="form-input rounded-lg h-40 pr-2 pl-2" rows="2" placeholder="SEO description for search engines" />
+                            <InputTextArea @bind-Value="pageModel.MetaDescription" class="@StyleService.GetFormInputClass(addtionalClasses: "mt-2")" rows="2" placeholder="SEO description for search engines" />
                             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Description for search engines (150-160 characters recommended)</p>
                         </div>
 
                         <div class="flex flex-col">
                             <label class="form-label dark:text-white">Meta Keywords</label>
-                            <InputText @bind-Value="pageModel.MetaKeywords" class="form-input rounded-lg h-10 pr-2 pl-2" placeholder="keyword1, keyword2, keyword3" />
+                            <InputText @bind-Value="pageModel.MetaKeywords" class="@StyleService.GetFormInputClass(addtionalClasses: "mt-2")" placeholder="keyword1, keyword2, keyword3" />
                             <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">Keywords for search engines (comma-separated)</p>
                         </div>
                     </div>

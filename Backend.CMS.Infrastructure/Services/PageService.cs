@@ -2,7 +2,6 @@
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
-using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Backend.CMS.Infrastructure.Repositories;
@@ -15,9 +14,6 @@ namespace Backend.CMS.Infrastructure.Services
     public class PageService : IPageService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly ICacheService _cacheService;
-        private readonly ICacheInvalidationService _cacheInvalidationService;
-        private readonly ICacheKeyService _cacheKeyService;
         private readonly IMapper _mapper;
         private readonly IUserSessionService _userSessionService;
         private readonly ILogger<PageService> _logger;
@@ -25,17 +21,11 @@ namespace Backend.CMS.Infrastructure.Services
 
         public PageService(
             IUnitOfWork unitOfWork,
-            ICacheService cacheService,
-            ICacheInvalidationService cacheInvalidationService,
-            ICacheKeyService cacheKeyService,
             IUserSessionService userSessionService,
             IMapper mapper,
             ILogger<PageService> logger)
         {
             _unitOfWork = unitOfWork;
-            _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
-            _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
-            _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -55,15 +45,11 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var cacheKey = _cacheKeyService.GetEntityKey<Page>(pageId);
-                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-                {
-                    var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
-                    if (page == null)
-                        throw new ArgumentException("Page not found");
+                var page = await _unitOfWork.Pages.GetByIdAsync(pageId);
+                if (page == null)
+                    throw new ArgumentException("Page not found");
 
-                    return _mapper.Map<PageDto>(page);
-                });
+                return _mapper.Map<PageDto>(page);
             }
             catch (Exception ex)
             {
@@ -80,17 +66,9 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var normalizedSlug = NormalizeSlug(slug);
-                var cacheKey = _cacheKeyService.GetCustomKey("page", "slug", normalizedSlug);
-
-                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-                {
-                    // For public access, only get published pages
-                    var page = await _unitOfWork.Pages.GetPublishedBySlugAsync(normalizedSlug);
-                    if (page == null)
-                        throw new ArgumentException("Page not found");
-
-                    return _mapper.Map<PageDto>(page);
-                });
+                // For public access, only get published pages
+                var page = await _unitOfWork.Pages.GetPublishedBySlugAsync(normalizedSlug);
+                return page == null ? throw new ArgumentException("Page not found") : _mapper.Map<PageDto>(page);
             }
             catch (Exception ex)
             {
@@ -107,33 +85,28 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var searchTerm = search?.Trim() ?? "";
-                var cacheKey = _cacheKeyService.GetQueryKey<Page>("search", new { searchTerm, page, pageSize });
 
-                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+                var pages = string.IsNullOrWhiteSpace(searchTerm)
+                    ? await _unitOfWork.Pages.GetPagedAsync(page, pageSize)
+                    : await _unitOfWork.Pages.SearchPagesAsync(searchTerm, page, pageSize);
+
+                var pageList = pages.ToList();
+                var pageDtos = _mapper.Map<List<PageListDto>>(pageList);
+
+                var pageIds = pageList.Select(p => p.Id).ToList();
+                var allVersions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => pageIds.Contains(v.PageId));
+                var versionGroups = allVersions.GroupBy(v => v.PageId).ToDictionary(g => g.Key, g => g.ToList());
+
+                foreach (var pageDto in pageDtos)
                 {
-                    var pages = string.IsNullOrWhiteSpace(searchTerm)
-                        ? await _unitOfWork.Pages.GetPagedAsync(page, pageSize)
-                        : await _unitOfWork.Pages.SearchPagesAsync(searchTerm, page, pageSize);
-
-                    var pageList = pages.ToList();
-                    var pageDtos = _mapper.Map<List<PageListDto>>(pageList);
-
-                    // Enhance with version information efficiently
-                    var pageIds = pageList.Select(p => p.Id).ToList();
-                    var allVersions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => pageIds.Contains(v.PageId));
-                    var versionGroups = allVersions.GroupBy(v => v.PageId).ToDictionary(g => g.Key, g => g.ToList());
-
-                    foreach (var pageDto in pageDtos)
+                    if (versionGroups.TryGetValue(pageDto.Id, out var versions))
                     {
-                        if (versionGroups.TryGetValue(pageDto.Id, out var versions))
-                        {
-                            pageDto.VersionCount = versions.Count;
-                            pageDto.CurrentVersion = versions.Any() ? versions.Max(v => v.VersionNumber) : 0;
-                        }
+                        pageDto.VersionCount = versions.Count;
+                        pageDto.CurrentVersion = versions.Count != 0 ? versions.Max(v => v.VersionNumber) : 0;
                     }
+                }
 
-                    return pageDtos;
-                }, TimeSpan.FromMinutes(15));
+                return pageDtos;
             }
             catch (Exception ex)
             {
@@ -148,100 +121,95 @@ namespace Backend.CMS.Infrastructure.Services
                 searchDto.PageNumber = Math.Max(1, searchDto.PageNumber);
                 searchDto.PageSize = Math.Clamp(searchDto.PageSize, 1, 100);
 
-                var cacheKey = _cacheKeyService.GetQueryKey<Page>("paged_search", searchDto);
-
-                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+                // Build predicate for filtering
+                Expression<Func<Page, bool>>? predicate = null;
+                if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm) ||
+                    searchDto.Status.HasValue ||
+                    searchDto.ParentPageId.HasValue ||
+                    searchDto.RequiresLogin.HasValue ||
+                    searchDto.AdminOnly.HasValue ||
+                    searchDto.CreatedFrom.HasValue ||
+                    searchDto.CreatedTo.HasValue ||
+                    searchDto.UpdatedFrom.HasValue ||
+                    searchDto.UpdatedTo.HasValue ||
+                    !string.IsNullOrWhiteSpace(searchDto.Template) ||
+                    searchDto.IsPublished.HasValue)
                 {
-                    // Build predicate for filtering
-                    Expression<Func<Page, bool>>? predicate = null;
-                    if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm) ||
-                        searchDto.Status.HasValue ||
-                        searchDto.ParentPageId.HasValue ||
-                        searchDto.RequiresLogin.HasValue ||
-                        searchDto.AdminOnly.HasValue ||
-                        searchDto.CreatedFrom.HasValue ||
-                        searchDto.CreatedTo.HasValue ||
-                        searchDto.UpdatedFrom.HasValue ||
-                        searchDto.UpdatedTo.HasValue ||
-                        !string.IsNullOrWhiteSpace(searchDto.Template) ||
-                        searchDto.IsPublished.HasValue)
+                    predicate = p =>
+                        (string.IsNullOrWhiteSpace(searchDto.SearchTerm) ||
+                         p.Name.Contains(searchDto.SearchTerm) ||
+                         p.Title.Contains(searchDto.SearchTerm) ||
+                         p.Description != null && p.Description.Contains(searchDto.SearchTerm) ||
+                         p.Slug.Contains(searchDto.SearchTerm)) &&
+                        (!searchDto.Status.HasValue || p.Status == searchDto.Status.Value) &&
+                        (!searchDto.ParentPageId.HasValue || p.ParentPageId == searchDto.ParentPageId.Value) &&
+                        (!searchDto.RequiresLogin.HasValue || p.RequiresLogin == searchDto.RequiresLogin.Value) &&
+                        (!searchDto.AdminOnly.HasValue || p.AdminOnly == searchDto.AdminOnly.Value) &&
+                        (!searchDto.CreatedFrom.HasValue || p.CreatedAt >= searchDto.CreatedFrom.Value) &&
+                        (!searchDto.CreatedTo.HasValue || p.CreatedAt <= searchDto.CreatedTo.Value) &&
+                        (!searchDto.UpdatedFrom.HasValue || p.UpdatedAt >= searchDto.UpdatedFrom.Value) &&
+                        (!searchDto.UpdatedTo.HasValue || p.UpdatedAt <= searchDto.UpdatedTo.Value) &&
+                        (string.IsNullOrWhiteSpace(searchDto.Template) || p.Template == searchDto.Template) &&
+                        (!searchDto.IsPublished.HasValue ||
+                         (searchDto.IsPublished.Value && p.Status == PageStatus.Published) ||
+                         (!searchDto.IsPublished.Value && p.Status != PageStatus.Published));
+                }
+
+                // Build ordering
+                Func<IQueryable<Page>, IOrderedQueryable<Page>>? orderBy = null;
+                orderBy = searchDto.SortBy.ToLowerInvariant() switch
+                {
+                    "name" => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                        ? q => q.OrderBy(p => p.Name)
+                        : q => q.OrderByDescending(p => p.Name),
+                    "title" => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                        ? q => q.OrderBy(p => p.Title)
+                        : q => q.OrderByDescending(p => p.Title),
+                    "status" => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                        ? q => q.OrderBy(p => p.Status)
+                        : q => q.OrderByDescending(p => p.Status),
+                    "createdat" => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                        ? q => q.OrderBy(p => p.CreatedAt)
+                        : q => q.OrderByDescending(p => p.CreatedAt),
+                    "publishedon" => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                        ? q => q.OrderBy(p => p.PublishedOn)
+                        : q => q.OrderByDescending(p => p.PublishedOn),
+                    _ => searchDto.SortDirection.ToLowerInvariant() == "asc"
+                        ? q => q.OrderBy(p => p.UpdatedAt)
+                        : q => q.OrderByDescending(p => p.UpdatedAt)
+                };
+
+                var pagedResult = await _unitOfWork.Pages.GetPagedResultAsync(
+                    searchDto.PageNumber,
+                    searchDto.PageSize,
+                    predicate,
+                    orderBy);
+
+                var pageListDtos = _mapper.Map<List<PageListDto>>(pagedResult.Data);
+
+                // Enhance with version information efficiently
+                if (pageListDtos.Count != 0)
+                {
+                    var pageIds = pageListDtos.Select(p => p.Id).ToList();
+                    var allVersions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => pageIds.Contains(v.PageId));
+                    var versionGroups = allVersions.GroupBy(v => v.PageId).ToDictionary(g => g.Key, g => g.ToList());
+
+                    foreach (var pageDto in pageListDtos)
                     {
-                        predicate = p =>
-                            (string.IsNullOrWhiteSpace(searchDto.SearchTerm) ||
-                             p.Name.Contains(searchDto.SearchTerm) ||
-                             p.Title.Contains(searchDto.SearchTerm) ||
-                             p.Description != null && p.Description.Contains(searchDto.SearchTerm) ||
-                             p.Slug.Contains(searchDto.SearchTerm)) &&
-                            (!searchDto.Status.HasValue || p.Status == searchDto.Status.Value) &&
-                            (!searchDto.ParentPageId.HasValue || p.ParentPageId == searchDto.ParentPageId.Value) &&
-                            (!searchDto.RequiresLogin.HasValue || p.RequiresLogin == searchDto.RequiresLogin.Value) &&
-                            (!searchDto.AdminOnly.HasValue || p.AdminOnly == searchDto.AdminOnly.Value) &&
-                            (!searchDto.CreatedFrom.HasValue || p.CreatedAt >= searchDto.CreatedFrom.Value) &&
-                            (!searchDto.CreatedTo.HasValue || p.CreatedAt <= searchDto.CreatedTo.Value) &&
-                            (!searchDto.UpdatedFrom.HasValue || p.UpdatedAt >= searchDto.UpdatedFrom.Value) &&
-                            (!searchDto.UpdatedTo.HasValue || p.UpdatedAt <= searchDto.UpdatedTo.Value) &&
-                            (string.IsNullOrWhiteSpace(searchDto.Template) || p.Template == searchDto.Template) &&
-                            (!searchDto.IsPublished.HasValue ||
-                             (searchDto.IsPublished.Value && p.Status == PageStatus.Published) ||
-                             (!searchDto.IsPublished.Value && p.Status != PageStatus.Published));
-                    }
-
-                    // Build ordering
-                    Func<IQueryable<Page>, IOrderedQueryable<Page>>? orderBy = null;
-                    orderBy = searchDto.SortBy.ToLowerInvariant() switch
-                    {
-                        "name" => searchDto.SortDirection.ToLowerInvariant() == "asc"
-                            ? q => q.OrderBy(p => p.Name)
-                            : q => q.OrderByDescending(p => p.Name),
-                        "title" => searchDto.SortDirection.ToLowerInvariant() == "asc"
-                            ? q => q.OrderBy(p => p.Title)
-                            : q => q.OrderByDescending(p => p.Title),
-                        "status" => searchDto.SortDirection.ToLowerInvariant() == "asc"
-                            ? q => q.OrderBy(p => p.Status)
-                            : q => q.OrderByDescending(p => p.Status),
-                        "createdat" => searchDto.SortDirection.ToLowerInvariant() == "asc"
-                            ? q => q.OrderBy(p => p.CreatedAt)
-                            : q => q.OrderByDescending(p => p.CreatedAt),
-                        "publishedon" => searchDto.SortDirection.ToLowerInvariant() == "asc"
-                            ? q => q.OrderBy(p => p.PublishedOn)
-                            : q => q.OrderByDescending(p => p.PublishedOn),
-                        _ => searchDto.SortDirection.ToLowerInvariant() == "asc"
-                            ? q => q.OrderBy(p => p.UpdatedAt)
-                            : q => q.OrderByDescending(p => p.UpdatedAt)
-                    };
-
-                    var pagedResult = await _unitOfWork.Pages.GetPagedResultAsync(
-                        searchDto.PageNumber,
-                        searchDto.PageSize,
-                        predicate,
-                        orderBy);
-
-                    var pageListDtos = _mapper.Map<List<PageListDto>>(pagedResult.Data);
-
-                    // Enhance with version information efficiently
-                    if (pageListDtos.Any())
-                    {
-                        var pageIds = pageListDtos.Select(p => p.Id).ToList();
-                        var allVersions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => pageIds.Contains(v.PageId));
-                        var versionGroups = allVersions.GroupBy(v => v.PageId).ToDictionary(g => g.Key, g => g.ToList());
-
-                        foreach (var pageDto in pageListDtos)
+                        if (versionGroups.TryGetValue(pageDto.Id, out var versions))
                         {
-                            if (versionGroups.TryGetValue(pageDto.Id, out var versions))
-                            {
-                                pageDto.VersionCount = versions.Count;
-                                pageDto.CurrentVersion = versions.Any() ? versions.Max(v => v.VersionNumber) : 0;
-                            }
+                            pageDto.VersionCount = versions.Count;
+                            pageDto.CurrentVersion = versions.Count != 0 ? versions.Max(v => v.VersionNumber) : 0;
                         }
                     }
+                }
 
-                    return new PagedResult<PageListDto>(
-                        pageListDtos,
-                        pagedResult.PageNumber,
-                        pagedResult.PageSize,
-                        pagedResult.TotalCount);
+                return new PagedResult<PageListDto>(
+                    pageListDtos,
+                    pagedResult.PageNumber,
+                    pagedResult.PageSize,
+                    pagedResult.TotalCount);
 
-                }, TimeSpan.FromMinutes(10));
             }
             catch (Exception ex)
             {
@@ -257,12 +225,8 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var cacheKey = _cacheKeyService.GetCollectionKey<Page>("hierarchy");
-                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-                {
-                    var pages = await _unitOfWork.Pages.GetPageHierarchyAsync();
-                    return _mapper.Map<List<PageDto>>(pages);
-                }, TimeSpan.FromMinutes(30));
+                var pages = await _unitOfWork.Pages.GetPageHierarchyAsync();
+                return _mapper.Map<List<PageDto>>(pages);
             }
             catch (Exception ex)
             {
@@ -275,12 +239,8 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var cacheKey = _cacheKeyService.GetCollectionKey<Page>("published");
-                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-                {
-                    var pages = await _unitOfWork.Pages.GetPublishedPagesAsync();
-                    return _mapper.Map<List<PageDto>>(pages);
-                }, TimeSpan.FromMinutes(20));
+                var pages = await _unitOfWork.Pages.GetPublishedPagesAsync();
+                return _mapper.Map<List<PageDto>>(pages);
             }
             catch (Exception ex)
             {
@@ -302,9 +262,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 if (createPageDto.ParentPageId.HasValue)
                 {
-                    var parentPage = await _unitOfWork.Pages.GetByIdAsync(createPageDto.ParentPageId.Value);
-                    if (parentPage == null)
-                        throw new ArgumentException("Parent page not found");
+                    var parentPage = await _unitOfWork.Pages.GetByIdAsync(createPageDto.ParentPageId.Value) ?? throw new ArgumentException("Parent page not found");
                 }
 
                 var page = _mapper.Map<Page>(createPageDto);
@@ -324,8 +282,6 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Create initial version
                 await CreatePageVersionAsync(page.Id, "Initial page creation");
-
-                await InvalidatePageCacheAsync(page.Id);
 
                 _logger.LogInformation("Created page {PageId} with slug {Slug}", page.Id, page.Slug);
 
@@ -382,8 +338,6 @@ namespace Backend.CMS.Infrastructure.Services
                 _unitOfWork.Pages.Update(page);
                 await _unitOfWork.Pages.SaveChangesAsync();
 
-                await InvalidatePageCacheAsync(pageId);
-
                 _logger.LogInformation("Updated page {PageId}", pageId);
 
                 return _mapper.Map<PageDto>(page);
@@ -416,10 +370,10 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 // Update page structure
-                page.Content = savePageStructureDto.Content ?? new Dictionary<string, object>();
-                page.Layout = savePageStructureDto.Layout ?? new Dictionary<string, object>();
-                page.Settings = savePageStructureDto.Settings ?? new Dictionary<string, object>();
-                page.Styles = savePageStructureDto.Styles ?? new Dictionary<string, object>();
+                page.Content = savePageStructureDto.Content ?? [];
+                page.Layout = savePageStructureDto.Layout ?? [];
+                page.Settings = savePageStructureDto.Settings ?? [];
+                page.Styles = savePageStructureDto.Styles ?? [];
                 page.UpdatedAt = DateTime.UtcNow;
                 page.UpdatedByUserId = currentUserId;
 
@@ -428,8 +382,6 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _unitOfWork.Pages.Update(page);
                 await _unitOfWork.Pages.SaveChangesAsync();
-
-                await InvalidatePageCacheAsync(savePageStructureDto.PageId);
 
                 _logger.LogInformation("Saved page structure for {PageId}", savePageStructureDto.PageId);
 
@@ -458,7 +410,6 @@ namespace Backend.CMS.Infrastructure.Services
 
                 if (success)
                 {
-                    await InvalidatePageCacheAsync(pageId);
                     _logger.LogInformation("Deleted page {PageId}", pageId);
                 }
 
@@ -501,8 +452,6 @@ namespace Backend.CMS.Infrastructure.Services
                 _unitOfWork.Pages.Update(page);
                 await _unitOfWork.Pages.SaveChangesAsync();
 
-                await InvalidatePageCacheAsync(pageId);
-
                 _logger.LogInformation("Published page {PageId}", pageId);
 
                 return _mapper.Map<PageDto>(page);
@@ -536,8 +485,6 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _unitOfWork.Pages.Update(page);
                 await _unitOfWork.Pages.SaveChangesAsync();
-
-                await InvalidatePageCacheAsync(pageId);
 
                 _logger.LogInformation("Unpublished page {PageId}", pageId);
 
@@ -603,9 +550,6 @@ namespace Backend.CMS.Infrastructure.Services
                 // Create initial version for duplicated page
                 await CreatePageVersionAsync(duplicatedPage.Id, $"Duplicated from page {originalPage.Name}");
 
-                await InvalidatePageCacheAsync(pageId);
-                await InvalidatePageCacheAsync(duplicatedPage.Id);
-
                 _logger.LogInformation("Duplicated page {OriginalPageId} to new page {NewPageId}", pageId, duplicatedPage.Id);
 
                 return _mapper.Map<PageDto>(duplicatedPage);
@@ -624,12 +568,8 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var cacheKey = _cacheKeyService.GetCustomKey("page", "children", parentPageId);
-                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-                {
-                    var pages = await _unitOfWork.Pages.GetChildPagesAsync(parentPageId);
-                    return _mapper.Map<List<PageDto>>(pages);
-                }, TimeSpan.FromMinutes(20));
+                var pages = await _unitOfWork.Pages.GetChildPagesAsync(parentPageId);
+                return _mapper.Map<List<PageDto>>(pages);
             }
             catch (Exception ex)
             {
@@ -711,10 +651,6 @@ namespace Backend.CMS.Infrastructure.Services
                 await _unitOfWork.GetRepository<PageVersion>().AddAsync(version);
                 await _unitOfWork.GetRepository<PageVersion>().SaveChangesAsync();
 
-                // Clear version cache
-                var versionsKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
-                await _cacheService.RemoveAsync(versionsKey);
-
                 return version;
             }
             catch (Exception ex)
@@ -731,14 +667,8 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var cacheKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
-                return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-                {
-                    var versions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => v.PageId == pageId);
-                    return versions.OrderByDescending(v => v.VersionNumber)
-                                  .Select(v => _mapper.Map<PageVersionDto>(v))
-                                  .ToList();
-                }, TimeSpan.FromMinutes(30));
+                var versions = await _unitOfWork.GetRepository<PageVersion>().FindAsync(v => v.PageId == pageId);
+                return [.. versions.OrderByDescending(v => v.VersionNumber).Select(v => _mapper.Map<PageVersionDto>(v))];
             }
             catch (Exception ex)
             {
@@ -779,8 +709,6 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _unitOfWork.Pages.Update(page);
                 await _unitOfWork.Pages.SaveChangesAsync();
-
-                await InvalidatePageCacheAsync(pageId);
 
                 _logger.LogInformation("Restored page {PageId} to version {VersionNumber}", pageId, version.VersionNumber);
 
@@ -826,22 +754,22 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 // Validate that JSON content is serializable
-                if (page.Content.Any())
+                if (page.Content.Count != 0)
                 {
                     JsonSerializer.Serialize(page.Content, _jsonOptions);
                 }
 
-                if (page.Layout.Any())
+                if (page.Layout.Count != 0)
                 {
                     JsonSerializer.Serialize(page.Layout, _jsonOptions);
                 }
 
-                if (page.Settings.Any())
+                if (page.Settings.Count != 0)
                 {
                     JsonSerializer.Serialize(page.Settings, _jsonOptions);
                 }
 
-                if (page.Styles.Any())
+                if (page.Styles.Count != 0)
                 {
                     JsonSerializer.Serialize(page.Styles, _jsonOptions);
                 }
@@ -923,16 +851,16 @@ namespace Backend.CMS.Infrastructure.Services
             }
 
             if (snapshot.TryGetValue("content", out var contentObj))
-                page.Content = ParseDictionary(contentObj) ?? new Dictionary<string, object>();
+                page.Content = ParseDictionary(contentObj) ?? [];
 
             if (snapshot.TryGetValue("layout", out var layoutObj))
-                page.Layout = ParseDictionary(layoutObj) ?? new Dictionary<string, object>();
+                page.Layout = ParseDictionary(layoutObj) ?? [];
 
             if (snapshot.TryGetValue("settings", out var settingsObj))
-                page.Settings = ParseDictionary(settingsObj) ?? new Dictionary<string, object>();
+                page.Settings = ParseDictionary(settingsObj) ?? [];
 
             if (snapshot.TryGetValue("styles", out var stylesObj))
-                page.Styles = ParseDictionary(stylesObj) ?? new Dictionary<string, object>();
+                page.Styles = ParseDictionary(stylesObj) ?? [];
 
             page.UpdatedByUserId = currentUserId;
         }
@@ -968,51 +896,12 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var json = JsonSerializer.Serialize(original, _jsonOptions);
-                return JsonSerializer.Deserialize<Dictionary<string, object>>(json, _jsonOptions) ?? new Dictionary<string, object>();
+                return JsonSerializer.Deserialize<Dictionary<string, object>>(json, _jsonOptions) ?? [];
             }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to deep copy dictionary, returning empty dictionary");
-                return new Dictionary<string, object>();
-            }
-        }
-
-        private async Task InvalidatePageCacheAsync(int pageId)
-        {
-            try
-            {
-                // Invalidate the specific page entity
-                await _cacheInvalidationService.InvalidateEntityAsync<Page>(pageId);
-
-                // Invalidate related page collections and patterns
-                await _cacheInvalidationService.InvalidateByPatternAsync("page:list:*");
-                await _cacheInvalidationService.InvalidateByPatternAsync("page:query:*");
-                await _cacheInvalidationService.InvalidateByPatternAsync("page:slug:*");
-                await _cacheInvalidationService.InvalidateByPatternAsync("page:children:*");
-
-                // Invalidate page collections
-                var hierarchyKey = _cacheKeyService.GetCollectionKey<Page>("hierarchy");
-                var publishedKey = _cacheKeyService.GetCollectionKey<Page>("published");
-
-                await _cacheService.RemoveAsync(new[] { hierarchyKey, publishedKey });
-
-                // Invalidate designer-specific caches
-                var designerKey = _cacheKeyService.GetCustomKey("designer", "page", pageId);
-                await _cacheService.RemoveAsync(designerKey);
-
-                // Invalidate preview caches
-                await _cacheInvalidationService.InvalidateByPatternAsync("preview:*");
-
-                // Invalidate version caches
-                var versionsKey = _cacheKeyService.GetCustomKey("page", "versions", pageId);
-                await _cacheService.RemoveAsync(versionsKey);
-
-                _logger.LogDebug("Invalidated cache for page {PageId}", pageId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error invalidating cache for page {PageId}", pageId);
-                throw;
+                return [];
             }
         }
     }

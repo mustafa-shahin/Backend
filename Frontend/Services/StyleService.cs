@@ -241,11 +241,12 @@ namespace Frontend.Services
         #endregion
 
         #region Form Methods
-        public string GetFormInputClass(bool hasError = false)
+        public string GetFormInputClass(bool hasError = false, string? addtionalClasses = null)
         {
             var baseClass = "block w-full px-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 " +
-                           "focus:outline-none focus:ring-2 focus:ring-offset-0 dark:bg-gray-700 " +
-                           "dark:placeholder-gray-400 dark:text-white sm:text-sm transition-all duration-200";
+                            "focus:outline-none focus:ring-2 focus:ring-offset-0 dark:bg-gray-700 " +
+                            "dark:placeholder-gray-400 dark:text-white sm:text-sm transition-all duration-200 " +
+                            (addtionalClasses ?? string.Empty);
 
             if (hasError)
             {
