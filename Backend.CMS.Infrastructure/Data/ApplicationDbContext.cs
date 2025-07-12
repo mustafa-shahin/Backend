@@ -688,9 +688,7 @@ namespace Backend.CMS.Infrastructure.Data
             modelBuilder.Entity<ProductVariant>(entity =>
             {
                 entity.HasKey(e => e.Id);
-                entity.HasIndex(e => e.SKU).IsUnique();
                 entity.Property(e => e.Title).HasMaxLength(200).IsRequired();
-                entity.Property(e => e.SKU).HasMaxLength(100).IsRequired();
                 entity.Property(e => e.Price).HasColumnType("decimal(18,2)");
                 entity.Property(e => e.CompareAtPrice).HasColumnType("decimal(18,2)");
                 entity.Property(e => e.CostPerItem).HasColumnType("decimal(18,2)");
