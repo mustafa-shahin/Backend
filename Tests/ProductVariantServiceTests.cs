@@ -59,12 +59,11 @@ public class ProductVariantServiceTests
     public async Task CreateVariantAsync_WhenProductExists_ShouldCreateVariant()
     {
         // Arrange
-        var createDto = new CreateProductVariantDto { Title = "New Variant", SKU = "SKU123", Images = new List<CreateProductVariantImageDto>() };
+        var createDto = new CreateProductVariantDto { Title = "New Variant", Images = new List<CreateProductVariantImageDto>() };
         var product = new Product { Id = 1, Name = "Test Product" };
-        var variant = new ProductVariant { Id = 1, Title = "New Variant", SKU = "SKU123", ProductId = 1 };
+        var variant = new ProductVariant { Id = 1, Title = "New Variant", ProductId = 1 };
 
         _unitOfWorkMock.Setup(u => u.Products.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(product);
-        _unitOfWorkMock.Setup(u => u.ProductVariants.SKUExistsAsync(createDto.SKU, null)).ReturnsAsync(false);
         _mapperMock.Setup(m => m.Map<ProductVariant>(createDto)).Returns(variant);
         _unitOfWorkMock.Setup(u => u.ProductVariants.AddAsync(variant, It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.ProductVariants.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
@@ -84,12 +83,11 @@ public class ProductVariantServiceTests
     public async Task UpdateVariantAsync_WhenVariantExists_ShouldUpdateVariant()
     {
         // Arrange
-        var updateDto = new UpdateProductVariantDto { Title = "Updated Variant", SKU = "SKU123", Images = new List<UpdateProductVariantImageDto>() };
-        var variant = new ProductVariant { Id = 1, Title = "Old Variant", SKU = "SKU123" };
+        var updateDto = new UpdateProductVariantDto { Title = "Updated Variant", Images = new List<UpdateProductVariantImageDto>() };
+        var variant = new ProductVariant { Id = 1, Title = "Old Variant" };
         var variantImageRepositoryMock = new Mock<IRepository<ProductVariantImage>>();
 
         _unitOfWorkMock.Setup(u => u.ProductVariants.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(variant);
-        _unitOfWorkMock.Setup(u => u.ProductVariants.SKUExistsAsync(updateDto.SKU, 1)).ReturnsAsync(false);
         _unitOfWorkMock.Setup(u => u.ProductVariants.Update(variant));
         _unitOfWorkMock.Setup(u => u.ProductVariants.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
         _mapperMock.Setup(m => m.Map<ProductVariantDto>(variant)).Returns(new ProductVariantDto { Id = 1, Title = "Updated Variant" });
@@ -127,31 +125,19 @@ public class ProductVariantServiceTests
     public async Task CreateVariantAsync_WhenProductDoesNotExist_ShouldThrowArgumentException()
     {
         // Arrange
-        var createDto = new CreateProductVariantDto { Title = "New Variant", SKU = "SKU123" };
+        var createDto = new CreateProductVariantDto { Title = "New Variant" };
         _unitOfWorkMock.Setup(u => u.Products.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync((Product)null);
 
         // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(() => _productVariantService.CreateVariantAsync(1, createDto));
     }
 
-    [Fact]
-    public async Task CreateVariantAsync_WhenSkuExists_ShouldThrowArgumentException()
-    {
-        // Arrange
-        var createDto = new CreateProductVariantDto { Title = "New Variant", SKU = "existing-sku" };
-        var product = new Product { Id = 1, Name = "Test Product" };
-        _unitOfWorkMock.Setup(u => u.Products.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync(product);
-        _unitOfWorkMock.Setup(u => u.ProductVariants.SKUExistsAsync("existing-sku", null)).ReturnsAsync(true);
-
-        // Act & Assert
-        await Assert.ThrowsAsync<ArgumentException>(() => _productVariantService.CreateVariantAsync(1, createDto));
-    }
 
     [Fact]
     public async Task UpdateVariantAsync_WhenVariantDoesNotExist_ShouldThrowArgumentException()
     {
         // Arrange
-        var updateDto = new UpdateProductVariantDto { Title = "Updated Variant", SKU = "updated-sku" };
+        var updateDto = new UpdateProductVariantDto { Title = "Updated Variant" };
         _unitOfWorkMock.Setup(u => u.ProductVariants.GetByIdAsync(1, It.IsAny<CancellationToken>())).ReturnsAsync((ProductVariant)null);
 
         // Act & Assert

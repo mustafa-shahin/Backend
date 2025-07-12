@@ -43,15 +43,6 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         #region Query Operations
 
-        public async Task<ProductVariant?> GetBySKUAsync(string sku)
-        {
-            return await _dbSet
-                .Include(v => v.Product)
-                .Include(v => v.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
-                .FirstOrDefaultAsync(v => v.SKU == sku && !v.IsDeleted);
-        }
-
         public async Task<ProductVariant?> GetWithImagesAsync(int variantId)
         {
             return await _dbSet
@@ -188,15 +179,6 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         #region Validation Operations
 
-        public async Task<bool> SKUExistsAsync(string sku, int? excludeVariantId = null)
-        {
-            var query = _dbSet.Where(v => v.SKU == sku && !v.IsDeleted);
-
-            if (excludeVariantId.HasValue)
-                query = query.Where(v => v.Id != excludeVariantId.Value);
-
-            return await query.AnyAsync();
-        }
 
         public async Task<bool> IsDefaultVariantAsync(int variantId)
         {
@@ -759,7 +741,6 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await _dbSet
                 .Where(v => !v.IsDeleted &&
                            (v.Title.Contains(searchTerm) ||
-                            v.SKU.Contains(searchTerm) ||
                             v.Option1!.Contains(searchTerm) ||
                             v.Option2!.Contains(searchTerm) ||
                             v.Option3!.Contains(searchTerm)))
@@ -775,7 +756,6 @@ namespace Backend.CMS.Infrastructure.Repositories
             var query = _dbSet
                 .Where(v => !v.IsDeleted &&
                            (v.Title.Contains(searchTerm) ||
-                            v.SKU.Contains(searchTerm) ||
                             v.Option1!.Contains(searchTerm) ||
                             v.Option2!.Contains(searchTerm) ||
                             v.Option3!.Contains(searchTerm)))
@@ -799,7 +779,6 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await _dbSet
                 .Where(v => !v.IsDeleted &&
                            (v.Title.Contains(searchTerm) ||
-                            v.SKU.Contains(searchTerm) ||
                             v.Option1!.Contains(searchTerm) ||
                             v.Option2!.Contains(searchTerm) ||
                             v.Option3!.Contains(searchTerm)))
@@ -895,28 +874,11 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<IEnumerable<ProductVariant>> GetDuplicateSkuVariantsAsync()
-        {
-            var duplicateSkus = await _dbSet
-                .Where(v => !v.IsDeleted)
-                .GroupBy(v => v.SKU)
-                .Where(g => g.Count() > 1)
-                .Select(g => g.Key)
-                .ToListAsync();
-
-            return await _dbSet
-                .Where(v => duplicateSkus.Contains(v.SKU) && !v.IsDeleted)
-                .Include(v => v.Product)
-                .OrderBy(v => v.SKU)
-                .ToListAsync();
-        }
-
         public async Task<IEnumerable<ProductVariant>> GetVariantsWithInvalidDataAsync()
         {
             return await _dbSet
                 .Where(v => !v.IsDeleted &&
                            (string.IsNullOrEmpty(v.Title) ||
-                            string.IsNullOrEmpty(v.SKU) ||
                             v.Price < 0 ||
                             v.Quantity < 0))
                 .Include(v => v.Product)

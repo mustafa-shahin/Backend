@@ -12,13 +12,11 @@ namespace Backend.CMS.Infrastructure.Interfaces
         Task<bool> DeleteVariantAsync(int variantId);
 
         // Query operations
-        Task<ProductVariantDto?> GetVariantBySKUAsync(string sku);
         Task<List<ProductVariantDto>> GetVariantsByProductIdAsync(int productId);
         Task<ProductVariantDto?> GetDefaultVariantAsync(int productId);
         Task<PagedResult<ProductVariantDto>> GetStandaloneVariantsAsync(int page = 1, int pageSize = 10);
 
         // Utility operations
-        Task<bool> ValidateSKUAsync(string sku, int? excludeVariantId = null);
         Task<ProductVariantDto> SetDefaultVariantAsync(int variantId);
         Task<List<ProductVariantDto>> ReorderVariantsAsync(List<(int VariantId, int Position)> variantOrders);
 

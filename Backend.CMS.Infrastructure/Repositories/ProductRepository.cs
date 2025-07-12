@@ -63,14 +63,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .FirstOrDefaultAsync(p => p.Slug == slug && !p.IsDeleted);
         }
 
-        public async Task<Product?> GetBySKUAsync(string sku)
-        {
-            return await _dbSet
-                .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
-                .FirstOrDefaultAsync(p =>!p.IsDeleted);
-        }
-
         public async Task<Product?> GetWithDetailsAsync(int productId)
         {
             return await _dbSet

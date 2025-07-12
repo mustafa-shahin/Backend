@@ -9,7 +9,6 @@ namespace Backend.CMS.Infrastructure.IRepositories
     public interface IProductVariantRepository : IRepository<ProductVariant>
     {
         // Query operations
-        Task<ProductVariant?> GetBySKUAsync(string sku);
         Task<ProductVariant?> GetWithImagesAsync(int variantId);
         Task<ProductVariant?> GetWithProductAsync(int variantId);
         Task<ProductVariant?> GetWithAllRelationsAsync(int variantId);
@@ -27,7 +26,6 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<int> GetStandaloneVariantCountAsync();
 
         // Validation operations
-        Task<bool> SKUExistsAsync(string sku, int? excludeVariantId = null);
         Task<bool> IsDefaultVariantAsync(int variantId);
         Task<bool> HasProductVariantsAsync(int productId);
 
@@ -100,7 +98,6 @@ namespace Backend.CMS.Infrastructure.IRepositories
 
         // Advanced queries
         Task<IEnumerable<ProductVariant>> GetVariantsWithNoImagesAsync();
-        Task<IEnumerable<ProductVariant>> GetDuplicateSkuVariantsAsync();
         Task<IEnumerable<ProductVariant>> GetVariantsWithInvalidDataAsync();
     }
 }

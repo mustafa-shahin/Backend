@@ -1039,10 +1039,6 @@ namespace Backend.CMS.Infrastructure.Validation
                 .NotEmpty().WithMessage("Variant title is required")
                 .MaximumLength(200).WithMessage("Title cannot exceed 200 characters");
 
-            RuleFor(x => x.SKU)
-                .NotEmpty().WithMessage("Variant SKU is required")
-                .MaximumLength(100).WithMessage("SKU cannot exceed 100 characters");
-
             RuleFor(x => x.Price)
                 .GreaterThanOrEqualTo(0).WithMessage("Price must be greater than or equal to 0");
 
@@ -1094,9 +1090,6 @@ namespace Backend.CMS.Infrastructure.Validation
                 .NotEmpty().WithMessage("Variant title is required")
                 .MaximumLength(200).WithMessage("Title cannot exceed 200 characters");
 
-            RuleFor(x => x.SKU)
-                .NotEmpty().WithMessage("Variant SKU is required")
-                .MaximumLength(100).WithMessage("SKU cannot exceed 100 characters");
 
             RuleFor(x => x.Price)
                 .GreaterThanOrEqualTo(0).WithMessage("Price must be greater than or equal to 0");

@@ -214,7 +214,6 @@ namespace Backend.CMS.Infrastructure.Caching.Services
         #region Product Cache Keys
         public static string ProductById(int productId) => $"product{SEPARATOR}id{SEPARATOR}{productId}";
         public static string ProductBySlug(string slug) => $"product{SEPARATOR}slug{SEPARATOR}{slug.ToLowerInvariant()}";
-        public static string ProductBySku(string sku) => $"product{SEPARATOR}sku{SEPARATOR}{sku.ToLowerInvariant()}";
         public static string ProductsByCategory(int categoryId, int page, int pageSize) => $"product{SEPARATOR}category{SEPARATOR}{categoryId}{SEPARATOR}page{SEPARATOR}{page}{SEPARATOR}size{SEPARATOR}{pageSize}";
         public static string FeaturedProducts(int count) => $"product{SEPARATOR}featured{SEPARATOR}{count}";
         public static string RecentProducts(int count) => $"product{SEPARATOR}recent{SEPARATOR}{count}";

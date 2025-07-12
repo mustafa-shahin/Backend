@@ -112,11 +112,6 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<ProductVariantDto?> GetVariantBySKUAsync(string sku)
-        {
-            var variant = await _unitOfWork.ProductVariants.GetBySKUAsync(sku);
-            return variant != null ? _mapper.Map<ProductVariantDto>(variant) : null;
-        }
 
         public async Task<List<ProductVariantDto>> GetVariantsByProductIdAsync(int productId)
         {
@@ -140,9 +135,6 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new ArgumentException($"Product with ID {productId} not found");
             }
 
-            // Validate SKU uniqueness
-            if (await _unitOfWork.ProductVariants.SKUExistsAsync(createVariantDto.SKU))
-                throw new ArgumentException($"Product variant with SKU '{createVariantDto.SKU}' already exists");
 
             // Validate images
             if (createVariantDto.Images.Any())
@@ -197,9 +189,6 @@ namespace Backend.CMS.Infrastructure.Services
             if (variant == null)
                 throw new ArgumentException($"Product variant with ID {variantId} not found");
 
-            // Validate SKU uniqueness
-            if (await _unitOfWork.ProductVariants.SKUExistsAsync(updateVariantDto.SKU, variantId))
-                throw new ArgumentException($"Product variant with SKU '{updateVariantDto.SKU}' already exists");
 
             // Validate images
             if (updateVariantDto.Images.Any())
@@ -262,11 +251,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             _logger.LogInformation("Deleted variant: {VariantTitle} (ID: {VariantId})", variant.Title, variant.Id);
             return true;
-        }
-
-        public async Task<bool> ValidateSKUAsync(string sku, int? excludeVariantId = null)
-        {
-            return !await _unitOfWork.ProductVariants.SKUExistsAsync(sku, excludeVariantId);
         }
 
         public async Task<ProductVariantDto> SetDefaultVariantAsync(int variantId)

@@ -117,32 +117,6 @@ namespace Backend.CMS.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Get variant by SKU
-        /// </summary>
-        /// <param name="sku">Variant SKU</param>
-        /// <returns>Variant information</returns>
-        [HttpGet("by-sku/{sku}")]
-        [AllowAnonymous]
-        [ProducesResponseType(typeof(ProductVariantDto), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<ProductVariantDto>> GetVariantBySKU(string sku)
-        {
-            try
-            {
-                var variant = await _variantService.GetVariantBySKUAsync(sku);
-                if (variant == null)
-                    return NotFound(new { Message = $"Variant with SKU '{sku}' not found" });
-
-                return Ok(variant);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving variant by SKU {SKU}", sku);
-                return StatusCode(500, new { Message = "An error occurred while retrieving the variant" });
-            }
-        }
 
         /// <summary>
         /// Get variants by product ID
@@ -230,10 +204,6 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Variant title is required" });
                 }
 
-                if (string.IsNullOrWhiteSpace(createVariantDto.SKU))
-                {
-                    return BadRequest(new { Message = "Variant SKU is required" });
-                }
 
                 var variant = await _variantService.CreateVariantAsync(productId, createVariantDto);
                 return CreatedAtAction(nameof(GetVariant), new { id = variant.Id }, variant);
@@ -284,11 +254,6 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Variant title is required" });
                 }
 
-                if (string.IsNullOrWhiteSpace(createVariantDto.SKU))
-                {
-                    return BadRequest(new { Message = "Variant SKU is required" });
-                }
-
                 // For standalone variants, use 0 or null as productId
                 var productId = createVariantDto.ProductId ?? 0;
                 var variant = await _variantService.CreateVariantAsync(productId, createVariantDto);
@@ -334,7 +299,6 @@ namespace Backend.CMS.API.Controllers
                 {
                     Id = variant.Id,
                     Title = variant.Title,
-                    SKU = variant.SKU,
                     Price = variant.Price,
                     CompareAtPrice = variant.CompareAtPrice,
                     CostPerItem = variant.CostPerItem,
@@ -626,36 +590,6 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error retrieving total stock for product {ProductId}", productId);
                 return StatusCode(500, new { Message = "An error occurred while retrieving total stock" });
-            }
-        }
-
-        /// <summary>
-        /// Validate variant SKU
-        /// </summary>
-        /// <param name="sku">SKU to validate</param>
-        /// <param name="excludeVariantId">Variant ID to exclude from validation</param>
-        /// <returns>Validation result</returns>
-        [HttpGet("validate-sku")]
-        [AdminOrDev]
-        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<bool>> ValidateSKU(
-            [FromQuery] string sku,
-            [FromQuery] int? excludeVariantId = null)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(sku))
-                    return BadRequest(new { Message = "SKU parameter is required" });
-
-                var isValid = await _variantService.ValidateSKUAsync(sku, excludeVariantId);
-                return Ok(new { IsValid = isValid });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error validating variant SKU");
-                return StatusCode(500, new { Message = "An error occurred while validating the SKU" });
             }
         }
 

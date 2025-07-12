@@ -11,7 +11,6 @@ namespace Backend.CMS.Infrastructure.IRepositories
     {
         // Query operations
         Task<Product?> GetBySlugAsync(string slug);
-        Task<Product?> GetBySKUAsync(string sku);
         Task<Product?> GetWithDetailsAsync(int productId);
         Task<Product?> GetWithVariantsAsync(int productId);
         Task<Product?> GetWithCategoriesAsync(int productId);

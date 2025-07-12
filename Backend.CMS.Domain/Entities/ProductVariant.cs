@@ -16,10 +16,6 @@ namespace Backend.CMS.Domain.Entities
         [MaxLength(255)]
         public string Title { get; set; } = string.Empty;
 
-        [Required]
-        [MaxLength(100)]
-        public string SKU { get; set; } = string.Empty;
-
         public decimal Price { get; set; }
 
         public decimal? CompareAtPrice { get; set; }
