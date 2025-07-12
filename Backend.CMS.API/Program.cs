@@ -715,7 +715,6 @@ static void ConfigureRequestPipeline(WebApplication app)
         app.UseSwaggerUI(c =>
         {
             c.SwaggerEndpoint("/swagger/v1/swagger.json", "Backend CMS API V1");
-            c.SwaggerEndpoint("/swagger/v2/swagger.json", "Backend CMS API V2");
             c.RoutePrefix = "swagger";
         });
     }
@@ -923,8 +922,6 @@ static async Task SeedDatabase(ApplicationDbContext context)
 
             var adminUserId = adminUser.Id;
 
-            // using the admin user ID for subsequent entities
-            await SeedCompanyData(context, adminUserId);
         }
     }
     catch (Exception ex)
@@ -934,140 +931,7 @@ static async Task SeedDatabase(ApplicationDbContext context)
     }
 }
 
-static async Task SeedCompanyData(ApplicationDbContext context, int adminUserId)
-{
-    // Seed default company
-    if (!context.Companies.Any())
-    {
-        var company = new Company
-        {
-            Name = "Default Company",
-            Description = "Default company",
-            IsActive = true,
-            Currency = "EUR",
-            Language = "en",
-            Timezone = "UTC",
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            CreatedByUserId = adminUserId,
-            UpdatedByUserId = adminUserId
-        };
 
-        context.Companies.Add(company);
-        await context.SaveChangesAsync();
-
-        // Add default address for company
-        var companyAddress = new Address
-        {
-            Street = "123 Business Street",
-            HouseNr = "1A",
-            City = "Business City",
-            State = "Business State",
-            Country = "Business Country",
-            PostalCode = "12345",
-            AddressType = "Main",
-            IsDefault = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            CreatedByUserId = adminUserId,
-            UpdatedByUserId = adminUserId
-        };
-
-        context.Entry(companyAddress).Property("CompanyId").CurrentValue = company.Id;
-        context.Addresses.Add(companyAddress);
-
-        // Add default contact details for company
-        var companyContact = new ContactDetails
-        {
-            PrimaryPhone = "+1234567890",
-            Email = "info@company.com",
-            Website = "https://company.com",
-            ContactType = "Business",
-            IsDefault = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            CreatedByUserId = adminUserId,
-            UpdatedByUserId = adminUserId
-        };
-
-        context.Entry(companyContact).Property("CompanyId").CurrentValue = company.Id;
-        context.ContactDetails.Add(companyContact);
-
-        var mainLocation = new Location
-        {
-            CompanyId = company.Id,
-            Name = "Main Office",
-            Description = "Main company office",
-            LocationCode = "MAIN001",
-            LocationType = "Headquarters",
-            IsMainLocation = true,
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            CreatedByUserId = adminUserId,
-            UpdatedByUserId = adminUserId
-        };
-        context.Locations.Add(mainLocation);
-
-        await context.SaveChangesAsync();
-
-        var locationAddress = new Address
-        {
-            Street = "456 Office Avenue",
-            HouseNr = "1",
-            City = "Office City",
-            State = "Office State",
-            Country = "Office Country",
-            PostalCode = "67890",
-            AddressType = "Office",
-            IsDefault = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            CreatedByUserId = adminUserId,
-            UpdatedByUserId = adminUserId
-        };
-
-        context.Entry(locationAddress).Property("LocationId").CurrentValue = mainLocation.Id;
-        context.Addresses.Add(locationAddress);
-
-        // Add contact details for main location
-        var locationContact = new ContactDetails
-        {
-            PrimaryPhone = "+1987654321",
-            Email = "office@company.com",
-            ContactType = "Office",
-            IsDefault = true,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            CreatedByUserId = adminUserId,
-            UpdatedByUserId = adminUserId
-        };
-
-        context.Entry(locationContact).Property("LocationId").CurrentValue = mainLocation.Id;
-        context.ContactDetails.Add(locationContact);
-
-        // Add opening hours for main location
-        for (int day = 0; day < 7; day++)
-        {
-            var openingHour = new LocationOpeningHour
-            {
-                LocationId = mainLocation.Id,
-                DayOfWeek = (DayOfWeek)day,
-                OpenTime = new TimeOnly(9, 0),
-                CloseTime = new TimeOnly(17, 0),
-                IsClosed = day == 0 || day == 6, // Closed on Sunday (0) and Saturday (6)
-                IsOpen24Hours = false,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                CreatedByUserId = adminUserId,
-                UpdatedByUserId = adminUserId
-            };
-            context.LocationOpeningHours.Add(openingHour);
-        }
-
-        await context.SaveChangesAsync();
-    }
-}
 
 #endregion
 
