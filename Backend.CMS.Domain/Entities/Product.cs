@@ -60,6 +60,9 @@ namespace Backend.CMS.Domain.Entities
         // Computed property for featured image
         [NotMapped]
         public string? FeaturedImageUrl => Images.OrderBy(i => i.Position).FirstOrDefault()?.ImageUrl;
+
+        [NotMapped]
+        public bool IsAvailable => Status == ProductStatus.Active && Variants.Any(v => v.Quantity > 0);
     }
 
    

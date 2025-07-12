@@ -224,12 +224,12 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl))
                 .ForMember(dest => dest.StatusName, opt => opt.MapFrom(src => src.Status.ToString()))
                 .ForMember(dest => dest.TypeName, opt => opt.MapFrom(src => src.Type.ToString()))
-              .ForMember(dest => dest.IsAvailable, opt => opt.MapFrom(src =>
-    src.Status == ProductStatus.Active &&
-    src.HasVariants &&
-    src.Variants != null &&
-    src.Variants.Any(v => v.Quantity > 0)
-))
+                .ForMember(dest => dest.IsAvailable, opt => opt.MapFrom(src =>
+                                                                                src.Status == ProductStatus.Active &&
+                                                                                src.HasVariants &&
+                                                                                src.Variants != null &&
+                                                                                src.Variants.Any(v => v.Quantity > 0)
+                                                                            ))
 
                 .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.Images.OrderBy(i => i.Position).FirstOrDefault() != null ? $"/api/files/{src.Images.OrderBy(i => i.Position).FirstOrDefault().FileId}/download" : null))
                 .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type))

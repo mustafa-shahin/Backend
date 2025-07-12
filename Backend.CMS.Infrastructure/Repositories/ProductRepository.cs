@@ -303,9 +303,16 @@ namespace Backend.CMS.Infrastructure.Repositories
                 query = query.Where(p => p.Vendor == searchDto.Vendor);
             }
 
-            if (searchDto.IsAvailable.HasValue && searchDto.IsAvailable.Value)
+            if (searchDto.IsAvailable.HasValue)
             {
-                query = query.Where(p => p.Status == ProductStatus.Active);
+                if (searchDto.IsAvailable.Value)
+                {
+                    query = query.Where(p => p.Status == ProductStatus.Active && p.Variants.Any(v => v.Quantity > 0));
+                }
+                else
+                {
+                    query = query.Where(p => p.Status != ProductStatus.Active || p.Variants.All(v => v.Quantity <= 0));
+                }
             }
 
             return query;

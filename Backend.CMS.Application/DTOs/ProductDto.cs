@@ -32,7 +32,7 @@ namespace Backend.CMS.Application.DTOs
         // Computed properties
         public string StatusName => Status.ToString();
         public string TypeName => Type.ToString();
-        public bool IsAvailable => Status == ProductStatus.Active && Variants.Any(v => v.IsAvailable && v.Quantity > 0);
+        public bool IsAvailable => Status == ProductStatus.Active && Variants.Any(v => v.Quantity > 0);
         public string? FeaturedImageUrl => Images.OrderBy(i => i.Position).FirstOrDefault()?.ImageUrl;
     }
 

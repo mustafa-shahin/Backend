@@ -28,7 +28,7 @@
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         // Computed properties
-        public bool IsAvailable { get; set; }
+        public bool IsAvailable => Quantity > 0;
         public decimal? DiscountPercentage { get; set; }
         public string DisplayTitle { get; set; } = string.Empty;
     }
