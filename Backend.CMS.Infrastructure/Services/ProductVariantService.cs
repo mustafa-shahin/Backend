@@ -1,7 +1,7 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
-using Backend.CMS.Infrastructure.Caching.Interfaces;
+using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
@@ -11,9 +11,6 @@ namespace Backend.CMS.Infrastructure.Services
     public class ProductVariantService : IProductVariantService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly ICacheService _cacheService;
-        private readonly ICacheInvalidationService _cacheInvalidationService;
-        private readonly ICacheKeyService _cacheKeyService;
         private readonly IMapper _mapper;
         private readonly ILogger<ProductVariantService> _logger;
 
@@ -22,36 +19,21 @@ namespace Backend.CMS.Infrastructure.Services
 
         public ProductVariantService(
             IUnitOfWork unitOfWork,
-            ICacheService cacheService,
-            ICacheInvalidationService cacheInvalidationService,
-            ICacheKeyService cacheKeyService,
             IMapper mapper,
             ILogger<ProductVariantService> logger)
         {
             _unitOfWork = unitOfWork;
-            _cacheService = cacheService;
-            _cacheInvalidationService = cacheInvalidationService;
-            _cacheKeyService = cacheKeyService;
             _mapper = mapper;
             _logger = logger;
         }
 
         public async Task<ProductVariantDto> GetVariantByIdAsync(int variantId)
         {
-            var cacheKey = _cacheKeyService.GetEntityKey<ProductVariant>(variantId);
-            var variant = await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var dbVariant = await _unitOfWork.ProductVariants.GetByIdAsync(variantId);
-                if (dbVariant == null)
-                    return null;
-
-                return _mapper.Map<ProductVariantDto>(dbVariant);
-            });
-
-            if (variant == null)
+            var dbVariant = await _unitOfWork.ProductVariants.GetByIdAsync(variantId);
+            if (dbVariant == null)
                 throw new ArgumentException($"Product variant with ID {variantId} not found");
 
-            return variant;
+            return _mapper.Map<ProductVariantDto>(dbVariant);
         }
 
         public async Task<PagedResult<ProductVariantDto>> GetVariantsAsync(int page = 1, int pageSize = 10, bool standaloneOnly = false)
@@ -60,52 +42,47 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "paged", page.ToString(), pageSize.ToString(), standaloneOnly.ToString());
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
+                PagedResult<ProductVariant> pagedResult;
+
+                if (standaloneOnly)
                 {
-                    PagedResult<ProductVariant> pagedResult;
-
-                    if (standaloneOnly)
-                    {
-                        // Get standalone variants (variants without product association or with ProductId = 0)
-                        pagedResult = await  _unitOfWork.ProductVariants.GetPagedResultAsync(
-                            page,
-                            pageSize,
-                            predicate: v => v.ProductId == 0,
-                            orderBy: query => query.OrderBy(v => v.Position).ThenBy(v => v.Title)
-                        );
-                    }
-                    else
-                    {
-                        // Get all variants
-                        pagedResult = await  _unitOfWork.ProductVariants.GetPagedResultAsync(
-                            page,
-                            pageSize,
-                            predicate: null,
-                            orderBy: query => query.OrderBy(v => v.Position).ThenBy(v => v.Title)
-                        );
-                    }
-
-                    var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
-
-                    return new PagedResult<ProductVariantDto>
-                    {
-                        Data = variantDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
+                    // Get standalone variants (variants without product association or with ProductId = 0)
+                    pagedResult = await _unitOfWork.ProductVariants.GetPagedResultAsync(
+                        page,
+                        pageSize,
+                        predicate: v => v.ProductId == 0,
+                        orderBy: query => query.OrderBy(v => v.Position).ThenBy(v => v.Title)
+                    );
                 }
-                catch (Exception ex)
+                else
                 {
-                    _logger.LogError(ex, "Error fetching paginated variants for page {Page}, pageSize {PageSize}, standaloneOnly {StandaloneOnly}",
-                        page, pageSize, standaloneOnly);
-                    throw;
+                    // Get all variants
+                    pagedResult = await _unitOfWork.ProductVariants.GetPagedResultAsync(
+                        page,
+                        pageSize,
+                        predicate: null,
+                        orderBy: query => query.OrderBy(v => v.Position).ThenBy(v => v.Title)
+                    );
                 }
-            }) ?? PagedResult<ProductVariantDto>.Empty(page, pageSize);
+
+                var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
+
+                return new PagedResult<ProductVariantDto>
+                {
+                    Data = variantDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching paginated variants for page {Page}, pageSize {PageSize}, standaloneOnly {StandaloneOnly}",
+                    page, pageSize, standaloneOnly);
+                throw;
+            }
         }
 
         public async Task<PagedResult<ProductVariantDto>> GetStandaloneVariantsAsync(int page = 1, int pageSize = 10)
@@ -114,60 +91,43 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "standalone", page.ToString(), pageSize.ToString());
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
-                {
-                    // Use the repository's dedicated pagination method for standalone variants
-                    var pagedResult = await  _unitOfWork.ProductVariants.GetStandaloneVariantsPagedAsync(page, pageSize);
-                    var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
+                // Use the repository's dedicated pagination method for standalone variants
+                var pagedResult = await _unitOfWork.ProductVariants.GetStandaloneVariantsPagedAsync(page, pageSize);
+                var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
-                    return new PagedResult<ProductVariantDto>
-                    {
-                        Data = variantDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
-                }
-                catch (Exception ex)
+                return new PagedResult<ProductVariantDto>
                 {
-                    _logger.LogError(ex, "Error fetching paginated standalone variants for page {Page}, pageSize {PageSize}", page, pageSize);
-                    throw;
-                }
-            }) ?? PagedResult<ProductVariantDto>.Empty(page, pageSize);
+                    Data = variantDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching paginated standalone variants for page {Page}, pageSize {PageSize}", page, pageSize);
+                throw;
+            }
         }
 
         public async Task<ProductVariantDto?> GetVariantBySKUAsync(string sku)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "sku", sku.ToLowerInvariant());
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var variant = await  _unitOfWork.ProductVariants.GetBySKUAsync(sku);
-                return variant != null ? _mapper.Map<ProductVariantDto>(variant) : null;
-            });
+            var variant = await _unitOfWork.ProductVariants.GetBySKUAsync(sku);
+            return variant != null ? _mapper.Map<ProductVariantDto>(variant) : null;
         }
 
         public async Task<List<ProductVariantDto>> GetVariantsByProductIdAsync(int productId)
         {
-            var cacheKey = _cacheKeyService.GetCollectionKey<ProductVariant>("by_product", productId);
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var variants = await  _unitOfWork.ProductVariants.GetByProductIdAsync(productId);
-                return _mapper.Map<List<ProductVariantDto>>(variants);
-            }) ?? [];
+            var variants = await _unitOfWork.ProductVariants.GetByProductIdAsync(productId);
+            return _mapper.Map<List<ProductVariantDto>>(variants);
         }
 
         public async Task<ProductVariantDto?> GetDefaultVariantAsync(int productId)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "default", productId.ToString());
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var variant = await  _unitOfWork.ProductVariants.GetDefaultVariantAsync(productId);
-                return variant != null ? _mapper.Map<ProductVariantDto>(variant) : null;
-            });
+            var variant = await _unitOfWork.ProductVariants.GetDefaultVariantAsync(productId);
+            return variant != null ? _mapper.Map<ProductVariantDto>(variant) : null;
         }
 
         public async Task<ProductVariantDto> CreateVariantAsync(int productId, CreateProductVariantDto createVariantDto)
@@ -181,7 +141,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
 
             // Validate SKU uniqueness
-            if (await  _unitOfWork.ProductVariants.SKUExistsAsync(createVariantDto.SKU))
+            if (await _unitOfWork.ProductVariants.SKUExistsAsync(createVariantDto.SKU))
                 throw new ArgumentException($"Product variant with SKU '{createVariantDto.SKU}' already exists");
 
             // Validate images
@@ -196,15 +156,15 @@ namespace Backend.CMS.Infrastructure.Services
             // If this is the first variant for the product and productId > 0, make it default
             if (productId > 0)
             {
-                var existingVariants = await  _unitOfWork.ProductVariants.GetByProductIdAsync(productId);
+                var existingVariants = await _unitOfWork.ProductVariants.GetByProductIdAsync(productId);
                 if (!existingVariants.Any())
                 {
                     variant.IsDefault = true;
                 }
             }
 
-            await  _unitOfWork.ProductVariants.AddAsync(variant);
-            await  _unitOfWork.ProductVariants.SaveChangesAsync();
+            await _unitOfWork.ProductVariants.AddAsync(variant);
+            await _unitOfWork.ProductVariants.SaveChangesAsync();
 
             // Add images
             if (createVariantDto.Images.Any())
@@ -224,23 +184,21 @@ namespace Backend.CMS.Infrastructure.Services
                 }
             }
 
-            await InvalidateVariantCacheAsync(productId);
-
             _logger.LogInformation("Created variant: {VariantTitle} for product {ProductId}", variant.Title, productId);
 
             // Return the complete variant with images
-            var createdVariant = await  _unitOfWork.ProductVariants.GetByIdAsync(variant.Id);
+            var createdVariant = await _unitOfWork.ProductVariants.GetByIdAsync(variant.Id);
             return _mapper.Map<ProductVariantDto>(createdVariant!);
         }
 
         public async Task<ProductVariantDto> UpdateVariantAsync(int variantId, UpdateProductVariantDto updateVariantDto)
         {
-            var variant = await  _unitOfWork.ProductVariants.GetByIdAsync(variantId);
+            var variant = await _unitOfWork.ProductVariants.GetByIdAsync(variantId);
             if (variant == null)
                 throw new ArgumentException($"Product variant with ID {variantId} not found");
 
             // Validate SKU uniqueness
-            if (await  _unitOfWork.ProductVariants.SKUExistsAsync(updateVariantDto.SKU, variantId))
+            if (await _unitOfWork.ProductVariants.SKUExistsAsync(updateVariantDto.SKU, variantId))
                 throw new ArgumentException($"Product variant with SKU '{updateVariantDto.SKU}' already exists");
 
             // Validate images
@@ -254,11 +212,8 @@ namespace Backend.CMS.Infrastructure.Services
             // Update images
             await UpdateVariantImagesAsync(variantId, updateVariantDto.Images);
 
-             _unitOfWork.ProductVariants.Update(variant);
-            await  _unitOfWork.ProductVariants.SaveChangesAsync();
-
-            await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
-            await InvalidateVariantCacheAsync(variant.ProductId);
+            _unitOfWork.ProductVariants.Update(variant);
+            await _unitOfWork.ProductVariants.SaveChangesAsync();
 
             _logger.LogInformation("Updated variant: {VariantTitle} (ID: {VariantId})", variant.Title, variant.Id);
             return _mapper.Map<ProductVariantDto>(variant);
@@ -266,7 +221,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> DeleteVariantAsync(int variantId)
         {
-            var variant = await  _unitOfWork.ProductVariants.GetByIdAsync(variantId);
+            var variant = await _unitOfWork.ProductVariants.GetByIdAsync(variantId);
             if (variant == null) return false;
 
             var productId = variant.ProductId;
@@ -274,10 +229,10 @@ namespace Backend.CMS.Infrastructure.Services
             // Check if this is the last variant (only for regular products, not standalone variants)
             if (productId > 0)
             {
-                var remainingVariants = await  _unitOfWork.ProductVariants.GetByProductIdAsync(productId);
+                var remainingVariants = await _unitOfWork.ProductVariants.GetByProductIdAsync(productId);
                 var variantsAfterDeletion = remainingVariants.Where(v => v.Id != variantId).ToList();
 
-                await  _unitOfWork.ProductVariants.SoftDeleteAsync(variant);
+                await _unitOfWork.ProductVariants.SoftDeleteAsync(variant);
 
                 // If no variants remain, update product
                 if (!variantsAfterDeletion.Any())
@@ -295,18 +250,15 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     var newDefaultVariant = variantsAfterDeletion.OrderBy(v => v.Position).First();
                     newDefaultVariant.IsDefault = true;
-                     _unitOfWork.ProductVariants.Update(newDefaultVariant);
-                    await  _unitOfWork.ProductVariants.SaveChangesAsync();
+                    _unitOfWork.ProductVariants.Update(newDefaultVariant);
+                    await _unitOfWork.ProductVariants.SaveChangesAsync();
                 }
             }
             else
             {
                 // For standalone variants, just delete
-                await  _unitOfWork.ProductVariants.SoftDeleteAsync(variant);
+                await _unitOfWork.ProductVariants.SoftDeleteAsync(variant);
             }
-
-            await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
-            await InvalidateVariantCacheAsync(productId);
 
             _logger.LogInformation("Deleted variant: {VariantTitle} (ID: {VariantId})", variant.Title, variant.Id);
             return true;
@@ -314,12 +266,12 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> ValidateSKUAsync(string sku, int? excludeVariantId = null)
         {
-            return !await  _unitOfWork.ProductVariants.SKUExistsAsync(sku, excludeVariantId);
+            return !await _unitOfWork.ProductVariants.SKUExistsAsync(sku, excludeVariantId);
         }
 
         public async Task<ProductVariantDto> SetDefaultVariantAsync(int variantId)
         {
-            var variant = await  _unitOfWork.ProductVariants.GetByIdAsync(variantId);
+            var variant = await _unitOfWork.ProductVariants.GetByIdAsync(variantId);
             if (variant == null)
                 throw new ArgumentException($"Product variant with ID {variantId} not found");
 
@@ -328,17 +280,14 @@ namespace Backend.CMS.Infrastructure.Services
                 throw new ArgumentException("Cannot set default variant for standalone variants");
 
             // Remove default flag from other variants of the same product
-            var allVariants = await  _unitOfWork.ProductVariants.GetByProductIdAsync(variant.ProductId);
+            var allVariants = await _unitOfWork.ProductVariants.GetByProductIdAsync(variant.ProductId);
             foreach (var v in allVariants)
             {
                 v.IsDefault = v.Id == variantId;
             }
 
-             _unitOfWork.ProductVariants.UpdateRange(allVariants);
-            await  _unitOfWork.ProductVariants.SaveChangesAsync();
-
-            await _cacheInvalidationService.InvalidateEntitiesAsync<ProductVariant>(allVariants.Select(v => (object)v.Id));
-            await InvalidateVariantCacheAsync(variant.ProductId);
+            _unitOfWork.ProductVariants.UpdateRange(allVariants);
+            await _unitOfWork.ProductVariants.SaveChangesAsync();
 
             _logger.LogInformation("Set default variant: {VariantTitle} (ID: {VariantId})", variant.Title, variant.Id);
             return _mapper.Map<ProductVariantDto>(variant);
@@ -347,42 +296,29 @@ namespace Backend.CMS.Infrastructure.Services
         public async Task<List<ProductVariantDto>> ReorderVariantsAsync(List<(int VariantId, int Position)> variantOrders)
         {
             var variantIds = variantOrders.Select(vo => vo.VariantId).ToList();
-            var variants = await  _unitOfWork.ProductVariants.FindAsync(v => variantIds.Contains(v.Id));
-
-            var productIds = new HashSet<int>();
+            var variants = await _unitOfWork.ProductVariants.FindAsync(v => variantIds.Contains(v.Id));
 
             foreach (var variant in variants)
             {
                 var newPosition = variantOrders.First(vo => vo.VariantId == variant.Id).Position;
                 variant.Position = newPosition;
-                productIds.Add(variant.ProductId);
             }
 
-             _unitOfWork.ProductVariants.UpdateRange(variants);
-            await  _unitOfWork.ProductVariants.SaveChangesAsync();
-
-            await _cacheInvalidationService.InvalidateEntitiesAsync<ProductVariant>(variantIds.Cast<object>());
-
-            foreach (var productId in productIds)
-            {
-                await InvalidateVariantCacheAsync(productId);
-            }
+            _unitOfWork.ProductVariants.UpdateRange(variants);
+            await _unitOfWork.ProductVariants.SaveChangesAsync();
 
             return _mapper.Map<List<ProductVariantDto>>(variants);
         }
 
         public async Task<ProductVariantDto> UpdateStockAsync(int variantId, int newQuantity)
         {
-            var variant = await  _unitOfWork.ProductVariants.GetByIdAsync(variantId);
+            var variant = await _unitOfWork.ProductVariants.GetByIdAsync(variantId);
             if (variant == null)
                 throw new ArgumentException($"Product variant with ID {variantId} not found");
 
             variant.Quantity = newQuantity;
-             _unitOfWork.ProductVariants.Update(variant);
-            await  _unitOfWork.ProductVariants.SaveChangesAsync();
-
-            await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
-            await InvalidateVariantCacheAsync(variant.ProductId);
+            _unitOfWork.ProductVariants.Update(variant);
+            await _unitOfWork.ProductVariants.SaveChangesAsync();
 
             _logger.LogInformation("Updated stock for variant {VariantId}: {NewQuantity}", variantId, newQuantity);
             return _mapper.Map<ProductVariantDto>(variant);
@@ -394,31 +330,26 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "low_stock", threshold.ToString(), page.ToString(), pageSize.ToString());
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
-                {
-                    // Use the repository's dedicated pagination method for low stock variants
-                    var pagedResult = await  _unitOfWork.ProductVariants.GetLowStockVariantsPagedAsync(threshold, page, pageSize);
-                    var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
+                // Use the repository's dedicated pagination method for low stock variants
+                var pagedResult = await _unitOfWork.ProductVariants.GetLowStockVariantsPagedAsync(threshold, page, pageSize);
+                var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
-                    return new PagedResult<ProductVariantDto>
-                    {
-                        Data = variantDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
-                }
-                catch (Exception ex)
+                return new PagedResult<ProductVariantDto>
                 {
-                    _logger.LogError(ex, "Error fetching paginated low stock variants for threshold {Threshold}, page {Page}, pageSize {PageSize}",
-                        threshold, page, pageSize);
-                    throw;
-                }
-            }) ?? PagedResult<ProductVariantDto>.Empty(page, pageSize);
+                    Data = variantDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching paginated low stock variants for threshold {Threshold}, page {Page}, pageSize {PageSize}",
+                    threshold, page, pageSize);
+                throw;
+            }
         }
 
         public async Task<PagedResult<ProductVariantDto>> GetOutOfStockVariantsAsync(int page = 1, int pageSize = 10)
@@ -427,48 +358,37 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "out_of_stock", page.ToString(), pageSize.ToString());
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
-                {
-                    // Use the repository's dedicated pagination method for out of stock variants
-                    var pagedResult = await  _unitOfWork.ProductVariants.GetOutOfStockVariantsPagedAsync(page, pageSize);
-                    var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
+                // Use the repository's dedicated pagination method for out of stock variants
+                var pagedResult = await _unitOfWork.ProductVariants.GetOutOfStockVariantsPagedAsync(page, pageSize);
+                var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
-                    return new PagedResult<ProductVariantDto>
-                    {
-                        Data = variantDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
-                }
-                catch (Exception ex)
+                return new PagedResult<ProductVariantDto>
                 {
-                    _logger.LogError(ex, "Error fetching paginated out of stock variants for page {Page}, pageSize {PageSize}", page, pageSize);
-                    throw;
-                }
-            }) ?? PagedResult<ProductVariantDto>.Empty(page, pageSize);
+                    Data = variantDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching paginated out of stock variants for page {Page}, pageSize {PageSize}", page, pageSize);
+                throw;
+            }
         }
 
         public async Task<int> GetTotalStockAsync(int productId)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product_variant", "total_stock", productId.ToString());
-            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var total = await  _unitOfWork.ProductVariants.GetTotalStockAsync(productId);
-                return new CountWrapper { Value = total };
-            });
-
-            return result?.Value ?? 0;
+            var total = await _unitOfWork.ProductVariants.GetTotalStockAsync(productId);
+            return total;
         }
 
         // Image management methods
         public async Task<ProductVariantImageDto> AddVariantImageAsync(int variantId, CreateProductVariantImageDto createImageDto)
         {
-            var variant = await  _unitOfWork.ProductVariants.GetByIdAsync(variantId);
+            var variant = await _unitOfWork.ProductVariants.GetByIdAsync(variantId);
             if (variant == null)
                 throw new ArgumentException($"Product variant with ID {variantId} not found");
 
@@ -485,9 +405,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             await _unitOfWork.GetRepository<ProductVariantImage>().AddAsync(variantImage);
             await _unitOfWork.GetRepository<ProductVariantImage>().SaveChangesAsync();
-
-            await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
-            await InvalidateVariantCacheAsync(variant.ProductId);
 
             _logger.LogInformation("Added image to variant {VariantId}: FileId {FileId}", variantId, createImageDto.FileId);
             return _mapper.Map<ProductVariantImageDto>(variantImage);
@@ -513,13 +430,6 @@ namespace Backend.CMS.Infrastructure.Services
             _unitOfWork.GetRepository<ProductVariantImage>().Update(variantImage);
             await _unitOfWork.GetRepository<ProductVariantImage>().SaveChangesAsync();
 
-            var variant = await  _unitOfWork.ProductVariants.GetByIdAsync(variantImage.ProductVariantId);
-            if (variant != null)
-            {
-                await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variant.Id);
-                await InvalidateVariantCacheAsync(variant.ProductId);
-            }
-
             _logger.LogInformation("Updated variant image {ImageId}", imageId);
             return _mapper.Map<ProductVariantImageDto>(variantImage);
         }
@@ -530,15 +440,8 @@ namespace Backend.CMS.Infrastructure.Services
             if (variantImage == null) return false;
 
             var variantId = variantImage.ProductVariantId;
-            var variant = await  _unitOfWork.ProductVariants.GetByIdAsync(variantId);
 
             await _unitOfWork.GetRepository<ProductVariantImage>().SoftDeleteAsync(variantImage);
-
-            if (variant != null)
-            {
-                await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
-                await InvalidateVariantCacheAsync(variant.ProductId);
-            }
 
             _logger.LogInformation("Deleted variant image {ImageId} from variant {VariantId}", imageId, variantId);
             return true;
@@ -557,13 +460,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             _unitOfWork.GetRepository<ProductVariantImage>().UpdateRange(images);
             await _unitOfWork.GetRepository<ProductVariantImage>().SaveChangesAsync();
-
-            var variant = await  _unitOfWork.ProductVariants.GetByIdAsync(variantId);
-            if (variant != null)
-            {
-                await _cacheInvalidationService.InvalidateEntityAsync<ProductVariant>(variantId);
-                await InvalidateVariantCacheAsync(variant.ProductId);
-            }
 
             return _mapper.Map<List<ProductVariantImageDto>>(images.OrderBy(i => i.Position));
         }
@@ -672,32 +568,6 @@ namespace Backend.CMS.Infrastructure.Services
                     firstImage.IsFeatured = true;
                     _unitOfWork.GetRepository<ProductVariantImage>().Update(firstImage);
                 }
-            }
-        }
-
-        private async Task InvalidateVariantCacheAsync(int productId)
-        {
-            try
-            {
-                // Invalidate specific cache patterns
-                await _cacheInvalidationService.InvalidateEntityTypeAsync<ProductVariant>();
-                await _cacheInvalidationService.InvalidateByPatternAsync(_cacheKeyService.GetEntityPattern<ProductVariant>());
-
-                // Invalidate product-specific variant caches
-                var productVariantPattern = _cacheKeyService.GetCustomKey("product_variant", "*", productId.ToString());
-                await _cacheInvalidationService.InvalidateByPatternAsync(productVariantPattern);
-
-                // Also invalidate related product cache since variants affect product data (only if productId > 0)
-                if (productId > 0)
-                {
-                    await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
-                }
-
-                _logger.LogDebug("Variant cache invalidated successfully for product {ProductId}", productId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error invalidating variant cache for product {ProductId}", productId);
             }
         }
     }

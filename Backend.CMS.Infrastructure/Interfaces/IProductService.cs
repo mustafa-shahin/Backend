@@ -27,15 +27,12 @@ namespace Backend.CMS.Infrastructure.Interfaces
         // Utility operations
         Task<ProductDto> DuplicateProductAsync(int productId, string newName);
         Task<bool> ValidateSlugAsync(string slug, int? excludeProductId = null);
-        Task<bool> ValidateSKUAsync(string sku, int? excludeProductId = null);
 
         // Collection operations
         Task<PagedResult<ProductDto>> GetFeaturedProductsAsync(int page = 1, int pageSize = 10);
         Task<PagedResult<ProductDto>> GetRelatedProductsAsync(int productId, int page = 1, int pageSize = 10);
         Task<PagedResult<ProductDto>> GetRecentProductsAsync(int page = 1, int pageSize = 10);
 
-        // Stock operations
-        Task UpdateStockAsync(int productId, int? variantId, int newQuantity);
         Task<PagedResult<ProductDto>> GetLowStockProductsAsync(int threshold = 5, int page = 1, int pageSize = 10);
         Task<PagedResult<ProductDto>> GetOutOfStockProductsAsync(int page = 1, int pageSize = 10);
 
@@ -43,7 +40,6 @@ namespace Backend.CMS.Infrastructure.Interfaces
         Task<Dictionary<string, object>> GetProductStatisticsAsync();
         Task<(decimal min, decimal max)> GetPriceRangeAsync();
         Task<List<string>> GetVendorsAsync();
-        Task<List<string>> GetTagsAsync();
 
         // Image management
         Task<ProductImageDto> AddProductImageAsync(int productId, CreateProductImageDto createImageDto);

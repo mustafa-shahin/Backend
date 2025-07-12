@@ -907,42 +907,10 @@ namespace Backend.CMS.Infrastructure.Validation
                 .MaximumLength(200).WithMessage("Product slug cannot exceed 200 characters")
                 .Matches(@"^[a-z0-9]+(?:-[a-z0-9]+)*$").WithMessage("Slug must be lowercase letters, numbers, and hyphens only");
 
-            RuleFor(x => x.SKU)
-                .NotEmpty().WithMessage("Product SKU is required")
-                .MaximumLength(100).WithMessage("SKU cannot exceed 100 characters");
-
-            RuleFor(x => x.Price)
-                .GreaterThanOrEqualTo(0).WithMessage("Price must be greater than or equal to 0");
-
-            RuleFor(x => x.CompareAtPrice)
-                .GreaterThan(x => x.Price).WithMessage("Compare at price must be greater than price")
-                .When(x => x.CompareAtPrice.HasValue);
-
-            RuleFor(x => x.CostPerItem)
-                .GreaterThanOrEqualTo(0).WithMessage("Cost per item must be greater than or equal to 0")
-                .When(x => x.CostPerItem.HasValue);
-
-            RuleFor(x => x.Quantity)
-                .GreaterThanOrEqualTo(0).WithMessage("Quantity must be greater than or equal to 0");
-
-            RuleFor(x => x.Weight)
-                .GreaterThanOrEqualTo(0).WithMessage("Weight must be greater than or equal to 0");
-
-            RuleFor(x => x.WeightUnit)
-                .MaximumLength(10).WithMessage("Weight unit cannot exceed 10 characters")
-                .When(x => !string.IsNullOrEmpty(x.WeightUnit));
 
             RuleFor(x => x.Vendor)
                 .MaximumLength(200).WithMessage("Vendor cannot exceed 200 characters")
                 .When(x => !string.IsNullOrEmpty(x.Vendor));
-
-            RuleFor(x => x.Barcode)
-                .MaximumLength(100).WithMessage("Barcode cannot exceed 100 characters")
-                .When(x => !string.IsNullOrEmpty(x.Barcode));
-
-            RuleFor(x => x.Tags)
-                .MaximumLength(1000).WithMessage("Tags cannot exceed 1000 characters")
-                .When(x => !string.IsNullOrEmpty(x.Tags));
 
             RuleFor(x => x.MetaTitle)
                 .MaximumLength(200).WithMessage("Meta title cannot exceed 200 characters")
@@ -961,9 +929,6 @@ namespace Backend.CMS.Infrastructure.Validation
             RuleFor(x => x.CategoryIds)
                 .NotNull().WithMessage("Category IDs cannot be null");
 
-            RuleFor(x => x.Options)
-                .NotNull().WithMessage("Options cannot be null");
-
             RuleFor(x => x.Variants)
                 .NotNull().WithMessage("Variants cannot be null");
 
@@ -972,10 +937,6 @@ namespace Backend.CMS.Infrastructure.Validation
 
             RuleFor(x => x.SEOSettings)
                 .NotNull().WithMessage("SEO settings cannot be null");
-
-            RuleForEach(x => x.Options)
-                .SetValidator(new CreateProductOptionDtoValidator())
-                .When(x => x.Options?.Any() == true);
 
             RuleForEach(x => x.Variants)
                 .SetValidator(new CreateProductVariantDtoValidator())
@@ -996,43 +957,6 @@ namespace Backend.CMS.Infrastructure.Validation
                 .MaximumLength(200).WithMessage("Product slug cannot exceed 200 characters")
                 .Matches(@"^[a-z0-9]+(?:-[a-z0-9]+)*$").WithMessage("Slug must be lowercase letters, numbers, and hyphens only");
 
-            RuleFor(x => x.SKU)
-                .NotEmpty().WithMessage("Product SKU is required")
-                .MaximumLength(100).WithMessage("SKU cannot exceed 100 characters");
-
-            RuleFor(x => x.Price)
-                .GreaterThanOrEqualTo(0).WithMessage("Price must be greater than or equal to 0");
-
-            RuleFor(x => x.CompareAtPrice)
-                .GreaterThan(x => x.Price).WithMessage("Compare at price must be greater than price")
-                .When(x => x.CompareAtPrice.HasValue);
-
-            RuleFor(x => x.CostPerItem)
-                .GreaterThanOrEqualTo(0).WithMessage("Cost per item must be greater than or equal to 0")
-                .When(x => x.CostPerItem.HasValue);
-
-            RuleFor(x => x.Quantity)
-                .GreaterThanOrEqualTo(0).WithMessage("Quantity must be greater than or equal to 0");
-
-            RuleFor(x => x.Weight)
-                .GreaterThanOrEqualTo(0).WithMessage("Weight must be greater than or equal to 0");
-
-            RuleFor(x => x.WeightUnit)
-                .MaximumLength(10).WithMessage("Weight unit cannot exceed 10 characters")
-                .When(x => !string.IsNullOrEmpty(x.WeightUnit));
-
-            RuleFor(x => x.Vendor)
-                .MaximumLength(200).WithMessage("Vendor cannot exceed 200 characters")
-                .When(x => !string.IsNullOrEmpty(x.Vendor));
-
-            RuleFor(x => x.Barcode)
-                .MaximumLength(100).WithMessage("Barcode cannot exceed 100 characters")
-                .When(x => !string.IsNullOrEmpty(x.Barcode));
-
-            RuleFor(x => x.Tags)
-                .MaximumLength(1000).WithMessage("Tags cannot exceed 1000 characters")
-                .When(x => !string.IsNullOrEmpty(x.Tags));
-
             RuleFor(x => x.MetaTitle)
                 .MaximumLength(200).WithMessage("Meta title cannot exceed 200 characters")
                 .When(x => !string.IsNullOrEmpty(x.MetaTitle));
@@ -1049,9 +973,6 @@ namespace Backend.CMS.Infrastructure.Validation
 
             RuleFor(x => x.CategoryIds)
                 .NotNull().WithMessage("Category IDs cannot be null");
-
-            RuleFor(x => x.Options)
-                .NotNull().WithMessage("Options cannot be null");
 
             RuleFor(x => x.Variants)
                 .NotNull().WithMessage("Variants cannot be null");
@@ -1075,14 +996,6 @@ namespace Backend.CMS.Infrastructure.Validation
                 .GreaterThan(0).WithMessage("Page size must be greater than 0")
                 .LessThanOrEqualTo(100).WithMessage("Page size cannot exceed 100");
 
-            RuleFor(x => x.MinPrice)
-                .GreaterThanOrEqualTo(0).WithMessage("Minimum price must be greater than or equal to 0")
-                .When(x => x.MinPrice.HasValue);
-
-            RuleFor(x => x.MaxPrice)
-                .GreaterThanOrEqualTo(x => x.MinPrice).WithMessage("Maximum price must be greater than or equal to minimum price")
-                .When(x => x.MaxPrice.HasValue && x.MinPrice.HasValue);
-
             RuleFor(x => x.SearchTerm)
                 .MaximumLength(500).WithMessage("Search term cannot exceed 500 characters")
                 .When(x => !string.IsNullOrEmpty(x.SearchTerm));
@@ -1093,9 +1006,6 @@ namespace Backend.CMS.Infrastructure.Validation
 
             RuleFor(x => x.CategoryIds)
                 .NotNull().WithMessage("Category IDs cannot be null");
-
-            RuleFor(x => x.Tags)
-                .NotNull().WithMessage("Tags cannot be null");
 
             RuleFor(x => x.SortBy)
                 .NotEmpty().WithMessage("Sort by field is required")

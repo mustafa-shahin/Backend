@@ -10,26 +10,13 @@ namespace Backend.CMS.Application.DTOs
         public string Slug { get; set; } = string.Empty;
         public string? Description { get; set; }
         public string? ShortDescription { get; set; }
-        public string SKU { get; set; } = string.Empty;
-        public decimal Price { get; set; }
-        public decimal? CompareAtPrice { get; set; }
-        public decimal? CostPerItem { get; set; }
-        public bool TrackQuantity { get; set; }
-        public int Quantity { get; set; }
         public bool ContinueSellingWhenOutOfStock { get; set; }
         public bool RequiresShipping { get; set; }
-        public bool IsPhysicalProduct { get; set; }
-        public decimal Weight { get; set; }
-        public string? WeightUnit { get; set; }
-        public bool IsTaxable { get; set; }
         public ProductStatus Status { get; set; }
         public ProductType Type { get; set; }
         public string? Vendor { get; set; }
-        public string? Barcode { get; set; }
         public bool HasVariants { get; set; }
-        public string? Tags { get; set; }
         public DateTime? PublishedAt { get; set; }
-        public string? Template { get; set; }
         public string? MetaTitle { get; set; }
         public string? MetaDescription { get; set; }
         public string? MetaKeywords { get; set; }
@@ -39,15 +26,13 @@ namespace Backend.CMS.Application.DTOs
         public List<CategoryDto> Categories { get; set; } = new();
         public List<ProductVariantDto> Variants { get; set; } = new();
         public List<ProductImageDto> Images { get; set; } = new();
-        public List<ProductOptionDto> Options { get; set; } = new();
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
 
         // Computed properties
         public string StatusName => Status.ToString();
         public string TypeName => Type.ToString();
-        public bool IsAvailable => Status == ProductStatus.Active && (HasVariants ? Variants.Any(v => v.IsAvailable) : Quantity > 0 || ContinueSellingWhenOutOfStock);
-        public decimal? DiscountPercentage => CompareAtPrice.HasValue && CompareAtPrice > Price ? Math.Round(((CompareAtPrice.Value - Price) / CompareAtPrice.Value) * 100, 2) : null;
+        public bool IsAvailable => Status == ProductStatus.Active && Variants.Any(v => v.IsAvailable && v.Quantity > 0);
         public string? FeaturedImageUrl => Images.OrderBy(i => i.Position).FirstOrDefault()?.ImageUrl;
     }
 
@@ -67,36 +52,8 @@ namespace Backend.CMS.Application.DTOs
         [StringLength(1000, ErrorMessage = "Short description cannot exceed 1000 characters")]
         public string? ShortDescription { get; set; }
 
-        [Required(ErrorMessage = "SKU is required")]
-        [StringLength(100, ErrorMessage = "SKU cannot exceed 100 characters")]
-        public string SKU { get; set; } = string.Empty;
-
-        [Required(ErrorMessage = "Price is required")]
-        [Range(0, double.MaxValue, ErrorMessage = "Price must be greater than or equal to 0")]
-        public decimal Price { get; set; }
-
-        [Range(0, double.MaxValue, ErrorMessage = "Compare at price must be greater than or equal to 0")]
-        public decimal? CompareAtPrice { get; set; }
-
-        [Range(0, double.MaxValue, ErrorMessage = "Cost per item must be greater than or equal to 0")]
-        public decimal? CostPerItem { get; set; }
-
-        public bool TrackQuantity { get; set; } = true;
-
-        [Range(0, int.MaxValue, ErrorMessage = "Quantity must be greater than or equal to 0")]
-        public int Quantity { get; set; } = 0;
-
         public bool ContinueSellingWhenOutOfStock { get; set; } = false;
         public bool RequiresShipping { get; set; } = true;
-        public bool IsPhysicalProduct { get; set; } = true;
-
-        [Range(0, double.MaxValue, ErrorMessage = "Weight must be greater than or equal to 0")]
-        public decimal Weight { get; set; } = 0;
-
-        [StringLength(10, ErrorMessage = "Weight unit cannot exceed 10 characters")]
-        public string? WeightUnit { get; set; } = "kg";
-
-        public bool IsTaxable { get; set; } = true;
 
         [Required(ErrorMessage = "Status is required")]
         public ProductStatus Status { get; set; } = ProductStatus.Active;
@@ -107,16 +64,7 @@ namespace Backend.CMS.Application.DTOs
         [StringLength(255, ErrorMessage = "Vendor cannot exceed 255 characters")]
         public string? Vendor { get; set; }
 
-        [StringLength(255, ErrorMessage = "Barcode cannot exceed 255 characters")]
-        public string? Barcode { get; set; }
-
         public bool HasVariants { get; set; } = false;
-
-        [StringLength(500, ErrorMessage = "Tags cannot exceed 500 characters")]
-        public string? Tags { get; set; }
-
-        [StringLength(255, ErrorMessage = "Template cannot exceed 255 characters")]
-        public string? Template { get; set; }
 
         [StringLength(255, ErrorMessage = "Meta title cannot exceed 255 characters")]
         public string? MetaTitle { get; set; }
@@ -134,44 +82,55 @@ namespace Backend.CMS.Application.DTOs
         public Dictionary<string, object> SEOSettings { get; set; } = new();
         public List<int> CategoryIds { get; set; } = new();
         public List<CreateProductImageDto> Images { get; set; } = new();
-        public List<CreateProductOptionDto> Options { get; set; } = new();
         public List<CreateProductVariantDto> Variants { get; set; } = new();
     }
 
     public class UpdateProductDto
     {
+        [Required(ErrorMessage = "Product name is required")]
+        [StringLength(255, ErrorMessage = "Product name cannot exceed 255 characters")]
         public string Name { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "URL slug is required")]
+        [StringLength(255, ErrorMessage = "URL slug cannot exceed 255 characters")]
         public string Slug { get; set; } = string.Empty;
+
+        [StringLength(2000, ErrorMessage = "Description cannot exceed 2000 characters")]
         public string? Description { get; set; }
+
+        [StringLength(1000, ErrorMessage = "Short description cannot exceed 1000 characters")]
         public string? ShortDescription { get; set; }
-        public string SKU { get; set; } = string.Empty;
-        public decimal Price { get; set; }
-        public decimal? CompareAtPrice { get; set; }
-        public decimal? CostPerItem { get; set; }
-        public bool TrackQuantity { get; set; }
-        public int Quantity { get; set; }
-        public bool ContinueSellingWhenOutOfStock { get; set; }
-        public bool RequiresShipping { get; set; }
-        public bool IsPhysicalProduct { get; set; }
-        public decimal Weight { get; set; }
-        public string? WeightUnit { get; set; }
-        public bool IsTaxable { get; set; }
+
+        public bool ContinueSellingWhenOutOfStock { get; set; } = false;
+        public bool RequiresShipping { get; set; } = true;
+
+        [Required(ErrorMessage = "Status is required")]
         public ProductStatus Status { get; set; }
+
+        [Required(ErrorMessage = "Product type is required")]
         public ProductType Type { get; set; }
+
+        [StringLength(255, ErrorMessage = "Vendor cannot exceed 255 characters")]
         public string? Vendor { get; set; }
-        public string? Barcode { get; set; }
+
         public bool HasVariants { get; set; }
-        public string? Tags { get; set; }
-        public string? Template { get; set; }
+
+        [StringLength(255, ErrorMessage = "Meta title cannot exceed 255 characters")]
         public string? MetaTitle { get; set; }
+
+        [StringLength(1000, ErrorMessage = "Meta description cannot exceed 1000 characters")]
         public string? MetaDescription { get; set; }
+
+        [StringLength(500, ErrorMessage = "Meta keywords cannot exceed 500 characters")]
         public string? MetaKeywords { get; set; }
+
+        [StringLength(1000, ErrorMessage = "Search keywords cannot exceed 1000 characters")]
         public string? SearchKeywords { get; set; }
+
         public Dictionary<string, object> CustomFields { get; set; } = new();
         public Dictionary<string, object> SEOSettings { get; set; } = new();
         public List<int> CategoryIds { get; set; } = new();
         public List<UpdateProductImageDto> Images { get; set; } = new();
-        public List<UpdateProductOptionDto> Options { get; set; } = new();
         public List<UpdateProductVariantDto> Variants { get; set; } = new();
     }
 
@@ -179,18 +138,15 @@ namespace Backend.CMS.Application.DTOs
     {
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
-        public string SKU { get; set; } = string.Empty;
-        public decimal Price { get; set; }
         public ProductStatus Status { get; set; }
         public ProductType Type { get; set; }
-        public int Quantity { get; set; }
         public bool HasVariants { get; set; }
         public string? FeaturedImageUrl { get; set; }
         public List<string> CategoryNames { get; set; } = new();
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
         public string StatusName => Status.ToString();
-        public bool IsAvailable => Status == ProductStatus.Active && (Quantity > 0 || HasVariants);
+        public bool IsAvailable { get; set; } 
     }
 
     public class ProductSearchDto
@@ -199,12 +155,9 @@ namespace Backend.CMS.Application.DTOs
         public ProductStatus? Status { get; set; }
         public ProductType? Type { get; set; }
         public List<int> CategoryIds { get; set; } = new();
-        public decimal? MinPrice { get; set; }
-        public decimal? MaxPrice { get; set; }
         public bool? HasVariants { get; set; }
         public bool? IsAvailable { get; set; }
         public string? Vendor { get; set; }
-        public List<string> Tags { get; set; } = new();
         public int Page { get; set; } = 1;
         public int PageSize { get; set; } = 20;
         public string SortBy { get; set; } = "Name";
@@ -221,19 +174,4 @@ namespace Backend.CMS.Application.DTOs
         public int? VariantId { get; set; }
         public int NewQuantity { get; set; }
     }
-
-
-
-
-
-
-
-
-
-
-
-
 }
-
-
-

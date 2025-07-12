@@ -20,7 +20,6 @@ namespace Backend.CMS.Infrastructure.Mapping
             ConfigureProductMappings();
             ConfigureProductVariantMappings();
             ConfigureProductImageMappings();
-            ConfigureProductOptionMappings();
             ConfigureDesignerMapping();
             ConfigureImageMappings();
             ConfigureFileMappings();
@@ -222,13 +221,16 @@ namespace Backend.CMS.Infrastructure.Mapping
                     src.Variants.Where(v => !v.IsDeleted)))
                 .ForMember(dest => dest.Images, opt => opt.MapFrom(src =>
                     src.Images.Where(i => !i.IsDeleted).OrderBy(i => i.Position)))
-                .ForMember(dest => dest.Options, opt => opt.MapFrom(src =>
-                    src.Options.Where(o => !o.IsDeleted)))
                 .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl))
                 .ForMember(dest => dest.StatusName, opt => opt.MapFrom(src => src.Status.ToString()))
                 .ForMember(dest => dest.TypeName, opt => opt.MapFrom(src => src.Type.ToString()))
-                .ForMember(dest => dest.IsAvailable, opt => opt.MapFrom(src => src.Status == ProductStatus.Active && (src.HasVariants ? src.Variants.Any(v => v.Quantity > 0 || v.ContinueSellingWhenOutOfStock) : src.Quantity > 0 || src.ContinueSellingWhenOutOfStock)))
-                .ForMember(dest => dest.DiscountPercentage, opt => opt.MapFrom(src => src.CompareAtPrice.HasValue && src.CompareAtPrice > src.Price ? Math.Round(((src.CompareAtPrice.Value - src.Price) / src.CompareAtPrice.Value) * 100, 2) : (decimal?)null))
+              .ForMember(dest => dest.IsAvailable, opt => opt.MapFrom(src =>
+    src.Status == ProductStatus.Active &&
+    src.HasVariants &&
+    src.Variants != null &&
+    src.Variants.Any(v => v.Quantity > 0)
+))
+
                 .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.Images.OrderBy(i => i.Position).FirstOrDefault() != null ? $"/api/files/{src.Images.OrderBy(i => i.Position).FirstOrDefault().FileId}/download" : null))
                 .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type))
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status));
@@ -246,7 +248,6 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.ProductCategories, opt => opt.Ignore())
                 .ForMember(dest => dest.Variants, opt => opt.Ignore())
                 .ForMember(dest => dest.Images, opt => opt.Ignore())
-                .ForMember(dest => dest.Options, opt => opt.Ignore())
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status))
                 .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type));
 
@@ -255,7 +256,6 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.ProductCategories, opt => opt.Ignore())
                 .ForMember(dest => dest.Variants, opt => opt.Ignore())
                 .ForMember(dest => dest.Images, opt => opt.Ignore())
-                .ForMember(dest => dest.Options, opt => opt.Ignore())
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status))
                 .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type));
         }
@@ -305,36 +305,6 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.File, opt => opt.Ignore());
         }
 
-        private void ConfigureProductOptionMappings()
-        {
-            CreateMap<ProductOption, ProductOptionDto>()
-                .ForMember(dest => dest.Values, opt => opt.MapFrom(src =>
-                    src.Values.Where(v => !v.IsDeleted)));
-
-            CreateMap<CreateProductOptionDto, ProductOption>()
-                .IgnoreAuditProperties()
-                .ForMember(dest => dest.Product, opt => opt.Ignore())
-                .ForMember(dest => dest.ProductId, opt => opt.Ignore())
-                .ForMember(dest => dest.Values, opt => opt.Ignore());
-
-            CreateMap<UpdateProductOptionDto, ProductOption>()
-                .IgnoreBaseEntityProperties()
-                .ForMember(dest => dest.Product, opt => opt.Ignore())
-                .ForMember(dest => dest.ProductId, opt => opt.Ignore())
-                .ForMember(dest => dest.Values, opt => opt.Ignore());
-
-            CreateMap<ProductOptionValue, ProductOptionValueDto>();
-
-            CreateMap<CreateProductOptionValueDto, ProductOptionValue>()
-                .IgnoreAuditProperties()
-                .ForMember(dest => dest.ProductOption, opt => opt.Ignore())
-                .ForMember(dest => dest.ProductOptionId, opt => opt.Ignore());
-
-            CreateMap<UpdateProductOptionValueDto, ProductOptionValue>()
-                .IgnoreBaseEntityProperties()
-                .ForMember(dest => dest.ProductOption, opt => opt.Ignore())
-                .ForMember(dest => dest.ProductOptionId, opt => opt.Ignore());
-        }
 
         private void ConfigureImageMappings()
         {

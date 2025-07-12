@@ -2,7 +2,6 @@
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
-using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
@@ -12,9 +11,6 @@ namespace Backend.CMS.Infrastructure.Services
     public class ProductService : IProductService
     {
         private readonly IUnitOfWork _unitOfWork;
-        private readonly ICacheService _cacheService;
-        private readonly ICacheInvalidationService _cacheInvalidationService;
-        private readonly ICacheKeyService _cacheKeyService;
         private readonly IMapper _mapper;
         private readonly ILogger<ProductService> _logger;
 
@@ -23,55 +19,40 @@ namespace Backend.CMS.Infrastructure.Services
 
         public ProductService(
             IUnitOfWork unitOfWork,
-            ICacheService cacheService,
-            ICacheInvalidationService cacheInvalidationService,
-            ICacheKeyService cacheKeyService,
             IMapper mapper,
             ILogger<ProductService> logger)
         {
             _unitOfWork = unitOfWork;
-            _cacheService = cacheService;
-            _cacheInvalidationService = cacheInvalidationService;
-            _cacheKeyService = cacheKeyService;
             _mapper = mapper;
             _logger = logger;
         }
 
         public async Task<ProductDto?> GetProductByIdAsync(int productId)
         {
-            var cacheKey = _cacheKeyService.GetEntityKey<Product>(productId);
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
+                var product = await _unitOfWork.Products.GetWithDetailsAsync(productId);
+                if (product == null)
                 {
-                    var product = await _unitOfWork.Products.GetWithDetailsAsync(productId);
-                    if (product == null)
-                    {
-                        _logger.LogDebug("GetProductByIdAsync for ID '{ProductId}' completed. Product not found", productId);
-                        return null;
-                    }
+                    _logger.LogDebug("GetProductByIdAsync for ID '{ProductId}' completed. Product not found", productId);
+                    return null;
+                }
 
-                    var productDto = _mapper.Map<ProductDto>(product);
-                    _logger.LogDebug("GetProductByIdAsync for ID '{ProductId}' completed. Product found", productId);
-                    return productDto;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Exception during product fetch/map for ID '{ProductId}'", productId);
-                    throw;
-                }
-            });
+                var productDto = _mapper.Map<ProductDto>(product);
+                _logger.LogDebug("GetProductByIdAsync for ID '{ProductId}' completed. Product found", productId);
+                return productDto;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Exception during product fetch/map for ID '{ProductId}'", productId);
+                throw;
+            }
         }
 
         public async Task<ProductDto?> GetProductBySlugAsync(string slug)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "slug", slug.ToLowerInvariant());
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var product = await _unitOfWork.Products.GetBySlugAsync(slug);
-                return product != null ? _mapper.Map<ProductDto>(product) : null;
-            });
+            var product = await _unitOfWork.Products.GetBySlugAsync(slug);
+            return product != null ? _mapper.Map<ProductDto>(product) : null;
         }
 
         public async Task<PagedResult<ProductDto>> GetProductsAsync(int page = 1, int pageSize = 10)
@@ -80,37 +61,32 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("paged", page, pageSize);
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
-                {
-                    // Get paginated result using the repository's built-in pagination
-                    var pagedResult = await _unitOfWork.Products.GetPagedResultAsync(
-                        page,
-                        pageSize,
-                        predicate: null,
-                        orderBy: query => query.OrderBy(p => p.Name)
-                    );
+                // Get paginated result using the repository's built-in pagination
+                var pagedResult = await _unitOfWork.Products.GetPagedResultAsync(
+                    page,
+                    pageSize,
+                    predicate: null,
+                    orderBy: query => query.OrderBy(p => p.Name)
+                );
 
-                    // Map entities to DTOs
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Map entities to DTOs
+                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                    return new PagedResult<ProductDto>
-                    {
-                        Data = productDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
-                }
-                catch (Exception ex)
+                return new PagedResult<ProductDto>
                 {
-                    _logger.LogError(ex, "Error fetching paginated products for page {Page}, pageSize {PageSize}", page, pageSize);
-                    throw;
-                }
-            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
+                    Data = productDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching paginated products for page {Page}, pageSize {PageSize}", page, pageSize);
+                throw;
+            }
         }
 
         public async Task<PagedResult<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 10)
@@ -119,33 +95,28 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("by_category", categoryId, page, pageSize);
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
-                {
-                    // Use the repository's dedicated pagination method for categories
-                    var pagedResult = await _unitOfWork.Products.GetPagedByCategoryAsync(categoryId, page, pageSize);
+                // Use the repository's dedicated pagination method for categories
+                var pagedResult = await _unitOfWork.Products.GetPagedByCategoryAsync(categoryId, page, pageSize);
 
-                    // Map entities to DTOs
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Map entities to DTOs
+                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                    return new PagedResult<ProductDto>
-                    {
-                        Data = productDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
-                }
-                catch (Exception ex)
+                return new PagedResult<ProductDto>
                 {
-                    _logger.LogError(ex, "Error fetching paginated products by category {CategoryId} for page {Page}, pageSize {PageSize}",
-                        categoryId, page, pageSize);
-                    throw;
-                }
-            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
+                    Data = productDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching paginated products by category {CategoryId} for page {Page}, pageSize {PageSize}",
+                    categoryId, page, pageSize);
+                throw;
+            }
         }
 
         public async Task<ProductDto> CreateProductAsync(CreateProductDto createProductDto)
@@ -153,10 +124,6 @@ namespace Backend.CMS.Infrastructure.Services
             // Validate slug uniqueness
             if (await _unitOfWork.Products.SlugExistsAsync(createProductDto.Slug))
                 throw new ArgumentException($"Product with slug '{createProductDto.Slug}' already exists");
-
-            // Validate SKU uniqueness
-            if (await _unitOfWork.Products.SKUExistsAsync(createProductDto.SKU))
-                throw new ArgumentException($"Product with SKU '{createProductDto.SKU}' already exists");
 
             // Validate categories
             if (createProductDto.CategoryIds.Any())
@@ -219,8 +186,6 @@ namespace Backend.CMS.Infrastructure.Services
                 await _unitOfWork.ProductVariants.SaveChangesAsync();
             }
 
-            await InvalidateProductCacheAsync();
-
             _logger.LogInformation("Created product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
 
             // Return the complete product with all relations
@@ -238,9 +203,6 @@ namespace Backend.CMS.Infrastructure.Services
             if (await _unitOfWork.Products.SlugExistsAsync(updateProductDto.Slug, productId))
                 throw new ArgumentException($"Product with slug '{updateProductDto.Slug}' already exists");
 
-            // Validate SKU uniqueness
-            if (await _unitOfWork.Products.SKUExistsAsync(updateProductDto.SKU, productId))
-                throw new ArgumentException($"Product with SKU '{updateProductDto.SKU}' already exists");
 
             // Validate images
             if (updateProductDto.Images.Any())
@@ -282,9 +244,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             await _unitOfWork.Products.SaveChangesAsync();
 
-            await InvalidateProductCacheAsync();
-            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
-
             _logger.LogInformation("Updated product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
 
             // Return the complete updated product
@@ -298,8 +257,6 @@ namespace Backend.CMS.Infrastructure.Services
             if (product == null) return false;
 
             await _unitOfWork.Products.SoftDeleteAsync(product);
-            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
-            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Deleted product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
             return true;
@@ -311,52 +268,36 @@ namespace Backend.CMS.Infrastructure.Services
             var page = Math.Max(1, searchDto.Page);
             var pageSize = searchDto.PageSize <= 0 ? DefaultPageSize : Math.Min(searchDto.PageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "search", searchDto.SearchTerm ?? "all", page.ToString(), pageSize.ToString());
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
-                {
-                    // Use the repository's search method that returns a paged result
-                    var pagedResult = await _unitOfWork.Products.SearchProductsPagedAsync(searchDto);
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Use the repository's search method that returns a paged result
+                var pagedResult = await _unitOfWork.Products.SearchProductsPagedAsync(searchDto);
+                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                    return new PagedResult<ProductDto>
-                    {
-                        Data = productDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
-                }
-                catch (Exception ex)
+                return new PagedResult<ProductDto>
                 {
-                    _logger.LogError(ex, "Error searching products with criteria: {@SearchDto}", searchDto);
-                    throw;
-                }
-            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
+                    Data = productDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error searching products with criteria: {@SearchDto}", searchDto);
+                throw;
+            }
         }
 
         public async Task<int> GetSearchCountAsync(ProductSearchDto searchDto)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "search_count", searchDto.SearchTerm ?? "all");
-            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var count = await _unitOfWork.Products.GetSearchCountAsync(searchDto);
-                return new CountWrapper { Value = count };
-            });
-
-            return result?.Value ?? 0;
+            var count = await _unitOfWork.Products.GetSearchCountAsync(searchDto);
+            return count;
         }
 
         public async Task<bool> ValidateSlugAsync(string slug, int? excludeProductId = null)
         {
             return !await _unitOfWork.Products.SlugExistsAsync(slug, excludeProductId);
-        }
-
-        public async Task<bool> ValidateSKUAsync(string sku, int? excludeProductId = null)
-        {
-            return !await _unitOfWork.Products.SKUExistsAsync(sku, excludeProductId);
         }
 
         public async Task<ProductDto> PublishProductAsync(int productId)
@@ -369,9 +310,6 @@ namespace Backend.CMS.Infrastructure.Services
             product.PublishedAt = DateTime.UtcNow;
             _unitOfWork.Products.Update(product);
             await _unitOfWork.Products.SaveChangesAsync();
-
-            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
-            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Published product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
             return _mapper.Map<ProductDto>(product);
@@ -388,9 +326,6 @@ namespace Backend.CMS.Infrastructure.Services
             _unitOfWork.Products.Update(product);
             await _unitOfWork.Products.SaveChangesAsync();
 
-            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
-            await InvalidateProductCacheAsync();
-
             _logger.LogInformation("Unpublished product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
             return _mapper.Map<ProductDto>(product);
         }
@@ -404,9 +339,6 @@ namespace Backend.CMS.Infrastructure.Services
             product.Status = ProductStatus.Archived;
             _unitOfWork.Products.Update(product);
             await _unitOfWork.Products.SaveChangesAsync();
-
-            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
-            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Archived product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
             return _mapper.Map<ProductDto>(product);
@@ -424,24 +356,11 @@ namespace Backend.CMS.Infrastructure.Services
                 Slug = await GenerateUniqueSlugAsync(newName),
                 Description = originalProduct.Description,
                 ShortDescription = originalProduct.ShortDescription,
-                SKU = await GenerateUniqueSKUAsync(originalProduct.SKU),
-                Price = originalProduct.Price,
-                CompareAtPrice = originalProduct.CompareAtPrice,
-                CostPerItem = originalProduct.CostPerItem,
-                TrackQuantity = originalProduct.TrackQuantity,
-                Quantity = 0, // Reset quantity for duplicated product
-                ContinueSellingWhenOutOfStock = originalProduct.ContinueSellingWhenOutOfStock,
                 RequiresShipping = originalProduct.RequiresShipping,
-                IsPhysicalProduct = originalProduct.IsPhysicalProduct,
-                Weight = originalProduct.Weight,
-                WeightUnit = originalProduct.WeightUnit,
-                IsTaxable = originalProduct.IsTaxable,
                 Status = ProductStatus.Draft, // Set as draft
                 Type = originalProduct.Type,
                 Vendor = originalProduct.Vendor,
                 HasVariants = originalProduct.HasVariants,
-                Tags = originalProduct.Tags,
-                Template = originalProduct.Template,
                 MetaTitle = originalProduct.MetaTitle,
                 MetaDescription = originalProduct.MetaDescription,
                 MetaKeywords = originalProduct.MetaKeywords,
@@ -481,7 +400,6 @@ namespace Backend.CMS.Infrastructure.Services
             }
 
             await _unitOfWork.Products.SaveChangesAsync();
-            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Duplicated product: {OriginalProductName} -> {NewProductName} (ID: {ProductId})",
                 originalProduct.Name, newName, duplicatedProduct.Id);
@@ -496,30 +414,25 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("featured", page, pageSize);
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
-                {
-                    // Use the repository's dedicated pagination method for featured products
-                    var pagedResult = await _unitOfWork.Products.GetFeaturedProductsPagedAsync(page, pageSize);
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Use the repository's dedicated pagination method for featured products
+                var pagedResult = await _unitOfWork.Products.GetFeaturedProductsPagedAsync(page, pageSize);
+                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                    return new PagedResult<ProductDto>
-                    {
-                        Data = productDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
-                }
-                catch (Exception ex)
+                return new PagedResult<ProductDto>
                 {
-                    _logger.LogError(ex, "Error fetching paginated featured products for page {Page}, pageSize {PageSize}", page, pageSize);
-                    throw;
-                }
-            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
+                    Data = productDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching paginated featured products for page {Page}, pageSize {PageSize}", page, pageSize);
+                throw;
+            }
         }
 
         public async Task<PagedResult<ProductDto>> GetRelatedProductsAsync(int productId, int page = 1, int pageSize = 10)
@@ -528,31 +441,26 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("related", productId, page, pageSize);
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
-                {
-                    // Use the repository's dedicated pagination method for related products
-                    var pagedResult = await _unitOfWork.Products.GetRelatedProductsPagedAsync(productId, page, pageSize);
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Use the repository's dedicated pagination method for related products
+                var pagedResult = await _unitOfWork.Products.GetRelatedProductsPagedAsync(productId, page, pageSize);
+                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                    return new PagedResult<ProductDto>
-                    {
-                        Data = productDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
-                }
-                catch (Exception ex)
+                return new PagedResult<ProductDto>
                 {
-                    _logger.LogError(ex, "Error fetching paginated related products for product {ProductId}, page {Page}, pageSize {PageSize}",
-                        productId, page, pageSize);
-                    throw;
-                }
-            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
+                    Data = productDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching paginated related products for product {ProductId}, page {Page}, pageSize {PageSize}",
+                    productId, page, pageSize);
+                throw;
+            }
         }
 
         public async Task<PagedResult<ProductDto>> GetRecentProductsAsync(int page = 1, int pageSize = 10)
@@ -561,107 +469,55 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCollectionKey<Product>("recent", page, pageSize);
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
-                {
-                    // Use the repository's dedicated pagination method for recent products
-                    var pagedResult = await _unitOfWork.Products.GetRecentProductsPagedAsync(page, pageSize);
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Use the repository's dedicated pagination method for recent products
+                var pagedResult = await _unitOfWork.Products.GetRecentProductsPagedAsync(page, pageSize);
+                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                    return new PagedResult<ProductDto>
-                    {
-                        Data = productDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
-                }
-                catch (Exception ex)
+                return new PagedResult<ProductDto>
                 {
-                    _logger.LogError(ex, "Error fetching paginated recent products for page {Page}, pageSize {PageSize}", page, pageSize);
-                    throw;
-                }
-            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
+                    Data = productDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching paginated recent products for page {Page}, pageSize {PageSize}", page, pageSize);
+                throw;
+            }
         }
 
         public async Task<Dictionary<string, object>> GetProductStatisticsAsync()
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "statistics");
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var totalProducts = await _unitOfWork.Products.CountAsync();
-                var activeProducts = await _unitOfWork.Products.CountAsync(p => p.Status == ProductStatus.Active);
-                var draftProducts = await _unitOfWork.Products.CountAsync(p => p.Status == ProductStatus.Draft);
-                var archivedProducts = await _unitOfWork.Products.CountAsync(p => p.Status == ProductStatus.Archived);
+            var totalProducts = await _unitOfWork.Products.CountAsync();
+            var activeProducts = await _unitOfWork.Products.CountAsync(p => p.Status == ProductStatus.Active);
+            var draftProducts = await _unitOfWork.Products.CountAsync(p => p.Status == ProductStatus.Draft);
+            var archivedProducts = await _unitOfWork.Products.CountAsync(p => p.Status == ProductStatus.Archived);
 
-                return new Dictionary<string, object>
-                {
-                    ["TotalProducts"] = totalProducts,
-                    ["ActiveProducts"] = activeProducts,
-                    ["DraftProducts"] = draftProducts,
-                    ["ArchivedProducts"] = archivedProducts,
-                    ["LastUpdated"] = DateTime.UtcNow
-                };
-            }) ?? new Dictionary<string, object>();
+            return new Dictionary<string, object>
+            {
+                ["TotalProducts"] = totalProducts,
+                ["ActiveProducts"] = activeProducts,
+                ["DraftProducts"] = draftProducts,
+                ["ArchivedProducts"] = archivedProducts,
+                ["LastUpdated"] = DateTime.UtcNow
+            };
         }
 
         public async Task<(decimal min, decimal max)> GetPriceRangeAsync()
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "price_range");
-            var priceRange = await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var min = await _unitOfWork.Products.GetMinPriceAsync();
-                var max = await _unitOfWork.Products.GetMaxPriceAsync();
-                return new PriceRange { Min = min, Max = max };
-            });
-
-            return priceRange == null
-                ? throw new InvalidOperationException("Price range data could not be retrieved.")
-                : (priceRange.Min, priceRange.Max);
+            var min = await _unitOfWork.Products.GetMinPriceAsync();
+            var max = await _unitOfWork.Products.GetMaxPriceAsync();
+            return (min, max);
         }
 
         public async Task<List<string>> GetVendorsAsync()
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "vendors");
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var vendors = await _unitOfWork.Products.GetVendorsAsync();
-                return vendors.ToList();
-            }) ?? [];
-        }
-
-        public async Task<List<string>> GetTagsAsync()
-        {
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "tags");
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var tags = await _unitOfWork.Products.GetTagsAsync();
-                return tags.ToList();
-            }) ?? [];
-        }
-
-        public async Task UpdateStockAsync(int productId, int? variantId, int newQuantity)
-        {
-            if (variantId.HasValue)
-            {
-                await _unitOfWork.ProductVariants.UpdateStockAsync(variantId.Value, newQuantity);
-            }
-            else
-            {
-                var product = await _unitOfWork.Products.GetByIdAsync(productId);
-                if (product != null)
-                {
-                    product.Quantity = newQuantity;
-                    _unitOfWork.Products.Update(product);
-                    await _unitOfWork.Products.SaveChangesAsync();
-                }
-            }
-
-            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
-            await InvalidateProductCacheAsync();
+            var vendors = await _unitOfWork.Products.GetVendorsAsync();
+            return vendors.ToList();
         }
 
         public async Task<PagedResult<ProductDto>> GetLowStockProductsAsync(int threshold = 5, int page = 1, int pageSize = 10)
@@ -670,31 +526,26 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "low_stock", threshold.ToString(), page.ToString(), pageSize.ToString());
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
-                {
-                    // Use the repository's dedicated pagination method for low stock products
-                    var pagedResult = await _unitOfWork.Products.GetLowStockProductsPagedAsync(threshold, page, pageSize);
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Use the repository's dedicated pagination method for low stock products
+                var pagedResult = await _unitOfWork.Products.GetLowStockProductsPagedAsync(threshold, page, pageSize);
+                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                    return new PagedResult<ProductDto>
-                    {
-                        Data = productDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
-                }
-                catch (Exception ex)
+                return new PagedResult<ProductDto>
                 {
-                    _logger.LogError(ex, "Error fetching paginated low stock products for threshold {Threshold}, page {Page}, pageSize {PageSize}",
-                        threshold, page, pageSize);
-                    throw;
-                }
-            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
+                    Data = productDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching paginated low stock products for threshold {Threshold}, page {Page}, pageSize {PageSize}",
+                    threshold, page, pageSize);
+                throw;
+            }
         }
 
         public async Task<PagedResult<ProductDto>> GetOutOfStockProductsAsync(int page = 1, int pageSize = 10)
@@ -703,30 +554,25 @@ namespace Backend.CMS.Infrastructure.Services
             page = Math.Max(1, page);
             pageSize = pageSize <= 0 ? DefaultPageSize : Math.Min(pageSize, MaxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCustomKey("product", "out_of_stock", page.ToString(), pageSize.ToString());
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            try
             {
-                try
-                {
-                    // Use the repository's dedicated pagination method for out of stock products
-                    var pagedResult = await _unitOfWork.Products.GetOutOfStockProductsPagedAsync(page, pageSize);
-                    var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Use the repository's dedicated pagination method for out of stock products
+                var pagedResult = await _unitOfWork.Products.GetOutOfStockProductsPagedAsync(page, pageSize);
+                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                    return new PagedResult<ProductDto>
-                    {
-                        Data = productDtos,
-                        PageNumber = pagedResult.PageNumber,
-                        PageSize = pagedResult.PageSize,
-                        TotalCount = pagedResult.TotalCount
-                    };
-                }
-                catch (Exception ex)
+                return new PagedResult<ProductDto>
                 {
-                    _logger.LogError(ex, "Error fetching paginated out of stock products for page {Page}, pageSize {PageSize}", page, pageSize);
-                    throw;
-                }
-            }) ?? PagedResult<ProductDto>.Empty(page, pageSize);
+                    Data = productDtos,
+                    PageNumber = pagedResult.PageNumber,
+                    PageSize = pagedResult.PageSize,
+                    TotalCount = pagedResult.TotalCount
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching paginated out of stock products for page {Page}, pageSize {PageSize}", page, pageSize);
+                throw;
+            }
         }
 
         // Image management methods
@@ -749,9 +595,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             await _unitOfWork.GetRepository<ProductImage>().AddAsync(productImage);
             await _unitOfWork.GetRepository<ProductImage>().SaveChangesAsync();
-
-            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
-            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Added image to product {ProductId}: FileId {FileId}", productId, createImageDto.FileId);
             return _mapper.Map<ProductImageDto>(productImage);
@@ -777,9 +620,6 @@ namespace Backend.CMS.Infrastructure.Services
             _unitOfWork.GetRepository<ProductImage>().Update(productImage);
             await _unitOfWork.GetRepository<ProductImage>().SaveChangesAsync();
 
-            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productImage.ProductId);
-            await InvalidateProductCacheAsync();
-
             _logger.LogInformation("Updated product image {ImageId}", imageId);
             return _mapper.Map<ProductImageDto>(productImage);
         }
@@ -791,9 +631,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             var productId = productImage.ProductId;
             await _unitOfWork.GetRepository<ProductImage>().SoftDeleteAsync(productImage);
-
-            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
-            await InvalidateProductCacheAsync();
 
             _logger.LogInformation("Deleted product image {ImageId} from product {ProductId}", imageId, productId);
             return true;
@@ -812,9 +649,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             _unitOfWork.GetRepository<ProductImage>().UpdateRange(images);
             await _unitOfWork.GetRepository<ProductImage>().SaveChangesAsync();
-
-            await _cacheInvalidationService.InvalidateEntityAsync<Product>(productId);
-            await InvalidateProductCacheAsync();
 
             return _mapper.Map<List<ProductImageDto>>(images.OrderBy(i => i.Position));
         }
@@ -838,19 +672,6 @@ namespace Backend.CMS.Infrastructure.Services
             return slug;
         }
 
-        private async Task<string> GenerateUniqueSKUAsync(string baseSku)
-        {
-            var sku = baseSku;
-            var counter = 1;
-
-            while (await _unitOfWork.Products.SKUExistsAsync(sku))
-            {
-                sku = $"{baseSku}-{counter}";
-                counter++;
-            }
-
-            return sku;
-        }
 
         private async Task ValidateImagesAsync(List<int> fileIds)
         {
@@ -950,21 +771,6 @@ namespace Backend.CMS.Infrastructure.Services
                     firstImage.IsFeatured = true;
                     _unitOfWork.GetRepository<ProductImage>().Update(firstImage);
                 }
-            }
-        }
-
-        private async Task InvalidateProductCacheAsync()
-        {
-            try
-            {
-                await _cacheInvalidationService.InvalidateEntityTypeAsync<Product>();
-                await _cacheInvalidationService.InvalidateByPatternAsync(_cacheKeyService.GetEntityPattern<Product>());
-
-                _logger.LogDebug("Product cache invalidated successfully");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error invalidating product cache");
             }
         }
     }

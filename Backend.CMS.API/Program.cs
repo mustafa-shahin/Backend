@@ -639,8 +639,6 @@ static void RegisterProductServices(WebApplicationBuilder builder)
     // Additional entity repositories
     builder.Services.AddScoped<IRepository<ProductCategory>, Repository<ProductCategory>>();
     builder.Services.AddScoped<IRepository<ProductImage>, Repository<ProductImage>>();
-    builder.Services.AddScoped<IRepository<ProductOption>, Repository<ProductOption>>();
-    builder.Services.AddScoped<IRepository<ProductOptionValue>, Repository<ProductOptionValue>>();
 }
 
 static void ConfigureSwagger(WebApplicationBuilder builder)

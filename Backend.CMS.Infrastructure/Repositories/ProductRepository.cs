@@ -30,8 +30,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                         .ThenInclude(i => i.File)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
                     .ThenInclude(i => i.File)
-                .Include(p => p.Options.Where(o => !o.IsDeleted))
-                    .ThenInclude(o => o.Values.Where(v => !v.IsDeleted))
                 .FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted);
         }
 
@@ -62,8 +60,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                         .ThenInclude(i => i.File)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
                     .ThenInclude(i => i.File)
-                .Include(p => p.Options.Where(o => !o.IsDeleted))
-                    .ThenInclude(o => o.Values.Where(v => !v.IsDeleted))
                 .FirstOrDefaultAsync(p => p.Slug == slug && !p.IsDeleted);
         }
 
@@ -72,7 +68,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await _dbSet
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
                     .ThenInclude(i => i.File)
-                .FirstOrDefaultAsync(p => p.SKU == sku && !p.IsDeleted);
+                .FirstOrDefaultAsync(p =>!p.IsDeleted);
         }
 
         public async Task<Product?> GetWithDetailsAsync(int productId)
@@ -85,8 +81,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                         .ThenInclude(i => i.File)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
                     .ThenInclude(i => i.File)
-                .Include(p => p.Options.Where(o => !o.IsDeleted))
-                    .ThenInclude(o => o.Values.Where(v => !v.IsDeleted))
                 .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
         }
 
@@ -115,13 +109,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
         }
 
-        public async Task<Product?> GetWithOptionsAsync(int productId)
-        {
-            return await _dbSet
-                .Include(p => p.Options.Where(o => !o.IsDeleted))
-                    .ThenInclude(o => o.Values.Where(v => !v.IsDeleted))
-                .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
-        }
 
         public async Task<Product?> GetWithAllRelationsAsync(int productId)
         {
@@ -135,16 +122,6 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<bool> SlugExistsAsync(string slug, int? excludeProductId = null)
         {
             var query = _dbSet.Where(p => p.Slug == slug && !p.IsDeleted);
-
-            if (excludeProductId.HasValue)
-                query = query.Where(p => p.Id != excludeProductId.Value);
-
-            return await query.AnyAsync();
-        }
-
-        public async Task<bool> SKUExistsAsync(string sku, int? excludeProductId = null)
-        {
-            var query = _dbSet.Where(p => p.SKU == sku && !p.IsDeleted);
 
             if (excludeProductId.HasValue)
                 query = query.Where(p => p.Id != excludeProductId.Value);
@@ -298,7 +275,6 @@ namespace Backend.CMS.Infrastructure.Repositories
             {
                 query = query.Where(p => p.Name.Contains(searchDto.SearchTerm) ||
                                         p.Description!.Contains(searchDto.SearchTerm) ||
-                                        p.SKU.Contains(searchDto.SearchTerm) ||
                                         p.SearchKeywords!.Contains(searchDto.SearchTerm));
             }
 
@@ -317,16 +293,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                 query = query.Where(p => p.ProductCategories.Any(pc => searchDto.CategoryIds.Contains(pc.CategoryId) && !pc.IsDeleted));
             }
 
-            if (searchDto.MinPrice.HasValue)
-            {
-                query = query.Where(p => p.Price >= searchDto.MinPrice.Value);
-            }
-
-            if (searchDto.MaxPrice.HasValue)
-            {
-                query = query.Where(p => p.Price <= searchDto.MaxPrice.Value);
-            }
-
             if (searchDto.HasVariants.HasValue)
             {
                 query = query.Where(p => p.HasVariants == searchDto.HasVariants.Value);
@@ -337,18 +303,9 @@ namespace Backend.CMS.Infrastructure.Repositories
                 query = query.Where(p => p.Vendor == searchDto.Vendor);
             }
 
-            if (searchDto.Tags.Any())
-            {
-                foreach (var tag in searchDto.Tags)
-                {
-                    query = query.Where(p => p.Tags!.Contains(tag));
-                }
-            }
-
             if (searchDto.IsAvailable.HasValue && searchDto.IsAvailable.Value)
             {
-                query = query.Where(p => p.Status == ProductStatus.Active &&
-                                        (p.Quantity > 0 || p.ContinueSellingWhenOutOfStock || p.HasVariants));
+                query = query.Where(p => p.Status == ProductStatus.Active);
             }
 
             return query;
@@ -361,9 +318,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                 "name" => sortDirection.ToLowerInvariant() == "desc"
                     ? query.OrderByDescending(p => p.Name)
                     : query.OrderBy(p => p.Name),
-                "price" => sortDirection.ToLowerInvariant() == "desc"
-                    ? query.OrderByDescending(p => p.Price)
-                    : query.OrderBy(p => p.Price),
                 "createdat" => sortDirection.ToLowerInvariant() == "desc"
                     ? query.OrderByDescending(p => p.CreatedAt)
                     : query.OrderBy(p => p.CreatedAt),
@@ -503,22 +457,31 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             return await _dbSet
                 .Where(p => p.Status == ProductStatus.Active && !p.IsDeleted)
-                .MinAsync(p => p.Price);
+                .SelectMany(p => p.Variants)
+                .MinAsync(v => v.Price);
         }
 
         public async Task<decimal> GetMaxPriceAsync()
         {
             return await _dbSet
                 .Where(p => p.Status == ProductStatus.Active && !p.IsDeleted)
-                .MaxAsync(p => p.Price);
+                .SelectMany(p => p.Variants)
+                .MaxAsync(v => v.Price);
         }
+
 
         public async Task<(decimal min, decimal max)> GetPriceRangeAsync()
         {
-            var activeProducts = _dbSet.Where(p => p.Status == ProductStatus.Active && !p.IsDeleted);
+            var variantPrices = await _dbSet
+                .Where(p => p.Status == ProductStatus.Active && !p.IsDeleted)
+                .SelectMany(p => p.Variants.Select(v => v.Price))
+                .ToListAsync();
 
-            var min = await activeProducts.MinAsync(p => p.Price);
-            var max = await activeProducts.MaxAsync(p => p.Price);
+            if (!variantPrices.Any())
+                return (0m, 0m); 
+
+            var min = variantPrices.Min();
+            var max = variantPrices.Max();
 
             return (min, max);
         }
@@ -526,10 +489,12 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<IEnumerable<Product>> GetProductsByPriceRangeAsync(decimal minPrice, decimal maxPrice)
         {
             return await _dbSet
-                .Where(p => p.Price >= minPrice && p.Price <= maxPrice && !p.IsDeleted)
+                .Where(p => !p.IsDeleted &&
+                            p.Status == ProductStatus.Active &&
+                            p.Variants.Any(v => v.Price >= minPrice && v.Price <= maxPrice))
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
                     .ThenInclude(i => i.File)
-                .OrderBy(p => p.Price)
+                .OrderBy(p => p.Variants.Min(v => v.Price)) 
                 .ToListAsync();
         }
 
@@ -547,42 +512,11 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<IEnumerable<string>> GetTagsAsync()
-        {
-            var products = await _dbSet
-                .Where(p => !string.IsNullOrEmpty(p.Tags) && !p.IsDeleted)
-                .Select(p => p.Tags!)
-                .ToListAsync();
-
-            var allTags = new HashSet<string>();
-            foreach (var tagString in products)
-            {
-                var tags = tagString.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                                 .Select(t => t.Trim())
-                                 .Where(t => !string.IsNullOrEmpty(t));
-                foreach (var tag in tags)
-                {
-                    allTags.Add(tag);
-                }
-            }
-
-            return allTags.OrderBy(t => t).ToList();
-        }
 
         public async Task<IEnumerable<Product>> GetByVendorAsync(string vendor)
         {
             return await _dbSet
                 .Where(p => p.Vendor == vendor && !p.IsDeleted)
-                .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
-                .OrderBy(p => p.Name)
-                .ToListAsync();
-        }
-
-        public async Task<IEnumerable<Product>> GetByTagAsync(string tag)
-        {
-            return await _dbSet
-                .Where(p => p.Tags!.Contains(tag) && !p.IsDeleted)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
                     .ThenInclude(i => i.File)
                 .OrderBy(p => p.Name)
@@ -596,10 +530,11 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<IEnumerable<Product>> GetLowStockProductsAsync(int threshold = 5)
         {
             return await _dbSet
-                .Where(p => p.TrackQuantity && p.Quantity <= threshold && p.Quantity > 0 && !p.IsDeleted)
+                .Where(p => !p.IsDeleted &&
+                            p.Variants.Any(v => v.Quantity > 0 && v.Quantity <= threshold))
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
                     .ThenInclude(i => i.File)
-                .OrderBy(p => p.Quantity)
+                .OrderBy(p => p.Variants.Min(v => v.Quantity))
                 .ThenBy(p => p.Name)
                 .ToListAsync();
         }
@@ -607,14 +542,15 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<PagedResult<Product>> GetLowStockProductsPagedAsync(int threshold, int page, int pageSize)
         {
             var query = _dbSet
-                .Where(p => p.TrackQuantity && p.Quantity <= threshold && p.Quantity > 0 && !p.IsDeleted)
+                .Where(p => !p.IsDeleted &&
+                            p.Variants.Any(v => v.Quantity > 0 && v.Quantity <= threshold))
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
                     .ThenInclude(i => i.File);
 
             var totalCount = await query.CountAsync();
 
             var items = await query
-                .OrderBy(p => p.Quantity)
+                .OrderBy(p => p.Variants.Min(v => v.Quantity)) 
                 .ThenBy(p => p.Name)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -626,7 +562,8 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<IEnumerable<Product>> GetOutOfStockProductsAsync()
         {
             return await _dbSet
-                .Where(p => p.TrackQuantity && p.Quantity <= 0 && !p.IsDeleted)
+                .Where(p => !p.IsDeleted &&
+                            p.Variants.All(v => v.Quantity <= 0)) 
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
                     .ThenInclude(i => i.File)
                 .OrderBy(p => p.Name)
@@ -636,7 +573,8 @@ namespace Backend.CMS.Infrastructure.Repositories
         public async Task<PagedResult<Product>> GetOutOfStockProductsPagedAsync(int page, int pageSize)
         {
             var query = _dbSet
-                .Where(p => p.TrackQuantity && p.Quantity <= 0 && !p.IsDeleted)
+                .Where(p => !p.IsDeleted &&
+                            p.Variants.All(v => v.Quantity <= 0))
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
                     .ThenInclude(i => i.File);
 
@@ -651,19 +589,24 @@ namespace Backend.CMS.Infrastructure.Repositories
             return new PagedResult<Product>(items, page, pageSize, totalCount);
         }
 
+
         public async Task<int> GetTotalStockAsync()
         {
             return await _dbSet
-                .Where(p => p.TrackQuantity && !p.IsDeleted)
-                .SumAsync(p => p.Quantity);
+                .Where(p => !p.IsDeleted)
+                .SelectMany(p => p.Variants)
+                .SumAsync(v => v.Quantity);
         }
+
 
         public async Task<int> GetTotalStockByStatusAsync(ProductStatus status)
         {
             return await _dbSet
-                .Where(p => p.Status == status && p.TrackQuantity && !p.IsDeleted)
-                .SumAsync(p => p.Quantity);
+                .Where(p => p.Status == status && !p.IsDeleted)
+                .SelectMany(p => p.Variants)
+                .SumAsync(v => v.Quantity);
         }
+
 
         #endregion
 
@@ -690,21 +633,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .ToListAsync();
 
             return stats.ToDictionary(s => s.CategoryName, s => s.Count);
-        }
-
-        public async Task<Dictionary<string, decimal>> GetSalesStatisticsAsync()
-        {
-            var products = await _dbSet
-                .Where(p => !p.IsDeleted)
-                .ToListAsync();
-
-            return new Dictionary<string, decimal>
-            {
-                ["TotalValue"] = products.Sum(p => p.Price * p.Quantity),
-                ["AveragePrice"] = products.Any() ? products.Average(p => p.Price) : 0,
-                ["MinPrice"] = products.Any() ? products.Min(p => p.Price) : 0,
-                ["MaxPrice"] = products.Any() ? products.Max(p => p.Price) : 0
-            };
         }
 
         #endregion
@@ -786,25 +714,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         #endregion
 
-        #region Product Option Operations
-
-        public async Task<IEnumerable<ProductOption>> GetProductOptionsAsync(int productId)
-        {
-            return await _context.Set<ProductOption>()
-                .Where(po => po.ProductId == productId && !po.IsDeleted)
-                .Include(po => po.Values.Where(v => !v.IsDeleted))
-                .OrderBy(po => po.Position)
-                .ToListAsync();
-        }
-
-        public async Task<int> GetOptionCountAsync(int productId)
-        {
-            return await _context.Set<ProductOption>()
-                .Where(po => po.ProductId == productId && !po.IsDeleted)
-                .CountAsync();
-        }
-
-        #endregion
+   
 
         #region Bulk Operations
 
@@ -923,20 +833,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<IEnumerable<Product>> GetDuplicateSkuProductsAsync()
-        {
-            var duplicateSkus = await _dbSet
-                .Where(p => !p.IsDeleted)
-                .GroupBy(p => p.SKU)
-                .Where(g => g.Count() > 1)
-                .Select(g => g.Key)
-                .ToListAsync();
-
-            return await _dbSet
-                .Where(p => duplicateSkus.Contains(p.SKU) && !p.IsDeleted)
-                .OrderBy(p => p.SKU)
-                .ToListAsync();
-        }
 
         public async Task<IEnumerable<Product>> GetDuplicateSlugProductsAsync()
         {

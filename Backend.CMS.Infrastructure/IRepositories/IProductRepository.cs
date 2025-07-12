@@ -16,12 +16,10 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<Product?> GetWithVariantsAsync(int productId);
         Task<Product?> GetWithCategoriesAsync(int productId);
         Task<Product?> GetWithImagesAsync(int productId);
-        Task<Product?> GetWithOptionsAsync(int productId);
         Task<Product?> GetWithAllRelationsAsync(int productId);
 
         // Validation operations
         Task<bool> SlugExistsAsync(string slug, int? excludeProductId = null);
-        Task<bool> SKUExistsAsync(string sku, int? excludeProductId = null);
 
         // Category-based queries
         Task<IEnumerable<Product>> GetByCategoryAsync(int categoryId, int page, int pageSize);
@@ -54,9 +52,7 @@ namespace Backend.CMS.Infrastructure.IRepositories
 
         // Vendor and tag operations
         Task<IEnumerable<string>> GetVendorsAsync();
-        Task<IEnumerable<string>> GetTagsAsync();
         Task<IEnumerable<Product>> GetByVendorAsync(string vendor);
-        Task<IEnumerable<Product>> GetByTagAsync(string tag);
 
         // Stock operations
         Task<IEnumerable<Product>> GetLowStockProductsAsync(int threshold = 5);
@@ -69,7 +65,6 @@ namespace Backend.CMS.Infrastructure.IRepositories
         // Statistics operations
         Task<Dictionary<string, int>> GetProductCountByStatusAsync();
         Task<Dictionary<string, int>> GetProductCountByCategoryAsync();
-        Task<Dictionary<string, decimal>> GetSalesStatisticsAsync();
 
         // ProductCategory management methods
         Task AddProductCategoryAsync(ProductCategory productCategory);
@@ -84,9 +79,6 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<ProductImage?> GetFeaturedImageAsync(int productId);
         Task<int> GetImageCountAsync(int productId);
 
-        // Product option operations
-        Task<IEnumerable<ProductOption>> GetProductOptionsAsync(int productId);
-        Task<int> GetOptionCountAsync(int productId);
 
         // Bulk operations
         Task<IEnumerable<Product>> GetProductsByIdsAsync(IEnumerable<int> productIds);
@@ -98,7 +90,6 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<IEnumerable<Product>> GetProductsWithNoVariantsAsync();
         Task<IEnumerable<Product>> GetProductsWithNoImagesAsync();
         Task<IEnumerable<Product>> GetProductsWithNoCategoriesAsync();
-        Task<IEnumerable<Product>> GetDuplicateSkuProductsAsync();
         Task<IEnumerable<Product>> GetDuplicateSlugProductsAsync();
 
         // Performance operations

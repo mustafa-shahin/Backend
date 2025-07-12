@@ -73,8 +73,6 @@ namespace Backend.CMS.Infrastructure.Data
         public DbSet<ProductVariantImage> ProductVariantImages { get; set; }
         public DbSet<ProductCategory> ProductCategories { get; set; }
         public DbSet<ProductImage> ProductImages { get; set; }
-        public DbSet<ProductOption> ProductOptions { get; set; }
-        public DbSet<ProductOptionValue> ProductOptionValues { get; set; }
 
         private void ConfigureIndexes(ModelBuilder modelBuilder)
         {
@@ -666,22 +664,13 @@ namespace Backend.CMS.Infrastructure.Data
             {
                 entity.HasKey(e => e.Id);
                 entity.HasIndex(e => e.Slug).IsUnique();
-                entity.HasIndex(e => e.SKU).IsUnique();
                 entity.Property(e => e.Name).HasMaxLength(200).IsRequired();
                 entity.Property(e => e.Slug).HasMaxLength(200).IsRequired();
-                entity.Property(e => e.SKU).HasMaxLength(100).IsRequired();
                 entity.Property(e => e.Description).HasColumnType("text");
                 entity.Property(e => e.ShortDescription).HasMaxLength(500);
-                entity.Property(e => e.CompareAtPrice).HasColumnType("decimal(18,2)");
-                entity.Property(e => e.CostPerItem).HasColumnType("decimal(18,2)");
-                entity.Property(e => e.Weight).HasColumnType("decimal(18,3)");
-                entity.Property(e => e.WeightUnit).HasMaxLength(10);
                 entity.Property(e => e.Status).HasConversion<string>();
                 entity.Property(e => e.Type).HasConversion<string>();
                 entity.Property(e => e.Vendor).HasMaxLength(200);
-                entity.Property(e => e.Barcode).HasMaxLength(100);
-                entity.Property(e => e.Tags).HasMaxLength(1000);
-                entity.Property(e => e.Template).HasMaxLength(100);
                 entity.Property(e => e.MetaTitle).HasMaxLength(200);
                 entity.Property(e => e.MetaDescription).HasMaxLength(500);
                 entity.Property(e => e.MetaKeywords).HasMaxLength(500);
@@ -793,35 +782,6 @@ namespace Backend.CMS.Infrastructure.Data
                 entity.HasIndex(e => new { e.ProductId, e.IsFeatured });
             });
 
-            // ProductOption configuration
-            modelBuilder.Entity<ProductOption>(entity =>
-            {
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.Name).HasMaxLength(100).IsRequired();
-
-                entity.HasOne(e => e.Product)
-                    .WithMany(e => e.Options)
-                    .HasForeignKey(e => e.ProductId)
-                    .OnDelete(DeleteBehavior.Cascade);
-
-                entity.HasIndex(e => e.ProductId);
-                entity.HasIndex(e => new { e.ProductId, e.Position });
-            });
-
-            // ProductOptionValue configuration
-            modelBuilder.Entity<ProductOptionValue>(entity =>
-            {
-                entity.HasKey(e => e.Id);
-                entity.Property(e => e.Value).HasMaxLength(100).IsRequired();
-
-                entity.HasOne(e => e.ProductOption)
-                    .WithMany(e => e.Values)
-                    .HasForeignKey(e => e.ProductOptionId)
-                    .OnDelete(DeleteBehavior.Cascade);
-
-                entity.HasIndex(e => e.ProductOptionId);
-                entity.HasIndex(e => new { e.ProductOptionId, e.Position });
-            });
             // Configure audit trail relationships WITHOUT circular references
             ConfigureAuditTrailRelationships(modelBuilder);
 

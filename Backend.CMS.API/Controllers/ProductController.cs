@@ -293,11 +293,6 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Product name is required" });
                 }
 
-                if (string.IsNullOrWhiteSpace(createProductDto.SKU))
-                {
-                    return BadRequest(new { Message = "Product SKU is required" });
-                }
-
                 if (string.IsNullOrWhiteSpace(createProductDto.Slug))
                 {
                     return BadRequest(new { Message = "Product slug is required" });
@@ -509,42 +504,6 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Update product stock
-        /// </summary>
-        /// <param name="id">Product ID</param>
-        /// <param name="updateStockDto">Stock update data</param>
-        /// <returns>Success confirmation</returns>
-        [HttpPost("{id:int}/stock")]
-        [AdminOrDev]
-        [ProducesResponseType(StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult> UpdateStock(int id, [FromBody] UpdateStockDto updateStockDto)
-        {
-            try
-            {
-                if (updateStockDto.NewQuantity < 0)
-                {
-                    return BadRequest(new { Message = "Quantity cannot be negative" });
-                }
-
-                await _productService.UpdateStockAsync(id, updateStockDto.VariantId, updateStockDto.NewQuantity);
-                return Ok(new { Message = "Stock updated successfully" });
-            }
-            catch (ArgumentException ex)
-            {
-                _logger.LogWarning("Stock update failed for product {ProductId}: {Message}", id, ex.Message);
-                return BadRequest(new { Message = ex.Message });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error updating stock for product {ProductId}", id);
-                return StatusCode(500, new { Message = "An error occurred while updating stock" });
-            }
-        }
-
-        /// <summary>
         /// Get product statistics
         /// </summary>
         /// <returns>Product statistics</returns>
@@ -607,28 +566,6 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error retrieving vendors");
                 return StatusCode(500, new { Message = "An error occurred while retrieving vendors" });
-            }
-        }
-
-        /// <summary>
-        /// Get all product tags
-        /// </summary>
-        /// <returns>List of tags</returns>
-        [HttpGet("tags")]
-        [AllowAnonymous]
-        [ProducesResponseType(typeof(List<string>), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<List<string>>> GetTags()
-        {
-            try
-            {
-                var tags = await _productService.GetTagsAsync();
-                return Ok(tags);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving tags");
-                return StatusCode(500, new { Message = "An error occurred while retrieving tags" });
             }
         }
 
@@ -714,36 +651,6 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error validating product slug");
                 return StatusCode(500, new { Message = "An error occurred while validating the slug" });
-            }
-        }
-
-        /// <summary>
-        /// Validate product SKU
-        /// </summary>
-        /// <param name="sku">SKU to validate</param>
-        /// <param name="excludeProductId">Product ID to exclude from validation</param>
-        /// <returns>Validation result</returns>
-        [HttpGet("validate-sku")]
-        [AdminOrDev]
-        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<bool>> ValidateSKU(
-            [FromQuery] string sku,
-            [FromQuery] int? excludeProductId = null)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(sku))
-                    return BadRequest(new { Message = "SKU parameter is required" });
-
-                var isValid = await _productService.ValidateSKUAsync(sku, excludeProductId);
-                return Ok(new { IsValid = isValid });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error validating product SKU");
-                return StatusCode(500, new { Message = "An error occurred while validating the SKU" });
             }
         }
 
