@@ -2,8 +2,8 @@
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Interfaces;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using static System.Net.Mime.MediaTypeNames;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -13,6 +13,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IMapper _mapper;
         private readonly ILogger<CategoryService> _logger;
         private readonly IFileUrlBuilder _fileUrlBuilder;
+        private readonly IScopedDbContextService _scopedDbContextService;
         private const int DefaultPageSize = 10;
         private const int MaxPageSize = 100;
         private const int MinPageSize = 1;
@@ -21,12 +22,14 @@ namespace Backend.CMS.Infrastructure.Services
             IMapper mapper,
             ILogger<CategoryService> logger,
             IUnitOfWork unitOfWork,
-            IFileUrlBuilder fileUrlBuilder)
+            IFileUrlBuilder fileUrlBuilder,
+            IScopedDbContextService scopedDbContextService)
         {
             _mapper = mapper;
             _logger = logger;
             _unitOfWork = unitOfWork;
             _fileUrlBuilder = fileUrlBuilder;
+            _scopedDbContextService = scopedDbContextService;
         }
 
         #region Paginated Methods
@@ -58,8 +61,8 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var categoryDtos = _mapper.Map<List<CategoryDto>>(pagedResult.Data);
 
-                // Service-level enrichment with product counts
-                await EnrichCategoriesWithProductCountsAsync(categoryDtos);
+                // Service-level enrichment with product counts - using batch operation
+                await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
 
                 // Apply additional service-level filters if needed
                 categoryDtos = await ApplyAdditionalFiltersAsync(categoryDtos, searchDto);
@@ -93,9 +96,6 @@ namespace Backend.CMS.Infrastructure.Services
                 var normalizedPageNumber = Math.Max(MinPageSize, pageNumber);
                 var normalizedPageSize = Math.Clamp(pageSize, MinPageSize, MaxPageSize);
 
-                // Override with default page size for consistency
-                normalizedPageSize = DefaultPageSize;
-
                 // Get data directly from repository
                 var pagedResult = await _unitOfWork.Categories.GetRootCategoriesPagedAsync(normalizedPageNumber, normalizedPageSize);
 
@@ -112,7 +112,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 var categoryDtos = _mapper.Map<List<CategoryDto>>(pagedResult.Data);
-                await EnrichCategoriesWithProductCountsAsync(categoryDtos);
+                await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
 
                 _logger.LogDebug("Retrieved {CategoryCount} root categories (page {PageNumber}/{TotalPages})",
                     categoryDtos.Count, pagedResult.PageNumber, pagedResult.TotalPages);
@@ -144,7 +144,7 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new ArgumentException("Parent category ID must be greater than 0", nameof(parentCategoryId));
 
                 var normalizedPageNumber = Math.Max(MinPageSize, pageNumber);
-                var normalizedPageSize = DefaultPageSize; // Force consistent page size
+                var normalizedPageSize = Math.Clamp(pageSize, MinPageSize, MaxPageSize);
 
                 // Validate parent category exists
                 var parentExists = await _unitOfWork.Categories.GetByIdAsync(parentCategoryId);
@@ -177,7 +177,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 var categoryDtos = _mapper.Map<List<CategoryDto>>(pagedResult.Data);
-                await EnrichCategoriesWithProductCountsAsync(categoryDtos);
+                await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
 
                 _logger.LogDebug("Retrieved {CategoryCount} subcategories for parent {ParentCategoryId} (page {PageNumber}/{TotalPages})",
                     categoryDtos.Count, parentCategoryId, pagedResult.PageNumber, pagedResult.TotalPages);
@@ -232,7 +232,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 var categoryDtos = _mapper.Map<List<CategoryDto>>(pagedResult.Data);
-                await EnrichCategoriesWithProductCountsAsync(categoryDtos);
+                await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
 
                 // Service-level post-processing filters
                 categoryDtos = await ApplyAdvancedSearchFiltersAsync(categoryDtos, searchDto);
@@ -283,7 +283,15 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 var categoryDto = _mapper.Map<CategoryDto>(category);
-                categoryDto.ProductCount = await _unitOfWork.Categories.GetProductCountAsync(categoryId, true);
+
+                // Get product count using scoped context to avoid threading issues
+                categoryDto.ProductCount = await _scopedDbContextService.ExecuteWithNewContextAsync(async context =>
+                {
+                    return await context.Set<ProductCategory>()
+                        .AsNoTracking()
+                        .Where(pc => pc.CategoryId == categoryId && !pc.IsDeleted)
+                        .CountAsync();
+                });
 
                 _logger.LogDebug("Retrieved category {CategoryName} (ID: {CategoryId})", category.Name, categoryId);
                 return categoryDto;
@@ -315,7 +323,15 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 var categoryDto = _mapper.Map<CategoryDto>(category);
-                categoryDto.ProductCount = await _unitOfWork.Categories.GetProductCountAsync(category.Id, true);
+
+                // Get product count using scoped context
+                categoryDto.ProductCount = await _scopedDbContextService.ExecuteWithNewContextAsync(async context =>
+                {
+                    return await context.Set<ProductCategory>()
+                        .AsNoTracking()
+                        .Where(pc => pc.CategoryId == category.Id && !pc.IsDeleted)
+                        .CountAsync();
+                });
 
                 _logger.LogDebug("Retrieved category {CategoryName} by slug '{Slug}'", category.Name, normalizedSlug);
                 return categoryDto;
@@ -389,9 +405,9 @@ namespace Backend.CMS.Infrastructure.Services
                     // Map DTO to entity
                     var category = _mapper.Map<Category>(createCategoryDto);
 
-
                     await _unitOfWork.Categories.AddAsync(category);
                     await _unitOfWork.SaveChangesAsync();
+
                     if (createCategoryDto.Images.Count != 0)
                     {
                         await AddCategoryImagesAsync(category.Id, createCategoryDto.Images);
@@ -421,7 +437,6 @@ namespace Backend.CMS.Infrastructure.Services
                 throw;
             }
         }
-
 
         public async Task<CategoryDto> UpdateCategoryAsync(int categoryId, UpdateCategoryDto updateCategoryDto)
         {
@@ -813,7 +828,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             // Normalize pagination parameters
             searchDto.PageNumber = Math.Max(MinPageSize, searchDto.PageNumber);
-            searchDto.PageSize = DefaultPageSize; // Force consistent page size
+            searchDto.PageSize = Math.Clamp(searchDto.PageSize, MinPageSize, MaxPageSize);
 
             // Normalize search term
             if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
@@ -897,20 +912,27 @@ namespace Backend.CMS.Infrastructure.Services
         }
 
         /// <summary>
-        /// Enrich categories with product counts efficiently
+        /// Enrich categories with product counts efficiently using batch operations - THREAD SAFE VERSION
         /// </summary>
-        private async Task EnrichCategoriesWithProductCountsAsync(List<CategoryDto> categoryDtos)
+        private async Task EnrichCategoriesWithProductCountsBatchAsync(List<CategoryDto> categoryDtos)
         {
             if (!categoryDtos.Any()) return;
 
             try
             {
-                var productCountTasks = categoryDtos.Select(async categoryDto =>
-                {
-                    categoryDto.ProductCount = await _unitOfWork.Categories.GetProductCountAsync(categoryDto.Id, true);
-                });
+                // Get all category IDs
+                var categoryIds = categoryDtos.Select(c => c.Id).ToList();
 
-                await Task.WhenAll(productCountTasks);
+                // Use the new batch method from repository which is thread-safe
+                var productCounts = await _unitOfWork.Categories.GetProductCountsAsync(categoryIds, true);
+
+                // Apply the counts to the DTOs
+                foreach (var categoryDto in categoryDtos)
+                {
+                    categoryDto.ProductCount = productCounts.GetValueOrDefault(categoryDto.Id, 0);
+                }
+
+                _logger.LogDebug("Enriched {Count} categories with product counts using batch operation", categoryDtos.Count);
             }
             catch (Exception ex)
             {
@@ -932,6 +954,15 @@ namespace Backend.CMS.Infrastructure.Services
 
             foreach (var category in categories)
             {
+                // Use scoped context for product count to avoid threading issues
+                var productCount = await _scopedDbContextService.ExecuteWithNewContextAsync(async context =>
+                {
+                    return await context.Set<ProductCategory>()
+                        .AsNoTracking()
+                        .Where(pc => pc.CategoryId == category.Id && !pc.IsDeleted)
+                        .CountAsync();
+                });
+
                 var treeDto = new CategoryTreeDto
                 {
                     Id = category.Id,
@@ -941,7 +972,7 @@ namespace Backend.CMS.Infrastructure.Services
                     IsActive = category.IsActive,
                     SortOrder = category.SortOrder,
                     FeaturedImageUrl = category.FeaturedImageUrl,
-                    ProductCount = await _unitOfWork.Categories.GetProductCountAsync(category.Id, true),
+                    ProductCount = productCount,
                     Children = await BuildCategoryTreeAsync(category.SubCategories),
                     Level = 0, // Will be calculated separately if needed
                     Path = category.Slug,
@@ -988,8 +1019,11 @@ namespace Backend.CMS.Infrastructure.Services
         {
             if (!fileIds.Any()) return;
 
-            var validationTasks = fileIds.Select(ValidateImageAsync);
-            await Task.WhenAll(validationTasks);
+            // Validate sequentially to avoid threading issues
+            foreach (var fileId in fileIds)
+            {
+                await ValidateImageAsync(fileId);
+            }
         }
 
         /// <summary>

@@ -14,6 +14,7 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<bool> SlugExistsAsync(string slug, int? excludeCategoryId = null);
         Task<IEnumerable<Category>> SearchCategoriesAsync(string searchTerm, int page, int pageSize);
         Task<int> GetProductCountAsync(int categoryId, bool includeSubCategories = false);
+        Task<Dictionary<int, int>> GetProductCountsAsync(IEnumerable<int> categoryIds, bool includeSubCategories = false);
         Task<bool> HasSubCategoriesAsync(int categoryId);
         Task<bool> CanDeleteAsync(int categoryId);
 

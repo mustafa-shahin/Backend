@@ -265,22 +265,26 @@ namespace Backend.CMS.Infrastructure.Repositories
             {
                 if (!includeSubCategories)
                 {
-                    var count = await _context.Set<ProductCategory>()
+                    var count = await _dbSet
                         .AsNoTracking()
-                        .Where(pc => pc.CategoryId == categoryId && !pc.IsDeleted)
+                        .Where(c => c.Id == categoryId && !c.IsDeleted)
+                        .SelectMany(c => c.ProductCategories)
+                        .Where(pc => !pc.IsDeleted)
                         .CountAsync();
 
                     _logger.LogDebug("Product count for category {CategoryId}: {Count}", categoryId, count);
                     return count;
                 }
 
-                // Get all descendant category IDs
                 var categoryIds = await GetAllDescendantCategoryIdsAsync(categoryId);
                 categoryIds.Add(categoryId);
 
-                var totalCount = await _context.Set<ProductCategory>()
+             
+                var totalCount = await _dbSet
                     .AsNoTracking()
-                    .Where(pc => categoryIds.Contains(pc.CategoryId) && !pc.IsDeleted)
+                    .Where(c => categoryIds.Contains(c.Id) && !c.IsDeleted)
+                    .SelectMany(c => c.ProductCategories)
+                    .Where(pc => !pc.IsDeleted)
                     .CountAsync();
 
                 _logger.LogDebug("Product count for category {CategoryId} (including subcategories): {Count}", categoryId, totalCount);
@@ -289,6 +293,61 @@ namespace Backend.CMS.Infrastructure.Repositories
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting product count for category {CategoryId}", categoryId);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Get product counts for multiple categories efficiently using a single query
+        /// </summary>
+        public async Task<Dictionary<int, int>> GetProductCountsAsync(IEnumerable<int> categoryIds, bool includeSubCategories = false)
+        {
+            try
+            {
+                var categoryIdsList = categoryIds.ToList();
+                if (!categoryIdsList.Any())
+                {
+                    return new Dictionary<int, int>();
+                }
+
+                if (!includeSubCategories)
+                {
+                    // Simple case: direct product counts only
+                    var directCounts = await _dbSet
+                        .AsNoTracking()
+                        .Where(c => categoryIdsList.Contains(c.Id) && !c.IsDeleted)
+                        .Select(c => new { c.Id, ProductCount = c.ProductCategories.Count(pc => !pc.IsDeleted) })
+                        .ToDictionaryAsync(x => x.Id, x => x.ProductCount);
+
+                    _logger.LogDebug("Retrieved direct product counts for {Count} categories", categoryIdsList.Count);
+                    return directCounts;
+                }
+
+                // Complex case: include subcategory counts
+                var result = new Dictionary<int, int>();
+                foreach (var categoryId in categoryIdsList)
+                {
+                    // Get all descendant IDs for this category
+                    var allIds = await GetAllDescendantCategoryIdsAsync(categoryId);
+                    allIds.Add(categoryId);
+
+                    // Get count for this category and all its descendants
+                    var count = await _dbSet
+                        .AsNoTracking()
+                        .Where(c => allIds.Contains(c.Id) && !c.IsDeleted)
+                        .SelectMany(c => c.ProductCategories)
+                        .Where(pc => !pc.IsDeleted)
+                        .CountAsync();
+
+                    result[categoryId] = count;
+                }
+
+                _logger.LogDebug("Retrieved hierarchical product counts for {Count} categories", categoryIdsList.Count);
+                return result;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting product counts for multiple categories");
                 throw;
             }
         }
@@ -312,10 +371,12 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             try
             {
-                // Check if category has products
-                var hasProducts = await _context.Set<ProductCategory>()
+                // Check if category has products using a separate query
+                var hasProducts = await _dbSet
                     .AsNoTracking()
-                    .AnyAsync(pc => pc.CategoryId == categoryId && !pc.IsDeleted);
+                    .Where(c => c.Id == categoryId && !c.IsDeleted)
+                    .SelectMany(c => c.ProductCategories)
+                    .AnyAsync(pc => !pc.IsDeleted);
 
                 if (hasProducts)
                 {
