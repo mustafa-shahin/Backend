@@ -62,11 +62,12 @@
             </div>
         </div>
 
-        <!-- Products Dropdown -->
-        <SidebarDropdown Icon="fas fa-box"
-                         Text="Products"
-                         IsCollapsed="@isCollapsed"
-                         Items="@productItems" />
+        <!-- Products (Future) -->
+        <SidebarItem Icon="fas fa-box"
+                     Text="Products"
+                     Href="/products"
+                     IsCollapsed="@isCollapsed"
+                     IsDisabled="true" />
 
         <!-- Analytics (Future) -->
         <SidebarItem Icon="fas fa-chart-bar"
@@ -179,13 +180,6 @@
         new SidebarDropdown.DropdownItem { Icon = "fas fa-music", Text = "Audio", Href = "/media/audio" },
         new SidebarDropdown.DropdownItem { Icon = "fas fa-file-alt", Text = "Documents", Href = "/media/documents" },
         new SidebarDropdown.DropdownItem { Icon = "fas fa-video", Text = "Videos", Href = "/media/videos" }
-    };
-
-    private List<SidebarDropdown.DropdownItem> productItems = new()
-    {
-        new SidebarDropdown.DropdownItem { Icon = "fas fa-box-open", Text = "Products", Href = "/products" },
-        new SidebarDropdown.DropdownItem { Icon = "fas fa-boxes", Text = "Product Variants", Href = "/productvariants" },
-        new SidebarDropdown.DropdownItem { Icon = "fas fa-tags", Text = "Categories", Href = "/categories" }
     };
 
     protected override async Task OnInitializedAsync()

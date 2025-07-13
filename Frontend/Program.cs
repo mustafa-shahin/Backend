@@ -34,9 +34,6 @@ builder.Services.AddScoped<IPageService, PageService>();
 builder.Services.AddScoped<IUsersService, UsersService>();
 builder.Services.AddScoped<IFileService, FileService>();
 builder.Services.AddScoped<IFolderService, FolderService>();
-builder.Services.AddScoped<ICategoryService, CategoryService>();
-builder.Services.AddScoped<IProductService, ProductService>();
-builder.Services.AddScoped<IProductVariantService, ProductVariantService>();
 
 // Add UI services
 builder.Services.AddScoped<IThemeService, ThemeService>();
