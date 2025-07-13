@@ -1,0 +1,551 @@
+@using Backend.CMS.Application.DTOs
+@using Frontend.Interfaces
+@using Frontend.Components.Files
+@using Frontend.Components.Common
+@inject IFileService FileService
+@inject IStyleService StyleService
+@inject INotificationService NotificationService
+@inject IJSRuntime JSRuntime
+
+<div class="space-y-4">
+    <!-- Current Images -->
+    @if (SelectedImages.Any())
+    {
+        <div class="space-y-3">
+            <h4 class="text-sm font-medium text-gray-900 dark:text-white">
+                @GetSelectionTitle()
+            </h4>
+            
+            @if (AllowMultiple)
+            {
+                <!-- Multiple Images Grid -->
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    @for (int i = 0; i < SelectedImages.Count; i++)
+                    {
+                        var index = i;
+                        var image = SelectedImages[index];
+                        <div class="relative group bg-gray-50 dark:bg-gray-700 rounded-lg border-2 @(IsFeatured(index) ? "border-blue-500" : "border-gray-200 dark:border-gray-600") overflow-hidden">
+                            <!-- Image Preview -->
+                            <div class="aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                                <img src="@GetImageUrl(image)" 
+                                     alt="@GetImageAlt(image)" 
+                                     class="w-full h-full object-cover" 
+                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                                <div class="w-full h-full flex items-center justify-center" style="display: none;">
+                                    <i class="fas fa-image text-gray-400 text-2xl"></i>
+                                </div>
+                            </div>
+
+                            <!-- Featured Badge -->
+                            @if (IsFeatured(index))
+                            {
+                                <div class="absolute top-2 left-2">
+                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        <i class="fas fa-star mr-1"></i>
+                                        Featured
+                                    </span>
+                                </div>
+                            }
+
+                            <!-- Actions -->
+                            <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                <div class="flex space-x-2">
+                                    <!-- Set as Featured -->
+                                    @if (AllowFeatured && !IsFeatured(index))
+                                    {
+                                        <button @onclick="() => SetAsFeatured(index)"
+                                                class="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                                title="Set as featured image">
+                                            <i class="fas fa-star text-sm"></i>
+                                        </button>
+                                    }
+
+                                    <!-- Edit -->
+                                    <button @onclick="() => EditImage(index)"
+                                            class="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+                                            title="Edit image details">
+                                        <i class="fas fa-edit text-sm"></i>
+                                    </button>
+
+                                    <!-- Remove -->
+                                    <button @onclick="() => RemoveImage(index)"
+                                            class="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                                            title="Remove image">
+                                        <i class="fas fa-trash text-sm"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Position Indicator -->
+                            <div class="absolute bottom-2 right-2">
+                                <span class="inline-flex items-center justify-center w-6 h-6 bg-gray-900 bg-opacity-75 text-white text-xs rounded-full">
+                                    @(index + 1)
+                                </span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <!-- Single Image -->
+                var image = SelectedImages.First();
+                <div class="relative group bg-gray-50 dark:bg-gray-700 rounded-lg border-2 border-gray-200 dark:border-gray-600 overflow-hidden max-w-xs">
+                    <!-- Image Preview -->
+                    <div class="aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                        <img src="@GetImageUrl(image)" 
+                             alt="@GetImageAlt(image)" 
+                             class="w-full h-full object-cover" 
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                        <div class="w-full h-full flex items-center justify-center" style="display: none;">
+                            <i class="fas fa-image text-gray-400 text-2xl"></i>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                        <div class="flex space-x-2">
+                            <!-- Edit -->
+                            <button @onclick="() => EditImage(0)"
+                                    class="p-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+                                    title="Edit image details">
+                                <i class="fas fa-edit text-sm"></i>
+                            </button>
+
+                            <!-- Remove -->
+                            <button @onclick="() => RemoveImage(0)"
+                                    class="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                                    title="Remove image">
+                                <i class="fas fa-trash text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <!-- Add Images Button -->
+    <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-blue-400 dark:hover:border-blue-500 transition-colors cursor-pointer"
+         @onclick="ShowFilePicker">
+        <div class="space-y-3">
+            <div class="w-12 h-12 mx-auto bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                <i class="fas fa-plus text-gray-400 text-xl"></i>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-gray-900 dark:text-white">
+                    @(SelectedImages.Any() ? "Add More Images" : "Add Image")
+                </p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">
+                    @GetPickerDescription()
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- File Picker Dialog -->
+<FormDialog @ref="filePickerDialog"
+            Title="@($"Select {(AllowMultiple ? "Images" : "Image")}")" 
+            Description="Choose images from your media library"
+            HeaderIcon="fas fa-images"
+            IsVisible="@showFilePicker"
+            IsSaving="@false"
+            Size="xlarge"
+            SaveText="@(AllowMultiple ? "Add Selected" : "Select Image")"
+            SaveIcon="fas fa-check"
+            OnClose="@CloseFilePicker"
+            OnSave="@AddSelectedFiles">
+    <BodyContent>
+        <div class="space-y-4">
+            <!-- Simplified File Selection -->
+            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                <div class="text-center py-8">
+                    <div class="w-16 h-16 mx-auto bg-blue-100 dark:bg-blue-800 rounded-full flex items-center justify-center mb-4">
+                        <i class="fas fa-images text-blue-600 dark:text-blue-300 text-2xl"></i>
+                    </div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                        Select Images
+                    </h3>
+                    <p class="text-gray-500 dark:text-gray-400 mb-4">
+                        File browser will be implemented here
+                    </p>
+                    <button @onclick="() => SimulateFileSelection()" 
+                            class="@StyleService.GetButtonClass("primary")">
+                        <i class="fas fa-plus mr-2"></i>
+                        Add Demo Image
+                    </button>
+                </div>
+            </div>
+        </div>
+
+            <!-- Selected Files Preview -->
+            @if (tempSelectedFiles.Any())
+            {
+                <div class="space-y-3">
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white">
+                        @(AllowMultiple ? $"Selected Files ({tempSelectedFiles.Count})" : "Selected File")
+                    </h4>
+                    <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                        @foreach (var file in tempSelectedFiles)
+                        {
+                            <div class="relative group">
+                                <div class="aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border-2 border-green-500">
+                                    <div class="w-full h-full flex items-center justify-center">
+                                        <div class="text-center">
+                                            <i class="fas fa-image text-green-600 text-2xl mb-2"></i>
+                                            <p class="text-xs font-medium text-green-800">@file.OriginalFileName</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button @onclick="() => RemoveTempFile(file)"
+                                        class="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                        title="Remove">
+                                    <i class="fas fa-times text-xs"></i>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+    </BodyContent>
+</FormDialog>
+
+<!-- Image Edit Dialog -->
+<FormDialog @ref="imageEditDialog"
+            Title="Edit Image Details"
+            Description="Update image information and settings"
+            HeaderIcon="fas fa-edit"
+            IsVisible="@showImageEdit"
+            IsSaving="@false"
+            Size="medium"
+            SaveText="Update"
+            SaveIcon="fas fa-save"
+            OnClose="@CloseImageEdit"
+            OnSave="@SaveImageEdit">
+    <BodyContent>
+        @if (editingImageFile != null)
+        {
+            <div class="space-y-4">
+                <!-- Image Preview -->
+                <div class="text-center">
+                    <div class="inline-block w-32 h-32 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+                        <img src="@GetFilePreviewUrl(editingImageFile)" 
+                             alt="@editingImageAlt" 
+                             class="w-full h-full object-cover" />
+                    </div>
+                </div>
+
+                <!-- Alt Text -->
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Alt Text
+                    </label>
+                    <input @bind="editingImageAlt"
+                           type="text"
+                           placeholder="Describe the image for accessibility"
+                           class="@StyleService.GetFormInputClass()" />
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                        Used by screen readers and when the image fails to load.
+                    </p>
+                </div>
+
+                <!-- Caption -->
+                <div class="space-y-2">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Caption
+                    </label>
+                    <textarea @bind="editingImageCaption"
+                              rows="3"
+                              placeholder="Optional caption for the image"
+                              class="@StyleService.GetFormTextareaClass()"></textarea>
+                </div>
+
+                <!-- Featured Toggle (only if multiple images are allowed and featured is supported) -->
+                @if (AllowMultiple && AllowFeatured)
+                {
+                    <div class="flex items-center space-x-3">
+                        <label class="flex items-center cursor-pointer">
+                            <input type="checkbox" @bind="editingImageIsFeatured" class="@StyleService.GetFormCheckboxClass()" />
+                            <span class="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Featured Image
+                            </span>
+                        </label>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            The main image shown in listings.
+                        </p>
+                    </div>
+                }
+            </div>
+        }
+    </BodyContent>
+</FormDialog>
+
+@code {
+    [Parameter] public List<object> SelectedImages { get; set; } = new();
+    [Parameter] public EventCallback<List<object>> SelectedImagesChanged { get; set; }
+    [Parameter] public bool AllowMultiple { get; set; } = true;
+    [Parameter] public bool AllowFeatured { get; set; } = true;
+    [Parameter] public bool AllowUpload { get; set; } = true;
+    [Parameter] public string EntityName { get; set; } = "item";
+
+    // Delegates for handling different image types
+    [Parameter] public Func<object, string> GetImageUrlFunc { get; set; } = null!;
+    [Parameter] public Func<object, string?> GetImageAltFunc { get; set; } = null!;
+    [Parameter] public Func<object, bool> GetIsFeaturedFunc { get; set; } = null!;
+    [Parameter] public Func<FileDto, object> CreateImageFromFileFunc { get; set; } = null!;
+    [Parameter] public Action<object, string?, string?, bool> UpdateImageFunc { get; set; } = null!;
+
+    private FormDialog? filePickerDialog;
+    private FormDialog? imageEditDialog;
+    // private FileBrowser? fileBrowser; // Disabled for now
+    
+    private bool showFilePicker = false;
+    private bool showImageEdit = false;
+    private object? editingImage = null;
+    private int editingImageIndex = -1;
+    private FileDto? editingImageFile = null;
+    private string editingImageAlt = string.Empty;
+    private string editingImageCaption = string.Empty;
+    private bool editingImageIsFeatured = false;
+    
+    private List<FileDto> tempSelectedFiles = new();
+    private Dictionary<int, FileDto> cachedFiles = new();
+
+    private void ShowFilePicker()
+    {
+        tempSelectedFiles.Clear();
+        showFilePicker = true;
+        StateHasChanged();
+    }
+
+    private void CloseFilePicker()
+    {
+        showFilePicker = false;
+        tempSelectedFiles.Clear();
+        StateHasChanged();
+    }
+
+    private void OnFilesSelected(List<FileDto> files)
+    {
+        tempSelectedFiles = files.Where(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Image).ToList();
+        
+        // If single image mode, only keep the first selected
+        if (!AllowMultiple && tempSelectedFiles.Count > 1)
+        {
+            tempSelectedFiles = tempSelectedFiles.Take(1).ToList();
+        }
+        
+        StateHasChanged();
+    }
+
+    private void SimulateFileSelection()
+    {
+        // Create demo file for testing
+        var demoFile = new FileDto
+        {
+            Id = DateTime.Now.Millisecond, // Random ID for demo
+            OriginalFileName = $"demo-image-{DateTime.Now:HHmmss}.jpg",
+            FileType = Backend.CMS.Domain.Enums.FileType.Image,
+            ContentType = "image/jpeg",
+            FileSize = 1024000,
+            Urls = new FileUrlsDto()
+        };
+        
+        if (!AllowMultiple)
+        {
+            tempSelectedFiles.Clear();
+        }
+        
+        tempSelectedFiles.Add(demoFile);
+        StateHasChanged();
+    }
+
+    private void RemoveTempFile(FileDto file)
+    {
+        tempSelectedFiles.Remove(file);
+        StateHasChanged();
+    }
+
+    private async Task AddSelectedFiles()
+    {
+        var newImages = new List<object>();
+
+        foreach (var file in tempSelectedFiles)
+        {
+            // Check if already added (for multiple mode)
+            if (AllowMultiple)
+            {
+                var existingImage = SelectedImages.FirstOrDefault(img => GetImageUrlFunc(img).Contains(file.Id.ToString()));
+                if (existingImage == null)
+                {
+                    var newImage = CreateImageFromFileFunc(file);
+                    newImages.Add(newImage);
+                    
+                    // Cache the file for later use
+                    cachedFiles[file.Id] = file;
+                }
+            }
+            else
+            {
+                // Single mode - replace existing
+                SelectedImages.Clear();
+                var newImage = CreateImageFromFileFunc(file);
+                newImages.Add(newImage);
+                cachedFiles[file.Id] = file;
+                break;
+            }
+        }
+
+        if (AllowMultiple)
+        {
+            SelectedImages.AddRange(newImages);
+        }
+        else
+        {
+            SelectedImages = newImages;
+        }
+
+        await SelectedImagesChanged.InvokeAsync(SelectedImages);
+        CloseFilePicker();
+    }
+
+    private void EditImage(int index)
+    {
+        if (index >= 0 && index < SelectedImages.Count)
+        {
+            editingImageIndex = index;
+            editingImage = SelectedImages[index];
+            editingImageAlt = GetImageAltFunc(editingImage) ?? string.Empty;
+            editingImageCaption = string.Empty; // This would need to be extracted based on your image type
+            editingImageIsFeatured = GetIsFeaturedFunc(editingImage);
+            
+            // Try to get the cached file
+            var imageUrl = GetImageUrlFunc(editingImage);
+            var fileId = ExtractFileIdFromUrl(imageUrl);
+            if (fileId.HasValue && cachedFiles.ContainsKey(fileId.Value))
+            {
+                editingImageFile = cachedFiles[fileId.Value];
+            }
+            
+            showImageEdit = true;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseImageEdit()
+    {
+        showImageEdit = false;
+        editingImage = null;
+        editingImageFile = null;
+        editingImageIndex = -1;
+        editingImageAlt = string.Empty;
+        editingImageCaption = string.Empty;
+        editingImageIsFeatured = false;
+        StateHasChanged();
+    }
+
+    private async Task SaveImageEdit()
+    {
+        if (editingImage != null && editingImageIndex >= 0 && editingImageIndex < SelectedImages.Count)
+        {
+            // If setting as featured and multiple images allowed, remove featured from others
+            if (AllowFeatured && AllowMultiple && editingImageIsFeatured)
+            {
+                for (int i = 0; i < SelectedImages.Count; i++)
+                {
+                    if (i != editingImageIndex)
+                    {
+                        UpdateImageFunc(SelectedImages[i], GetImageAltFunc(SelectedImages[i]), string.Empty, false);
+                    }
+                }
+            }
+
+            // Update the editing image
+            UpdateImageFunc(editingImage, editingImageAlt, editingImageCaption, editingImageIsFeatured);
+            
+            await SelectedImagesChanged.InvokeAsync(SelectedImages);
+            CloseImageEdit();
+        }
+    }
+
+    private async Task SetAsFeatured(int index)
+    {
+        if (index >= 0 && index < SelectedImages.Count && AllowFeatured && AllowMultiple)
+        {
+            // Remove featured from all images
+            for (int i = 0; i < SelectedImages.Count; i++)
+            {
+                UpdateImageFunc(SelectedImages[i], GetImageAltFunc(SelectedImages[i]), string.Empty, i == index);
+            }
+
+            await SelectedImagesChanged.InvokeAsync(SelectedImages);
+            StateHasChanged();
+        }
+    }
+
+    private async Task RemoveImage(int index)
+    {
+        if (index >= 0 && index < SelectedImages.Count)
+        {
+            SelectedImages.RemoveAt(index);
+            await SelectedImagesChanged.InvokeAsync(SelectedImages);
+            StateHasChanged();
+        }
+    }
+
+    private string GetImageUrl(object image)
+    {
+        return GetImageUrlFunc?.Invoke(image) ?? string.Empty;
+    }
+
+    private string GetImageAlt(object image)
+    {
+        return GetImageAltFunc?.Invoke(image) ?? "Image";
+    }
+
+    private bool IsFeatured(int index)
+    {
+        if (!AllowFeatured || index < 0 || index >= SelectedImages.Count)
+            return false;
+            
+        return GetIsFeaturedFunc?.Invoke(SelectedImages[index]) ?? false;
+    }
+
+    private string GetSelectionTitle()
+    {
+        if (AllowMultiple)
+        {
+            return $"Selected Images ({SelectedImages.Count})";
+        }
+        return "Selected Image";
+    }
+
+    private string GetPickerDescription()
+    {
+        if (AllowMultiple)
+        {
+            return "Select multiple images from existing files or upload new images";
+        }
+        return "Select from existing files or upload a new image";
+    }
+
+    private string GetFilePreviewUrl(FileDto file)
+    {
+        return file.Urls?.Thumbnail ?? file.Urls?.Download ?? FileService.GetThumbnailUrl(file.Id);
+    }
+
+    private int? ExtractFileIdFromUrl(string url)
+    {
+        // This is a simple implementation - you might need to adjust based on your URL structure
+        var parts = url.Split('/');
+        foreach (var part in parts)
+        {
+            if (int.TryParse(part, out var id))
+            {
+                return id;
+            }
+        }
+        return null;
+    }
+}

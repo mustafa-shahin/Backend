@@ -14,7 +14,7 @@ namespace Frontend.Interfaces
         string GetButtonClass(string variant = "primary", string size = "medium");
 
         // Status and badge methods
-        string GetStatusBadgeClass(PageStatus status);
+        public string GetStatusBadgeClass(object status);
         string GetStatusText(PageStatus status);
         string GetUserRoleBadgeClass(UserRole role);
         string GetUserRoleText(UserRole role);
@@ -66,5 +66,9 @@ namespace Frontend.Interfaces
         string GetFileTypeIcon(FileType fileType);
         long GetMaxFileSize(FileType fileType);
         string GetStatusBadgeClasses(PageStatus status);
+        string GetFormSelectClass(bool hasError = false);
+        string GetFormTextareaClass(bool hasError = false);
+        string GetFormCheckboxClass(bool hasError = false);
+        string GetFileIconColor(string extension);
     }
 }

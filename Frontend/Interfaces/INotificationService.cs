@@ -1,6 +1,6 @@
 ﻿using Frontend.Helpers;
 
-namespace Frontend.Interface
+namespace Frontend.Interfaces
 {
     public interface INotificationService
     {

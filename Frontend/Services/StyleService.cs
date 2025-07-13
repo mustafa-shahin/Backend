@@ -102,18 +102,25 @@ namespace Frontend.Services
         #endregion
 
         #region Status and Badge Methods
-        public string GetStatusBadgeClass(PageStatus status)
+        public string GetStatusBadgeClass(object status)
         {
             var baseClass = "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium";
+
             return status switch
             {
-                PageStatus.Published => $"{baseClass} bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
                 PageStatus.Draft => $"{baseClass} bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+                PageStatus.Published => $"{baseClass} bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
                 PageStatus.Scheduled => $"{baseClass} bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
                 PageStatus.Archived => $"{baseClass} bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+
+                ProductStatus.Draft => $"{baseClass} bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+                ProductStatus.Active => $"{baseClass} bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+                ProductStatus.Archived => $"{baseClass} bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+
                 _ => $"{baseClass} bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
             };
         }
+
 
         public string GetStatusText(PageStatus status)
         {
@@ -628,5 +635,83 @@ namespace Frontend.Services
                 _ => "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
             };
         }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        #region Additional Form Methods
+        public string GetFormSelectClass(bool hasError = false)
+        {
+            var baseClass = "block w-full px-3 py-2 border rounded-lg shadow-sm " +
+                            "focus:outline-none focus:ring-2 focus:ring-offset-0 dark:bg-gray-700 " +
+                            "dark:text-white sm:text-sm transition-all duration-200";
+
+            if (hasError)
+            {
+                return $"{baseClass} border-red-300 focus:border-red-500 focus:ring-red-500 dark:border-red-600";
+            }
+
+            return $"{baseClass} border-gray-300 focus:border-blue-500 focus:ring-blue-500 " +
+                   "dark:border-gray-600 dark:focus:border-blue-500 dark:focus:ring-blue-500";
+        }
+
+        public string GetFormTextareaClass(bool hasError = false)
+        {
+            var baseClass = "block w-full px-3 py-2 border rounded-lg shadow-sm placeholder-gray-400 " +
+                            "focus:outline-none focus:ring-2 focus:ring-offset-0 dark:bg-gray-700 " +
+                            "dark:placeholder-gray-400 dark:text-white sm:text-sm transition-all duration-200 resize-vertical";
+
+            if (hasError)
+            {
+                return $"{baseClass} border-red-300 focus:border-red-500 focus:ring-red-500 dark:border-red-600";
+            }
+
+            return $"{baseClass} border-gray-300 focus:border-blue-500 focus:ring-blue-500 " +
+                   "dark:border-gray-600 dark:focus:border-blue-500 dark:focus:ring-blue-500";
+        }
+
+        public string GetFormCheckboxClass(bool hasError = false)
+        {
+            var baseClass = "h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded " +
+                            "dark:border-gray-600 dark:bg-gray-700 transition-colors";
+
+            if (hasError)
+            {
+                return $"{baseClass} border-red-300 focus:ring-red-500";
+            }
+
+            return baseClass;
+        }
+
+        public string GetFileIconColor(string extension)
+        {
+            return extension.ToLower() switch
+            {
+                var ext when ext.StartsWith(".jpg") || ext.StartsWith(".jpeg") || ext.StartsWith(".png") || ext.StartsWith(".gif") || ext.StartsWith(".webp") => "text-green-600 dark:text-green-400",
+                var ext when ext.StartsWith(".mp4") || ext.StartsWith(".avi") || ext.StartsWith(".mov") || ext.StartsWith(".webm") => "text-blue-600 dark:text-blue-400",
+                var ext when ext.StartsWith(".mp3") || ext.StartsWith(".wav") || ext.StartsWith(".flac") => "text-purple-600 dark:text-purple-400",
+                ".pdf" => "text-red-600 dark:text-red-400",
+                ".doc" or ".docx" => "text-blue-600 dark:text-blue-400",
+                ".xls" or ".xlsx" => "text-green-600 dark:text-green-400",
+                ".ppt" or ".pptx" => "text-orange-600 dark:text-orange-400",
+                ".zip" or ".rar" or ".7z" => "text-yellow-600 dark:text-yellow-400",
+                _ => "text-gray-600 dark:text-gray-400"
+            };
+        }
+        #endregion
     }
 }

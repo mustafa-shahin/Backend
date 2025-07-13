@@ -1,6 +1,6 @@
 ﻿using Frontend.Enums;
 using Frontend.Helpers;
-using Frontend.Interface;
+using Frontend.Interfaces;
 
 namespace Frontend.Services
 {

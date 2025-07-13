@@ -1,7 +1,4 @@
-﻿@using Frontend.Interface
-@using Frontend.Interfaces
-@using Frontend.Services
-@inject IAuthService AuthService
+﻿@inject IAuthService AuthService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 
@@ -44,6 +41,12 @@
                          IsCollapsed="@isCollapsed"
                          Items="@mediaItems" />
 
+        <!-- Products Dropdown -->
+        <SidebarDropdown Icon="fas fa-box"
+                         Text="Products"
+                         IsCollapsed="@isCollapsed"
+                         Items="@productItems" />
+
         <!-- Users -->
         <SidebarItem Icon="fas fa-users"
                      Text="Users"
@@ -61,13 +64,6 @@
                 Coming Soon
             </div>
         </div>
-
-        <!-- Products (Future) -->
-        <SidebarItem Icon="fas fa-box"
-                     Text="Products"
-                     Href="/products"
-                     IsCollapsed="@isCollapsed"
-                     IsDisabled="true" />
 
         <!-- Analytics (Future) -->
         <SidebarItem Icon="fas fa-chart-bar"
@@ -180,6 +176,13 @@
         new SidebarDropdown.DropdownItem { Icon = "fas fa-music", Text = "Audio", Href = "/media/audio" },
         new SidebarDropdown.DropdownItem { Icon = "fas fa-file-alt", Text = "Documents", Href = "/media/documents" },
         new SidebarDropdown.DropdownItem { Icon = "fas fa-video", Text = "Videos", Href = "/media/videos" }
+    };
+
+    private List<SidebarDropdown.DropdownItem> productItems = new()
+    {
+        new SidebarDropdown.DropdownItem { Icon = "fas fa-box", Text = "Products", Href = "/products" },
+        new SidebarDropdown.DropdownItem { Icon = "fas fa-cubes", Text = "Product Variants", Href = "/products/variants" },
+        new SidebarDropdown.DropdownItem { Icon = "fas fa-tags", Text = "Categories", Href = "/products/categories" }
     };
 
     protected override async Task OnInitializedAsync()

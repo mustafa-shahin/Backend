@@ -1,0 +1,463 @@
+@using Backend.CMS.Application.DTOs
+@using Frontend.Interfaces
+@using Frontend.Components.Files
+@using System.Text
+@inject ICategoryService CategoryService
+@inject IFileService FileService
+@inject IStyleService StyleService
+@inject INotificationService NotificationService
+
+<div class="space-y-6">
+    <!-- Basic Information -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center mb-4">
+            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
+                <i class="fas fa-info-circle text-white text-sm"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Basic Information</h3>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Name -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Category Name *
+                </label>
+                <input @bind="Model.Name" @oninput="OnNameChanged"
+                       type="text"
+                       placeholder="Enter category name"
+                       class="@StyleService.GetFormInputClass(addtionalClasses: GetValidationClass("Name"))" />
+                @if (ValidationErrors.ContainsKey("Name"))
+                {
+                    <p class="text-red-600 dark:text-red-400 text-sm mt-1">
+                        <i class="fas fa-exclamation-triangle mr-1"></i>
+                        @ValidationErrors["Name"]
+                    </p>
+                }
+            </div>
+
+            <!-- Slug -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    URL Slug *
+                </label>
+                <div class="relative">
+                    <input @bind="Model.Slug" @oninput="OnSlugChanged"
+                           type="text"
+                           placeholder="category-slug"
+                           class="@StyleService.GetFormInputClass(addtionalClasses: GetValidationClass("Slug"))" />
+                    @if (isValidatingSlug)
+                    {
+                        <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
+                            <div class="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+                        </div>
+                    }
+                    else if (slugValidationResult.HasValue)
+                    {
+                        <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
+                            @if (slugValidationResult.Value)
+                            {
+                                <i class="fas fa-check-circle text-green-500"></i>
+                            }
+                            else
+                            {
+                                <i class="fas fa-times-circle text-red-500"></i>
+                            }
+                        </div>
+                    }
+                </div>
+                @if (ValidationErrors.ContainsKey("Slug"))
+                {
+                    <p class="text-red-600 dark:text-red-400 text-sm mt-1">
+                        <i class="fas fa-exclamation-triangle mr-1"></i>
+                        @ValidationErrors["Slug"]
+                    </p>
+                }
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    Used in URLs. Only lowercase letters, numbers, and hyphens allowed.
+                </p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 mt-6">
+            <!-- Short Description -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Short Description
+                </label>
+                <input @bind="Model.ShortDescription"
+                       type="text"
+                       placeholder="Brief description for listings"
+                       maxlength="500"
+                       class="@StyleService.GetFormInputClass()" />
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    @(Model.ShortDescription?.Length ?? 0)/500 characters. Used in category listings.
+                </p>
+            </div>
+
+            <!-- Description -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Description
+                </label>
+                <textarea @bind="Model.Description"
+                          rows="4"
+                          placeholder="Detailed category description"
+                          maxlength="1000"
+                          class="@StyleService.GetFormTextareaClass()"></textarea>
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    @(Model.Description?.Length ?? 0)/1000 characters. Detailed description for category pages.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hierarchy -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center mb-4">
+            <div class="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center mr-3">
+                <i class="fas fa-sitemap text-white text-sm"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Category Hierarchy</h3>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Parent Category -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Parent Category
+                </label>
+                <select @bind="Model.ParentCategoryId" class="@StyleService.GetFormSelectClass()">
+                    <option value="">-- Root Category --</option>
+                    @if (parentCategories != null)
+                    {
+                        @foreach (var category in parentCategories)
+                        {
+                            <option value="@category.Id">@GetCategoryDisplayName(category)</option>
+                        }
+                    }
+                </select>
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    Select a parent category to create a sub-category, or leave empty for a root category.
+                </p>
+            </div>
+
+            <!-- Sort Order -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Sort Order
+                </label>
+                <input @bind="Model.SortOrder"
+                       type="number"
+                       min="0"
+                       max="9999"
+                       placeholder="0"
+                       class="@StyleService.GetFormInputClass()" />
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    Lower numbers appear first. Use 0 for default ordering.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Images -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center mb-4">
+            <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center mr-3">
+                <i class="fas fa-images text-white text-sm"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Category Images</h3>
+        </div>
+        <ImagePicker SelectedImages="@categoryImageObjects"
+                     SelectedImagesChanged="@OnCategoryImagesChanged"
+                     AllowMultiple="true"
+                     AllowFeatured="true"
+                     AllowUpload="true"
+                     EntityName="category"
+                     GetImageUrlFunc="@GetCategoryImageUrl"
+                     GetImageAltFunc="@GetCategoryImageAlt"
+                     GetIsFeaturedFunc="@GetCategoryImageIsFeatured"
+                     CreateImageFromFileFunc="@CreateCategoryImageFromFile"
+                     UpdateImageFunc="@UpdateCategoryImage" />
+    </div>
+
+    <!-- Status & Visibility -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center mb-4">
+            <div class="w-8 h-8 bg-yellow-600 rounded-lg flex items-center justify-center mr-3">
+                <i class="fas fa-toggle-on text-white text-sm"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Status & Visibility</h3>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Active Status -->
+            <div class="space-y-3">
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" @bind="Model.IsActive" class="@StyleService.GetFormCheckboxClass()" />
+                    <span class="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Active Category
+                    </span>
+                </label>
+                <p class="text-gray-500 dark:text-gray-400 text-xs">
+                    Inactive categories won't appear in product assignment or navigation.
+                </p>
+            </div>
+
+            <!-- Visibility -->
+            <div class="space-y-3">
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" @bind="Model.IsVisible" class="@StyleService.GetFormCheckboxClass()" />
+                    <span class="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Visible to Customers
+                    </span>
+                </label>
+                <p class="text-gray-500 dark:text-gray-400 text-xs">
+                    Hidden categories are only visible in the admin panel.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- SEO Information -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center mb-4">
+            <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center mr-3">
+                <i class="fas fa-search text-white text-sm"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">SEO Information</h3>
+        </div>
+
+        <div class="space-y-6">
+            <!-- Meta Title -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Meta Title
+                </label>
+                <input @bind="Model.MetaTitle"
+                       type="text"
+                       placeholder="SEO-optimized title for search engines"
+                       maxlength="255"
+                       class="@StyleService.GetFormInputClass()" />
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    @(Model.MetaTitle?.Length ?? 0)/255 characters. Leave empty to use category name.
+                </p>
+            </div>
+
+            <!-- Meta Description -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Meta Description
+                </label>
+                <textarea @bind="Model.MetaDescription"
+                          rows="3"
+                          placeholder="Brief description for search engine results"
+                          maxlength="500"
+                          class="@StyleService.GetFormTextareaClass()"></textarea>
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    @(Model.MetaDescription?.Length ?? 0)/500 characters. Appears in search engine results.
+                </p>
+            </div>
+
+            <!-- Meta Keywords -->
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Meta Keywords
+                </label>
+                <input @bind="Model.MetaKeywords"
+                       type="text"
+                       placeholder="keyword1, keyword2, keyword3"
+                       maxlength="500"
+                       class="@StyleService.GetFormInputClass()" />
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    @(Model.MetaKeywords?.Length ?? 0)/500 characters. Comma-separated keywords for SEO.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public CreateCategoryDto Model { get; set; } = new();
+    [Parameter] public Dictionary<string, string> ValidationErrors { get; set; } = new();
+    [Parameter] public bool IsEditMode { get; set; }
+
+    private List<CategoryTreeDto>? parentCategories;
+    private bool isValidatingSlug = false;
+    private bool? slugValidationResult = null;
+    private Timer? slugValidationTimer;
+    private string previousSlug = string.Empty;
+
+    // Image picker support
+    private List<object> categoryImageObjects = new();
+
+    protected override void OnParametersSet()
+    {
+        // Convert CreateCategoryImageDto to objects for the generic ImagePicker
+        categoryImageObjects = Model.Images.Cast<object>().ToList();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadParentCategories();
+    }
+
+    private async Task LoadParentCategories()
+    {
+        try
+        {
+            parentCategories = await CategoryService.GetCategoryTreeAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load parent categories: {ex.Message}");
+        }
+    }
+
+    private void OnNameChanged(ChangeEventArgs e)
+    {
+        var name = e.Value?.ToString() ?? string.Empty;
+        Model.Name = name;
+
+        // Auto-generate slug if it's empty or matches the previous auto-generated slug
+        if (string.IsNullOrEmpty(Model.Slug) || Model.Slug == GenerateSlugFromName(previousSlug))
+        {
+            Model.Slug = GenerateSlugFromName(name);
+            OnSlugChanged();
+        }
+
+        StateHasChanged();
+    }
+
+    private void OnSlugChanged(ChangeEventArgs? e = null)
+    {
+        if (e != null)
+        {
+            Model.Slug = e.Value?.ToString() ?? string.Empty;
+        }
+
+        // Reset validation state
+        slugValidationResult = null;
+
+        // Debounce slug validation
+        slugValidationTimer?.Dispose();
+        slugValidationTimer = new Timer(async _ => await ValidateSlugAsync(), null, 500, Timeout.Infinite);
+
+        StateHasChanged();
+    }
+
+    private async Task ValidateSlugAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Model.Slug))
+        {
+            return;
+        }
+
+        try
+        {
+            isValidatingSlug = true;
+            await InvokeAsync(StateHasChanged);
+
+            var isValid = await CategoryService.ValidateSlugAsync(Model.Slug, IsEditMode ? null : null);
+            slugValidationResult = isValid;
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to validate slug: {ex.Message}");
+            slugValidationResult = false;
+        }
+        finally
+        {
+            isValidatingSlug = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string GenerateSlugFromName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return string.Empty;
+
+        return name.ToLowerInvariant()
+                   .Replace(" ", "-")
+                   .Replace("_", "-")
+                   .ToCharArray()
+                   .Where(c => char.IsLetterOrDigit(c) || c == '-')
+                   .Aggregate(new StringBuilder(), (sb, c) => sb.Append(c))
+                   .ToString()
+                   .Trim('-');
+    }
+
+    private string GetValidationClass(string fieldName)
+    {
+        return ValidationErrors.ContainsKey(fieldName) ? "border-red-500 dark:border-red-400" : string.Empty;
+    }
+
+    private string GetCategoryDisplayName(CategoryTreeDto category)
+    {
+        var prefix = new string('—', category.Level * 2);
+        return $"{prefix} {category.Name}";
+    }
+
+    // ImagePicker helper methods
+    private async Task OnCategoryImagesChanged(List<object> images)
+    {
+        categoryImageObjects = images;
+        Model.Images = images.Cast<CreateCategoryImageDto>().ToList();
+        StateHasChanged();
+    }
+
+    private string GetCategoryImageUrl(object image)
+    {
+        if (image is CreateCategoryImageDto categoryImage)
+        {
+            // Return a URL based on FileId - you might need to adjust this based on your file service
+            return FileService.GetThumbnailUrl(categoryImage.FileId);
+        }
+        return string.Empty;
+    }
+
+    private string? GetCategoryImageAlt(object image)
+    {
+        if (image is CreateCategoryImageDto categoryImage)
+        {
+            return categoryImage.Alt;
+        }
+        return null;
+    }
+
+    private bool GetCategoryImageIsFeatured(object image)
+    {
+        if (image is CreateCategoryImageDto categoryImage)
+        {
+            return categoryImage.IsFeatured;
+        }
+        return false;
+    }
+
+    private object CreateCategoryImageFromFile(FileDto file)
+    {
+        return new CreateCategoryImageDto
+        {
+            FileId = file.Id,
+            Position = Model.Images.Count,
+            IsFeatured = !Model.Images.Any() // First image is featured by default
+        };
+    }
+
+    private void UpdateCategoryImage(object image, string? alt, string? caption, bool isFeatured)
+    {
+        if (image is CreateCategoryImageDto categoryImage)
+        {
+            categoryImage.Alt = alt;
+            categoryImage.Caption = caption;
+            categoryImage.IsFeatured = isFeatured;
+        }
+    }
+
+    public void Dispose()
+    {
+        slugValidationTimer?.Dispose();
+    }
+}

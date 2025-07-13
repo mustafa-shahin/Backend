@@ -1,5 +1,5 @@
 ﻿@inherits LayoutComponentBase
-@using Frontend.Interface
+
 @inject IJSRuntime JSRuntime
 @inject IThemeService ThemeService
 @inject NavigationManager Navigation
@@ -25,9 +25,9 @@
                 <!-- Main Content -->
                 <main class="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900">
                     <div class="p-6">
-                        <Frontend.Components.ErrorBoundary>
+                        <Frontend.Components.Common.ErrorBoundary>
                             @Body
-                        </Frontend.Components.ErrorBoundary>
+                        </Frontend.Components.Common.ErrorBoundary>
                     </div>
                 </main>
             </div>
