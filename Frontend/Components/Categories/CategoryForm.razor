@@ -405,7 +405,15 @@
     {
         categoryImageObjects = images;
         Model.Images = images.Cast<CreateCategoryImageDto>().ToList();
+
+        // Update positions to ensure proper ordering
+        for (int i = 0; i < Model.Images.Count; i++)
+        {
+            Model.Images[i].Position = i;
+        }
+
         StateHasChanged();
+        await Task.CompletedTask; // Ensure this is async-compatible
     }
 
     private string GetCategoryImageUrl(object image)

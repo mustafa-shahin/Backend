@@ -89,8 +89,8 @@
             @if (!string.IsNullOrEmpty(category.FeaturedImageUrl))
             {
                 <div class="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600">
-                    <img src="@category.FeaturedImageUrl" 
-                         alt="@category.Name" 
+                    <img src="@category.FeaturedImageUrl"
+                         alt="@category.Name"
                          class="w-full h-full object-cover"
                          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
                     <div class="w-full h-full flex items-center justify-center" style="display: none;">
@@ -182,7 +182,7 @@
                         Inactive
                     </span>
                 }
-                
+
                 @if (category.IsVisible)
                 {
                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200">
@@ -259,6 +259,7 @@
     private string statusFilter = string.Empty;
     private string visibilityFilter = string.Empty;
     private string parentFilter = string.Empty;
+    private bool ignoreFiltersOnNextLoad = false;
     private string StatusFilter
     {
         get => statusFilter;
@@ -307,20 +308,28 @@
             SortDirection = "Asc"
         };
 
-        // Apply filters
-        if (!string.IsNullOrEmpty(statusFilter))
+        // Apply filters only if not ignoring them
+        if (!ignoreFiltersOnNextLoad)
         {
-            searchDto.IsActive = statusFilter == "active";
-        }
+            if (!string.IsNullOrEmpty(statusFilter))
+            {
+                searchDto.IsActive = statusFilter == "active";
+            }
 
-        if (!string.IsNullOrEmpty(visibilityFilter))
-        {
-            searchDto.IsVisible = visibilityFilter == "visible";
-        }
+            if (!string.IsNullOrEmpty(visibilityFilter))
+            {
+                searchDto.IsVisible = visibilityFilter == "visible";
+            }
 
-        if (!string.IsNullOrEmpty(parentFilter))
+            if (!string.IsNullOrEmpty(parentFilter))
+            {
+                searchDto.ParentCategoryId = parentFilter == "root" ? null : (parentFilter == "sub" ? -1 : null);
+            }
+        }
+        else
         {
-            searchDto.ParentCategoryId = parentFilter == "root" ? null : (parentFilter == "sub" ? -1 : null);
+            // Reset the flag after use
+            ignoreFiltersOnNextLoad = false;
         }
 
         return await CategoryService.GetCategoriesAsync(searchDto);
@@ -415,7 +424,7 @@
     {
         var errors = new Dictionary<string, string>();
 
-        // Basic validation
+        // Only basic required field validation - let backend handle business logic
         if (string.IsNullOrWhiteSpace(model.Name))
         {
             errors["Name"] = "Category name is required.";
@@ -424,29 +433,6 @@
         if (string.IsNullOrWhiteSpace(model.Slug))
         {
             errors["Slug"] = "Category slug is required.";
-        }
-        else
-        {
-            // Validate slug format
-            if (!System.Text.RegularExpressions.Regex.IsMatch(model.Slug, @"^[a-z0-9-]+$"))
-            {
-                errors["Slug"] = "Slug must contain only lowercase letters, numbers, and hyphens.";
-            }
-            else
-            {
-                // Check slug uniqueness
-                var isSlugValid = await CategoryService.ValidateSlugAsync(model.Slug, isEdit ? null : null);
-                if (!isSlugValid)
-                {
-                    errors["Slug"] = "This slug is already in use. Please choose a different one.";
-                }
-            }
-        }
-
-        // Validate parent category (avoid circular references)
-        if (model.ParentCategoryId.HasValue && model.ParentCategoryId.Value <= 0)
-        {
-            errors["ParentCategoryId"] = "Invalid parent category selected.";
         }
 
         return errors;
@@ -457,16 +443,34 @@
         StateHasChanged();
     }
 
-    private Task OnCategoryCreated(CategoryDto category)
+    private async Task OnCategoryCreated(CategoryDto category)
     {
+        // Set flag to ignore filters on next load
+        ignoreFiltersOnNextLoad = true;
+
+        // Clear all filters for future loads
+        statusFilter = string.Empty;
+        visibilityFilter = string.Empty;
+        parentFilter = string.Empty;
+
+        // Show success message
         NotificationService.ShowSuccess($"Category '{category.Name}' created successfully!");
-        return Task.CompletedTask;
+
+        // The GenericCrudPage will call LoadData automatically after this
+        // The ignoreFiltersOnNextLoad flag will ensure new category is visible
     }
 
-    private Task OnCategoryUpdated(CategoryDto category)
+    private async Task OnCategoryUpdated(CategoryDto category)
     {
+        // Set flag to ignore filters on next load
+        ignoreFiltersOnNextLoad = true;
+
+        // Clear filters to ensure updated category is visible
+        statusFilter = string.Empty;
+        visibilityFilter = string.Empty;
+        parentFilter = string.Empty;
+
         NotificationService.ShowSuccess($"Category '{category.Name}' updated successfully!");
-        return Task.CompletedTask;
     }
 
     private Task OnCategoryDeleted(int categoryId)

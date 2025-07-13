@@ -1,5 +1,6 @@
 using Backend.CMS.Application.DTOs;
 using Frontend.Interfaces;
+using Microsoft.JSInterop;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -10,16 +11,18 @@ namespace Frontend.Services
     {
         private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonOptions;
-
-        public CategoryService(HttpClient httpClient)
+        private readonly IJSRuntime _jsRuntime;
+        public CategoryService(HttpClient httpClient, IJSRuntime jsRuntime)
         {
             _httpClient = httpClient;
+            _jsRuntime = jsRuntime;
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
             };
+
         }
 
         public async Task<PagedResult<CategoryDto>> GetCategoriesAsync(CategorySearchDto? searchDto = null)
@@ -217,13 +220,19 @@ namespace Frontend.Services
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
+
+                // Log to browser console
+                await _jsRuntime.InvokeVoidAsync("console.error", $"Failed to update category: {response.StatusCode} - {errorContent}");
+
                 throw new HttpRequestException($"Failed to update category: {response.StatusCode} - {errorContent}");
             }
             catch (Exception ex)
             {
-                throw new Exception($"Error updating category {id}: {ex.Message}", ex);
+                await _jsRuntime.InvokeVoidAsync("console.error", $"Exception while updating category {id}: {ex.Message}");
+                throw;
             }
         }
+
 
         public async Task<bool> DeleteCategoryAsync(int id)
         {

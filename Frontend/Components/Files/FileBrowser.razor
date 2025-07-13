@@ -1,6 +1,9 @@
 @using Backend.CMS.Application.DTOs
 @using Backend.CMS.Domain.Enums
 @using Frontend.Interfaces
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Http
+@using Microsoft.Extensions.Primitives
 @inject IFileService FileService
 @inject IStyleService StyleService
 @inject INotificationService NotificationService
@@ -19,7 +22,7 @@
                        class="@StyleService.GetFormInputClass() pl-10" />
             </div>
         </div>
-        
+
         @if (ShowUpload)
         {
             <button @onclick="ShowUploadDialog" class="@StyleService.GetButtonClass("primary")">
@@ -52,8 +55,8 @@
                                 <div class="aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden mb-2">
                                     @if (file.FileType == FileType.Image)
                                     {
-                                        <img src="@GetFilePreviewUrl(file)" 
-                                             alt="@file.OriginalFileName" 
+                                        <img src="@GetFilePreviewUrl(file)"
+                                             alt="@file.OriginalFileName"
                                              class="w-full h-full object-cover"
                                              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
                                         <div class="w-full h-full flex items-center justify-center" style="display: none;">
@@ -156,6 +159,31 @@
     }
 </div>
 
+<!-- Upload Dialog -->
+@if (ShowUpload)
+{
+    <FormDialog @ref="uploadDialog"
+                Title="Upload Files"
+                Description="Select and upload files to your media library"
+                HeaderIcon="fas fa-upload"
+                IsVisible="@showUploadDialog"
+                IsSaving="@isUploading"
+                Size="large"
+                SaveText="Upload Files"
+                SaveIcon="fas fa-upload"
+                ZIndex="1200"
+                OnClose="@CloseUploadDialog"
+                OnSave="@UploadFiles">
+        <BodyContent>
+            <FileUpload Files="@selectedUploadFiles"
+                        FilesChanged="@OnUploadFilesChanged"
+                        UploadProgress="@uploadProgress"
+                        UploadProgressChanged="@OnUploadProgressChanged"
+                        IsUploading="@isUploading" />
+        </BodyContent>
+    </FormDialog>
+}
+
 @code {
     [Parameter] public FileType[]? FileTypes { get; set; }
     [Parameter] public bool AllowMultiSelect { get; set; } = true;
@@ -167,11 +195,18 @@
     private bool isLoading = true;
     private string searchTerm = string.Empty;
     private Timer? searchTimer;
-    
+
     private int currentPage = 1;
     private int pageSize = 24;
     private int totalCount = 0;
     private int totalPages = 0;
+
+    // Upload functionality
+    private bool showUploadDialog = false;
+    private bool isUploading = false;
+    private List<IBrowserFile> selectedUploadFiles = new();
+    private Dictionary<string, int> uploadProgress = new();
+    private FormDialog? uploadDialog;
 
     protected override async Task OnInitializedAsync()
     {
@@ -266,8 +301,10 @@
 
     private void ShowUploadDialog()
     {
-        // This would open an upload dialog - for now just show a notification
-        NotificationService.ShowInfo("Upload functionality would be implemented here");
+        showUploadDialog = true;
+        selectedUploadFiles.Clear();
+        uploadProgress.Clear();
+        StateHasChanged();
     }
 
     private string GetFileCardClass(bool isSelected)
@@ -285,8 +322,158 @@
         return file.Urls?.Thumbnail ?? file.Urls?.Download ?? FileService.GetThumbnailUrl(file.Id);
     }
 
+    private void CloseUploadDialog()
+    {
+        showUploadDialog = false;
+        selectedUploadFiles.Clear();
+        uploadProgress.Clear();
+        StateHasChanged();
+    }
+
+    private async Task OnUploadFilesChanged(List<IBrowserFile> files)
+    {
+        selectedUploadFiles = files;
+        StateHasChanged();
+    }
+
+    private async Task OnUploadProgressChanged(Dictionary<string, int> progress)
+    {
+        uploadProgress = progress;
+        StateHasChanged();
+    }
+
+    private async Task UploadFiles()
+    {
+        if (!selectedUploadFiles.Any()) return;
+
+        try
+        {
+            isUploading = true;
+            StateHasChanged();
+
+            var uploadTasks = new List<Task>();
+
+            foreach (var file in selectedUploadFiles)
+            {
+                uploadTasks.Add(UploadSingleFile(file));
+            }
+
+            await Task.WhenAll(uploadTasks);
+
+            NotificationService.ShowSuccess($"Successfully uploaded {selectedUploadFiles.Count} file(s)");
+
+            // Refresh the files list
+            await LoadFiles();
+
+            CloseUploadDialog();
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Upload failed: {ex.Message}");
+        }
+        finally
+        {
+            isUploading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task UploadSingleFile(IBrowserFile file)
+    {
+        try
+        {
+            // Initialize progress
+            uploadProgress[file.Name] = 0;
+            await InvokeAsync(() =>
+            {
+                OnUploadProgressChanged(uploadProgress);
+                StateHasChanged();
+            });
+
+            // Create a FormFile from IBrowserFile for the upload
+            var formFile = new FormFileWrapper(file);
+
+            var uploadDto = new FileUploadDto
+            {
+                File = formFile,
+                IsPublic = true,
+                GenerateThumbnail = true,
+                ProcessImmediately = true
+            };
+
+            // Simulate progress updates during upload
+            var progressTask = Task.Run(async () =>
+            {
+                for (int i = 10; i <= 90; i += 10)
+                {
+                    await Task.Delay(100);
+                    uploadProgress[file.Name] = i;
+                    await InvokeAsync(() =>
+                    {
+                        OnUploadProgressChanged(uploadProgress);
+                        StateHasChanged();
+                    });
+                }
+            });
+
+            var result = await FileService.UploadFileAsync(uploadDto);
+
+            // Complete the progress simulation
+            await progressTask;
+
+            if (result?.Success == true && result.File != null)
+            {
+                // Update progress to 100%
+                uploadProgress[file.Name] = 100;
+                await InvokeAsync(() =>
+                {
+                    OnUploadProgressChanged(uploadProgress);
+                    StateHasChanged();
+                });
+            }
+            else
+            {
+                throw new Exception(result?.ErrorMessage ?? "Upload failed");
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to upload {file.Name}: {ex.Message}");
+            // Remove from progress on error
+            uploadProgress.Remove(file.Name);
+            await InvokeAsync(() =>
+            {
+                OnUploadProgressChanged(uploadProgress);
+                StateHasChanged();
+            });
+        }
+    }
+
     public void Dispose()
     {
         searchTimer?.Dispose();
+    }
+
+    // FormFile wrapper to convert IBrowserFile to IFormFile
+    private class FormFileWrapper : IFormFile
+    {
+        private readonly IBrowserFile _browserFile;
+
+        public FormFileWrapper(IBrowserFile browserFile)
+        {
+            _browserFile = browserFile;
+        }
+
+        public string ContentType => _browserFile.ContentType;
+        public string ContentDisposition => "";
+        public IHeaderDictionary Headers => new Microsoft.AspNetCore.Http.HeaderDictionary();
+        public long Length => _browserFile.Size;
+        public string Name => _browserFile.Name;
+        public string FileName => _browserFile.Name;
+
+        public void CopyTo(Stream target) => throw new NotImplementedException();
+        public Task CopyToAsync(Stream target, CancellationToken cancellationToken = default)
+            => _browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100).CopyToAsync(target, cancellationToken);
+        public Stream OpenReadStream() => _browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100); // 100MB limit
     }
 }

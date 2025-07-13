@@ -15,7 +15,7 @@
             <h4 class="text-sm font-medium text-gray-900 dark:text-white">
                 @GetSelectionTitle()
             </h4>
-            
+
             @if (AllowMultiple)
             {
                 <!-- Multiple Images Grid -->
@@ -27,9 +27,9 @@
                         <div class="relative group bg-gray-50 dark:bg-gray-700 rounded-lg border-2 @(IsFeatured(index) ? "border-blue-500" : "border-gray-200 dark:border-gray-600") overflow-hidden">
                             <!-- Image Preview -->
                             <div class="aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                                <img src="@GetImageUrl(image)" 
-                                     alt="@GetImageAlt(image)" 
-                                     class="w-full h-full object-cover" 
+                                <img src="@GetImageUrl(image)"
+                                     alt="@GetImageAlt(image)"
+                                     class="w-full h-full object-cover"
                                      onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
                                 <div class="w-full h-full flex items-center justify-center" style="display: none;">
                                     <i class="fas fa-image text-gray-400 text-2xl"></i>
@@ -93,9 +93,9 @@
                 <div class="relative group bg-gray-50 dark:bg-gray-700 rounded-lg border-2 border-gray-200 dark:border-gray-600 overflow-hidden max-w-xs">
                     <!-- Image Preview -->
                     <div class="aspect-square bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                        <img src="@GetImageUrl(image)" 
-                             alt="@GetImageAlt(image)" 
-                             class="w-full h-full object-cover" 
+                        <img src="@GetImageUrl(image)"
+                             alt="@GetImageAlt(image)"
+                             class="w-full h-full object-cover"
                              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
                         <div class="w-full h-full flex items-center justify-center" style="display: none;">
                             <i class="fas fa-image text-gray-400 text-2xl"></i>
@@ -146,7 +146,7 @@
 
 <!-- File Picker Dialog -->
 <FormDialog @ref="filePickerDialog"
-            Title="@($"Select {(AllowMultiple ? "Images" : "Image")}")" 
+            Title="@($"Select {(AllowMultiple ? "Images" : "Image")}")"
             Description="Choose images from your media library"
             HeaderIcon="fas fa-images"
             IsVisible="@showFilePicker"
@@ -155,59 +155,46 @@
             SaveText="@(AllowMultiple ? "Add Selected" : "Select Image")"
             SaveIcon="fas fa-check"
             OnClose="@CloseFilePicker"
+            ZIndex="1000"
             OnSave="@AddSelectedFiles">
     <BodyContent>
         <div class="space-y-4">
-            <!-- Simplified File Selection -->
-            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
-                <div class="text-center py-8">
-                    <div class="w-16 h-16 mx-auto bg-blue-100 dark:bg-blue-800 rounded-full flex items-center justify-center mb-4">
-                        <i class="fas fa-images text-blue-600 dark:text-blue-300 text-2xl"></i>
-                    </div>
-                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                        Select Images
-                    </h3>
-                    <p class="text-gray-500 dark:text-gray-400 mb-4">
-                        File browser will be implemented here
-                    </p>
-                    <button @onclick="() => SimulateFileSelection()" 
-                            class="@StyleService.GetButtonClass("primary")">
-                        <i class="fas fa-plus mr-2"></i>
-                        Add Demo Image
-                    </button>
-                </div>
-            </div>
+            <!-- File Browser -->
+            <FileBrowser FileTypes="@(new[] { Backend.CMS.Domain.Enums.FileType.Image })"
+                         AllowMultiSelect="@AllowMultiple"
+                         ShowUpload="@AllowUpload"
+                         OnFilesSelected="@OnFilesSelected" />
         </div>
 
-            <!-- Selected Files Preview -->
-            @if (tempSelectedFiles.Any())
-            {
-                <div class="space-y-3">
-                    <h4 class="text-sm font-medium text-gray-900 dark:text-white">
-                        @(AllowMultiple ? $"Selected Files ({tempSelectedFiles.Count})" : "Selected File")
-                    </h4>
-                    <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                        @foreach (var file in tempSelectedFiles)
-                        {
-                            <div class="relative group">
-                                <div class="aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border-2 border-green-500">
-                                    <div class="w-full h-full flex items-center justify-center">
-                                        <div class="text-center">
-                                            <i class="fas fa-image text-green-600 text-2xl mb-2"></i>
-                                            <p class="text-xs font-medium text-green-800">@file.OriginalFileName</p>
-                                        </div>
+        <!-- Selected Files Preview -->
+        @if (tempSelectedFiles.Any())
+        {
+            <div class="space-y-3">
+                <h4 class="text-sm font-medium text-gray-900 dark:text-white">
+                    @(AllowMultiple ? $"Selected Files ({tempSelectedFiles.Count})" : "Selected File")
+                </h4>
+                <div class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    @foreach (var file in tempSelectedFiles)
+                    {
+                        <div class="relative group">
+                            <div class="aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden border-2 border-green-500">
+                                <div class="w-full h-full flex items-center justify-center">
+                                    <div class="text-center">
+                                        <i class="fas fa-image text-green-600 text-2xl mb-2"></i>
+                                        <p class="text-xs font-medium text-green-800">@file.OriginalFileName</p>
                                     </div>
                                 </div>
-                                <button @onclick="() => RemoveTempFile(file)"
-                                        class="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                                        title="Remove">
-                                    <i class="fas fa-times text-xs"></i>
-                                </button>
                             </div>
-                        }
-                    </div>
+                            <button @onclick="() => RemoveTempFile(file)"
+                                    class="absolute -top-2 -right-2 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="Remove">
+                                <i class="fas fa-times text-xs"></i>
+                            </button>
+                        </div>
+                    }
                 </div>
-            }
+            </div>
+        }
     </BodyContent>
 </FormDialog>
 
@@ -221,6 +208,7 @@
             Size="medium"
             SaveText="Update"
             SaveIcon="fas fa-save"
+            ZIndex="1100"
             OnClose="@CloseImageEdit"
             OnSave="@SaveImageEdit">
     <BodyContent>
@@ -230,8 +218,8 @@
                 <!-- Image Preview -->
                 <div class="text-center">
                     <div class="inline-block w-32 h-32 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
-                        <img src="@GetFilePreviewUrl(editingImageFile)" 
-                             alt="@editingImageAlt" 
+                        <img src="@GetFilePreviewUrl(editingImageFile)"
+                             alt="@editingImageAlt"
                              class="w-full h-full object-cover" />
                     </div>
                 </div>
@@ -298,8 +286,8 @@
 
     private FormDialog? filePickerDialog;
     private FormDialog? imageEditDialog;
-    // private FileBrowser? fileBrowser; // Disabled for now
-    
+    private FileBrowser? fileBrowser;
+
     private bool showFilePicker = false;
     private bool showImageEdit = false;
     private object? editingImage = null;
@@ -308,7 +296,7 @@
     private string editingImageAlt = string.Empty;
     private string editingImageCaption = string.Empty;
     private bool editingImageIsFeatured = false;
-    
+
     private List<FileDto> tempSelectedFiles = new();
     private Dictionary<int, FileDto> cachedFiles = new();
 
@@ -328,38 +316,18 @@
 
     private void OnFilesSelected(List<FileDto> files)
     {
-        tempSelectedFiles = files.Where(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Image).ToList();
-        
+        // Filter to only image files
+        tempSelectedFiles = files?.Where(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Image).ToList() ?? new List<FileDto>();
+
         // If single image mode, only keep the first selected
         if (!AllowMultiple && tempSelectedFiles.Count > 1)
         {
             tempSelectedFiles = tempSelectedFiles.Take(1).ToList();
         }
-        
+
         StateHasChanged();
     }
 
-    private void SimulateFileSelection()
-    {
-        // Create demo file for testing
-        var demoFile = new FileDto
-        {
-            Id = DateTime.Now.Millisecond, // Random ID for demo
-            OriginalFileName = $"demo-image-{DateTime.Now:HHmmss}.jpg",
-            FileType = Backend.CMS.Domain.Enums.FileType.Image,
-            ContentType = "image/jpeg",
-            FileSize = 1024000,
-            Urls = new FileUrlsDto()
-        };
-        
-        if (!AllowMultiple)
-        {
-            tempSelectedFiles.Clear();
-        }
-        
-        tempSelectedFiles.Add(demoFile);
-        StateHasChanged();
-    }
 
     private void RemoveTempFile(FileDto file)
     {
@@ -369,44 +337,79 @@
 
     private async Task AddSelectedFiles()
     {
+        if (!tempSelectedFiles.Any())
+        {
+            CloseFilePicker();
+            return;
+        }
+
         var newImages = new List<object>();
 
         foreach (var file in tempSelectedFiles)
         {
-            // Check if already added (for multiple mode)
-            if (AllowMultiple)
+            try
             {
-                var existingImage = SelectedImages.FirstOrDefault(img => GetImageUrlFunc(img).Contains(file.Id.ToString()));
-                if (existingImage == null)
+                // Check if already added (for multiple mode)
+                if (AllowMultiple)
                 {
+                    // Better duplicate check using file ID comparison
+                    bool alreadyExists = false;
+                    foreach (var existingImg in SelectedImages)
+                    {
+                        if (existingImg is CreateCategoryImageDto categoryImg && categoryImg.FileId == file.Id)
+                        {
+                            alreadyExists = true;
+                            break;
+                        }
+                    }
+
+                    if (!alreadyExists)
+                    {
+                        var newImage = CreateImageFromFileFunc(file);
+                        newImages.Add(newImage);
+
+                        // Cache the file for later use
+                        cachedFiles[file.Id] = file;
+                    }
+                }
+                else
+                {
+                    // Single mode - replace existing
+                    SelectedImages.Clear();
                     var newImage = CreateImageFromFileFunc(file);
                     newImages.Add(newImage);
-                    
-                    // Cache the file for later use
                     cachedFiles[file.Id] = file;
+                    break;
                 }
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to add image {file.OriginalFileName}: {ex.Message}");
+            }
+        }
+
+        if (newImages.Any())
+        {
+            if (AllowMultiple)
+            {
+                SelectedImages.AddRange(newImages);
             }
             else
             {
-                // Single mode - replace existing
-                SelectedImages.Clear();
-                var newImage = CreateImageFromFileFunc(file);
-                newImages.Add(newImage);
-                cachedFiles[file.Id] = file;
-                break;
+                SelectedImages = newImages;
+            }
+
+            try
+            {
+                await SelectedImagesChanged.InvokeAsync(SelectedImages);
+                StateHasChanged(); // Force immediate UI update
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to update images: {ex.Message}");
             }
         }
 
-        if (AllowMultiple)
-        {
-            SelectedImages.AddRange(newImages);
-        }
-        else
-        {
-            SelectedImages = newImages;
-        }
-
-        await SelectedImagesChanged.InvokeAsync(SelectedImages);
         CloseFilePicker();
     }
 
@@ -419,7 +422,7 @@
             editingImageAlt = GetImageAltFunc(editingImage) ?? string.Empty;
             editingImageCaption = string.Empty; // This would need to be extracted based on your image type
             editingImageIsFeatured = GetIsFeaturedFunc(editingImage);
-            
+
             // Try to get the cached file
             var imageUrl = GetImageUrlFunc(editingImage);
             var fileId = ExtractFileIdFromUrl(imageUrl);
@@ -427,7 +430,7 @@
             {
                 editingImageFile = cachedFiles[fileId.Value];
             }
-            
+
             showImageEdit = true;
             StateHasChanged();
         }
@@ -463,8 +466,9 @@
 
             // Update the editing image
             UpdateImageFunc(editingImage, editingImageAlt, editingImageCaption, editingImageIsFeatured);
-            
+
             await SelectedImagesChanged.InvokeAsync(SelectedImages);
+            StateHasChanged(); // Force immediate UI update
             CloseImageEdit();
         }
     }
@@ -480,7 +484,7 @@
             }
 
             await SelectedImagesChanged.InvokeAsync(SelectedImages);
-            StateHasChanged();
+            StateHasChanged(); // Force immediate UI update
         }
     }
 
@@ -490,7 +494,7 @@
         {
             SelectedImages.RemoveAt(index);
             await SelectedImagesChanged.InvokeAsync(SelectedImages);
-            StateHasChanged();
+            StateHasChanged(); // Force immediate UI update
         }
     }
 
@@ -508,7 +512,7 @@
     {
         if (!AllowFeatured || index < 0 || index >= SelectedImages.Count)
             return false;
-            
+
         return GetIsFeaturedFunc?.Invoke(SelectedImages[index]) ?? false;
     }
 

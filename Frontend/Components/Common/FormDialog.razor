@@ -4,19 +4,16 @@
 
 @if (IsVisible)
 {
-    <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-        <!-- Background overlay -->
-        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
-                 @onclick="HandleBackdropClick"
-                 aria-hidden="true"></div>
-
-            <!-- This element is to trick the browser into centering the modal contents. -->
-            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-
-            <!-- Modal panel -->
-            <div class="@GetDialogClasses()"
-                 @onclick:stopPropagation="true">
+    <!-- Modal Overlay -->
+    <div class="fixed inset-0 flex items-center justify-center p-4" 
+         style="z-index: @ZIndex; background-color: rgba(0, 0, 0, 0.5);"
+         @onclick="HandleBackdropClick"
+         aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        
+        <!-- Modal Content -->
+        <div class="@GetDialogClasses()"
+             @onclick:stopPropagation="true"
+             style="max-height: 90vh; overflow-y: auto;">
 
                 <!-- Header -->
                 <div class="bg-white dark:bg-gray-800 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
@@ -112,7 +109,7 @@
                 </div>
             </div>
         </div>
-    </div>
+
 }
 
 @code {
@@ -143,6 +140,7 @@
     // Events
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public int ZIndex { get; set; } = 50;
 
     // State management
     private bool _isDisposing = false;
@@ -191,13 +189,15 @@
     private string GetDialogClasses()
     {
         var sizeClass = StyleService.GetDialogSizeClass(Size);
-        return $"inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle {sizeClass} animate-slide-up";
+        return $"bg-white dark:bg-gray-800 rounded-xl shadow-2xl {sizeClass} mx-auto my-auto";
     }
 
     private string GetBodyClasses()
     {
         return StyleService.GetBodyClass(Size);
     }
+
+    // Simplified z-index management - no complex backdrop classes needed
 
     public void Show()
     {
