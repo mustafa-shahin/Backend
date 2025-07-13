@@ -320,15 +320,19 @@
         var name = e.Value?.ToString() ?? string.Empty;
         Model.Name = name;
 
-        // Auto-generate slug if it's empty or matches the previous auto-generated slug
-        if (string.IsNullOrEmpty(Model.Slug) || Model.Slug == GenerateSlugFromName(previousSlug))
+        var generatedSlug = GenerateSlugFromName(name);
+
+        if (string.IsNullOrEmpty(Model.Slug) || Model.Slug == previousSlug)
         {
-            Model.Slug = GenerateSlugFromName(name);
+            Model.Slug = generatedSlug;
             OnSlugChanged();
         }
 
+        previousSlug = generatedSlug;
+
         StateHasChanged();
     }
+
 
     private void OnSlugChanged(ChangeEventArgs? e = null)
     {
@@ -373,21 +377,20 @@
             await InvokeAsync(StateHasChanged);
         }
     }
-
     private string GenerateSlugFromName(string name)
     {
         if (string.IsNullOrWhiteSpace(name))
             return string.Empty;
 
         return name.ToLowerInvariant()
-                   .Replace(" ", "-")
-                   .Replace("_", "-")
-                   .ToCharArray()
-                   .Where(c => char.IsLetterOrDigit(c) || c == '-')
-                   .Aggregate(new StringBuilder(), (sb, c) => sb.Append(c))
-                   .ToString()
-                   .Trim('-');
+          .Replace(" ", "-")
+          .Replace("_", "-")
+          .Where(c => char.IsLetterOrDigit(c) || c == '-')
+          .Aggregate(new StringBuilder(), (sb, c) => sb.Append(c))
+          .ToString()
+          .Trim('-');
     }
+
 
     private string GetValidationClass(string fieldName)
     {

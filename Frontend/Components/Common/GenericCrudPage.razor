@@ -440,6 +440,7 @@
         showEntityDialog = false;
         entityModel = CreateModelFactory();
         validationErrors.Clear();
+        selectedEntityId = 0;
         StateHasChanged();
     }
 
@@ -505,17 +506,29 @@
     {
         try
         {
+            // Ensure dialog is properly closed first
+            deleteDialog?.Hide();
+
             var success = await DeleteFunc(selectedEntityId);
             if (success)
             {
                 NotificationService.ShowSuccess($"{EntitySingularName} deleted successfully");
                 await OnEntityDeleted.InvokeAsync(selectedEntityId);
+
+                // Reset selection
+                selectedEntityId = 0;
+
                 await LoadData();
             }
         }
         catch (Exception ex)
         {
             NotificationService.ShowError($"Failed to delete {EntitySingularName.ToLower()}: {ex.Message}");
+        }
+        finally
+        {
+            // Force state update to ensure UI is refreshed
+            StateHasChanged();
         }
     }
 
@@ -533,6 +546,7 @@
     {
         showDuplicateDialog = false;
         duplicateName = string.Empty;
+        selectedEntityId = 0;
         StateHasChanged();
     }
 

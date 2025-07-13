@@ -94,6 +94,15 @@ namespace Backend.CMS.Infrastructure.Services
             catch (DbUpdateConcurrencyException ex)
             {
                 _logger.LogError(ex, "Concurrency conflict occurred during SaveChanges");
+
+                // Handle concurrency conflicts by refreshing entities
+                foreach (var entry in ex.Entries)
+                {
+                    if (entry.Entity is BaseEntity)
+                    {
+                        await entry.ReloadAsync(cancellationToken);
+                    }
+                }
                 throw;
             }
             catch (DbUpdateException ex)
@@ -138,6 +147,10 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogError(ex, "Failed to commit transaction: {TransactionId}", transaction.TransactionId);
                 throw;
             }
+            finally
+            {
+                await transaction.DisposeAsync();
+            }
         }
 
         public async Task RollbackTransactionAsync(IDbContextTransaction transaction, CancellationToken cancellationToken = default)
@@ -155,6 +168,10 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogError(ex, "Failed to rollback transaction: {TransactionId}", transaction.TransactionId);
                 throw;
             }
+            finally
+            {
+                await transaction.DisposeAsync();
+            }
         }
 
         public async Task ExecuteInTransactionAsync(Func<Task> action, CancellationToken cancellationToken = default)
@@ -165,15 +182,19 @@ namespace Backend.CMS.Infrastructure.Services
             var strategy = _context.Database.CreateExecutionStrategy();
             await strategy.ExecuteAsync(async () =>
             {
-                using var transaction = await BeginTransactionAsync(cancellationToken);
+                IDbContextTransaction? transaction = null;
                 try
                 {
+                    transaction = await BeginTransactionAsync(cancellationToken);
                     await action();
                     await CommitTransactionAsync(transaction, cancellationToken);
                 }
                 catch
                 {
-                    await RollbackTransactionAsync(transaction, cancellationToken);
+                    if (transaction != null)
+                    {
+                        await RollbackTransactionAsync(transaction, cancellationToken);
+                    }
                     throw;
                 }
             });
@@ -187,16 +208,20 @@ namespace Backend.CMS.Infrastructure.Services
             var strategy = _context.Database.CreateExecutionStrategy();
             return await strategy.ExecuteAsync(async () =>
             {
-                using var transaction = await BeginTransactionAsync(cancellationToken);
+                IDbContextTransaction? transaction = null;
                 try
                 {
+                    transaction = await BeginTransactionAsync(cancellationToken);
                     var result = await action();
                     await CommitTransactionAsync(transaction, cancellationToken);
                     return result;
                 }
                 catch
                 {
-                    await RollbackTransactionAsync(transaction, cancellationToken);
+                    if (transaction != null)
+                    {
+                        await RollbackTransactionAsync(transaction, cancellationToken);
+                    }
                     throw;
                 }
             });
@@ -204,8 +229,16 @@ namespace Backend.CMS.Infrastructure.Services
 
         public void ClearChangeTracker()
         {
-            _context.ChangeTracker.Clear();
-            _logger.LogDebug("ChangeTracker cleared");
+            try
+            {
+                _context.ChangeTracker.Clear();
+                _logger.LogDebug("ChangeTracker cleared");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error clearing ChangeTracker");
+                throw;
+            }
         }
 
         public void DetachEntity<T>(T entity) where T : class
@@ -213,8 +246,20 @@ namespace Backend.CMS.Infrastructure.Services
             if (entity == null)
                 throw new ArgumentNullException(nameof(entity));
 
-            _context.Entry(entity).State = EntityState.Detached;
-            _logger.LogDebug("Entity detached: {EntityType}", typeof(T).Name);
+            try
+            {
+                var entry = _context.Entry(entity);
+                if (entry.State != EntityState.Detached)
+                {
+                    entry.State = EntityState.Detached;
+                    _logger.LogDebug("Entity detached: {EntityType}", typeof(T).Name);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error detaching entity of type {EntityType}", typeof(T).Name);
+                throw;
+            }
         }
 
         public void AttachEntity<T>(T entity) where T : class
@@ -222,42 +267,78 @@ namespace Backend.CMS.Infrastructure.Services
             if (entity == null)
                 throw new ArgumentNullException(nameof(entity));
 
-            _context.Entry(entity).State = EntityState.Unchanged;
-            _logger.LogDebug("Entity attached: {EntityType}", typeof(T).Name);
+            try
+            {
+                var entry = _context.Entry(entity);
+                if (entry.State == EntityState.Detached)
+                {
+                    entry.State = EntityState.Unchanged;
+                    _logger.LogDebug("Entity attached: {EntityType}", typeof(T).Name);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error attaching entity of type {EntityType}", typeof(T).Name);
+                throw;
+            }
         }
 
         public bool HasChanges()
         {
-            var hasChanges = _context.ChangeTracker.HasChanges();
-            _logger.LogDebug("ChangeTracker has changes: {HasChanges}", hasChanges);
-            return hasChanges;
+            try
+            {
+                var hasChanges = _context.ChangeTracker.HasChanges();
+                _logger.LogDebug("ChangeTracker has changes: {HasChanges}", hasChanges);
+                return hasChanges;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking if ChangeTracker has changes");
+                return false;
+            }
         }
 
         public IEnumerable<object> GetTrackedEntities()
         {
-            return _context.ChangeTracker.Entries()
-                .Select(e => e.Entity)
-                .ToList();
+            try
+            {
+                return _context.ChangeTracker.Entries()
+                    .Select(e => e.Entity)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting tracked entities");
+                return Enumerable.Empty<object>();
+            }
         }
 
         public void ResetToSnapshot()
         {
-            foreach (var entry in _context.ChangeTracker.Entries())
+            try
             {
-                switch (entry.State)
+                foreach (var entry in _context.ChangeTracker.Entries())
                 {
-                    case EntityState.Modified:
-                        entry.State = EntityState.Unchanged;
-                        break;
-                    case EntityState.Added:
-                        entry.State = EntityState.Detached;
-                        break;
-                    case EntityState.Deleted:
-                        entry.State = EntityState.Unchanged;
-                        break;
+                    switch (entry.State)
+                    {
+                        case EntityState.Modified:
+                            entry.State = EntityState.Unchanged;
+                            break;
+                        case EntityState.Added:
+                            entry.State = EntityState.Detached;
+                            break;
+                        case EntityState.Deleted:
+                            entry.State = EntityState.Unchanged;
+                            break;
+                    }
                 }
+                _logger.LogDebug("ChangeTracker reset to snapshot");
             }
-            _logger.LogDebug("ChangeTracker reset to snapshot");
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error resetting ChangeTracker to snapshot");
+                throw;
+            }
         }
 
         protected virtual void Dispose(bool disposing)
@@ -266,6 +347,12 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 try
                 {
+                    // Clear any pending changes to avoid issues during disposal
+                    if (_context.ChangeTracker.HasChanges())
+                    {
+                        _context.ChangeTracker.Clear();
+                    }
+
                     _context.Dispose();
                     _logger.LogDebug("UnitOfWork disposed successfully");
                 }

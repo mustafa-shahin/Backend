@@ -1,72 +1,72 @@
 ﻿@inject IStyleService StyleService
+@inject IJSRuntime JSRuntime
 
 @if (IsVisible)
 {
-    <div class="fixed inset-0 z-50 overflow-y-auto">
-        <!-- Backdrop -->
-        <div class="modal-backdrop fixed inset-0" @onclick="HandleBackdropClick"></div>
+    <div class="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
+        <!-- Background overlay -->
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+                 @onclick="HandleBackdropClick"
+                 aria-hidden="true"></div>
 
-        <!-- Dialog -->
-        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full max-w-lg animate-slide-up"
+            <!-- This element is to trick the browser into centering the modal contents. -->
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+            <!-- Dialog panel -->
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"
                  @onclick:stopPropagation="true">
 
-                <!-- Header -->
-                <div class="bg-white dark:bg-gray-800 px-6 py-4">
-                    <div class="flex items-center">
-                        @if (!string.IsNullOrEmpty(Icon))
-                        {
-                            <div class="flex-shrink-0">
-                                <i class="@Icon @GetIconColorClass() text-2xl"></i>
+                <!-- Content -->
+                <div class="bg-white dark:bg-gray-800 px-6 pt-6 pb-4">
+                    <div class="flex items-start">
+                        <div class="flex-shrink-0">
+                            <div class="w-12 h-12 rounded-full @GetIconBackgroundClass() flex items-center justify-center">
+                                <i class="@GetIconClass() text-white text-xl"></i>
                             </div>
-                            <div class="ml-4">
-                                <h3 class="text-lg font-medium text-gray-900 dark:text-white">@Title</h3>
+                        </div>
+                        <div class="ml-4 flex-1">
+                            <h3 class="text-lg font-semibold text-gray-900 dark:text-white" id="modal-title">
+                                @Title
+                            </h3>
+                            <div class="mt-2">
+                                <p class="text-sm text-gray-600 dark:text-gray-400">
+                                    @Message
+                                </p>
                             </div>
-                        }
-                        else
-                        {
-                            <h3 class="text-lg font-medium text-gray-900 dark:text-white">@Title</h3>
-                        }
+                        </div>
                     </div>
                 </div>
 
-                <!-- Body -->
-                <div class="bg-white dark:bg-gray-800 px-6 py-4">
-                    @if (BodyContent != null)
-                    {
-                        @BodyContent
-                    }
-                    else
-                    {
-                        <p class="text-gray-600 dark:text-gray-300">@Message</p>
-                    }
-                </div>
-
-                <!-- Footer -->
-                <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 flex justify-end space-x-3">
-                    <button @onclick="Cancel"
+                <!-- Actions -->
+                <div class="bg-gray-50 dark:bg-gray-900 px-6 py-4 flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-3 space-y-3 space-y-reverse sm:space-y-0">
+                    <button @onclick="HandleCancel"
                             type="button"
-                            class="@StyleService.GetButtonClass("secondary", "medium")"
-                            disabled="@IsProcessingInternal">
+                            disabled="@IsProcessing"
+                            class="@StyleService.GetButtonClass("secondary", "medium") w-full sm:w-auto">
                         @CancelText
                     </button>
 
-                    <button @onclick="Confirm"
+                    <button @onclick="HandleConfirm"
                             type="button"
-                            class="@StyleService.GetButtonClass("danger", "medium")"
-                            disabled="@IsProcessingInternal">
-                        @if (IsProcessingInternal)
+                            disabled="@IsProcessing"
+                            class="@GetConfirmButtonClass() w-full sm:w-auto">
+                        @if (IsProcessing)
                         {
-                            <i class="fas fa-spinner fa-spin mr-2"></i>
-                            <span>@ProcessingText</span>
+                            <div class="flex items-center justify-center">
+                                <div class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                                @ProcessingText
+                            </div>
                         }
                         else
                         {
-                            @if (!string.IsNullOrEmpty(ConfirmIcon))
-                            {
-                                <i class="@ConfirmIcon mr-2"></i>
-                            }
-                            <span>@ConfirmText</span>
+                            <div class="flex items-center justify-center">
+                                @if (!string.IsNullOrEmpty(ConfirmIcon))
+                                {
+                                    <i class="@ConfirmIcon mr-2"></i>
+                                }
+                                @ConfirmText
+                            </div>
                         }
                     </button>
                 </div>
@@ -81,158 +81,152 @@
     [Parameter] public string ConfirmText { get; set; } = "Confirm";
     [Parameter] public string CancelText { get; set; } = "Cancel";
     [Parameter] public string ProcessingText { get; set; } = "Processing...";
-    [Parameter] public string ConfirmClass { get; set; } = "btn-primary";
-    [Parameter] public string ConfirmIcon { get; set; } = string.Empty;
-    [Parameter] public string Icon { get; set; } = "fas fa-exclamation-triangle";
-    [Parameter] public string IconType { get; set; } = "warning"; // warning, danger, info, success
+    [Parameter] public string? ConfirmIcon { get; set; }
+    [Parameter] public string ConfirmClass { get; set; } = "";
+    [Parameter] public string Type { get; set; } = "warning"; // warning, danger, info, success
+    [Parameter] public bool CloseOnBackdrop { get; set; } = true;
     [Parameter] public bool IsVisible { get; set; }
     [Parameter] public bool IsProcessing { get; set; }
-    [Parameter] public bool CloseOnBackdrop { get; set; } = true;
-
-    [Parameter] public RenderFragment? BodyContent { get; set; }
-
     [Parameter] public EventCallback OnConfirm { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
 
-    // Internal state to track processing
-    private bool _internalProcessing = false;
-    private bool _wasVisible = false;
-    private bool _confirmInProgress = false;
+    // State management
+    private bool _isDisposing = false;
+    private DotNetObjectReference<ConfirmationDialog>? _objRef;
 
-    // Combined processing state
-    private bool IsProcessingInternal => IsProcessing || _internalProcessing;
-
-    protected override void OnParametersSet()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // Reset internal processing state when dialog becomes visible after being hidden
-        if (IsVisible && !_wasVisible)
+        if (firstRender)
         {
-            _internalProcessing = false;
-            _confirmInProgress = false;
+            _objRef = DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("addEscapeKeyListener", _objRef);
         }
-
-        // Reset internal processing when external processing finishes
-        if (!IsProcessing && _internalProcessing && !_confirmInProgress)
-        {
-            _internalProcessing = false;
-        }
-
-        _wasVisible = IsVisible;
-        base.OnParametersSet();
     }
 
-    private async Task Confirm()
+    private async Task HandleConfirm()
     {
-        if (IsProcessingInternal || _confirmInProgress) return;
+        if (IsProcessing) return;
 
         try
         {
-            _confirmInProgress = true;
-            _internalProcessing = true;
+            IsProcessing = true;
             StateHasChanged();
 
-            if (OnConfirm.HasDelegate)
-            {
-                await OnConfirm.InvokeAsync();
-            }
-
-            // If we reach here and no external processing is managing the state,
-            // and the dialog is still visible, reset our internal state
-            if (!IsProcessing && IsVisible)
-            {
-                _internalProcessing = false;
-                _confirmInProgress = false;
-                StateHasChanged();
-            }
+            await OnConfirm.InvokeAsync();
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"Error in confirmation action: {ex.Message}");
-            _internalProcessing = false;
-            _confirmInProgress = false;
+        }
+        finally
+        {
+            IsProcessing = false;
+            IsVisible = false;
             StateHasChanged();
         }
     }
 
-    private async Task Cancel()
+    private async Task HandleCancel()
     {
-        if (IsProcessingInternal) return;
+        if (IsProcessing) return;
 
-        try
-        {
-            _internalProcessing = false;
-            _confirmInProgress = false;
+        IsVisible = false;
+        StateHasChanged();
 
-            if (OnCancel.HasDelegate)
-            {
-                await OnCancel.InvokeAsync();
-            }
-        }
-        catch (Exception ex)
+        if (OnCancel.HasDelegate)
         {
-            Console.Error.WriteLine($"Error in cancel action: {ex.Message}");
-        }
-        finally
-        {
-            StateHasChanged();
+            await OnCancel.InvokeAsync();
         }
     }
 
     private async Task HandleBackdropClick()
     {
-        if (CloseOnBackdrop && !IsProcessingInternal)
+        if (CloseOnBackdrop && !IsProcessing)
         {
-            await Cancel();
+            await HandleCancel();
         }
     }
 
-    private string GetIconColorClass()
+    [JSInvokable]
+    public async Task HandleEscapeKey()
     {
-        return IconType.ToLower() switch
+        if (IsVisible && !IsProcessing)
         {
-            "warning" => "text-yellow-500",
-            "danger" => "text-red-500",
-            "info" => "text-blue-500",
-            "success" => "text-green-500",
-            _ => "text-yellow-500"
+            await HandleCancel();
+        }
+    }
+
+    private string GetIconClass()
+    {
+        return Type.ToLower() switch
+        {
+            "danger" => "fas fa-exclamation-triangle",
+            "success" => "fas fa-check",
+            "info" => "fas fa-info",
+            _ => "fas fa-exclamation-triangle"
+        };
+    }
+
+    private string GetIconBackgroundClass()
+    {
+        return Type.ToLower() switch
+        {
+            "danger" => "bg-red-500",
+            "success" => "bg-green-500",
+            "info" => "bg-blue-500",
+            _ => "bg-yellow-500"
+        };
+    }
+
+    private string GetConfirmButtonClass()
+    {
+        if (!string.IsNullOrEmpty(ConfirmClass))
+        {
+            return ConfirmClass;
+        }
+
+        return Type.ToLower() switch
+        {
+            "danger" => StyleService.GetButtonClass("danger", "medium"),
+            "success" => StyleService.GetButtonClass("success", "medium"),
+            "info" => StyleService.GetButtonClass("primary", "medium"),
+            _ => StyleService.GetButtonClass("warning", "medium")
         };
     }
 
     public void Show()
     {
         IsVisible = true;
-        _internalProcessing = false;
-        _confirmInProgress = false;
+        IsProcessing = false;
         StateHasChanged();
     }
 
     public void Hide()
     {
         IsVisible = false;
-        _internalProcessing = false;
-        _confirmInProgress = false;
+        IsProcessing = false;
         StateHasChanged();
     }
 
-    /// <summary>
-    /// Force close the dialog and reset all states
-    /// </summary>
-    public void ForceClose()
+    public async ValueTask DisposeAsync()
     {
-        IsVisible = false;
-        _internalProcessing = false;
-        _confirmInProgress = false;
-        _wasVisible = false;
-        StateHasChanged();
-    }
+        if (!_isDisposing)
+        {
+            _isDisposing = true;
 
-    /// <summary>
-    /// Reset the dialog state without changing visibility
-    /// </summary>
-    public void ResetState()
-    {
-        _internalProcessing = false;
-        _confirmInProgress = false;
-        StateHasChanged();
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("removeEscapeKeyListener");
+                _objRef?.Dispose();
+            }
+            catch (JSDisconnectedException)
+            {
+                // Browser has disconnected, ignore
+            }
+            catch (TaskCanceledException)
+            {
+                // Operation was cancelled, ignore
+            }
+        }
     }
 }

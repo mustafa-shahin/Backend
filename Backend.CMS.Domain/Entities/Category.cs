@@ -49,9 +49,7 @@ namespace Backend.CMS.Domain.Entities
         // Images relationship
         public ICollection<CategoryImage> Images { get; set; } = new List<CategoryImage>();
 
-        // Computed property for featured image
-        [NotMapped]
-        public string? FeaturedImageUrl => Images.OrderBy(i => i.Position).FirstOrDefault()?.ImageUrl;
+        public string? FeaturedImageUrl { get; set; }
     }
 
     public class CategoryImage : BaseEntity
@@ -79,10 +77,10 @@ namespace Backend.CMS.Domain.Entities
         public bool IsFeatured { get; set; } = false;
 
         // Computed property for image URL
-        [NotMapped]
-        public string ImageUrl => $"/api/files/{FileId}/download";
+
+        public string? ImageUrl { get; set; }
 
         [NotMapped]
-        public string? ThumbnailUrl => $"/api/files/{FileId}/thumbnail";
+        public string? ThumbnailUrl { get; set; }
     }
 }

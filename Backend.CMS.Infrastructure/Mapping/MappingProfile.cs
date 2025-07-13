@@ -189,8 +189,7 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.SubCategories, opt => opt.MapFrom(src => src.SubCategories.Where(sc => !sc.IsDeleted)))
                 .ForMember(dest => dest.Images, opt => opt.MapFrom(src => src.Images.Where(i => !i.IsDeleted).OrderBy(i => i.Position)))
                 .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl))
-                .ForMember(dest => dest.ProductCount, opt => opt.Ignore()) // Will be set by service
-                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.Images.OrderBy(i => i.Position).FirstOrDefault() != null ? $"/api/files/{src.Images.OrderBy(i => i.Position).FirstOrDefault().FileId}/download" : null));
+                .ForMember(dest => dest.ProductCount, opt => opt.Ignore()); // Will be set by service
 
             CreateMap<Category, CategoryTreeDto>()
                 .ForMember(dest => dest.Children, opt => opt.MapFrom(src => src.SubCategories.Where(sc => !sc.IsDeleted)))

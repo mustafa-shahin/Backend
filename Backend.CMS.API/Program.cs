@@ -578,7 +578,9 @@ static void RegisterCoreServices(WebApplicationBuilder builder)
     builder.Services.AddScoped<IAddressService, AddressService>();
     builder.Services.AddScoped<IContactDetailsService, ContactDetailsService>();
     builder.Services.AddScoped<IUserCacheService, UserCacheService>();
+    builder.Services.AddScoped<IScopedDbContextService, ScopedDbContextService>();
 }
+
 
 static void RegisterBusinessServices(WebApplicationBuilder builder)
 {

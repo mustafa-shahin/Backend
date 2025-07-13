@@ -9,7 +9,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class CategoryRepository : Repository<Category>, ICategoryRepository
     {
-        public CategoryRepository(ApplicationDbContext context, ILogger<CategoryRepository> logger) 
+        public CategoryRepository(ApplicationDbContext context, ILogger<CategoryRepository> logger)
             : base(context, logger)
         {
         }
@@ -23,6 +23,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             try
             {
                 var category = await _dbSet
+                    .AsNoTracking()
                     .Include(c => c.ParentCategory)
                     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
@@ -44,6 +45,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             try
             {
                 var categories = await _dbSet
+                    .AsNoTracking()
                     .Include(c => c.ParentCategory)
                     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
@@ -71,6 +73,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     throw new ArgumentException("Slug cannot be null or empty", nameof(slug));
 
                 var category = await _dbSet
+                    .AsNoTracking()
                     .Include(c => c.ParentCategory)
                     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
@@ -92,6 +95,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             try
             {
                 var categories = await _dbSet
+                    .AsNoTracking()
                     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
                         .ThenInclude(i => i.File)
@@ -115,6 +119,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             try
             {
                 var categories = await _dbSet
+                    .AsNoTracking()
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
                         .ThenInclude(i => i.File)
                     .Where(c => !c.IsDeleted && c.ParentCategoryId == null)
@@ -137,6 +142,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             try
             {
                 var categories = await _dbSet
+                    .AsNoTracking()
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
                         .ThenInclude(i => i.File)
                     .Where(c => !c.IsDeleted && c.ParentCategoryId == parentCategoryId)
@@ -159,6 +165,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             try
             {
                 var category = await _dbSet
+                   .AsNoTracking()
                    .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
                    .Include(c => c.Images.Where(i => !i.IsDeleted))
                        .ThenInclude(i => i.File)
@@ -179,6 +186,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             try
             {
                 var category = await _dbSet
+                    .AsNoTracking()
                     .Include(c => c.ProductCategories.Where(pc => !pc.IsDeleted))
                         .ThenInclude(pc => pc.Product)
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
@@ -202,7 +210,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 if (string.IsNullOrWhiteSpace(slug))
                     throw new ArgumentException("Slug cannot be null or empty", nameof(slug));
 
-                var query = _dbSet.Where(c => !c.IsDeleted && c.Slug == slug);
+                var query = _dbSet.AsNoTracking().Where(c => !c.IsDeleted && c.Slug == slug);
 
                 if (excludeCategoryId.HasValue)
                     query = query.Where(c => c.Id != excludeCategoryId.Value);
@@ -228,6 +236,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 ValidatePagination(page, pageSize);
 
                 var categories = await _dbSet
+                    .AsNoTracking()
                     .Where(c => !c.IsDeleted && (
                         c.Name.Contains(searchTerm) ||
                         (c.Description != null && c.Description.Contains(searchTerm)) ||
@@ -257,6 +266,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 if (!includeSubCategories)
                 {
                     var count = await _context.Set<ProductCategory>()
+                        .AsNoTracking()
                         .Where(pc => pc.CategoryId == categoryId && !pc.IsDeleted)
                         .CountAsync();
 
@@ -269,6 +279,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 categoryIds.Add(categoryId);
 
                 var totalCount = await _context.Set<ProductCategory>()
+                    .AsNoTracking()
                     .Where(pc => categoryIds.Contains(pc.CategoryId) && !pc.IsDeleted)
                     .CountAsync();
 
@@ -286,7 +297,7 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             try
             {
-                var hasSubCategories = await _dbSet.AnyAsync(c => !c.IsDeleted && c.ParentCategoryId == categoryId);
+                var hasSubCategories = await _dbSet.AsNoTracking().AnyAsync(c => !c.IsDeleted && c.ParentCategoryId == categoryId);
                 _logger.LogDebug("Category {CategoryId} has subcategories: {HasSubCategories}", categoryId, hasSubCategories);
                 return hasSubCategories;
             }
@@ -303,6 +314,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             {
                 // Check if category has products
                 var hasProducts = await _context.Set<ProductCategory>()
+                    .AsNoTracking()
                     .AnyAsync(pc => pc.CategoryId == categoryId && !pc.IsDeleted);
 
                 if (hasProducts)
@@ -337,9 +349,9 @@ namespace Backend.CMS.Infrastructure.Repositories
             {
                 ValidatePagination(searchDto.PageNumber, searchDto.PageSize);
 
-                // Start with base query - only filter by IsDeleted initially
-                var query = _dbSet.Where(c => !c.IsDeleted);
-                var test = query.ToList().Where(c => c.IsDeleted);
+                // Start with base query - use AsNoTracking to prevent tracking conflicts
+                var query = _dbSet.AsNoTracking().Where(c => !c.IsDeleted);
+
                 // Apply filters only if they are explicitly specified
                 if (searchDto.ParentCategoryId.HasValue)
                 {
@@ -421,7 +433,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 // Apply sorting
                 query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
 
-                // Apply pagination
+                // Apply pagination and include related entities
                 var categories = await query
                     .Include(c => c.ParentCategory)
                     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
@@ -430,6 +442,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
                     .Take(searchDto.PageSize)
                     .ToListAsync();
+
                 var result = new PagedResult<Category>
                 {
                     Data = categories,
@@ -456,7 +469,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             {
                 ValidatePagination(pageNumber, pageSize);
 
-                var query = _dbSet.Where(c => !c.IsDeleted && c.ParentCategoryId == null);
+                var query = _dbSet.AsNoTracking().Where(c => !c.IsDeleted && c.ParentCategoryId == null);
 
                 var totalCount = await query.CountAsync();
 
@@ -493,7 +506,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             {
                 ValidatePagination(pageNumber, pageSize);
 
-                var query = _dbSet.Where(c => !c.IsDeleted && c.ParentCategoryId == parentCategoryId);
+                var query = _dbSet.AsNoTracking().Where(c => !c.IsDeleted && c.ParentCategoryId == parentCategoryId);
 
                 var totalCount = await query.CountAsync();
 
@@ -566,7 +579,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         private IQueryable<Category> BuildSearchQuery(CategorySearchDto searchDto)
         {
-            var query = _dbSet.Where(c => !c.IsDeleted);
+            var query = _dbSet.AsNoTracking().Where(c => !c.IsDeleted);
 
             if (searchDto.ParentCategoryId.HasValue)
             {
@@ -664,6 +677,7 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             var descendantIds = new List<int>();
             var childIds = await _dbSet
+                .AsNoTracking()
                 .Where(c => !c.IsDeleted && c.ParentCategoryId == categoryId)
                 .Select(c => c.Id)
                 .ToListAsync();
@@ -682,10 +696,10 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             if (page < 1)
                 throw new ArgumentException("Page number must be greater than 0", nameof(page));
-            
+
             if (pageSize < 1)
                 throw new ArgumentException("Page size must be greater than 0", nameof(pageSize));
-            
+
             if (pageSize > 1000)
                 throw new ArgumentException("Page size cannot exceed 1000", nameof(pageSize));
         }

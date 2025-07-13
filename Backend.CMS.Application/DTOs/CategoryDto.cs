@@ -60,9 +60,10 @@ namespace Backend.CMS.Application.DTOs
         [StringLength(500)]
         public string? MetaKeywords { get; set; }
 
-        public Dictionary<string, object> CustomFields { get; set; } = new();
+        public Dictionary<string, object> CustomFields { get; set; } = [];
 
-        public List<CreateCategoryImageDto> Images { get; set; } = new();
+        public List<CreateCategoryImageDto> Images { get; set; } = [];
+        public string? FeaturedImageUrl { get; set; }
     }
 
     public class UpdateCategoryDto

@@ -287,9 +287,8 @@
                     Title="@DeleteDialogTitle"
                     Message="@DeleteDialogMessage"
                     ConfirmText="Delete"
-                    ConfirmClass="bg-red-600 hover:bg-red-700 focus:ring-red-500"
+                    ConfirmClass="@StyleService.GetButtonClass("danger")"
                     ConfirmIcon="fas fa-trash"
-                    IconType="danger"
                     OnConfirm="@DeleteFile"
                     OnCancel="@CancelDelete"
                     IsVisible="@dialogState.ShowDeleteDialog"
@@ -619,8 +618,7 @@
             // Show the confirmation dialog
             dialogState.ShowDeleteDialog = true;
 
-            // Force the dialog to reset its state
-            deleteFileDialog?.ResetState();
+
 
             StateHasChanged();
         }
