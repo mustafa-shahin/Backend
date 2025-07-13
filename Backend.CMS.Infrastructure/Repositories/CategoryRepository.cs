@@ -337,12 +337,91 @@ namespace Backend.CMS.Infrastructure.Repositories
             {
                 ValidatePagination(searchDto.PageNumber, searchDto.PageSize);
 
-                var query = BuildSearchQuery(searchDto);
+                // Start with base query - only filter by IsDeleted initially
+                var query = _dbSet.Where(c => !c.IsDeleted);
+                var test = query.ToList().Where(c => c.IsDeleted);
+                // Apply filters only if they are explicitly specified
+                if (searchDto.ParentCategoryId.HasValue)
+                {
+                    query = query.Where(c => c.ParentCategoryId == searchDto.ParentCategoryId.Value);
+                }
 
+                if (searchDto.IsActive.HasValue)
+                {
+                    query = query.Where(c => c.IsActive == searchDto.IsActive.Value);
+                }
+
+                if (searchDto.IsVisible.HasValue)
+                {
+                    query = query.Where(c => c.IsVisible == searchDto.IsVisible.Value);
+                }
+
+                // Apply search term filter
+                if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
+                {
+                    var searchTerm = searchDto.SearchTerm.Trim().ToLower();
+                    query = query.Where(c =>
+                        c.Name.ToLower().Contains(searchTerm) ||
+                        (c.Description != null && c.Description.ToLower().Contains(searchTerm)) ||
+                        c.Slug.ToLower().Contains(searchTerm) ||
+                        (c.MetaKeywords != null && c.MetaKeywords.ToLower().Contains(searchTerm)));
+                }
+
+                // Apply date filters
+                if (searchDto.CreatedFrom.HasValue)
+                {
+                    query = query.Where(c => c.CreatedAt >= searchDto.CreatedFrom.Value);
+                }
+
+                if (searchDto.CreatedTo.HasValue)
+                {
+                    query = query.Where(c => c.CreatedAt <= searchDto.CreatedTo.Value);
+                }
+
+                if (searchDto.UpdatedFrom.HasValue)
+                {
+                    query = query.Where(c => c.UpdatedAt >= searchDto.UpdatedFrom.Value);
+                }
+
+                if (searchDto.UpdatedTo.HasValue)
+                {
+                    query = query.Where(c => c.UpdatedAt <= searchDto.UpdatedTo.Value);
+                }
+
+                // Apply image filter
+                if (searchDto.HasImages.HasValue)
+                {
+                    if (searchDto.HasImages.Value)
+                    {
+                        query = query.Where(c => c.Images.Any(i => !i.IsDeleted));
+                    }
+                    else
+                    {
+                        query = query.Where(c => !c.Images.Any(i => !i.IsDeleted));
+                    }
+                }
+
+                // Apply meta keywords filter
+                if (!string.IsNullOrWhiteSpace(searchDto.MetaKeywords))
+                {
+                    var keywords = searchDto.MetaKeywords.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(k => k.Trim().ToLower()).ToList();
+
+                    foreach (var keyword in keywords)
+                    {
+                        query = query.Where(c => c.MetaKeywords != null && c.MetaKeywords.ToLower().Contains(keyword));
+                    }
+                }
+
+                // Get total count before applying pagination
                 var totalCount = await query.CountAsync();
 
+                _logger.LogDebug("Query built successfully. Total count before pagination: {TotalCount}", totalCount);
+
+                // Apply sorting
                 query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
 
+                // Apply pagination
                 var categories = await query
                     .Include(c => c.ParentCategory)
                     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
@@ -351,7 +430,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
                     .Take(searchDto.PageSize)
                     .ToListAsync();
-
                 var result = new PagedResult<Category>
                 {
                     Data = categories,
@@ -360,12 +438,14 @@ namespace Backend.CMS.Infrastructure.Repositories
                     TotalCount = totalCount
                 };
 
-                _logger.LogDebug("Retrieved paged categories: {Count} results", categories.Count);
+                _logger.LogDebug("Retrieved paged categories: {Count} results out of {TotalCount} total",
+                    categories.Count, totalCount);
+
                 return result;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving paged categories");
+                _logger.LogError(ex, "Error retrieving paged categories with search criteria: {@SearchDto}", searchDto);
                 throw;
             }
         }
