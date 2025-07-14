@@ -29,6 +29,8 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly SemaphoreSlim _uploadSemaphore;
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _hashSemaphores;
         private readonly Timer _semaphoreCleanupTimer;
+        private readonly int _defaultPageSize;
+        private readonly int _maxPageSize;
         private bool _disposed = false;
 
         public FileService(
@@ -50,7 +52,10 @@ namespace Backend.CMS.Infrastructure.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
 
-            _baseUrl = configuration["FileStorage:BaseUrl"] ?? "/api/files";
+            _baseUrl = configuration["FileStorage:BaseUrl"] ?? "/api/v1/files";
+            _defaultPageSize = configuration.GetValue("Pagination:DefaultPageSize", 10);
+            _maxPageSize = configuration.GetValue("Pagination:MaxPageSize", 100);
+
             _uploadSemaphore = new SemaphoreSlim(Environment.ProcessorCount, Environment.ProcessorCount);
             _hashSemaphores = new ConcurrentDictionary<string, SemaphoreSlim>();
 
@@ -317,20 +322,25 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                // Validate pagination parameters
+                // Validate and normalize pagination parameters
                 var pageNumber = Math.Max(1, searchDto.PageNumber);
-                var pageSize = Math.Clamp(searchDto.PageSize, 1, 100);
+                var pageSize = Math.Clamp(searchDto.PageSize <= 0 ? _defaultPageSize : searchDto.PageSize, 1, _maxPageSize);
 
-                // Build query using EF queryable
-                var query = BuildFileQuery(searchDto);
+                _logger.LogDebug("Getting paginated files: page {PageNumber}, size {PageSize}", pageNumber, pageSize);
+
+                // Build base query using repository queryable
+                var query = _unitOfWork.Files.GetQueryable();
+
+                // Apply search filters efficiently at database level
+                query = ApplySearchFilters(query, searchDto);
 
                 // Apply sorting
                 query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
 
-                // Get total count for pagination
+                // Get total count for pagination (before applying skip/take)
                 var totalCount = await query.CountAsync();
 
-                // Apply pagination and get results
+                // Apply pagination at database level
                 var files = await query
                     .Skip((pageNumber - 1) * pageSize)
                     .Take(pageSize)
@@ -338,6 +348,8 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Map to DTOs with URLs
                 var fileDtos = await MapFilesToDtos(files);
+
+                _logger.LogDebug("Retrieved {Count} files out of {TotalCount} total", files.Count, totalCount);
 
                 return new PaginatedResult<FileDto>(fileDtos, pageNumber, pageSize, totalCount);
             }
@@ -350,8 +362,22 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<PaginatedResult<FileDto>> SearchFilesPagedAsync(FileSearchDto searchDto)
         {
-            // SearchFilesPagedAsync uses the same logic as GetFilesPagedAsync
-            // but with more emphasis on search functionality
+            // Ensure we have search criteria
+            if (string.IsNullOrWhiteSpace(searchDto.SearchTerm) &&
+                !searchDto.FileType.HasValue &&
+                !searchDto.FolderId.HasValue &&
+                !searchDto.IsPublic.HasValue &&
+                !searchDto.CreatedFrom.HasValue &&
+                !searchDto.CreatedTo.HasValue &&
+                !searchDto.MinSize.HasValue &&
+                !searchDto.MaxSize.HasValue &&
+                (!searchDto.Tags?.Any() ?? true))
+            {
+                _logger.LogWarning("Search called without any search criteria, returning empty result");
+                return PaginatedResult<FileDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
+            }
+
+            // Use the same logic as GetFilesPagedAsync since it already handles search
             return await GetFilesPagedAsync(searchDto);
         }
 
@@ -361,7 +387,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 FolderId = folderId,
                 PageNumber = pageNumber,
-                PageSize = pageSize,
+                PageSize = pageSize <= 0 ? _defaultPageSize : pageSize,
                 SortBy = "CreatedAt",
                 SortDirection = "Desc"
             };
@@ -419,10 +445,9 @@ namespace Backend.CMS.Infrastructure.Services
             };
         }
 
-
         #endregion
 
-        #region File Management Operations - FIXED DEADLOCK ISSUES
+        #region File Management Operations
 
         public async Task<FileDto> UpdateFileAsync(int fileId, UpdateFileDto updateDto)
         {
@@ -471,8 +496,6 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogInformation("Starting delete operation for file {FileId}", fileId);
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
-
-                // Use single repository call to avoid nested semaphore acquisition
                 var success = await _unitOfWork.Files.SoftDeleteAsync(fileId, currentUserId);
 
                 if (success)
@@ -503,46 +526,43 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogInformation("Starting bulk delete operation for {Count} files", fileIds.Count);
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
+                var successCount = 0;
+                var failureCount = 0;
 
-    
-                    var successCount = 0;
-                    var failureCount = 0;
+                // Process deletions in parallel batches to avoid overwhelming the system
+                const int batchSize = 10;
+                var batches = fileIds.Chunk(batchSize);
 
-                    // Process deletions in parallel batches to avoid overwhelming the semaphore
-                    const int batchSize = 10;
-                    var batches = fileIds.Chunk(batchSize);
-
-                    foreach (var batch in batches)
+                foreach (var batch in batches)
+                {
+                    var tasks = batch.Select(async fileId =>
                     {
-                        var tasks = batch.Select(async fileId =>
+                        try
                         {
-                            try
+                            var success = await _unitOfWork.Files.SoftDeleteAsync(fileId, currentUserId);
+                            if (success)
                             {
-                                var success = await _unitOfWork.Files.SoftDeleteAsync(fileId, currentUserId);
-                                if (success)
-                                {
-                                    Interlocked.Increment(ref successCount);
-                                }
-                                else
-                                {
-                                    Interlocked.Increment(ref failureCount);
-                                }
+                                Interlocked.Increment(ref successCount);
                             }
-                            catch (Exception ex)
+                            else
                             {
-                                _logger.LogError(ex, "Failed to delete file: {FileId}", fileId);
                                 Interlocked.Increment(ref failureCount);
                             }
-                        });
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to delete file: {FileId}", fileId);
+                            Interlocked.Increment(ref failureCount);
+                        }
+                    });
 
-                        await Task.WhenAll(tasks);
-                    }
+                    await Task.WhenAll(tasks);
+                }
 
-                    _logger.LogInformation("Bulk delete completed: {SuccessCount} successful, {FailureCount} failed",
-                        successCount, failureCount);
+                _logger.LogInformation("Bulk delete completed: {SuccessCount} successful, {FailureCount} failed",
+                    successCount, failureCount);
 
-                    return successCount == fileIds.Count;
-        
+                return successCount == fileIds.Count;
             }
             catch (Exception ex)
             {
@@ -939,7 +959,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         #endregion
 
-        #region Bulk Operations - FIXED DEADLOCK ISSUES
+        #region Bulk Operations
 
         public async Task<bool> BulkUpdateFilesAsync(List<int> fileIds, UpdateFileDto updateDto)
         {
@@ -951,7 +971,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var currentUserId = _userSessionService.GetCurrentUserId();
                 var successCount = 0;
 
-                // Process updates in batches
+                // Process updates in batches for better performance
                 const int batchSize = 50;
                 var batches = fileIds.Chunk(batchSize);
 
@@ -1044,42 +1064,36 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<FileDto>> BulkCopyFilesAsync(List<int> fileIds, int? destinationFolderId)
         {
+            var copiedFiles = new List<FileDto>();
 
- 
-                var copiedFiles = new List<FileDto>();
-                                                      
-
-                foreach (var fileId in fileIds)
+            foreach (var fileId in fileIds)
+            {
+                try
                 {
-                    try
+                    var copyDto = new CopyFileDto
                     {
-                        var copyDto = new CopyFileDto
-                        {
-                            FileId = fileId,
-                            DestinationFolderId = destinationFolderId
-                        };
+                        FileId = fileId,
+                        DestinationFolderId = destinationFolderId
+                    };
 
-                        var copiedFile = await CopyFileAsync(copyDto);
-                        copiedFiles.Add(copiedFile);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Failed to copy file: {FileId}", fileId);
-
-                    }
+                    var copiedFile = await CopyFileAsync(copyDto);
+                    copiedFiles.Add(copiedFile);
                 }
-                return copiedFiles;
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to copy file: {FileId}", fileId);
+                }
+            }
 
+            return copiedFiles;
         }
 
         #endregion
 
-            #region Private Helper Methods
+        #region Private Helper Methods
 
-        private IQueryable<FileEntity> BuildFileQuery(FileSearchDto searchDto)
+        private IQueryable<FileEntity> ApplySearchFilters(IQueryable<FileEntity> query, FileSearchDto searchDto)
         {
-            var query = _unitOfWork.Files.GetQueryable();
-
             // Apply filters efficiently at database level
             if (!string.IsNullOrEmpty(searchDto.SearchTerm))
             {
@@ -1118,7 +1132,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
             }
 
-            return query.Where(f => !f.IsDeleted);
+            return query;
         }
 
         private static IQueryable<FileEntity> ApplySorting(IQueryable<FileEntity> query, string sortBy, string sortDirection)

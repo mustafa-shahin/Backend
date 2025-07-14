@@ -2,15 +2,13 @@
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
-using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
-using Backend.CMS.Infrastructure.Services;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using System.Text.Json;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -18,9 +16,6 @@ namespace Backend.CMS.Infrastructure.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IUserSessionService _userSessionService;
-        private readonly ICacheService _cacheService;
-        private readonly ICacheKeyService _cacheKeyService;
-        private readonly ICacheInvalidationService _cacheInvalidationService;
         private readonly IMapper _mapper;
         private readonly ILogger<FolderService> _logger;
         private readonly IConfiguration _configuration;
@@ -31,17 +26,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly Timer _semaphoreCleanupTimer;
         private readonly Lock _semaphoreLock = new();
 
-        // Cache TTL configurations
-        private readonly TimeSpan _folderMetadataCacheTTL;
-        private readonly TimeSpan _folderListCacheTTL;
-        private readonly TimeSpan _folderTreeCacheTTL;
-        private readonly TimeSpan _folderSearchCacheTTL;
-        private readonly TimeSpan _folderStatisticsCacheTTL;
-        private readonly TimeSpan _folderValidationCacheTTL;
-        private readonly TimeSpan _breadcrumbsCacheTTL;
-
         // Performance settings
-        private readonly bool _enableAggressiveCaching;
         private readonly int _maxConcurrentOperations;
 
         // Pagination settings
@@ -53,33 +38,17 @@ namespace Backend.CMS.Infrastructure.Services
         public FolderService(
             IUnitOfWork unitOfWork,
             IUserSessionService userSessionService,
-            ICacheService cacheService,
-            ICacheKeyService cacheKeyService,
-            ICacheInvalidationService cacheInvalidationService,
             IMapper mapper,
             ILogger<FolderService> logger,
             IConfiguration configuration)
         {
-            _unitOfWork = unitOfWork;
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
             _userSessionService = userSessionService ?? throw new ArgumentNullException(nameof(userSessionService));
-            _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
-            _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
-            _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
 
-            // Load cache TTL configurations
-            _folderMetadataCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FolderStorage:CacheTTL:MetadataMinutes", 30));
-            _folderListCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FolderStorage:CacheTTL:ListMinutes", 15));
-            _folderTreeCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FolderStorage:CacheTTL:TreeMinutes", 20));
-            _folderSearchCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FolderStorage:CacheTTL:SearchMinutes", 10));
-            _folderStatisticsCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FolderStorage:CacheTTL:StatisticsMinutes", 30));
-            _folderValidationCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FolderStorage:CacheTTL:ValidationMinutes", 5));
-            _breadcrumbsCacheTTL = TimeSpan.FromMinutes(_configuration.GetValue("FolderStorage:CacheTTL:BreadcrumbsMinutes", 15));
-
             // Load performance settings
-            _enableAggressiveCaching = _configuration.GetValue("FolderStorage:Performance:EnableAggressiveCaching", true);
             _maxConcurrentOperations = _configuration.GetValue("FolderStorage:Performance:MaxConcurrentOperations", Environment.ProcessorCount);
 
             // Load pagination settings
@@ -95,7 +64,7 @@ namespace Backend.CMS.Infrastructure.Services
                 TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(10));
         }
 
-        #region Paginated Operations (Core Service Logic)
+        #region Paginated Operations (Core Service Logic with Database-Level Pagination)
 
         public async Task<PaginatedResult<FolderDto>> GetFoldersPagedAsync(int? parentFolderId = null, int pageNumber = 1, int pageSize = 10)
         {
@@ -103,48 +72,47 @@ namespace Backend.CMS.Infrastructure.Services
             pageNumber = Math.Max(1, pageNumber);
             pageSize = Math.Clamp(pageSize <= 0 ? _defaultPageSize : pageSize, 1, _maxPageSize);
 
-            var cacheKey = _cacheKeyService.GetCollectionKey<FolderDto>("paged", parentFolderId ?? 0, pageNumber, pageSize);
+            _logger.LogDebug("Getting paginated folders: parent {ParentFolderId}, page {PageNumber}, size {PageSize}",
+                parentFolderId, pageNumber, pageSize);
 
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            await _operationSemaphore.WaitAsync();
+            try
             {
-                _logger.LogDebug("Cache miss for paginated folders: parent {ParentFolderId}, page {PageNumber}, size {PageSize}",
-                    parentFolderId, pageNumber, pageSize);
+                // Build query for efficient database-level pagination
+                var query = _unitOfWork.Folders.GetQueryable();
 
-                await _operationSemaphore.WaitAsync();
-                try
+                // Apply parent folder filter
+                if (parentFolderId.HasValue)
                 {
-                    // Get all folders for the parent (this will be optimized with repository-level pagination in production)
-                    var allFolders = parentFolderId.HasValue
-                        ? await _unitOfWork.Folders.GetSubFoldersAsync(parentFolderId.Value)
-                        : await _unitOfWork.Folders.GetRootFoldersAsync();
-
-                    var totalCount = allFolders.Count();
-
-                    // Apply server-side pagination
-                    var folders = allFolders
-                        .Skip((pageNumber - 1) * pageSize)
-                        .Take(pageSize)
-                        .ToList();
-
-                    // Map to DTOs with enhanced metadata
-                    var folderDtos = await MapFoldersToDto(folders);
-
-                    // Create paginated result
-                    var result = new PaginatedResult<FolderDto>(folderDtos, pageNumber, pageSize, totalCount);
-
-                    // Cache individual folder metadata for future single folder requests
-                    if (_enableAggressiveCaching && folderDtos.Any())
-                    {
-                        await CacheFolderMetadataListAsync(folderDtos);
-                    }
-
-                    return result;
+                    query = query.Where(f => f.ParentFolderId == parentFolderId.Value);
                 }
-                finally
+                else
                 {
-                    _operationSemaphore.Release();
+                    query = query.Where(f => f.ParentFolderId == null);
                 }
-            }, _folderListCacheTTL) ?? PaginatedResult<FolderDto>.Empty(pageNumber, pageSize);
+
+                query = query.OrderBy(f => f.Name);
+
+                var totalCount = await query.CountAsync();
+
+                var folders = await query
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync();
+
+                var folderDtos = await MapFoldersToDto(folders);
+
+                var result = new PaginatedResult<FolderDto>(folderDtos, pageNumber, pageSize, totalCount);
+
+                _logger.LogDebug("Retrieved {Count} folders out of {TotalCount} total for parent {ParentFolderId}",
+                    folders.Count, totalCount, parentFolderId);
+
+                return result;
+            }
+            finally
+            {
+                _operationSemaphore.Release();
+            }
         }
 
         public async Task<PaginatedResult<FolderDto>> SearchFoldersPagedAsync(string searchTerm, int pageNumber = 1, int pageSize = 10)
@@ -156,51 +124,49 @@ namespace Backend.CMS.Infrastructure.Services
             pageNumber = Math.Max(1, pageNumber);
             pageSize = Math.Clamp(pageSize <= 0 ? _defaultPageSize : pageSize, 1, _maxPageSize);
 
-            var searchHash = GenerateSearchHash(searchTerm);
-            var cacheKey = _cacheKeyService.GetQueryKey<FolderDto>("search_paged", new { Hash = searchHash, PageNumber = pageNumber, PageSize = pageSize });
+            _logger.LogDebug("Searching paginated folders: {SearchTerm}, page {PageNumber}, size {PageSize}",
+                searchTerm, pageNumber, pageSize);
 
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            await _operationSemaphore.WaitAsync();
+            try
             {
-                _logger.LogDebug("Cache miss for paginated folder search: {SearchTerm}, page {PageNumber}, size {PageSize}",
-                    searchTerm, pageNumber, pageSize);
 
-                await _operationSemaphore.WaitAsync();
-                try
-                {
-                    // Get all matching folders
-                    var allFolders = await _unitOfWork.Folders.SearchFoldersByNameAsync(searchTerm);
-                    var totalCount = allFolders.Count();
+                var query = _unitOfWork.Folders.GetQueryable();
 
-                    // Apply server-side pagination
-                    var folders = allFolders
-                        .Skip((pageNumber - 1) * pageSize)
-                        .Take(pageSize)
-                        .ToList();
 
-                    // Map to DTOs
-                    var folderDtos = await MapFoldersToDto(folders);
+                var searchTermLower = searchTerm.ToLowerInvariant();
+                query = query.Where(f =>
+                    EF.Functions.Like(f.Name.ToLower(), $"%{searchTermLower}%") ||
+                    (f.Description != null && EF.Functions.Like(f.Description.ToLower(), $"%{searchTermLower}%")));
 
-                    // Create paginated result
-                    var result = new PaginatedResult<FolderDto>(folderDtos, pageNumber, pageSize, totalCount);
+                query = query.OrderBy(f => f.Name);
 
-                    // Cache individual folder metadata
-                    if (_enableAggressiveCaching && folderDtos.Any())
-                    {
-                        await CacheFolderMetadataListAsync(folderDtos, TimeSpan.FromMinutes(5));
-                    }
+                var totalCount = await query.CountAsync();
 
-                    return result;
-                }
-                finally
-                {
-                    _operationSemaphore.Release();
-                }
-            }, _folderSearchCacheTTL) ?? PaginatedResult<FolderDto>.Empty(pageNumber, pageSize);
+                var folders = await query
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync();
+
+                
+                var folderDtos = await MapFoldersToDto(folders);
+
+                var result = new PaginatedResult<FolderDto>(folderDtos, pageNumber, pageSize, totalCount);
+
+                _logger.LogDebug("Found {Count} folders out of {TotalCount} total matching '{SearchTerm}'",
+                    folders.Count, totalCount, searchTerm);
+
+                return result;
+            }
+            finally
+            {
+                _operationSemaphore.Release();
+            }
         }
 
         #endregion
 
-        #region Create/Update/Delete Operations (Invalidate cache)
+        #region Create/Update/Delete Operations
 
         public async Task<FolderDto> CreateFolderAsync(CreateFolderDto createDto)
         {
@@ -217,14 +183,12 @@ namespace Backend.CMS.Infrastructure.Services
             folder.Path = await GenerateUniqueFolderPathAsync(createDto.Name, createDto.ParentFolderId);
 
             await _unitOfWork.Folders.AddAsync(folder);
-            await _unitOfWork.Folders.SaveChangesAsync();
+            await _unitOfWork.SaveChangesAsync();
 
             var result = _mapper.Map<FolderDto>(folder);
             await PopulateFolderStatistics(result);
 
-            // Invalidate related cache
-            await InvalidateFolderRelatedCacheAsync(result.Id, result.ParentFolderId);
-            await InvalidateGlobalFolderCacheAsync();
+            _logger.LogInformation("Created folder: {FolderName} (ID: {FolderId})", folder.Name, folder.Id);
 
             return result;
         }
@@ -238,7 +202,6 @@ namespace Backend.CMS.Infrastructure.Services
             if (folder == null)
                 throw new ArgumentException("Folder not found");
 
-            var originalParentId = folder.ParentFolderId;
             var currentUserId = _userSessionService.GetCurrentUserId();
 
             _mapper.Map(updateDto, folder);
@@ -246,18 +209,12 @@ namespace Backend.CMS.Infrastructure.Services
             folder.UpdatedByUserId = currentUserId;
 
             _unitOfWork.Folders.Update(folder);
-            await _unitOfWork.Folders.SaveChangesAsync();
+            await _unitOfWork.SaveChangesAsync();
 
             var result = _mapper.Map<FolderDto>(folder);
             await PopulateFolderStatistics(result);
 
-            // Invalidate cache for both old and new parent folders
-            await Task.WhenAll(
-                InvalidateFolderRelatedCacheAsync(folderId, originalParentId),
-                InvalidateFolderRelatedCacheAsync(folderId, result.ParentFolderId),
-                InvalidateGlobalFolderCacheAsync(),
-                InvalidateFolderValidationCacheAsync()
-            );
+            _logger.LogInformation("Updated folder: {FolderName} (ID: {FolderId})", folder.Name, folder.Id);
 
             return result;
         }
@@ -268,7 +225,6 @@ namespace Backend.CMS.Infrastructure.Services
             if (folder == null)
                 return false;
 
-            var parentFolderId = folder.ParentFolderId;
             var currentUserId = _userSessionService.GetCurrentUserId();
 
             // Check if folder can be deleted
@@ -278,13 +234,10 @@ namespace Backend.CMS.Infrastructure.Services
             }
 
             var success = await _unitOfWork.Folders.SoftDeleteAsync(folderId, currentUserId);
+
             if (success)
             {
-                await Task.WhenAll(
-                    InvalidateFolderRelatedCacheAsync(folderId, parentFolderId),
-                    InvalidateGlobalFolderCacheAsync(),
-                    InvalidateFolderValidationCacheAsync()
-                );
+                _logger.LogInformation("Deleted folder: {FolderName} (ID: {FolderId})", folder.Name, folder.Id);
             }
 
             return success;
@@ -298,8 +251,6 @@ namespace Backend.CMS.Infrastructure.Services
             var folder = await _unitOfWork.Folders.GetByIdAsync(moveDto.FolderId);
             if (folder == null)
                 throw new ArgumentException("Folder not found");
-
-            var originalParentId = folder.ParentFolderId;
 
             // Prevent moving folder to its own descendant
             if (moveDto.NewParentFolderId.HasValue && await _unitOfWork.Folders.IsDescendantOfAsync(moveDto.NewParentFolderId.Value, moveDto.FolderId))
@@ -315,13 +266,8 @@ namespace Backend.CMS.Infrastructure.Services
             var result = _mapper.Map<FolderDto>(updatedFolder!);
             await PopulateFolderStatistics(result);
 
-            // Invalidate cache for both old and new parent folders
-            await Task.WhenAll(
-                InvalidateFolderRelatedCacheAsync(moveDto.FolderId, originalParentId),
-                InvalidateFolderRelatedCacheAsync(moveDto.FolderId, moveDto.NewParentFolderId),
-                InvalidateGlobalFolderCacheAsync(),
-                InvalidateFolderValidationCacheAsync()
-            );
+            _logger.LogInformation("Moved folder: {FolderName} (ID: {FolderId}) to parent {NewParentId}",
+                folder.Name, folder.Id, moveDto.NewParentFolderId);
 
             return result;
         }
@@ -336,6 +282,7 @@ namespace Backend.CMS.Infrastructure.Services
                 return false;
 
             var currentUserId = _userSessionService.GetCurrentUserId();
+            var oldName = folder.Name;
 
             folder.Name = newName.Trim();
             folder.UpdatedAt = DateTime.UtcNow;
@@ -345,13 +292,10 @@ namespace Backend.CMS.Infrastructure.Services
             folder.Path = await GenerateUniqueFolderPathAsync(newName, folder.ParentFolderId);
 
             _unitOfWork.Folders.Update(folder);
-            await _unitOfWork.Folders.SaveChangesAsync();
+            await _unitOfWork.SaveChangesAsync();
 
-            await Task.WhenAll(
-                InvalidateFolderMetadataCacheAsync(folderId),
-                InvalidateGlobalFolderCacheAsync(),
-                InvalidateFolderValidationCacheAsync()
-            );
+            _logger.LogInformation("Renamed folder from '{OldName}' to '{NewName}' (ID: {FolderId})",
+                oldName, newName, folderId);
 
             return true;
         }
@@ -380,77 +324,66 @@ namespace Backend.CMS.Infrastructure.Services
             newFolder.Path = await GenerateUniqueFolderPathAsync(folderName, destinationFolderId);
 
             await _unitOfWork.Folders.AddAsync(newFolder);
-            await _unitOfWork.Folders.SaveChangesAsync();
+            await _unitOfWork.SaveChangesAsync();
 
             var result = _mapper.Map<FolderDto>(newFolder);
             await PopulateFolderStatistics(result);
 
-            await Task.WhenAll(
-                InvalidateFolderRelatedCacheAsync(result.Id, destinationFolderId),
-                InvalidateGlobalFolderCacheAsync()
-            );
+            _logger.LogInformation("Copied folder: {OriginalName} to {NewName} (ID: {NewFolderId})",
+                originalFolder.Name, folderName, newFolder.Id);
 
             return result;
         }
 
         #endregion
 
-        #region Cached Read Operations
+        #region Read Operations
 
         public async Task<FolderDto> GetFolderByIdAsync(int folderId)
         {
             if (folderId <= 0)
                 throw new ArgumentException("Folder ID must be greater than 0", nameof(folderId));
 
-            var cacheKey = _cacheKeyService.GetEntityKey<FolderDto>(folderId);
+            _logger.LogDebug("Getting folder by ID: {FolderId}", folderId);
 
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                _logger.LogDebug("Cache miss for folder metadata: {FolderId}", folderId);
+            var folder = await _unitOfWork.Folders.GetByIdAsync(folderId);
+            if (folder == null)
+                throw new ArgumentException($"Folder with ID {folderId} not found");
 
-                var folder = await _unitOfWork.Folders.GetByIdAsync(folderId);
-                if (folder == null)
-                    return null;
+            var dto = _mapper.Map<FolderDto>(folder);
+            await PopulateFolderStatistics(dto);
 
-                var dto = _mapper.Map<FolderDto>(folder);
-                await PopulateFolderStatistics(dto);
-                return dto;
-            }, _folderMetadataCacheTTL) ?? throw new InvalidOperationException($"Folder with ID {folderId} could not be retrieved.");
+            return dto;
         }
 
         public async Task<List<FolderDto>> GetFoldersAsync(int? parentFolderId = null)
         {
-            var cacheKey = _cacheKeyService.GetCollectionKey<FolderDto>("by_parent", parentFolderId ?? 0);
+            _logger.LogDebug("Getting folders for parent: {ParentFolderId}", parentFolderId);
 
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            // Use queryable for efficient data access
+            var query = _unitOfWork.Folders.GetQueryable();
+
+            if (parentFolderId.HasValue)
             {
-                _logger.LogDebug("Cache miss for folder list: parent {ParentFolderId}", parentFolderId);
+                query = query.Where(f => f.ParentFolderId == parentFolderId.Value);
+            }
+            else
+            {
+                query = query.Where(f => f.ParentFolderId == null);
+            }
 
-                var folders = parentFolderId.HasValue
-                    ? await _unitOfWork.Folders.GetSubFoldersAsync(parentFolderId.Value)
-                    : await _unitOfWork.Folders.GetRootFoldersAsync();
+            query = query.OrderBy(f => f.Name);
+            var folders = await query.ToListAsync();
 
-                var folderDtos = await MapFoldersToDto(folders);
+            var folderDtos = await MapFoldersToDto(folders);
 
-                // Cache individual folder metadata for future single folder requests
-                if (_enableAggressiveCaching && folderDtos.Any())
-                {
-                    await CacheFolderMetadataListAsync(folderDtos);
-                }
-
-                return folderDtos;
-            }, _folderListCacheTTL) ?? new List<FolderDto>();
+            return folderDtos;
         }
 
         public async Task<FolderTreeDto> GetFolderTreeAsync(int? rootFolderId = null)
         {
-            var cacheKey = _cacheKeyService.GetCollectionKey<FolderTreeDto>("tree", rootFolderId ?? 0);
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                _logger.LogDebug("Cache miss for folder tree: root {RootFolderId}", rootFolderId);
-                return await BuildFolderTreeAsync(rootFolderId);
-            }, _folderTreeCacheTTL) ?? new FolderTreeDto();
+            _logger.LogDebug("Building folder tree for root: {RootFolderId}", rootFolderId);
+            return await BuildFolderTreeAsync(rootFolderId);
         }
 
         public async Task<List<FolderDto>> SearchFoldersAsync(string searchTerm)
@@ -458,50 +391,36 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(searchTerm))
                 return new List<FolderDto>();
 
-            var searchHash = GenerateSearchHash(searchTerm);
-            var cacheKey = _cacheKeyService.GetQueryKey<FolderDto>("search", new { Hash = searchHash });
+            _logger.LogDebug("Searching folders for term: {SearchTerm}", searchTerm);
 
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                _logger.LogDebug("Cache miss for folder search: {SearchTerm}", searchTerm);
+            // Use queryable for efficient database search
+            var query = _unitOfWork.Folders.GetQueryable();
+            var searchTermLower = searchTerm.ToLowerInvariant();
 
-                var folders = await _unitOfWork.Folders.SearchFoldersByNameAsync(searchTerm);
-                var folderDtos = await MapFoldersToDto(folders);
+            query = query.Where(f =>
+                EF.Functions.Like(f.Name.ToLower(), $"%{searchTermLower}%") ||
+                (f.Description != null && EF.Functions.Like(f.Description.ToLower(), $"%{searchTermLower}%")));
 
-                // Cache individual folder metadata
-                if (_enableAggressiveCaching && folderDtos.Any())
-                {
-                    await CacheFolderMetadataListAsync(folderDtos, TimeSpan.FromMinutes(5));
-                }
+            query = query.OrderBy(f => f.Name);
+            var folders = await query.ToListAsync();
 
-                return folderDtos;
-            }, _folderSearchCacheTTL) ?? new List<FolderDto>();
+            var folderDtos = await MapFoldersToDto(folders);
+
+            return folderDtos;
         }
 
         public async Task<string> GetFolderPathAsync(int folderId)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("folder_path", folderId);
-
-            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var folder = await _unitOfWork.Folders.GetByIdAsync(folderId);
-                return new StringWrapper(folder?.Path ?? string.Empty);
-            }, _folderMetadataCacheTTL);
-
-            return result?.Value ?? string.Empty;
+            var folder = await _unitOfWork.Folders.GetByIdAsync(folderId);
+            return folder?.Path ?? string.Empty;
         }
 
         public async Task<List<FolderDto>> GetFolderBreadcrumbsAsync(int folderId)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("folder_breadcrumbs", folderId);
+            _logger.LogDebug("Getting breadcrumbs for folder: {FolderId}", folderId);
 
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                _logger.LogDebug("Cache miss for folder breadcrumbs: {FolderId}", folderId);
-
-                var ancestors = await _unitOfWork.Folders.GetAncestorsAsync(folderId);
-                return await MapFoldersToDto(ancestors);
-            }, _breadcrumbsCacheTTL) ?? new List<FolderDto>();
+            var ancestors = await _unitOfWork.Folders.GetAncestorsAsync(folderId);
+            return await MapFoldersToDto(ancestors);
         }
 
         public async Task<FolderDto?> GetFolderByPathAsync(string path)
@@ -509,68 +428,50 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(path))
                 return null;
 
-            var cacheKey = _cacheKeyService.GetCustomKey("folder_by_path", path.ToLowerInvariant());
+            _logger.LogDebug("Getting folder by path: {Path}", path);
 
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                _logger.LogDebug("Cache miss for folder by path: {Path}", path);
+            var folder = await _unitOfWork.Folders.GetByPathAsync(path);
+            if (folder == null)
+                return null;
 
-                var folder = await _unitOfWork.Folders.GetByPathAsync(path);
-                if (folder == null)
-                    return null;
-
-                var dto = _mapper.Map<FolderDto>(folder);
-                await PopulateFolderStatistics(dto);
-                return dto;
-            }, _folderMetadataCacheTTL);
+            var dto = _mapper.Map<FolderDto>(folder);
+            await PopulateFolderStatistics(dto);
+            return dto;
         }
 
         public async Task<Dictionary<string, object>> GetFolderStatisticsAsync(int folderId)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("folder_statistics", folderId);
+            _logger.LogDebug("Getting statistics for folder: {FolderId}", folderId);
 
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            var fileCount = await _unitOfWork.Folders.GetTotalFileCountAsync(folderId, includeSubfolders: false);
+            var subFolderCount = (await _unitOfWork.Folders.GetSubFoldersAsync(folderId)).Count();
+            var totalSize = await _unitOfWork.Folders.GetTotalSizeAsync(folderId, includeSubfolders: false);
+            var totalSizeWithSubfolders = await _unitOfWork.Folders.GetTotalSizeAsync(folderId, includeSubfolders: true);
+            var depth = await _unitOfWork.Folders.GetDepthAsync(folderId);
+
+            return new Dictionary<string, object>
             {
-                _logger.LogDebug("Cache miss for folder statistics: {FolderId}", folderId);
-
-                var fileCount = await _unitOfWork.Folders.GetTotalFileCountAsync(folderId, includeSubfolders: false);
-                var subFolderCount = (await _unitOfWork.Folders.GetSubFoldersAsync(folderId)).Count();
-                var totalSize = await _unitOfWork.Folders.GetTotalSizeAsync(folderId, includeSubfolders: false);
-                var totalSizeWithSubfolders = await _unitOfWork.Folders.GetTotalSizeAsync(folderId, includeSubfolders: true);
-                var depth = await _unitOfWork.Folders.GetDepthAsync(folderId);
-
-                return new Dictionary<string, object>
-                {
-                    ["fileCount"] = fileCount,
-                    ["subFolderCount"] = subFolderCount,
-                    ["totalSize"] = totalSize,
-                    ["totalSizeWithSubfolders"] = totalSizeWithSubfolders,
-                    ["totalSizeFormatted"] = FormatFileSize(totalSize),
-                    ["totalSizeWithSubfoldersFormatted"] = FormatFileSize(totalSizeWithSubfolders),
-                    ["depth"] = depth,
-                    ["generatedAt"] = DateTime.UtcNow
-                };
-            }, _folderStatisticsCacheTTL) ?? new Dictionary<string, object>();
+                ["fileCount"] = fileCount,
+                ["subFolderCount"] = subFolderCount,
+                ["totalSize"] = totalSize,
+                ["totalSizeWithSubfolders"] = totalSizeWithSubfolders,
+                ["totalSizeFormatted"] = FormatFileSize(totalSize),
+                ["totalSizeWithSubfoldersFormatted"] = FormatFileSize(totalSizeWithSubfolders),
+                ["depth"] = depth,
+                ["generatedAt"] = DateTime.UtcNow
+            };
         }
 
         #endregion
 
-        #region Cached Validation Operations
+        #region Validation Operations
 
         public async Task<bool> FolderExistsAsync(int folderId)
         {
             if (folderId <= 0)
                 return false;
 
-            var cacheKey = _cacheKeyService.GetCustomKey("folder_exists", folderId);
-
-            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var exists = await _unitOfWork.Folders.AnyAsync(f => f.Id == folderId);
-                return new BoolWrapper(exists);
-            }, _folderValidationCacheTTL);
-
-            var exists = result?.Value ?? false;
+            var exists = await _unitOfWork.Folders.AnyAsync(f => f.Id == folderId);
             _logger.LogDebug("Folder existence check for {FolderId}: {Exists}", folderId, exists);
 
             return exists;
@@ -581,16 +482,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (string.IsNullOrWhiteSpace(name))
                 return false;
 
-            var cacheKey = _cacheKeyService.GetCustomKey("folder_name_validation",
-                name.ToLowerInvariant(), parentFolderId ?? 0, excludeFolderId ?? 0);
-
-            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var isValid = await _unitOfWork.Folders.IsPathUniqueAsync(name, excludeFolderId);
-                return new BoolWrapper(isValid);
-            }, _folderValidationCacheTTL);
-
-            var isValid = result?.Value ?? false;
+            var isValid = await _unitOfWork.Folders.IsPathUniqueAsync(name, excludeFolderId);
             _logger.LogDebug("Folder name validation for '{Name}' in parent {ParentId}: {IsValid}",
                 name, parentFolderId, isValid);
 
@@ -599,93 +491,77 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> IsSubFolderOfAsync(int childFolderId, int parentFolderId)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("folder_hierarchy_check", childFolderId, parentFolderId);
-
-            var result = await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                var isSubFolder = await _unitOfWork.Folders.IsDescendantOfAsync(childFolderId, parentFolderId);
-                return new BoolWrapper(isSubFolder);
-            }, _folderValidationCacheTTL);
-
-            return result?.Value ?? false;
+            var isSubFolder = await _unitOfWork.Folders.IsDescendantOfAsync(childFolderId, parentFolderId);
+            return isSubFolder;
         }
 
         #endregion
 
-        #region System Folder Operations (Cached)
+        #region System Folder Operations
 
         public async Task<FolderDto> GetOrCreateSystemFolderAsync(FolderType folderType)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("system_folder", folderType.ToString());
+            _logger.LogDebug("Getting or creating system folder: {FolderType}", folderType);
 
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            var existingFolder = (await _unitOfWork.Folders.GetFoldersByTypeAsync(folderType)).FirstOrDefault();
+            if (existingFolder != null)
             {
-                _logger.LogDebug("Cache miss for system folder: {FolderType}", folderType);
+                var dto = _mapper.Map<FolderDto>(existingFolder);
+                await PopulateFolderStatistics(dto);
+                return dto;
+            }
 
-                var existingFolder = (await _unitOfWork.Folders.GetFoldersByTypeAsync(folderType)).FirstOrDefault();
-                if (existingFolder != null)
-                {
-                    var dto = _mapper.Map<FolderDto>(existingFolder);
-                    await PopulateFolderStatistics(dto);
-                    return dto;
-                }
+            // Create system folder
+            var createDto = new CreateFolderDto
+            {
+                Name = GetSystemFolderName(folderType),
+                Description = GetSystemFolderDescription(folderType),
+                FolderType = folderType,
+                IsPublic = folderType == FolderType.CompanyAssets
+            };
 
-                // Create system folder
-                var createDto = new CreateFolderDto
-                {
-                    Name = GetSystemFolderName(folderType),
-                    Description = GetSystemFolderDescription(folderType),
-                    FolderType = folderType,
-                    IsPublic = folderType == FolderType.CompanyAssets
-                };
+            var result = await CreateFolderAsync(createDto);
+            _logger.LogInformation("Created system folder: {FolderType} (ID: {FolderId})", folderType, result.Id);
 
-                return await CreateFolderAsync(createDto);
-            }, _folderMetadataCacheTTL) ?? throw new InvalidOperationException($"System folder {folderType} could not be created.");
+            return result;
         }
 
         public async Task<FolderDto> GetUserAvatarFolderAsync(int userId)
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("user_avatar_folder", userId);
+            _logger.LogDebug("Getting user avatar folder for user: {UserId}", userId);
 
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
+            var userAvatarsFolder = await GetOrCreateSystemFolderAsync(FolderType.UserAvatars);
+
+            var userFolder = (await _unitOfWork.Folders.GetSubFoldersAsync(userAvatarsFolder.Id))
+                .FirstOrDefault(f => f.Name.Equals($"user_{userId}", StringComparison.OrdinalIgnoreCase));
+
+            if (userFolder != null)
             {
-                _logger.LogDebug("Cache miss for user avatar folder: {UserId}", userId);
+                var dto = _mapper.Map<FolderDto>(userFolder);
+                await PopulateFolderStatistics(dto);
+                return dto;
+            }
 
-                var userAvatarsFolder = await GetOrCreateSystemFolderAsync(FolderType.UserAvatars);
+            // Create user-specific avatar folder
+            var createDto = new CreateFolderDto
+            {
+                Name = $"user_{userId}",
+                Description = $"Avatar folder for user {userId}",
+                ParentFolderId = userAvatarsFolder.Id,
+                FolderType = FolderType.UserAvatars,
+                IsPublic = false
+            };
 
-                var userFolder = (await _unitOfWork.Folders.GetSubFoldersAsync(userAvatarsFolder.Id))
-                    .FirstOrDefault(f => f.Name.Equals($"user_{userId}", StringComparison.OrdinalIgnoreCase));
+            var result = await CreateFolderAsync(createDto);
+            _logger.LogInformation("Created user avatar folder for user {UserId} (ID: {FolderId})", userId, result.Id);
 
-                if (userFolder != null)
-                {
-                    var dto = _mapper.Map<FolderDto>(userFolder);
-                    await PopulateFolderStatistics(dto);
-                    return dto;
-                }
-
-                // Create user-specific avatar folder
-                var createDto = new CreateFolderDto
-                {
-                    Name = $"user_{userId}",
-                    Description = $"Avatar folder for user {userId}",
-                    ParentFolderId = userAvatarsFolder.Id,
-                    FolderType = FolderType.UserAvatars,
-                    IsPublic = false
-                };
-
-                return await CreateFolderAsync(createDto);
-            }, _folderMetadataCacheTTL) ?? throw new InvalidOperationException($"User avatar folder for user {userId} could not be created.");
+            return result;
         }
 
         public async Task<FolderDto> GetCompanyAssetsFolderAsync()
         {
-            var cacheKey = _cacheKeyService.GetCustomKey("company_assets_folder");
-
-            return await _cacheService.GetOrAddAsync(cacheKey, async () =>
-            {
-                _logger.LogDebug("Cache miss for company assets folder");
-                return await GetOrCreateSystemFolderAsync(FolderType.CompanyAssets);
-            }, _folderMetadataCacheTTL) ?? throw new InvalidOperationException("Company assets folder could not be created.");
+            _logger.LogDebug("Getting company assets folder");
+            return await GetOrCreateSystemFolderAsync(FolderType.CompanyAssets);
         }
 
         #endregion
@@ -730,9 +606,18 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task<FolderTreeDto> BuildFolderTreeAsync(int? rootFolderId)
         {
-            var folders = rootFolderId.HasValue
-                ? await _unitOfWork.Folders.GetSubFoldersAsync(rootFolderId.Value)
-                : await _unitOfWork.Folders.GetRootFoldersAsync();
+            var query = _unitOfWork.Folders.GetQueryable();
+
+            if (rootFolderId.HasValue)
+            {
+                query = query.Where(f => f.ParentFolderId == rootFolderId.Value);
+            }
+            else
+            {
+                query = query.Where(f => f.ParentFolderId == null);
+            }
+
+            var folders = await query.OrderBy(f => f.Name).ToListAsync();
 
             var treeDto = new FolderTreeDto();
 
@@ -774,7 +659,10 @@ namespace Backend.CMS.Infrastructure.Services
 
                 if (child.HasSubFolders)
                 {
-                    var subFolders = await _unitOfWork.Folders.GetSubFoldersAsync(folder.Id);
+                    var subQuery = _unitOfWork.Folders.GetQueryable()
+                        .Where(f => f.ParentFolderId == folder.Id)
+                        .OrderBy(f => f.Name);
+                    var subFolders = await subQuery.ToListAsync();
                     child.Children = await BuildFolderTreeChildren(subFolders);
                 }
 
@@ -842,167 +730,6 @@ namespace Backend.CMS.Infrastructure.Services
             }
             return $"{len:0.##} {sizes[order]}";
         }
-
-        private async Task CacheFolderMetadataListAsync(IEnumerable<FolderDto> folders, TimeSpan? customTtl = null)
-        {
-            if (!_enableAggressiveCaching || !folders.Any())
-                return;
-
-            var ttl = customTtl ?? _folderMetadataCacheTTL;
-            var cachingTasks = folders.Select(async folder =>
-            {
-                try
-                {
-                    var cacheKey = _cacheKeyService.GetEntityKey<FolderDto>(folder.Id);
-                    await _cacheService.SetAsync(cacheKey, folder, ttl);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to cache metadata for folder {FolderId}", folder.Id);
-                }
-            });
-
-            await Task.WhenAll(cachingTasks);
-            _logger.LogDebug("Cached metadata for {Count} folders", folders.Count());
-        }
-
-        private string GenerateSearchHash(string searchTerm)
-        {
-            var normalizedTerm = searchTerm.ToLowerInvariant().Trim();
-            using var sha256 = SHA256.Create();
-            var hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(normalizedTerm));
-            return Convert.ToBase64String(hashBytes).Replace("/", "_").Replace("+", "-").TrimEnd('=')[..12];
-        }
-
-        #region Cache Invalidation Methods
-
-        private async Task InvalidateFolderRelatedCacheAsync(int folderId, int? parentFolderId)
-        {
-            try
-            {
-                var invalidationTasks = new List<Task>
-                {
-                    InvalidateFolderMetadataCacheAsync(folderId),
-                    InvalidateFolderHierarchyCacheAsync(folderId),
-                    InvalidateGlobalFolderCacheAsync()
-                };
-
-                if (parentFolderId.HasValue)
-                {
-                    invalidationTasks.Add(InvalidateParentFolderCacheAsync(parentFolderId.Value));
-                }
-
-                await Task.WhenAll(invalidationTasks);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error invalidating cache for folder {FolderId}", folderId);
-            }
-        }
-
-        private async Task InvalidateFolderMetadataCacheAsync(int folderId)
-        {
-            try
-            {
-                var cacheKeys = new[]
-                {
-                    _cacheKeyService.GetEntityKey<FolderDto>(folderId),
-                    _cacheKeyService.GetCustomKey("folder_path", folderId),
-                    _cacheKeyService.GetCustomKey("folder_breadcrumbs", folderId),
-                    _cacheKeyService.GetCustomKey("folder_statistics", folderId),
-                    _cacheKeyService.GetCustomKey("folder_exists", folderId)
-                };
-
-                await _cacheService.RemoveAsync(cacheKeys);
-                _logger.LogDebug("Invalidated metadata cache for folder {FolderId}", folderId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to invalidate metadata cache for folder {FolderId}", folderId);
-            }
-        }
-
-        private async Task InvalidateFolderHierarchyCacheAsync(int folderId)
-        {
-            try
-            {
-                // Invalidate hierarchy-related cache patterns
-                await Task.WhenAll(
-                    _cacheService.RemoveByPatternAsync($"folder:*:hierarchy_check:*:{folderId}"),
-                    _cacheService.RemoveByPatternAsync($"folder:*:hierarchy_check:{folderId}:*"),
-                    _cacheService.RemoveByPatternAsync("folder:*:breadcrumbs:*"),
-                    _cacheService.RemoveByPatternAsync("folder:*:tree:*")
-                );
-
-                _logger.LogDebug("Invalidated hierarchy cache for folder {FolderId}", folderId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to invalidate hierarchy cache for folder {FolderId}", folderId);
-            }
-        }
-
-        private async Task InvalidateParentFolderCacheAsync(int parentFolderId)
-        {
-            try
-            {
-                // Invalidate parent folder's children list
-                await Task.WhenAll(
-                    _cacheService.RemoveByPatternAsync($"folder:list:by_parent:{parentFolderId}:*"),
-                    _cacheService.RemoveByPatternAsync($"folder:list:paged:*"),
-                    _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("folder_statistics", parentFolderId)),
-                    InvalidateFolderMetadataCacheAsync(parentFolderId)
-                );
-
-                _logger.LogDebug("Invalidated parent folder cache: {ParentFolderId}", parentFolderId);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to invalidate parent folder cache: {ParentFolderId}", parentFolderId);
-            }
-        }
-
-        private async Task InvalidateGlobalFolderCacheAsync()
-        {
-            try
-            {
-                var patterns = new[]
-                {
-                    "folder:list:*",
-                    "folder:tree:*",
-                    "folder:query:search:*",
-                    "folder:query:search_paged:*"
-                };
-
-                var invalidationTasks = patterns.Select(pattern => _cacheService.RemoveByPatternAsync(pattern));
-                await Task.WhenAll(invalidationTasks);
-
-                _logger.LogDebug("Invalidated global folder cache");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to invalidate global folder cache");
-            }
-        }
-
-        private async Task InvalidateFolderValidationCacheAsync()
-        {
-            try
-            {
-                await Task.WhenAll(
-                    _cacheService.RemoveByPatternAsync("folder:*:name_validation:*"),
-                    _cacheService.RemoveByPatternAsync("folder:*:hierarchy_check:*")
-                );
-
-                _logger.LogDebug("Invalidated folder validation cache");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to invalidate folder validation cache");
-            }
-        }
-
-        #endregion
 
         private void CleanupUnusedSemaphores(object? state)
         {
