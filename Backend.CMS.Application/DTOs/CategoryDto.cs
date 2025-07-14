@@ -280,6 +280,7 @@ namespace Backend.CMS.Application.DTOs
 
         public bool IsFeatured { get; set; }
     }
+
     /// <summary>
     /// DTO for moving a category to a different parent
     /// </summary>
@@ -331,7 +332,6 @@ namespace Backend.CMS.Application.DTOs
         public int Position { get; set; }
     }
 
-#endregion
-}
 
 }
+
