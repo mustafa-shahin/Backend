@@ -279,7 +279,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                 var categoryIds = await GetAllDescendantCategoryIdsAsync(categoryId);
                 categoryIds.Add(categoryId);
 
-             
                 var totalCount = await _dbSet
                     .AsNoTracking()
                     .Where(c => categoryIds.Contains(c.Id) && !c.IsDeleted)
@@ -297,9 +296,6 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
         }
 
-        /// <summary>
-        /// Get product counts for multiple categories efficiently using a single query
-        /// </summary>
         public async Task<Dictionary<int, int>> GetProductCountsAsync(IEnumerable<int> categoryIds, bool includeSubCategories = false)
         {
             try
@@ -312,7 +308,6 @@ namespace Backend.CMS.Infrastructure.Repositories
 
                 if (!includeSubCategories)
                 {
-                    // Simple case: direct product counts only
                     var directCounts = await _dbSet
                         .AsNoTracking()
                         .Where(c => categoryIdsList.Contains(c.Id) && !c.IsDeleted)
@@ -323,15 +318,12 @@ namespace Backend.CMS.Infrastructure.Repositories
                     return directCounts;
                 }
 
-                // Complex case: include subcategory counts
                 var result = new Dictionary<int, int>();
                 foreach (var categoryId in categoryIdsList)
                 {
-                    // Get all descendant IDs for this category
                     var allIds = await GetAllDescendantCategoryIdsAsync(categoryId);
                     allIds.Add(categoryId);
 
-                    // Get count for this category and all its descendants
                     var count = await _dbSet
                         .AsNoTracking()
                         .Where(c => allIds.Contains(c.Id) && !c.IsDeleted)
@@ -371,7 +363,6 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             try
             {
-                // Check if category has products using a separate query
                 var hasProducts = await _dbSet
                     .AsNoTracking()
                     .Where(c => c.Id == categoryId && !c.IsDeleted)
@@ -384,7 +375,6 @@ namespace Backend.CMS.Infrastructure.Repositories
                     return false;
                 }
 
-                // Check if category has subcategories
                 var hasSubCategories = await HasSubCategoriesAsync(categoryId);
 
                 if (hasSubCategories)
@@ -403,14 +393,12 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
         }
 
-        // PagedResult methods
-        public async Task<PaginatedResult<Category>> GetCategoriesPagedAsync(CategorySearchDto searchDto)
+        #region New IQueryable Methods for Service-Level Pagination
+
+        public IQueryable<Category> GetCategoriesQueryable(CategorySearchDto searchDto)
         {
             try
             {
-                ValidatePagination(searchDto.PageNumber, searchDto.PageSize);
-
-                // Start with base query - use AsNoTracking to prevent tracking conflicts
                 var query = _dbSet.AsNoTracking().Where(c => !c.IsDeleted);
 
                 // Apply filters only if they are explicitly specified
@@ -486,155 +474,115 @@ namespace Backend.CMS.Infrastructure.Repositories
                     }
                 }
 
-                // Get total count before applying pagination
-                var totalCount = await query.CountAsync();
+                _logger.LogDebug("Built categories query with filters: Parent={ParentId}, Active={IsActive}, Visible={IsVisible}, SearchTerm='{SearchTerm}'",
+                    searchDto.ParentCategoryId, searchDto.IsActive, searchDto.IsVisible, searchDto.SearchTerm);
 
-                _logger.LogDebug("Query built successfully. Total count before pagination: {TotalCount}", totalCount);
-
-                // Apply sorting
-                query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
-
-                // Apply pagination and include related entities
-                var categories = await query
-                    .Include(c => c.ParentCategory)
-                    .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
-                    .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
-                    .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
-                    .Take(searchDto.PageSize)
-                    .ToListAsync();
-
-                var result = new PaginatedResult<Category>
-                {
-                    Data = categories,
-                    PageNumber = searchDto.PageNumber,
-                    PageSize = searchDto.PageSize,
-                    TotalCount = totalCount
-                };
-
-                _logger.LogDebug("Retrieved paged categories: {Count} results out of {TotalCount} total",
-                    categories.Count, totalCount);
-
-                return result;
+                return query;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving paged categories with search criteria: {@SearchDto}", searchDto);
+                _logger.LogError(ex, "Error building categories query");
                 throw;
             }
         }
 
-        public async Task<PaginatedResult<Category>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize)
+        public IQueryable<Category> GetRootCategoriesQueryable()
         {
             try
             {
-                ValidatePagination(pageNumber, pageSize);
+                var query = _dbSet.AsNoTracking()
+                    .Where(c => !c.IsDeleted && c.ParentCategoryId == null);
 
-                var query = _dbSet.AsNoTracking().Where(c => !c.IsDeleted && c.ParentCategoryId == null);
-
-                var totalCount = await query.CountAsync();
-
-                var categories = await query
-                    .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
-                    .OrderBy(c => c.SortOrder)
-                    .ThenBy(c => c.Name)
-                    .Skip((pageNumber - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                var result = new PaginatedResult<Category>
-                {
-                    Data = categories,
-                    PageNumber = pageNumber,
-                    PageSize = pageSize,
-                    TotalCount = totalCount
-                };
-
-                _logger.LogDebug("Retrieved paged root categories: {Count} results", categories.Count);
-                return result;
+                _logger.LogDebug("Built root categories query");
+                return query;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving paged root categories");
+                _logger.LogError(ex, "Error building root categories query");
                 throw;
             }
         }
 
-        public async Task<PaginatedResult<Category>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize)
+        public IQueryable<Category> GetSubCategoriesQueryable(int parentCategoryId)
         {
             try
             {
-                ValidatePagination(pageNumber, pageSize);
+                var query = _dbSet.AsNoTracking()
+                    .Where(c => !c.IsDeleted && c.ParentCategoryId == parentCategoryId);
 
-                var query = _dbSet.AsNoTracking().Where(c => !c.IsDeleted && c.ParentCategoryId == parentCategoryId);
-
-                var totalCount = await query.CountAsync();
-
-                var categories = await query
-                    .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
-                    .OrderBy(c => c.SortOrder)
-                    .ThenBy(c => c.Name)
-                    .Skip((pageNumber - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                var result = new PaginatedResult<Category>
-                {
-                    Data = categories,
-                    PageNumber = pageNumber,
-                    PageSize = pageSize,
-                    TotalCount = totalCount
-                };
-
-                _logger.LogDebug("Retrieved paged subcategories for parent {ParentCategoryId}: {Count} results", parentCategoryId, categories.Count);
-                return result;
+                _logger.LogDebug("Built subcategories query for parent {ParentCategoryId}", parentCategoryId);
+                return query;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving paged subcategories for parent {ParentCategoryId}", parentCategoryId);
+                _logger.LogError(ex, "Error building subcategories query for parent {ParentCategoryId}", parentCategoryId);
                 throw;
             }
         }
 
-        public async Task<PaginatedResult<Category>> SearchCategoriesPagedAsync(CategorySearchDto searchDto)
+        public IQueryable<Category> SearchCategoriesQueryable(CategorySearchDto searchDto)
         {
             try
             {
-                ValidatePagination(searchDto.PageNumber, searchDto.PageSize);
-
                 var query = BuildAdvancedSearchQuery(searchDto);
-
-                var totalCount = await query.CountAsync();
-
-                query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
-
-                var categories = await query
-                    .Include(c => c.ParentCategory)
-                    .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
-                    .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
-                    .Take(searchDto.PageSize)
-                    .ToListAsync();
-
-                var result = new PaginatedResult<Category>
-                {
-                    Data = categories,
-                    PageNumber = searchDto.PageNumber,
-                    PageSize = searchDto.PageSize,
-                    TotalCount = totalCount
-                };
-
-                _logger.LogDebug("Searched categories with advanced criteria: {Count} results", categories.Count);
-                return result;
+                _logger.LogDebug("Built search categories query for term '{SearchTerm}'", searchDto.SearchTerm);
+                return query;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error searching categories with advanced criteria");
+                _logger.LogError(ex, "Error building search categories query");
                 throw;
             }
         }
+
+        public async Task<int> GetQueryCountAsync(IQueryable<Category> query)
+        {
+            try
+            {
+                var count = await query.CountAsync();
+                _logger.LogDebug("Query count: {Count}", count);
+                return count;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting query count");
+                throw;
+            }
+        }
+
+        public IQueryable<Category> ApplyIncludes(IQueryable<Category> query, bool includeImages = true, bool includeParent = true, bool includeSubCategories = false)
+        {
+            try
+            {
+                if (includeParent)
+                {
+                    query = query.Include(c => c.ParentCategory);
+                }
+
+                if (includeSubCategories)
+                {
+                    query = query.Include(c => c.SubCategories.Where(sc => !sc.IsDeleted));
+                }
+
+                if (includeImages)
+                {
+                    query = query.Include(c => c.Images.Where(i => !i.IsDeleted))
+                        .ThenInclude(i => i.File);
+                }
+
+                _logger.LogDebug("Applied includes: Images={IncludeImages}, Parent={IncludeParent}, SubCategories={IncludeSubCategories}",
+                    includeImages, includeParent, includeSubCategories);
+
+                return query;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error applying includes to query");
+                throw;
+            }
+        }
+
+        #endregion
 
         #region Private Helper Methods
 

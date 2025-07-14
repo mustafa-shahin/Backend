@@ -5,8 +5,11 @@ namespace Backend.CMS.Infrastructure.Interfaces
     public interface IAddressService
     {
         Task<AddressDto> GetAddressByIdAsync(int addressId);
-        Task<PagedResult<AddressDto>> GetAddressesPagedAsync(AddressSearchDto searchDto);
+        Task<PaginatedResult<AddressDto>> GetAddressesPaginatedAsync(AddressSearchDto searchDto);
         Task<List<AddressDto>> GetAddressesByEntityAsync(string entityType, int entityId);
+        Task<PaginatedResult<AddressDto>> GetAddressesByEntityPaginatedAsync(string entityType, int entityId, int pageNumber, int pageSize);
+        Task<PaginatedResult<AddressDto>> GetAddressesByTypePaginatedAsync(string addressType, int pageNumber, int pageSize);
+        Task<PaginatedResult<AddressDto>> SearchAddressesPaginatedAsync(string searchTerm, int pageNumber, int pageSize);
         Task<AddressDto> CreateAddressAsync(CreateAddressDto createAddressDto, string entityType, int entityId);
         Task<AddressDto> UpdateAddressAsync(int addressId, UpdateAddressDto updateAddressDto);
         Task<bool> DeleteAddressAsync(int addressId);

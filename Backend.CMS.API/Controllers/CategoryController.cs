@@ -1,3 +1,5 @@
+// Backend.CMS.API/Controllers/CategoryController.cs
+
 using Backend.CMS.API.Authorization;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Infrastructure.Interfaces;
@@ -6,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Asp.Versioning;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.Extensions.Options;
 
 namespace Backend.CMS.API.Controllers
 {
@@ -20,15 +23,20 @@ namespace Backend.CMS.API.Controllers
     {
         private readonly ICategoryService _categoryService;
         private readonly ILogger<CategoryController> _logger;
+        private readonly CategoryControllerOptions _options;
 
-        public CategoryController(ICategoryService categoryService, ILogger<CategoryController> logger)
+        public CategoryController(
+            ICategoryService categoryService,
+            ILogger<CategoryController> logger,
+            IOptions<CategoryControllerOptions> options)
         {
             _categoryService = categoryService;
             _logger = logger;
+            _options = options.Value;
         }
 
         /// <summary>
-        /// Get paginated list of categories with optional filtering (Service-level pagination - 10 items per page)
+        /// Get paginated list of categories with optional filtering (Service-level pagination)
         /// </summary>
         /// <param name="pageNumber">Page number (1-based, default: 1)</param>
         /// <param name="parentCategoryId">Optional parent category ID to filter by</param>
@@ -37,12 +45,12 @@ namespace Backend.CMS.API.Controllers
         /// <param name="sortBy">Sort field (default: Name)</param>
         /// <param name="sortDirection">Sort direction (Asc/Desc, default: Asc)</param>
         /// <param name="searchTerm">Optional search term for name, description, or slug</param>
-        /// <returns>Paginated list of categories (10 items per page)</returns>
+        /// <returns>Paginated list of categories</returns>
         [HttpGet]
         [AllowAnonymous]
         [ProducesResponseType(typeof(PaginatedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<PaginatedResult<CategoryDto>>> GetCategories(
             [FromQuery] int pageNumber = 1,
             [FromQuery] int? parentCategoryId = null,
@@ -54,11 +62,11 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
-                // Create search DTO with service-controlled pagination (10 items per page)
+                // Create search DTO with service-controlled pagination
                 var searchDto = new CategorySearchDto
                 {
                     PageNumber = pageNumber,
-                    PageSize = 10, // Fixed page size - controlled by service
+                    PageSize = _options.DefaultPageSize, // Configurable page size
                     ParentCategoryId = parentCategoryId,
                     IsActive = isActive,
                     IsVisible = isVisible,
@@ -68,7 +76,7 @@ namespace Backend.CMS.API.Controllers
                 };
 
                 // Service handles all pagination logic
-                var result = await _categoryService.GetCategoriesPagedAsync(searchDto);
+                var result = await _categoryService.GetCategoriesPaginatedAsync(searchDto);
 
                 _logger.LogDebug("Retrieved {ItemCount} categories for page {PageNumber} of {TotalPages}",
                     result.Data.Count, result.PageNumber, result.TotalPages);
@@ -93,7 +101,7 @@ namespace Backend.CMS.API.Controllers
         [HttpGet("tree")]
         [AllowAnonymous]
         [ProducesResponseType(typeof(List<CategoryTreeDto>), StatusCodes.Status200OK)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<List<CategoryTreeDto>>> GetCategoryTree()
         {
             try
@@ -110,22 +118,22 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get root categories with service-level pagination (10 items per page)
+        /// Get root categories with service-level pagination
         /// </summary>
         /// <param name="pageNumber">Page number (1-based, default: 1)</param>
-        /// <returns>Paginated list of root categories (10 items per page)</returns>
+        /// <returns>Paginated list of root categories</returns>
         [HttpGet("root")]
         [AllowAnonymous]
         [ProducesResponseType(typeof(PaginatedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]        
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<PaginatedResult<CategoryDto>>> GetRootCategories(
             [FromQuery] int pageNumber = 1)
         {
             try
             {
-                // Service controls page size (10 items per page)
-                var result = await _categoryService.GetRootCategoriesPagedAsync(pageNumber, 10);
+                // Service controls page size
+                var result = await _categoryService.GetRootCategoriesPaginatedAsync(pageNumber, _options.DefaultPageSize);
 
                 _logger.LogDebug("Retrieved {ItemCount} root categories for page {PageNumber} of {TotalPages}",
                     result.Data.Count, result.PageNumber, result.TotalPages);
@@ -153,7 +161,7 @@ namespace Backend.CMS.API.Controllers
         [AllowAnonymous]
         [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryDto>> GetCategory(int id)
         {
             try
@@ -188,7 +196,7 @@ namespace Backend.CMS.API.Controllers
         [AllowAnonymous]
         [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]     
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryDto>> GetCategoryBySlug(string slug)
         {
             try
@@ -213,16 +221,16 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get subcategories of a category with service-level pagination (10 items per page)
+        /// Get subcategories of a category with service-level pagination
         /// </summary>
         /// <param name="id">Parent category ID</param>
         /// <param name="pageNumber">Page number (1-based, default: 1)</param>
-        /// <returns>Paginated list of subcategories (10 items per page)</returns>
+        /// <returns>Paginated list of subcategories</returns>
         [HttpGet("{id:int}/subcategories")]
         [AllowAnonymous]
         [ProducesResponseType(typeof(PaginatedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<PaginatedResult<CategoryDto>>> GetSubCategories(
             int id,
             [FromQuery] int pageNumber = 1)
@@ -234,8 +242,8 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Parent category ID must be greater than 0" });
                 }
 
-                // Service controls page size (10 items per page)
-                var result = await _categoryService.GetSubCategoriesPagedAsync(id, pageNumber, 10);
+                // Service controls page size
+                var result = await _categoryService.GetSubCategoriesPaginatedAsync(id, pageNumber, _options.DefaultPageSize);
 
                 _logger.LogDebug("Retrieved {ItemCount} subcategories for parent {ParentId} on page {PageNumber} of {TotalPages}",
                     result.Data.Count, id, result.PageNumber, result.TotalPages);
@@ -255,15 +263,15 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Advanced category search with filtering and service-level pagination (10 items per page)
+        /// Advanced category search with filtering and service-level pagination
         /// </summary>
         /// <param name="searchDto">Search criteria with service-controlled pagination</param>
-        /// <returns>Paginated search results (10 items per page)</returns>
+        /// <returns>Paginated search results</returns>
         [HttpPost("search")]
         [AllowAnonymous]
         [ProducesResponseType(typeof(PaginatedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<PaginatedResult<CategoryDto>>> SearchCategories([FromBody] CategorySearchDto searchDto)
         {
             try
@@ -273,8 +281,11 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Search criteria is required" });
                 }
 
-                // Service will normalize and enforce page size of 10
-                var result = await _categoryService.SearchCategoriesPagedAsync(searchDto);
+                // Override page size with controller configuration
+                searchDto.PageSize = _options.DefaultPageSize;
+
+                // Service will normalize and handle pagination
+                var result = await _categoryService.SearchCategoriesPaginatedAsync(searchDto);
 
                 _logger.LogDebug("Search '{SearchTerm}' returned {ItemCount} categories for page {PageNumber} of {TotalPages}",
                     searchDto.SearchTerm, result.Data.Count, result.PageNumber, result.TotalPages);
@@ -302,7 +313,7 @@ namespace Backend.CMS.API.Controllers
         [AdminOrDev]
         [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status201Created)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]        
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryDto>> CreateCategory([FromBody] CreateCategoryDto createCategoryDto)
         {
             try
@@ -341,7 +352,7 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]        
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryDto>> UpdateCategory(int id, [FromBody] UpdateCategoryDto updateCategoryDto)
         {
             try
@@ -384,7 +395,7 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]    
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult> DeleteCategory(int id)
         {
             try
@@ -424,7 +435,7 @@ namespace Backend.CMS.API.Controllers
         [AdminOrDev]
         [ProducesResponseType(typeof(CategoryDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]    
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         public async Task<ActionResult<CategoryDto>> MoveCategory(int id, [FromBody] MoveCategoryDto moveCategoryDto)
         {
             try
@@ -720,59 +731,27 @@ namespace Backend.CMS.API.Controllers
 
         #endregion
 
-        #region Supporting DTOs for controller actions
-
         /// <summary>
-        /// DTO for moving a category to a different parent
+        /// Configuration options for CategoryController
         /// </summary>
-        public class MoveCategoryDto
+        public class CategoryControllerOptions
         {
-            [Required]
-            public int? NewParentCategoryId { get; set; }
+            public const string SectionName = "CategoryController";
+
+            /// <summary>
+            /// Default page size for paginated results
+            /// </summary>
+            public int DefaultPageSize { get; set; } = 10;
+
+            /// <summary>
+            /// Maximum allowed page size
+            /// </summary>
+            public int MaxPageSize { get; set; } = 100;
+
+            /// <summary>
+            /// Minimum allowed page size
+            /// </summary>
+            public int MinPageSize { get; set; } = 1;
         }
-
-        /// <summary>
-        /// DTO for reordering categories
-        /// </summary>
-        public class ReorderCategoriesDto
-        {
-            [Required]
-            public List<CategoryOrderDto> Categories { get; set; } = new();
-        }
-
-        /// <summary>
-        /// DTO for category order information
-        /// </summary>
-        public class CategoryOrderDto
-        {
-            [Required]
-            public int Id { get; set; }
-
-            [Required]
-            public int SortOrder { get; set; }
-        }
-
-        /// <summary>
-        /// DTO for reordering category images
-        /// </summary>
-        public class ReorderCategoryImagesDto
-        {
-            [Required]
-            public List<CategoryImageOrderDto> Images { get; set; } = new();
-        }
-
-        /// <summary>
-        /// DTO for category image order information
-        /// </summary>
-        public class CategoryImageOrderDto
-        {
-            [Required]
-            public int Id { get; set; }
-
-            [Required]
-            public int Position { get; set; }
-        }
-
-        #endregion
-    }
+    } 
 }

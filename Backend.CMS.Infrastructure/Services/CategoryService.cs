@@ -14,6 +14,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ILogger<CategoryService> _logger;
         private readonly IFileUrlBuilder _fileUrlBuilder;
         private readonly IScopedDbContextService _scopedDbContextService;
+        private readonly IUserSessionService _userSessionService;
         private const int DefaultPageSize = 10;
         private const int MaxPageSize = 100;
         private const int MinPageSize = 1;
@@ -23,31 +24,37 @@ namespace Backend.CMS.Infrastructure.Services
             ILogger<CategoryService> logger,
             IUnitOfWork unitOfWork,
             IFileUrlBuilder fileUrlBuilder,
+            IUserSessionService userSessionService,
             IScopedDbContextService scopedDbContextService)
         {
             _mapper = mapper;
             _logger = logger;
             _unitOfWork = unitOfWork;
             _fileUrlBuilder = fileUrlBuilder;
+            _userSessionService = userSessionService;
             _scopedDbContextService = scopedDbContextService;
+
         }
 
-        #region Paginated Methods
+        #region Paginated Methods - Service-Level Pagination
 
         /// <summary>
         /// Get paginated categories with filtering and sorting - Service-level pagination
         /// </summary>
-        public async Task<PaginatedResult<CategoryDto>> GetCategoriesPagedAsync(CategorySearchDto searchDto)
+        public async Task<PaginatedResult<CategoryDto>> GetCategoriesPaginatedAsync(CategorySearchDto searchDto)
         {
             try
             {
                 // Normalize and validate pagination parameters at service level
                 searchDto = NormalizeSearchDto(searchDto);
 
-                // Get data directly from repository
-                var pagedResult = await _unitOfWork.Categories.GetCategoriesPagedAsync(searchDto);
+                // Get base query from repository
+                var query = _unitOfWork.Categories.GetCategoriesQueryable(searchDto);
 
-                if (!pagedResult.Data.Any())
+                // Get total count before pagination
+                var totalCount = await _unitOfWork.Categories.GetQueryCountAsync(query);
+
+                if (totalCount == 0)
                 {
                     _logger.LogDebug("No categories found for search criteria on page {PageNumber}", searchDto.PageNumber);
                     return new PaginatedResult<CategoryDto>
@@ -59,23 +66,34 @@ namespace Backend.CMS.Infrastructure.Services
                     };
                 }
 
-                var categoryDtos = _mapper.Map<List<CategoryDto>>(pagedResult.Data);
+                // Apply sorting
+                query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
 
-                // Service-level enrichment with product counts - using batch operation
+                // Apply pagination
+                query = query.Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                            .Take(searchDto.PageSize);
+
+                // Apply includes and execute query
+                query = _unitOfWork.Categories.ApplyIncludes(query, includeImages: true, includeParent: true, includeSubCategories: false);
+                var categories = await query.ToListAsync();
+
+                // Map to DTOs
+                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
+
                 await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
 
-                // Apply additional service-level filters if needed
-                categoryDtos = await ApplyAdditionalFiltersAsync(categoryDtos, searchDto);
+                // Apply additional service-level post-processing
+                categoryDtos = await ApplyPostProcessingFiltersAsync(categoryDtos, searchDto);
 
-                _logger.LogDebug("Retrieved {CategoryCount} categories (page {PageNumber}/{TotalPages})",
-                    categoryDtos.Count, pagedResult.PageNumber, pagedResult.TotalPages);
+                _logger.LogDebug("Retrieved {CategoryCount} categories (page {PageNumber}/{TotalPages}) with service-level pagination",
+                    categoryDtos.Count, searchDto.PageNumber, Math.Ceiling((double)totalCount / searchDto.PageSize));
 
                 return new PaginatedResult<CategoryDto>
                 {
                     Data = categoryDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
+                    PageNumber = searchDto.PageNumber,
+                    PageSize = searchDto.PageSize,
+                    TotalCount = totalCount
                 };
             }
             catch (Exception ex)
@@ -88,7 +106,7 @@ namespace Backend.CMS.Infrastructure.Services
         /// <summary>
         /// Get paginated root categories - Service-level pagination
         /// </summary>
-        public async Task<PaginatedResult<CategoryDto>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize)
+        public async Task<PaginatedResult<CategoryDto>> GetRootCategoriesPaginatedAsync(int pageNumber, int pageSize)
         {
             try
             {
@@ -96,10 +114,13 @@ namespace Backend.CMS.Infrastructure.Services
                 var normalizedPageNumber = Math.Max(MinPageSize, pageNumber);
                 var normalizedPageSize = Math.Clamp(pageSize, MinPageSize, MaxPageSize);
 
-                // Get data directly from repository
-                var pagedResult = await _unitOfWork.Categories.GetRootCategoriesPagedAsync(normalizedPageNumber, normalizedPageSize);
+                // Get base query from repository
+                var query = _unitOfWork.Categories.GetRootCategoriesQueryable();
 
-                if (!pagedResult.Data.Any())
+                // Get total count before pagination
+                var totalCount = await _unitOfWork.Categories.GetQueryCountAsync(query);
+
+                if (totalCount == 0)
                 {
                     _logger.LogDebug("No root categories found on page {PageNumber}", normalizedPageNumber);
                     return new PaginatedResult<CategoryDto>
@@ -111,18 +132,31 @@ namespace Backend.CMS.Infrastructure.Services
                     };
                 }
 
-                var categoryDtos = _mapper.Map<List<CategoryDto>>(pagedResult.Data);
+                // Apply default sorting for root categories
+                query = query.OrderBy(c => c.SortOrder).ThenBy(c => c.Name);
+
+                // Apply pagination
+                query = query.Skip((normalizedPageNumber - 1) * normalizedPageSize)
+                            .Take(normalizedPageSize);
+
+                // Apply includes and execute query
+                query = _unitOfWork.Categories.ApplyIncludes(query, includeImages: true, includeParent: false, includeSubCategories: false);
+                var categories = await query.ToListAsync();
+
+                // Map to DTOs
+                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
+
                 await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
 
-                _logger.LogDebug("Retrieved {CategoryCount} root categories (page {PageNumber}/{TotalPages})",
-                    categoryDtos.Count, pagedResult.PageNumber, pagedResult.TotalPages);
+                _logger.LogDebug("Retrieved {CategoryCount} root categories (page {PageNumber}/{TotalPages}) with service-level pagination",
+                    categoryDtos.Count, normalizedPageNumber, Math.Ceiling((double)totalCount / normalizedPageSize));
 
                 return new PaginatedResult<CategoryDto>
                 {
                     Data = categoryDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
+                    PageNumber = normalizedPageNumber,
+                    PageSize = normalizedPageSize,
+                    TotalCount = totalCount
                 };
             }
             catch (Exception ex)
@@ -135,14 +169,10 @@ namespace Backend.CMS.Infrastructure.Services
         /// <summary>
         /// Get paginated subcategories - Service-level pagination
         /// </summary>
-        public async Task<PaginatedResult<CategoryDto>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize)
+        public async Task<PaginatedResult<CategoryDto>> GetSubCategoriesPaginatedAsync(int parentCategoryId, int pageNumber, int pageSize)
         {
             try
             {
-                // Service-level validation
-                if (parentCategoryId <= 0)
-                    throw new ArgumentException("Parent category ID must be greater than 0", nameof(parentCategoryId));
-
                 var normalizedPageNumber = Math.Max(MinPageSize, pageNumber);
                 var normalizedPageSize = Math.Clamp(pageSize, MinPageSize, MaxPageSize);
 
@@ -160,10 +190,13 @@ namespace Backend.CMS.Infrastructure.Services
                     };
                 }
 
-                // Get data directly from repository
-                var pagedResult = await _unitOfWork.Categories.GetSubCategoriesPagedAsync(parentCategoryId, normalizedPageNumber, normalizedPageSize);
+                // Get base query from repository
+                var query = _unitOfWork.Categories.GetSubCategoriesQueryable(parentCategoryId);
 
-                if (!pagedResult.Data.Any())
+                // Get total count before pagination
+                var totalCount = await _unitOfWork.Categories.GetQueryCountAsync(query);
+
+                if (totalCount == 0)
                 {
                     _logger.LogDebug("No subcategories found for parent {ParentCategoryId} on page {PageNumber}",
                         parentCategoryId, normalizedPageNumber);
@@ -176,18 +209,31 @@ namespace Backend.CMS.Infrastructure.Services
                     };
                 }
 
-                var categoryDtos = _mapper.Map<List<CategoryDto>>(pagedResult.Data);
+                // Apply default sorting for subcategories
+                query = query.OrderBy(c => c.SortOrder).ThenBy(c => c.Name);
+
+                // Apply pagination
+                query = query.Skip((normalizedPageNumber - 1) * normalizedPageSize)
+                            .Take(normalizedPageSize);
+
+                // Apply includes and execute query
+                query = _unitOfWork.Categories.ApplyIncludes(query, includeImages: true, includeParent: false, includeSubCategories: false);
+                var categories = await query.ToListAsync();
+
+                // Map to DTOs
+                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
+
                 await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
 
-                _logger.LogDebug("Retrieved {CategoryCount} subcategories for parent {ParentCategoryId} (page {PageNumber}/{TotalPages})",
-                    categoryDtos.Count, parentCategoryId, pagedResult.PageNumber, pagedResult.TotalPages);
+                _logger.LogDebug("Retrieved {CategoryCount} subcategories for parent {ParentCategoryId} (page {PageNumber}/{TotalPages}) with service-level pagination",
+                    categoryDtos.Count, parentCategoryId, normalizedPageNumber, Math.Ceiling((double)totalCount / normalizedPageSize));
 
                 return new PaginatedResult<CategoryDto>
                 {
                     Data = categoryDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
+                    PageNumber = normalizedPageNumber,
+                    PageSize = normalizedPageSize,
+                    TotalCount = totalCount
                 };
             }
             catch (Exception ex)
@@ -201,7 +247,7 @@ namespace Backend.CMS.Infrastructure.Services
         /// <summary>
         /// Search categories with pagination - Service-level pagination and filtering
         /// </summary>
-        public async Task<PaginatedResult<CategoryDto>> SearchCategoriesPagedAsync(CategorySearchDto searchDto)
+        public async Task<PaginatedResult<CategoryDto>> SearchCategoriesPaginatedAsync(CategorySearchDto searchDto)
         {
             try
             {
@@ -212,13 +258,16 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     _logger.LogWarning("Search performed with empty search term");
                     // Fallback to regular paginated categories
-                    return await GetCategoriesPagedAsync(searchDto);
+                    return await GetCategoriesPaginatedAsync(searchDto);
                 }
 
-                // Get data directly from repository
-                var pagedResult = await _unitOfWork.Categories.SearchCategoriesPagedAsync(searchDto);
+                // Get base query from repository
+                var query = _unitOfWork.Categories.SearchCategoriesQueryable(searchDto);
 
-                if (!pagedResult.Data.Any())
+                // Get total count before pagination
+                var totalCount = await _unitOfWork.Categories.GetQueryCountAsync(query);
+
+                if (totalCount == 0)
                 {
                     _logger.LogDebug("No categories found for search term '{SearchTerm}' on page {PageNumber}",
                         searchDto.SearchTerm, searchDto.PageNumber);
@@ -231,26 +280,35 @@ namespace Backend.CMS.Infrastructure.Services
                     };
                 }
 
-                var categoryDtos = _mapper.Map<List<CategoryDto>>(pagedResult.Data);
+                // Apply sorting
+                query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
+
+                // Apply pagination
+                query = query.Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                            .Take(searchDto.PageSize);
+
+                // Apply includes and execute query
+                query = _unitOfWork.Categories.ApplyIncludes(query, includeImages: true, includeParent: true, includeSubCategories: false);
+                var categories = await query.ToListAsync();
+
+                // Map to DTOs
+                var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
+
+                // Service-level enrichment
                 await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
 
-                // Service-level post-processing filters
-                categoryDtos = await ApplyAdvancedSearchFiltersAsync(categoryDtos, searchDto);
+                // Apply service-level post-processing
+                categoryDtos = await ApplySearchPostProcessingAsync(categoryDtos, searchDto);
 
-                // Recalculate total count after service-level filtering
-                var finalTotalCount = categoryDtos.Count < searchDto.PageSize ?
-                    ((searchDto.PageNumber - 1) * searchDto.PageSize) + categoryDtos.Count :
-                    pagedResult.TotalCount;
-
-                _logger.LogDebug("Search '{SearchTerm}' found {CategoryCount} categories (page {PageNumber}/{TotalPages})",
-                    searchDto.SearchTerm, categoryDtos.Count, searchDto.PageNumber, Math.Ceiling((double)finalTotalCount / searchDto.PageSize));
+                _logger.LogDebug("Search '{SearchTerm}' found {CategoryCount} categories (page {PageNumber}/{TotalPages}) with service-level pagination",
+                    searchDto.SearchTerm, categoryDtos.Count, searchDto.PageNumber, Math.Ceiling((double)totalCount / searchDto.PageSize));
 
                 return new PaginatedResult<CategoryDto>
                 {
                     Data = categoryDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = finalTotalCount
+                    PageNumber = searchDto.PageNumber,
+                    PageSize = searchDto.PageSize,
+                    TotalCount = totalCount
                 };
             }
             catch (Exception ex)
@@ -272,9 +330,6 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                if (categoryId <= 0)
-                    throw new ArgumentException("Category ID must be greater than 0", nameof(categoryId));
-
                 var category = await _unitOfWork.Categories.GetWithSubCategoriesAsync(categoryId);
                 if (category == null)
                 {
@@ -404,7 +459,8 @@ namespace Backend.CMS.Infrastructure.Services
 
                     // Map DTO to entity
                     var category = _mapper.Map<Category>(createCategoryDto);
-
+                    category.CreatedAt = DateTime.UtcNow;
+                    category.CreatedByUserId = _userSessionService.GetCurrentUserId(); ;
                     await _unitOfWork.Categories.AddAsync(category);
                     await _unitOfWork.SaveChangesAsync();
 
@@ -440,17 +496,16 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<CategoryDto> UpdateCategoryAsync(int categoryId, UpdateCategoryDto updateCategoryDto)
         {
-            if (categoryId <= 0)
-                throw new ArgumentException("Category ID must be greater than 0", nameof(categoryId));
 
-            if (updateCategoryDto == null)
-                throw new ArgumentNullException(nameof(updateCategoryDto));
+            ArgumentNullException.ThrowIfNull(updateCategoryDto);
 
             try
             {
                 return await _unitOfWork.ExecuteInTransactionAsync(async () =>
                 {
                     var category = await _unitOfWork.Categories.GetByIdAsync(categoryId);
+
+
                     if (category == null)
                         throw new ArgumentException($"Category with ID {categoryId} not found");
 
@@ -478,7 +533,8 @@ namespace Backend.CMS.Infrastructure.Services
                     {
                         await ValidateImagesAsync(updateCategoryDto.Images.Select(i => i.FileId).ToList());
                     }
-
+                    category.UpdatedByUserId = _userSessionService.GetCurrentUserId();
+                    category.UpdatedAt = DateTime.UtcNow;
                     _mapper.Map(updateCategoryDto, category);
                     _unitOfWork.Categories.Update(category);
 
@@ -506,9 +562,6 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<bool> DeleteCategoryAsync(int categoryId)
         {
-            if (categoryId <= 0)
-                throw new ArgumentException("Category ID must be greater than 0", nameof(categoryId));
-
             try
             {
                 return await _unitOfWork.ExecuteInTransactionAsync(async () =>
@@ -532,7 +585,8 @@ namespace Backend.CMS.Infrastructure.Services
                         await _unitOfWork.GetRepository<CategoryImage>()
                             .SoftDeleteRangeAsync(existingImages);
                     }
-
+                    category.UpdatedByUserId = _userSessionService.GetCurrentUserId();
+                    category.UpdatedAt = DateTime.UtcNow;
                     // Now delete the category
                     await _unitOfWork.Categories.SoftDeleteAsync(category);
                     await _unitOfWork.SaveChangesAsync();
@@ -550,22 +604,12 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<CategoryDto> MoveCategoryAsync(int categoryId, int? newParentCategoryId)
         {
-            if (categoryId <= 0)
-                throw new ArgumentException("Category ID must be greater than 0", nameof(categoryId));
-
-            var category = await _unitOfWork.Categories.GetByIdAsync(categoryId);
-            if (category == null)
-                throw new ArgumentException($"Category with ID {categoryId} not found");
-
+            var category = await _unitOfWork.Categories.GetByIdAsync(categoryId) ?? throw new ArgumentException($"Category with ID {categoryId} not found");
             if (newParentCategoryId.HasValue)
             {
                 if (newParentCategoryId.Value == categoryId)
                     throw new ArgumentException("Category cannot be its own parent");
-
-                var parentExists = await _unitOfWork.Categories.GetByIdAsync(newParentCategoryId.Value);
-                if (parentExists == null)
-                    throw new ArgumentException($"Parent category with ID {newParentCategoryId.Value} not found");
-
+                _ = await _unitOfWork.Categories.GetByIdAsync(newParentCategoryId.Value) ?? throw new ArgumentException($"Parent category with ID {newParentCategoryId.Value} not found");
                 if (await WouldCreateCircularReferenceAsync(categoryId, newParentCategoryId.Value))
                     throw new ArgumentException("Cannot create circular reference in category hierarchy");
             }
@@ -573,6 +617,8 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 category.ParentCategoryId = newParentCategoryId;
+                category.UpdatedByUserId = _userSessionService.GetCurrentUserId();
+                category.UpdatedAt = DateTime.UtcNow;
                 _unitOfWork.Categories.Update(category);
                 await _unitOfWork.SaveChangesAsync();
 
@@ -588,7 +634,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<CategoryDto>> ReorderCategoriesAsync(List<(int CategoryId, int SortOrder)> categoryOrders)
         {
-            if (categoryOrders == null || !categoryOrders.Any())
+            if (categoryOrders == null || categoryOrders.Count == 0)
                 throw new ArgumentException("Category orders cannot be null or empty", nameof(categoryOrders));
 
             try
@@ -600,8 +646,9 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     var newOrder = categoryOrders.First(co => co.CategoryId == category.Id).SortOrder;
                     category.SortOrder = newOrder;
+                    category.UpdatedByUserId = _userSessionService.GetCurrentUserId();
+                    category.UpdatedAt = DateTime.UtcNow;
                 }
-
                 _unitOfWork.Categories.UpdateRange(categories);
                 await _unitOfWork.SaveChangesAsync();
 
@@ -641,9 +688,6 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                if (categoryId <= 0)
-                    return false;
-
                 var canDelete = await _unitOfWork.Categories.CanDeleteAsync(categoryId);
                 return canDelete;
             }
@@ -660,18 +704,10 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<CategoryImageDto> AddCategoryImageAsync(int categoryId, CreateCategoryImageDto createImageDto)
         {
-            if (categoryId <= 0)
-                throw new ArgumentException("Category ID must be greater than 0", nameof(categoryId));
+            ArgumentNullException.ThrowIfNull(createImageDto);
 
-            if (createImageDto == null)
-                throw new ArgumentNullException(nameof(createImageDto));
-
-            var category = await _unitOfWork.Categories.GetByIdAsync(categoryId);
-            if (category == null)
-                throw new ArgumentException($"Category with ID {categoryId} not found");
-
+            var category = await _unitOfWork.Categories.GetByIdAsync(categoryId) ?? throw new ArgumentException($"Category with ID {categoryId} not found");
             await ValidateImageAsync(createImageDto.FileId);
-
             try
             {
                 return await _unitOfWork.ExecuteInTransactionAsync(async () =>
@@ -684,7 +720,8 @@ namespace Backend.CMS.Infrastructure.Services
                     {
                         await RemoveFeaturedFlagFromOtherImagesAsync(categoryId);
                     }
-
+                    categoryImage.UpdatedByUserId = _userSessionService.GetCurrentUserId();
+                    categoryImage.UpdatedAt = DateTime.UtcNow;
                     await _unitOfWork.GetRepository<CategoryImage>().AddAsync(categoryImage);
                     await _unitOfWork.SaveChangesAsync();
 
@@ -734,7 +771,8 @@ namespace Backend.CMS.Infrastructure.Services
                     {
                         await RemoveFeaturedFlagFromOtherImagesAsync(categoryImage.CategoryId, imageId);
                     }
-
+                    categoryImage.UpdatedByUserId = _userSessionService.GetCurrentUserId();
+                    categoryImage.UpdatedAt = DateTime.UtcNow;
                     _unitOfWork.GetRepository<CategoryImage>().Update(categoryImage);
                     await _unitOfWork.SaveChangesAsync();
 
@@ -768,6 +806,8 @@ namespace Backend.CMS.Infrastructure.Services
                     }
 
                     var categoryId = categoryImage.CategoryId;
+                    categoryImage.UpdatedByUserId = _userSessionService.GetCurrentUserId();
+                    categoryImage.UpdatedAt = DateTime.UtcNow;
                     await _unitOfWork.GetRepository<CategoryImage>().SoftDeleteAsync(categoryImage);
                     await _unitOfWork.SaveChangesAsync();
 
@@ -784,10 +824,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         public async Task<List<CategoryImageDto>> ReorderCategoryImagesAsync(int categoryId, List<(int ImageId, int Position)> imageOrders)
         {
-            if (categoryId <= 0)
-                throw new ArgumentException("Category ID must be greater than 0", nameof(categoryId));
-
-            if (imageOrders == null || !imageOrders.Any())
+            if (imageOrders == null || imageOrders.Count == 0)
                 throw new ArgumentException("Image orders cannot be null or empty", nameof(imageOrders));
 
             try
@@ -799,6 +836,8 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     var newPosition = imageOrders.First(io => io.ImageId == image.Id).Position;
                     image.Position = newPosition;
+                    image.UpdatedByUserId = _userSessionService.GetCurrentUserId();
+                    image.UpdatedAt = DateTime.UtcNow;
                 }
 
                 _unitOfWork.GetRepository<CategoryImage>().UpdateRange(images);
@@ -823,8 +862,7 @@ namespace Backend.CMS.Infrastructure.Services
         /// </summary>
         private CategorySearchDto NormalizeSearchDto(CategorySearchDto searchDto)
         {
-            if (searchDto == null)
-                throw new ArgumentNullException(nameof(searchDto));
+            ArgumentNullException.ThrowIfNull(searchDto);
 
             // Normalize pagination parameters
             searchDto.PageNumber = Math.Max(MinPageSize, searchDto.PageNumber);
@@ -878,13 +916,30 @@ namespace Backend.CMS.Infrastructure.Services
         }
 
         /// <summary>
-        /// Apply additional service-level filters that couldn't be applied at repository level
+        /// Apply sorting to query
         /// </summary>
-        private async Task<List<CategoryDto>> ApplyAdditionalFiltersAsync(List<CategoryDto> categoryDtos, CategorySearchDto searchDto)
+        private IQueryable<Category> ApplySorting(IQueryable<Category> query, string sortBy, string sortDirection)
+        {
+            var isDescending = sortDirection.Equals("Desc", StringComparison.OrdinalIgnoreCase);
+
+            return sortBy.ToLowerInvariant() switch
+            {
+                "name" => isDescending ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
+                "createdat" => isDescending ? query.OrderByDescending(c => c.CreatedAt) : query.OrderBy(c => c.CreatedAt),
+                "updatedat" => isDescending ? query.OrderByDescending(c => c.UpdatedAt) : query.OrderBy(c => c.UpdatedAt),
+                "sortorder" => isDescending ? query.OrderByDescending(c => c.SortOrder) : query.OrderBy(c => c.SortOrder),
+                _ => query.OrderBy(c => c.SortOrder).ThenBy(c => c.Name)
+            };
+        }
+
+        /// <summary>
+        /// Apply post-processing filters after mapping to DTOs
+        /// </summary>
+        private async Task<List<CategoryDto>> ApplyPostProcessingFiltersAsync(List<CategoryDto> categoryDtos, CategorySearchDto searchDto)
         {
             var filteredCategories = categoryDtos;
 
-            // Apply product count filters at service level
+            // Apply product count filters (after enrichment)
             if (searchDto.MinProductCount.HasValue)
             {
                 filteredCategories = filteredCategories.Where(c => c.ProductCount >= searchDto.MinProductCount.Value).ToList();
@@ -895,24 +950,29 @@ namespace Backend.CMS.Infrastructure.Services
                 filteredCategories = filteredCategories.Where(c => c.ProductCount <= searchDto.MaxProductCount.Value).ToList();
             }
 
+            // Apply any other filters here
+            // For example, permission-based filtering, custom business rules, etc.
+
+            await Task.CompletedTask; // Placeholder for async operations
             return filteredCategories;
         }
 
         /// <summary>
-        /// Apply advanced search filters at service level
+        /// Apply search-specific post-processing
         /// </summary>
-        private async Task<List<CategoryDto>> ApplyAdvancedSearchFiltersAsync(List<CategoryDto> categoryDtos, CategorySearchDto searchDto)
+        private async Task<List<CategoryDto>> ApplySearchPostProcessingAsync(List<CategoryDto> categoryDtos, CategorySearchDto searchDto)
         {
-            var filteredCategories = await ApplyAdditionalFiltersAsync(categoryDtos, searchDto);
+            var processedCategories = await ApplyPostProcessingFiltersAsync(categoryDtos, searchDto);
 
-            // Apply any additional advanced filters here if needed
-            // This method allows for complex business logic that can't be easily expressed in SQL
+            // Apply search-specific processing like relevance scoring, highlighting, etc.
+            // For example, calculate relevance scores based on search term matches
 
-            return filteredCategories;
+            await Task.CompletedTask; // Placeholder for async operations
+            return processedCategories;
         }
 
         /// <summary>
-        /// Enrich categories with product counts efficiently using batch operations - THREAD SAFE VERSION
+        /// Enrich categories with product counts
         /// </summary>
         private async Task EnrichCategoriesWithProductCountsBatchAsync(List<CategoryDto> categoryDtos)
         {

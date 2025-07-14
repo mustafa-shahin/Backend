@@ -18,10 +18,15 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<bool> HasSubCategoriesAsync(int categoryId);
         Task<bool> CanDeleteAsync(int categoryId);
 
-        // Paginated methods with PagedResult
-        Task<PaginatedResult<Category>> GetCategoriesPagedAsync(CategorySearchDto searchDto);
-        Task<PaginatedResult<Category>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize);
-        Task<PaginatedResult<Category>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize);
-        Task<PaginatedResult<Category>> SearchCategoriesPagedAsync(CategorySearchDto searchDto);
+        IQueryable<Category> GetCategoriesQueryable(CategorySearchDto searchDto);
+        IQueryable<Category> GetRootCategoriesQueryable();
+        IQueryable<Category> GetSubCategoriesQueryable(int parentCategoryId);
+        IQueryable<Category> SearchCategoriesQueryable(CategorySearchDto searchDto);
+
+        // Helper method to get total count for a query
+        Task<int> GetQueryCountAsync(IQueryable<Category> query);
+
+        // Helper method to apply includes to a query
+        IQueryable<Category> ApplyIncludes(IQueryable<Category> query, bool includeImages = true, bool includeParent = true, bool includeSubCategories = false);
     }
 }
