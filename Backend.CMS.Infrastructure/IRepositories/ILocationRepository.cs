@@ -7,9 +7,8 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<Location?> GetMainLocationAsync();
         Task<IEnumerable<Location>> GetLocationsByCompanyAsync(int companyId);
         Task<bool> LocationCodeExistsAsync(string locationCode, int? excludeLocationId = null);
-        Task<IEnumerable<Location>> SearchLocationsAsync(string searchTerm, int page, int pageSize);
-        Task<IEnumerable<Location>> GetPagedWithRelatedAsync(int page, int pageSize);
         Task<Location?> GetWithAddressesAndContactsAsync(int locationId);
-
+        IQueryable<Location> GetQueryableWithIncludes();
+        IQueryable<Location> ApplySearchFilter(IQueryable<Location> query, string searchTerm);
     }
 }

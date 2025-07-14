@@ -62,29 +62,44 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var query = BuildLocationQuery(searchDto);
+                // Validate pagination parameters
+                ValidatePaginationParameters(searchDto.PageNumber, searchDto.PageSize);
 
+                // Build the base query using repository
+                var query = _unitOfWork.Locations.GetQueryableWithIncludes();
+
+                // Apply search filter
+                if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
+                {
+                    query = _unitOfWork.Locations.ApplySearchFilter(query, searchDto.SearchTerm);
+                }
+
+                // Apply additional filters
+                query = ApplyLocationFilters(query, searchDto);
+
+                // Get total count before pagination
                 var totalCount = await query.CountAsync();
 
-                // Apply sorting
+                // Apply sorting and pagination
                 query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
 
-                // Apply pagination
                 var locations = await query
                     .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
                     .Take(searchDto.PageSize)
-                    .Include(l => l.Addresses.Where(a => !a.IsDeleted))
-                    .Include(l => l.ContactDetails.Where(c => !c.IsDeleted))
-                    .Include(l => l.OpeningHours.Where(oh => !oh.IsDeleted))
                     .ToListAsync();
 
                 var locationDtos = _mapper.Map<List<LocationDto>>(locations);
 
-                return new PaginatedResult<LocationDto>(
+                var result = new PaginatedResult<LocationDto>(
                     locationDtos,
                     searchDto.PageNumber,
                     searchDto.PageSize,
                     totalCount);
+
+                _logger.LogDebug("Retrieved {Count} locations (page {Page} of {TotalPages})",
+                    locationDtos.Count, searchDto.PageNumber, result.TotalPages);
+
+                return result;
             }
             catch (Exception ex)
             {
@@ -106,7 +121,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var locations = await  _unitOfWork.Locations.GetLocationsByCompanyAsync(companyId);
+                var locations = await _unitOfWork.Locations.GetLocationsByCompanyAsync(companyId);
                 return _mapper.Map<List<LocationDto>>(locations);
             }
             catch (Exception ex)
@@ -135,7 +150,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Validate location code uniqueness
                 if (!string.IsNullOrEmpty(createLocationDto.LocationCode) &&
-                    await  _unitOfWork.Locations.LocationCodeExistsAsync(createLocationDto.LocationCode))
+                    await _unitOfWork.Locations.LocationCodeExistsAsync(createLocationDto.LocationCode))
                 {
                     throw new ArgumentException("Location code already exists");
                 }
@@ -149,8 +164,8 @@ namespace Backend.CMS.Infrastructure.Services
                 location.CreatedAt = DateTime.UtcNow;
                 location.UpdatedAt = DateTime.UtcNow;
 
-                await  _unitOfWork.Locations.AddAsync(location);
-                await  _unitOfWork.Locations.SaveChangesAsync();
+                await _unitOfWork.Locations.AddAsync(location);
+                await _unitOfWork.Locations.SaveChangesAsync();
 
                 // Handle related data creation in parallel
                 var tasks = new List<Task>();
@@ -180,7 +195,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _logger.LogInformation("Location {LocationId} created by user {UserId}", location.Id, currentUserId);
 
-                var createdLocation = await  _unitOfWork.Locations.GetWithAddressesAndContactsAsync(location.Id);
+                var createdLocation = await _unitOfWork.Locations.GetWithAddressesAndContactsAsync(location.Id);
                 return _mapper.Map<LocationDto>(createdLocation);
             }
             catch (Exception ex) when (!(ex is ArgumentException))
@@ -202,7 +217,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var location = await  _unitOfWork.Locations.GetByIdAsync(locationId);
+                var location = await _unitOfWork.Locations.GetByIdAsync(locationId);
                 if (location == null)
                 {
                     _logger.LogWarning("Location {LocationId} not found for update", locationId);
@@ -211,7 +226,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Validate location code uniqueness
                 if (!string.IsNullOrEmpty(updateLocationDto.LocationCode) &&
-                    await  _unitOfWork.Locations.LocationCodeExistsAsync(updateLocationDto.LocationCode, locationId))
+                    await _unitOfWork.Locations.LocationCodeExistsAsync(updateLocationDto.LocationCode, locationId))
                 {
                     throw new ArgumentException("Location code already exists");
                 }
@@ -222,7 +237,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _mapper.Map(updateLocationDto, location);
                 location.UpdatedAt = DateTime.UtcNow;
                 location.UpdatedByUserId = currentUserId;
-                 _unitOfWork.Locations.Update(location);
+                _unitOfWork.Locations.Update(location);
 
                 // Handle related data updates in parallel
                 var tasks = new List<Task>();
@@ -252,7 +267,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _logger.LogInformation("Location {LocationId} updated by user {UserId}", locationId, currentUserId);
 
-                var updatedLocation = await  _unitOfWork.Locations.GetWithAddressesAndContactsAsync(locationId);
+                var updatedLocation = await _unitOfWork.Locations.GetWithAddressesAndContactsAsync(locationId);
                 return _mapper.Map<LocationDto>(updatedLocation);
             }
             catch (Exception ex) when (!(ex is ArgumentException))
@@ -271,7 +286,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var result = await  _unitOfWork.Locations.SoftDeleteAsync(locationId, currentUserId);
+                var result = await _unitOfWork.Locations.SoftDeleteAsync(locationId, currentUserId);
 
                 if (result)
                 {
@@ -299,7 +314,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var location = await  _unitOfWork.Locations.GetByIdAsync(locationId);
+                var location = await _unitOfWork.Locations.GetByIdAsync(locationId);
                 if (location == null)
                 {
                     _logger.LogWarning("Location {LocationId} not found for setting as main", locationId);
@@ -309,7 +324,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var currentUserId = _userSessionService.GetCurrentUserId();
 
                 // Batch update all locations for the same company
-                var allLocations = await  _unitOfWork.Locations.FindAsync(l => l.CompanyId == location.CompanyId);
+                var allLocations = await _unitOfWork.Locations.FindAsync(l => l.CompanyId == location.CompanyId);
                 var updateTime = DateTime.UtcNow;
 
                 foreach (var l in allLocations)
@@ -339,7 +354,7 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var mainLocation = await  _unitOfWork.Locations.GetMainLocationAsync();
+                var mainLocation = await _unitOfWork.Locations.GetMainLocationAsync();
                 if (mainLocation == null)
                 {
                     _logger.LogWarning("Main location not found");
@@ -362,7 +377,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                return await  _unitOfWork.Locations.LocationCodeExistsAsync(locationCode, excludeLocationId);
+                return await _unitOfWork.Locations.LocationCodeExistsAsync(locationCode, excludeLocationId);
             }
             catch (Exception ex)
             {
@@ -378,10 +393,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var locations = await _context.Locations
-                    .Where(l => !l.IsDeleted)
-                    .Include(l => l.Addresses.Where(a => !a.IsDeleted))
-                    .Include(l => l.ContactDetails.Where(c => !c.IsDeleted))
+                var locations = await _unitOfWork.Locations.GetQueryableWithIncludes()
                     .OrderByDescending(l => l.CreatedAt)
                     .Take(count)
                     .ToListAsync();
@@ -399,11 +411,10 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var totalLocations = await  _unitOfWork.Locations.CountAsync();
-                var activeLocations = await  _unitOfWork.Locations.CountAsync(l => l.IsActive);
-                var mainLocation = await  _unitOfWork.Locations.GetMainLocationAsync();
-                var locationsByType = await _context.Locations
-                    .Where(l => !l.IsDeleted)
+                var totalLocations = await _unitOfWork.Locations.CountAsync();
+                var activeLocations = await _unitOfWork.Locations.CountAsync(l => l.IsActive);
+                var mainLocation = await _unitOfWork.Locations.GetMainLocationAsync();
+                var locationsByType = await _unitOfWork.Locations.GetQueryable()
                     .GroupBy(l => l.LocationType)
                     .Select(g => new { Type = g.Key, Count = g.Count() })
                     .ToListAsync();
@@ -438,7 +449,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var locations = await  _unitOfWork.Locations.FindAsync(l => locationIds.Contains(l.Id));
+                var locations = await _unitOfWork.Locations.FindAsync(l => locationIds.Contains(l.Id));
                 var updateTime = DateTime.UtcNow;
 
                 foreach (var location in locations)
@@ -472,9 +483,9 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var locations = await  _unitOfWork.Locations.FindAsync(l => locationIds.Contains(l.Id));
+                var locations = await _unitOfWork.Locations.FindAsync(l => locationIds.Contains(l.Id));
 
-                await  _unitOfWork.Locations.SoftDeleteRangeAsync(locations, currentUserId);
+                await _unitOfWork.Locations.SoftDeleteRangeAsync(locations, currentUserId);
 
                 _logger.LogInformation("Bulk deleted {Count} locations by user {UserId}", locations.Count(), currentUserId);
 
@@ -489,21 +500,8 @@ namespace Backend.CMS.Infrastructure.Services
 
         #region Private Helper Methods
 
-        private IQueryable<Location> BuildLocationQuery(LocationSearchDto searchDto)
+        private IQueryable<Location> ApplyLocationFilters(IQueryable<Location> query, LocationSearchDto searchDto)
         {
-            var query = _context.Locations
-                .Where(l => !l.IsDeleted)
-                .AsQueryable();
-
-            if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
-            {
-                var searchTerm = searchDto.SearchTerm.ToLower();
-                query = query.Where(l =>
-                    l.Name.ToLower().Contains(searchTerm) ||
-                    (l.LocationCode != null && l.LocationCode.ToLower().Contains(searchTerm)) ||
-                    (l.Description != null && l.Description.ToLower().Contains(searchTerm)));
-            }
-
             if (!string.IsNullOrWhiteSpace(searchDto.LocationType))
             {
                 query = query.Where(l => l.LocationType == searchDto.LocationType);
@@ -795,6 +793,18 @@ namespace Backend.CMS.Infrastructure.Services
 
             _logger.LogDebug("Updated {DeletedCount} contacts and created {CreatedCount} contacts for location {LocationId}",
                 existingContacts.Count, newContacts.Count, locationId);
+        }
+
+        private static void ValidatePaginationParameters(int pageNumber, int pageSize)
+        {
+            if (pageNumber < 1)
+                throw new ArgumentException("Page number must be greater than 0", nameof(pageNumber));
+
+            if (pageSize < 1)
+                throw new ArgumentException("Page size must be greater than 0", nameof(pageSize));
+
+            if (pageSize > 100)
+                throw new ArgumentException("Page size cannot exceed 100", nameof(pageSize));
         }
 
         #endregion

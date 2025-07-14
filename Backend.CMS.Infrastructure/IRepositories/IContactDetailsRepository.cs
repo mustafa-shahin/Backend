@@ -12,10 +12,9 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<ContactDetails?> GetByPhoneAsync(string phone);
         Task<bool> SetDefaultContactDetailsAsync(int contactDetailsId, int entityId, string entityType);
         Task<int> CountContactDetailsByEntityAsync(int entityId, string entityType);
-        Task<PaginatedResult<ContactDetails>> SearchContactDetailsAsync(string searchTerm, int page, int pageSize);
         Task<bool> EmailExistsAsync(string email, int? excludeContactDetailsId = null);
         Task<bool> PhoneExistsAsync(string phone, int? excludeContactDetailsId = null);
-        Task<PaginatedResult<ContactDetails>> GetPagedContactDetailsByEntityAsync(int entityId, string entityType, int page, int pageSize);
-        Task<PaginatedResult<ContactDetails>> GetPagedContactDetailsByTypeAsync(string contactType, int page, int pageSize);
+        IQueryable<ContactDetails> GetQueryableWithEntityFilter(string? entityType = null, int? entityId = null);
+        IQueryable<ContactDetails> ApplySearchFilter(IQueryable<ContactDetails> query, string searchTerm);
     }
 }

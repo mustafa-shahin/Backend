@@ -18,7 +18,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Include(l => l.Addresses.Where(a => !a.IsDeleted))
                 .Include(l => l.ContactDetails.Where(c => !c.IsDeleted))
                 .Include(l => l.OpeningHours.Where(oh => !oh.IsDeleted))
-                .FirstOrDefaultAsync(l => l.IsMainLocation);
+                .FirstOrDefaultAsync(l => l.IsMainLocation && !l.IsDeleted);
         }
 
         public async Task<IEnumerable<Location>> GetLocationsByCompanyAsync(int companyId)
@@ -27,7 +27,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Include(l => l.Addresses.Where(a => !a.IsDeleted))
                 .Include(l => l.ContactDetails.Where(c => !c.IsDeleted))
                 .Include(l => l.OpeningHours.Where(oh => !oh.IsDeleted))
-                .Where(l => l.CompanyId == companyId)
+                .Where(l => l.CompanyId == companyId && !l.IsDeleted)
                 .OrderBy(l => l.Name)
                 .ToListAsync();
         }
@@ -38,12 +38,12 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Include(l => l.Addresses.Where(a => !a.IsDeleted))
                 .Include(l => l.ContactDetails.Where(c => !c.IsDeleted))
                 .Include(l => l.OpeningHours.Where(oh => !oh.IsDeleted))
-                .FirstOrDefaultAsync(l => l.Id == locationId);
+                .FirstOrDefaultAsync(l => l.Id == locationId && !l.IsDeleted);
         }
 
         public async Task<bool> LocationCodeExistsAsync(string locationCode, int? excludeLocationId = null)
         {
-            var query = _dbSet.Where(l => l.LocationCode == locationCode);
+            var query = _dbSet.Where(l => !l.IsDeleted && l.LocationCode == locationCode);
 
             if (excludeLocationId.HasValue)
                 query = query.Where(l => l.Id != excludeLocationId.Value);
@@ -51,28 +51,25 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await query.AnyAsync();
         }
 
-        public async Task<IEnumerable<Location>> SearchLocationsAsync(string searchTerm, int page, int pageSize)
+        public IQueryable<Location> GetQueryableWithIncludes()
         {
-            return await _dbSet
+            return _dbSet
                 .Include(l => l.Addresses.Where(a => !a.IsDeleted))
                 .Include(l => l.ContactDetails.Where(c => !c.IsDeleted))
-                .Where(l => l.Name.Contains(searchTerm) ||
-                           l.LocationCode!.Contains(searchTerm) ||
-                           l.Description!.Contains(searchTerm))
-                .OrderBy(l => l.Name)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
+                .Include(l => l.OpeningHours.Where(oh => !oh.IsDeleted))
+                .Where(l => !l.IsDeleted);
         }
-        public async Task<IEnumerable<Location>> GetPagedWithRelatedAsync(int page, int pageSize)
+
+        public IQueryable<Location> ApplySearchFilter(IQueryable<Location> query, string searchTerm)
         {
-            return await _dbSet
-                .Include(u => u.Addresses.Where(a => !a.IsDeleted))
-                .Include(u => u.ContactDetails.Where(c => !c.IsDeleted))
-                .OrderBy(u => u.Id)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
+            if (string.IsNullOrWhiteSpace(searchTerm))
+                return query;
+
+            var lowerSearchTerm = searchTerm.ToLower();
+            return query.Where(l =>
+                l.Name.ToLower().Contains(lowerSearchTerm) ||
+                (l.LocationCode != null && l.LocationCode.ToLower().Contains(lowerSearchTerm)) ||
+                (l.Description != null && l.Description.ToLower().Contains(lowerSearchTerm)));
         }
     }
 }

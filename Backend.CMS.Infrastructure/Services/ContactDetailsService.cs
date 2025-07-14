@@ -3,10 +3,8 @@ using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.Interfaces;
-using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -67,14 +65,27 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var query = BuildContactDetailsQuery(searchDto);
+                // Validate pagination parameters
+                ValidatePaginationParameters(searchDto.PageNumber, searchDto.PageSize);
 
+                // Build the base query using repository
+                var query = _unitOfWork.ContactDetails.GetQueryableWithEntityFilter(searchDto.EntityType, searchDto.EntityId);
+
+                // Apply search filter
+                if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
+                {
+                    query = _unitOfWork.ContactDetails.ApplySearchFilter(query, searchDto.SearchTerm);
+                }
+
+                // Apply additional filters
+                query = ApplyContactDetailsFilters(query, searchDto);
+
+                // Get total count before pagination
                 var totalCount = await query.CountAsync();
 
-                // Apply sorting
+                // Apply sorting and pagination
                 query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
 
-                // Apply pagination
                 var contactDetails = await query
                     .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
                     .Take(searchDto.PageSize)
@@ -82,11 +93,16 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var contactDetailsDtos = _mapper.Map<List<ContactDetailsDto>>(contactDetails);
 
-                return new PaginatedResult<ContactDetailsDto>(
+                var result = new PaginatedResult<ContactDetailsDto>(
                     contactDetailsDtos,
                     searchDto.PageNumber,
                     searchDto.PageSize,
                     totalCount);
+
+                _logger.LogDebug("Retrieved {Count} contact details (page {Page} of {TotalPages})",
+                    contactDetailsDtos.Count, searchDto.PageNumber, result.TotalPages);
+
+                return result;
             }
             catch (Exception ex)
             {
@@ -108,18 +124,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var query = _context.ContactDetails.AsQueryable();
-                var normalizedEntityType = entityType.ToLowerInvariant();
-
-                query = normalizedEntityType switch
-                {
-                    "user" => query.Where(c => EF.Property<int?>(c, "UserId") == entityId),
-                    "company" => query.Where(c => EF.Property<int?>(c, "CompanyId") == entityId),
-                    "location" => query.Where(c => EF.Property<int?>(c, "LocationId") == entityId),
-                    _ => throw new ArgumentException($"Invalid entity type: {entityType}")
-                };
-
-                var contactDetails = await query.OrderBy(c => c.CreatedAt).ToListAsync();
+                var contactDetails = await _unitOfWork.ContactDetails.GetContactDetailsByEntityAsync(entityId, entityType);
                 return _mapper.Map<List<ContactDetailsDto>>(contactDetails);
             }
             catch (Exception ex) when (!(ex is ArgumentException))
@@ -192,7 +197,7 @@ namespace Backend.CMS.Infrastructure.Services
             using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var contactDetails = await  _unitOfWork.ContactDetails.GetByIdAsync(contactId);
+                var contactDetails = await _unitOfWork.ContactDetails.GetByIdAsync(contactId);
                 if (contactDetails == null)
                 {
                     _logger.LogWarning("Contact details {ContactId} not found for update", contactId);
@@ -205,8 +210,8 @@ namespace Backend.CMS.Infrastructure.Services
                 contactDetails.UpdatedAt = DateTime.UtcNow;
                 contactDetails.UpdatedByUserId = currentUserId;
 
-                 _unitOfWork.ContactDetails.Update(contactDetails);
-                await  _unitOfWork.ContactDetails.SaveChangesAsync();
+                _unitOfWork.ContactDetails.Update(contactDetails);
+                await _unitOfWork.ContactDetails.SaveChangesAsync();
                 await transaction.CommitAsync();
 
                 _logger.LogInformation("Contact details {ContactId} updated by user {UserId}", contactId, currentUserId);
@@ -229,7 +234,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var result = await  _unitOfWork.ContactDetails.SoftDeleteAsync(contactId, currentUserId);
+                var result = await _unitOfWork.ContactDetails.SoftDeleteAsync(contactId, currentUserId);
 
                 if (result)
                 {
@@ -263,62 +268,12 @@ namespace Backend.CMS.Infrastructure.Services
             if (!IsValidEntityType(entityType))
                 throw new ArgumentException($"Invalid entity type: {entityType}");
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var contactDetails = await  _unitOfWork.ContactDetails.GetByIdAsync(contactId);
-                if (contactDetails == null)
-                {
-                    _logger.LogWarning("Contact details {ContactId} not found for setting default", contactId);
-                    return false;
-                }
-
-                var currentUserId = _userSessionService.GetCurrentUserId();
-                var normalizedEntityType = entityType.ToLowerInvariant();
-
-                // Verify that the contact details belongs to the specified entity
-                var entityIdProperty = GetEntityIdPropertyName(normalizedEntityType);
-                var contactEntityId = _context.Entry(contactDetails).Property(entityIdProperty).CurrentValue;
-
-                if (!contactEntityId?.Equals(entityId) == true)
-                {
-                    _logger.LogWarning("Contact details {ContactId} does not belong to {EntityType} {EntityId}",
-                        contactId, entityType, entityId);
-                    throw new ArgumentException("Contact details does not belong to the specified entity");
-                }
-
-                // Build query for all contact details of this entity
-                var query = _context.ContactDetails.AsQueryable();
-                query = normalizedEntityType switch
-                {
-                    "user" => query.Where(c => EF.Property<int?>(c, "UserId") == entityId),
-                    "company" => query.Where(c => EF.Property<int?>(c, "CompanyId") == entityId),
-                    "location" => query.Where(c => EF.Property<int?>(c, "LocationId") == entityId),
-                    _ => throw new ArgumentException($"Invalid entity type: {entityType}")
-                };
-
-                var allContactDetails = await query.ToListAsync();
-
-                // Batch update all contact details
-                foreach (var contact in allContactDetails)
-                {
-                    contact.IsDefault = contact.Id == contactId;
-                    contact.UpdatedAt = DateTime.UtcNow;
-                    contact.UpdatedByUserId = currentUserId;
-                    _context.ContactDetails.Update(contact);
-                }
-
-                await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
-
-                _logger.LogInformation("Default contact details set to {ContactId} for {EntityType} {EntityId} by user {UserId}",
-                    contactId, entityType, entityId, currentUserId);
-
-                return true;
+                return await _unitOfWork.ContactDetails.SetDefaultContactDetailsAsync(contactId, entityId, entityType);
             }
-            catch (Exception ex) when (!(ex is ArgumentException))
+            catch (Exception ex)
             {
-                await transaction.RollbackAsync();
                 _logger.LogError(ex, "Error setting default contact details {ContactId} for {EntityType} {EntityId}",
                     contactId, entityType, entityId);
                 throw;
@@ -332,8 +287,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var contactDetails = await _context.ContactDetails
-                    .Where(c => !c.IsDeleted)
+                var contactDetails = await _unitOfWork.ContactDetails.GetQueryable()
                     .OrderByDescending(c => c.CreatedAt)
                     .Take(count)
                     .ToListAsync();
@@ -351,17 +305,16 @@ namespace Backend.CMS.Infrastructure.Services
         {
             try
             {
-                var totalContactDetails = await  _unitOfWork.ContactDetails.CountAsync();
-                var defaultContactDetails = await  _unitOfWork.ContactDetails.CountAsync(c => c.IsDefault);
-                var contactDetailsByType = await _context.ContactDetails
-                    .Where(c => !c.IsDeleted)
+                var totalContactDetails = await _unitOfWork.ContactDetails.CountAsync();
+                var defaultContactDetails = await _unitOfWork.ContactDetails.CountAsync(c => c.IsDefault);
+                var contactDetailsByType = await _unitOfWork.ContactDetails.GetQueryable()
                     .GroupBy(c => c.ContactType ?? "Default")
                     .Select(g => new { Type = g.Key, Count = g.Count() })
                     .ToListAsync();
 
-                var contactDetailsWithEmail = await  _unitOfWork.ContactDetails.CountAsync(c => !string.IsNullOrEmpty(c.Email));
-                var contactDetailsWithPhone = await  _unitOfWork.ContactDetails.CountAsync(c => !string.IsNullOrEmpty(c.PrimaryPhone));
-                var contactDetailsWithWebsite = await  _unitOfWork.ContactDetails.CountAsync(c => !string.IsNullOrEmpty(c.Website));
+                var contactDetailsWithEmail = await _unitOfWork.ContactDetails.CountAsync(c => !string.IsNullOrEmpty(c.Email));
+                var contactDetailsWithPhone = await _unitOfWork.ContactDetails.CountAsync(c => !string.IsNullOrEmpty(c.PrimaryPhone));
+                var contactDetailsWithWebsite = await _unitOfWork.ContactDetails.CountAsync(c => !string.IsNullOrEmpty(c.Website));
 
                 return new Dictionary<string, object>
                 {
@@ -393,7 +346,7 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var contactDetails = await  _unitOfWork.ContactDetails.FindAsync(c => contactIds.Contains(c.Id));
+                var contactDetails = await _unitOfWork.ContactDetails.FindAsync(c => contactIds.Contains(c.Id));
                 var updateTime = DateTime.UtcNow;
 
                 foreach (var contact in contactDetails)
@@ -427,9 +380,9 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                var contactDetails = await  _unitOfWork.ContactDetails.FindAsync(c => contactIds.Contains(c.Id));
+                var contactDetails = await _unitOfWork.ContactDetails.FindAsync(c => contactIds.Contains(c.Id));
 
-                await  _unitOfWork.ContactDetails.SoftDeleteRangeAsync(contactDetails, currentUserId);
+                await _unitOfWork.ContactDetails.SoftDeleteRangeAsync(contactDetails, currentUserId);
 
                 _logger.LogInformation("Bulk deleted {Count} contact details by user {UserId}", contactDetails.Count(), currentUserId);
 
@@ -444,24 +397,8 @@ namespace Backend.CMS.Infrastructure.Services
 
         #region Private Helper Methods
 
-        private IQueryable<ContactDetails> BuildContactDetailsQuery(ContactDetailsSearchDto searchDto)
+        private IQueryable<ContactDetails> ApplyContactDetailsFilters(IQueryable<ContactDetails> query, ContactDetailsSearchDto searchDto)
         {
-            var query = _context.ContactDetails
-                .Where(c => !c.IsDeleted)
-                .AsQueryable();
-
-            if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
-            {
-                var searchTerm = searchDto.SearchTerm.ToLower();
-                query = query.Where(c =>
-                    (c.Email != null && c.Email.ToLower().Contains(searchTerm)) ||
-                    (c.PrimaryPhone != null && c.PrimaryPhone.Contains(searchTerm)) ||
-                    (c.SecondaryPhone != null && c.SecondaryPhone.Contains(searchTerm)) ||
-                    (c.Mobile != null && c.Mobile.Contains(searchTerm)) ||
-                    (c.Website != null && c.Website.ToLower().Contains(searchTerm)) ||
-                    (c.ContactType != null && c.ContactType.ToLower().Contains(searchTerm)));
-            }
-
             if (!string.IsNullOrWhiteSpace(searchDto.ContactType))
             {
                 query = query.Where(c => c.ContactType == searchDto.ContactType);
@@ -470,18 +407,6 @@ namespace Backend.CMS.Infrastructure.Services
             if (searchDto.IsDefault.HasValue)
             {
                 query = query.Where(c => c.IsDefault == searchDto.IsDefault.Value);
-            }
-
-            if (!string.IsNullOrWhiteSpace(searchDto.EntityType) && searchDto.EntityId.HasValue)
-            {
-                var normalizedEntityType = searchDto.EntityType.ToLowerInvariant();
-                query = normalizedEntityType switch
-                {
-                    "user" => query.Where(c => EF.Property<int?>(c, "UserId") == searchDto.EntityId.Value),
-                    "company" => query.Where(c => EF.Property<int?>(c, "CompanyId") == searchDto.EntityId.Value),
-                    "location" => query.Where(c => EF.Property<int?>(c, "LocationId") == searchDto.EntityId.Value),
-                    _ => query
-                };
             }
 
             if (searchDto.CreatedAfter.HasValue)
@@ -547,6 +472,18 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogWarning("{EntityType} with ID {EntityId} not found for contact details creation", entityType, entityId);
                 throw new ArgumentException($"{entityType} with ID {entityId} not found");
             }
+        }
+
+        private static void ValidatePaginationParameters(int pageNumber, int pageSize)
+        {
+            if (pageNumber < 1)
+                throw new ArgumentException("Page number must be greater than 0", nameof(pageNumber));
+
+            if (pageSize < 1)
+                throw new ArgumentException("Page size must be greater than 0", nameof(pageSize));
+
+            if (pageSize > 100)
+                throw new ArgumentException("Page size cannot exceed 100", nameof(pageSize));
         }
 
         #endregion
