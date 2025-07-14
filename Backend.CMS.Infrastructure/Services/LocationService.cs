@@ -55,7 +55,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<LocationDto>> GetLocationsPagedAsync(LocationSearchDto searchDto)
+        public async Task<PaginatedResult<LocationDto>> GetLocationsPagedAsync(LocationSearchDto searchDto)
         {
             if (searchDto == null)
                 throw new ArgumentNullException(nameof(searchDto));
@@ -80,7 +80,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var locationDtos = _mapper.Map<List<LocationDto>>(locations);
 
-                return new PagedResult<LocationDto>(
+                return new PaginatedResult<LocationDto>(
                     locationDtos,
                     searchDto.PageNumber,
                     searchDto.PageSize,
@@ -93,7 +93,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<LocationDto>> SearchLocationsPagedAsync(LocationSearchDto searchDto)
+        public async Task<PaginatedResult<LocationDto>> SearchLocationsPagedAsync(LocationSearchDto searchDto)
         {
             // This method is the same as GetLocationsPagedAsync since filtering is already included
             return await GetLocationsPagedAsync(searchDto);

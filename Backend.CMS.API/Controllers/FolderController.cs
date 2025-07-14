@@ -37,10 +37,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
         /// <returns>Paginated list of folders</returns>
         [HttpGet]
-        [ProducesResponseType(typeof(PagedResult<FolderDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<FolderDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<FolderDto>>> GetFolders(
+        public async Task<ActionResult<PaginatedResult<FolderDto>>> GetFolders(
             [FromQuery] int? parentFolderId = null,
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10)
@@ -70,10 +70,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
         /// <returns>Paginated search results</returns>
         [HttpGet("search")]
-        [ProducesResponseType(typeof(PagedResult<FolderDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<FolderDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<FolderDto>>> SearchFolders(
+        public async Task<ActionResult<PaginatedResult<FolderDto>>> SearchFolders(
             [FromQuery][Required] string searchTerm,
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10)

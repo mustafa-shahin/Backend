@@ -35,7 +35,7 @@ namespace Frontend.Services
         /// <param name="pageSize">Page size (1-100)</param>
         /// <param name="search">Optional search term</param>
         /// <returns>Paginated result with metadata</returns>
-        public async Task<PagedResult<UserDto>> GetUsersAsync(int pageNumber = 1, int pageSize = 10, string? search = null)
+        public async Task<PaginatedResult<UserDto>> GetUsersAsync(int pageNumber = 1, int pageSize = 10, string? search = null)
         {
             try
             {
@@ -62,12 +62,12 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<UserDto>>(_jsonOptions);
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<UserDto>>(_jsonOptions);
 
                     if (result == null)
                     {
                         _logger?.LogWarning("Received null response from users API");
-                        return PagedResult<UserDto>.Empty(pageNumber, pageSize);
+                        return PaginatedResult<UserDto>.Empty(pageNumber, pageSize);
                     }
 
                     _logger?.LogInformation("Retrieved {UserCount} users on page {Page} of {TotalPages} (total: {TotalCount})",
@@ -99,7 +99,7 @@ namespace Frontend.Services
         /// </summary>
         /// <param name="searchDto">Advanced search criteria</param>
         /// <returns>Paginated search results</returns>
-        public async Task<PagedResult<UserDto>> SearchUsersAsync(UserSearchDto searchDto)
+        public async Task<PaginatedResult<UserDto>> SearchUsersAsync(UserSearchDto searchDto)
         {
             try
             {
@@ -116,12 +116,12 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<UserDto>>(_jsonOptions);
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<UserDto>>(_jsonOptions);
 
                     if (result == null)
                     {
                         _logger?.LogWarning("Received null response from advanced user search API");
-                        return PagedResult<UserDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
+                        return PaginatedResult<UserDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
                     }
 
                     _logger?.LogInformation("Advanced search completed: {UserCount} users on page {Page} of {TotalPages} (total: {TotalCount})",
@@ -573,7 +573,7 @@ namespace Frontend.Services
         /// <param name="pageSize">Page size</param>
         /// <param name="search">Search term</param>
         /// <returns>Paginated users</returns>
-        public async Task<PagedResult<UserDto>> GetUsersV2Async(int pageNumber = 1, int pageSize = 10, string? search = null)
+        public async Task<PaginatedResult<UserDto>> GetUsersV2Async(int pageNumber = 1, int pageSize = 10, string? search = null)
         {
             try
             {
@@ -598,8 +598,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<UserDto>>(_jsonOptions);
-                    return result ?? PagedResult<UserDto>.Empty(pageNumber, pageSize);
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<UserDto>>(_jsonOptions);
+                    return result ?? PaginatedResult<UserDto>.Empty(pageNumber, pageSize);
                 }
 
                 // Fallback to v1.0 if v2.0 is not available

@@ -41,14 +41,14 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// <param name="pageSize">Page size (auto-corrected to valid range 1-100)</param>
         /// <param name="search">Optional search term</param>
         /// <returns>Paginated result with all metadata calculated in service</returns>
-        Task<PagedResult<UserDto>> GetUsersPagedAsync(int pageNumber = 1, int pageSize = 10, string? search = null);
+        Task<PaginatedResult<UserDto>> GetUsersPagedAsync(int pageNumber = 1, int pageSize = 10, string? search = null);
 
         /// <summary>
         /// Advanced user search with filtering options
         /// </summary>
         /// <param name="searchDto">Advanced search criteria with pagination</param>
         /// <returns>Paginated search results</returns>
-        Task<PagedResult<UserDto>> SearchUsersPagedAsync(UserSearchDto searchDto);
+        Task<PaginatedResult<UserDto>> SearchUsersPagedAsync(UserSearchDto searchDto);
 
         #endregion
 

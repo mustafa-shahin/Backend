@@ -17,7 +17,7 @@ namespace Frontend.Services
         private readonly string _backendBaseUrl;
         private readonly SemaphoreSlim _downloadSemaphore;
         private readonly ConcurrentDictionary<int, FileDto> _fileCache;
-        private readonly ConcurrentDictionary<string, PagedResult<FileDto>> _paginationCache;
+        private readonly ConcurrentDictionary<string, PaginatedResult<FileDto>> _paginationCache;
         private readonly Timer _cacheCleanupTimer;
 
         public FileService(HttpClient httpClient, IJSRuntime jsRuntime)
@@ -28,7 +28,7 @@ namespace Frontend.Services
             _backendBaseUrl = GetBackendBaseUrl(httpClient);
             _downloadSemaphore = new SemaphoreSlim(5, 5);
             _fileCache = new ConcurrentDictionary<int, FileDto>();
-            _paginationCache = new ConcurrentDictionary<string, PagedResult<FileDto>>();
+            _paginationCache = new ConcurrentDictionary<string, PaginatedResult<FileDto>>();
 
             _jsonOptions = new JsonSerializerOptions
             {
@@ -55,7 +55,7 @@ namespace Frontend.Services
 
         #region Enhanced Core File Operations with Pagination
 
-        public async Task<PagedResult<FileDto>> GetFilesAsync(
+        public async Task<PaginatedResult<FileDto>> GetFilesAsync(
             int pageNumber = 1,
             int pageSize = 10,
             int? folderId = null,
@@ -96,11 +96,11 @@ namespace Frontend.Services
                     throw new HttpRequestException($"Failed to get files: {response.StatusCode} - {errorContent}");
                 }
 
-                var result = await response.Content.ReadFromJsonAsync<PagedResult<FileDto>>(_jsonOptions);
+                var result = await response.Content.ReadFromJsonAsync<PaginatedResult<FileDto>>(_jsonOptions);
 
                 if (result == null)
                 {
-                    return PagedResult<FileDto>.Empty(pageNumber, pageSize);
+                    return PaginatedResult<FileDto>.Empty(pageNumber, pageSize);
                 }
 
                 // Validate pagination data integrity
@@ -127,7 +127,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<FileDto>> SearchFilesAsync(FileSearchDto searchDto)
+        public async Task<PaginatedResult<FileDto>> SearchFilesAsync(FileSearchDto searchDto)
         {
             try
             {
@@ -146,11 +146,11 @@ namespace Frontend.Services
                     throw new HttpRequestException($"Failed to search files: {response.StatusCode} - {errorContent}");
                 }
 
-                var result = await response.Content.ReadFromJsonAsync<PagedResult<FileDto>>(_jsonOptions);
+                var result = await response.Content.ReadFromJsonAsync<PaginatedResult<FileDto>>(_jsonOptions);
 
                 if (result == null)
                 {
-                    return PagedResult<FileDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
+                    return PaginatedResult<FileDto>.Empty(searchDto.PageNumber, searchDto.PageSize);
                 }
 
                 // Cache the search results
@@ -170,7 +170,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<FileDto>> GetFilesByFolderAsync(int? folderId, int pageNumber = 1, int pageSize = 10)
+        public async Task<PaginatedResult<FileDto>> GetFilesByFolderAsync(int? folderId, int pageNumber = 1, int pageSize = 10)
         {
             return await GetFilesAsync(pageNumber, pageSize, folderId);
         }

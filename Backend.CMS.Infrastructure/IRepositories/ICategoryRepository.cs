@@ -19,9 +19,9 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<bool> CanDeleteAsync(int categoryId);
 
         // Paginated methods with PagedResult
-        Task<PagedResult<Category>> GetCategoriesPagedAsync(CategorySearchDto searchDto);
-        Task<PagedResult<Category>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize);
-        Task<PagedResult<Category>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize);
-        Task<PagedResult<Category>> SearchCategoriesPagedAsync(CategorySearchDto searchDto);
+        Task<PaginatedResult<Category>> GetCategoriesPagedAsync(CategorySearchDto searchDto);
+        Task<PaginatedResult<Category>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize);
+        Task<PaginatedResult<Category>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize);
+        Task<PaginatedResult<Category>> SearchCategoriesPagedAsync(CategorySearchDto searchDto);
     }
 }

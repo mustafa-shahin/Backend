@@ -13,14 +13,14 @@ namespace Frontend.Interfaces
         /// <param name="pageSize">Page size (1-100)</param>
         /// <param name="search">Optional search term</param>
         /// <returns>Paginated result with metadata</returns>
-        Task<PagedResult<UserDto>> GetUsersAsync(int pageNumber = 1, int pageSize = 10, string? search = null);
+        Task<PaginatedResult<UserDto>> GetUsersAsync(int pageNumber = 1, int pageSize = 10, string? search = null);
 
         /// <summary>
         /// Advanced user search with filtering
         /// </summary>
         /// <param name="searchDto">Advanced search criteria</param>
         /// <returns>Paginated search results</returns>
-        Task<PagedResult<UserDto>> SearchUsersAsync(UserSearchDto searchDto);
+        Task<PaginatedResult<UserDto>> SearchUsersAsync(UserSearchDto searchDto);
 
         /// <summary>
         /// Get users using API version 2.0 with fallback to v1.0
@@ -29,7 +29,7 @@ namespace Frontend.Interfaces
         /// <param name="pageSize">Page size</param>
         /// <param name="search">Search term</param>
         /// <returns>Paginated users</returns>
-        Task<PagedResult<UserDto>> GetUsersV2Async(int pageNumber = 1, int pageSize = 10, string? search = null);
+        Task<PaginatedResult<UserDto>> GetUsersV2Async(int pageNumber = 1, int pageSize = 10, string? search = null);
 
         #endregion
 

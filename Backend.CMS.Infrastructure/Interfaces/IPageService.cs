@@ -8,8 +8,8 @@ namespace Backend.CMS.Infrastructure.Interfaces
         Task<PageDto> GetPageByIdAsync(int pageId);
         Task<PageDto> GetPageBySlugAsync(string slug);
         Task<List<PageListDto>> GetPagesAsync(int page = 1, int pageSize = 10, string? search = null);
-        Task<PagedResult<PageListDto>> GetPagesPagedAsync(PageSearchDto searchDto);
-        Task<PagedResult<PageListDto>> SearchPagesPagedAsync(PageSearchDto searchDto);
+        Task<PaginatedResult<PageListDto>> GetPagesPagedAsync(PageSearchDto searchDto);
+        Task<PaginatedResult<PageListDto>> SearchPagesPagedAsync(PageSearchDto searchDto);
         Task<List<PageDto>> GetPageHierarchyAsync();
         Task<PageDto> CreatePageAsync(CreatePageDto createPageDto);
         Task<PageDto> UpdatePageAsync(int pageId, UpdatePageDto updatePageDto);

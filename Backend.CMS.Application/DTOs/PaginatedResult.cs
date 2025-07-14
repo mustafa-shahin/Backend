@@ -4,7 +4,7 @@
     /// Represents a paginated result set with metadata about pagination
     /// </summary>
     /// <typeparam name="T">The type of items in the result set</typeparam>
-    public class PagedResult<T>
+    public class PaginatedResult<T>
     {
         /// <summary>
         /// The items for the current page
@@ -54,7 +54,7 @@
         /// <summary>
         /// Creates an empty paged result
         /// </summary>
-        public PagedResult()
+        public PaginatedResult()
         {
         }
 
@@ -65,7 +65,7 @@
         /// <param name="pageNumber">Current page number (1-based)</param>
         /// <param name="pageSize">Number of items per page</param>
         /// <param name="totalCount">Total number of items across all pages</param>
-        public PagedResult(IReadOnlyList<T> data, int pageNumber, int pageSize, int totalCount)
+        public PaginatedResult(IReadOnlyList<T> data, int pageNumber, int pageSize, int totalCount)
         {
             Data = data ?? new List<T>();
             PageNumber = Math.Max(1, pageNumber);
@@ -87,7 +87,7 @@
         /// <param name="pageNumber">Current page number (1-based)</param>
         /// <param name="pageSize">Number of items per page</param>
         /// <returns>A paged result containing the items for the specified page</returns>
-        public static PagedResult<T> Create(IReadOnlyList<T> allItems, int pageNumber, int pageSize)
+        public static PaginatedResult<T> Create(IReadOnlyList<T> allItems, int pageNumber, int pageSize)
         {
             pageNumber = Math.Max(1, pageNumber);
             pageSize = Math.Max(1, pageSize);
@@ -97,7 +97,7 @@
 
             var data = allItems?.Skip(skip).Take(pageSize).ToList() ?? new List<T>();
 
-            return new PagedResult<T>(data, pageNumber, pageSize, totalCount);
+            return new PaginatedResult<T>(data, pageNumber, pageSize, totalCount);
         }
 
         /// <summary>
@@ -106,9 +106,9 @@
         /// <param name="pageNumber">Current page number</param>
         /// <param name="pageSize">Page size</param>
         /// <returns>An empty paged result</returns>
-        public static PagedResult<T> Empty(int pageNumber = 1, int pageSize = 10)
+        public static PaginatedResult<T> Empty(int pageNumber = 1, int pageSize = 10)
         {
-            return new PagedResult<T>(new List<T>(), pageNumber, pageSize, 0);
+            return new PaginatedResult<T>(new List<T>(), pageNumber, pageSize, 0);
         }
 
         /// <summary>
@@ -117,10 +117,10 @@
         /// <typeparam name="TDestination">The destination type</typeparam>
         /// <param name="mapper">Function to map from T to TDestination</param>
         /// <returns>A new paged result with mapped data</returns>
-        public PagedResult<TDestination> Map<TDestination>(Func<T, TDestination> mapper)
+        public PaginatedResult<TDestination> Map<TDestination>(Func<T, TDestination> mapper)
         {
             var mappedData = Data.Select(mapper).ToList();
-            return new PagedResult<TDestination>(mappedData, PageNumber, PageSize, TotalCount);
+            return new PaginatedResult<TDestination>(mappedData, PageNumber, PageSize, TotalCount);
         }
     }
 

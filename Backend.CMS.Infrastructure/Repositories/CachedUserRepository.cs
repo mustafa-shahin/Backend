@@ -288,7 +288,7 @@ namespace Backend.CMS.Infrastructure.Repositories
         public IQueryable<User> GetQueryable()
             => _repository.GetQueryable();
 
-        public async Task<Backend.CMS.Application.DTOs.PagedResult<User>> GetPagedResultAsync(int page, int pageSize, Expression<Func<User, bool>>? predicate = null, Func<IQueryable<User>, IOrderedQueryable<User>>? orderBy = null, CancellationToken cancellationToken = default)
+        public async Task<Backend.CMS.Application.DTOs.PaginatedResult<User>> GetPagedResultAsync(int page, int pageSize, Expression<Func<User, bool>>? predicate = null, Func<IQueryable<User>, IOrderedQueryable<User>>? orderBy = null, CancellationToken cancellationToken = default)
             => await _repository.GetPagedResultAsync(page, pageSize, predicate, orderBy, cancellationToken);
 
         public async Task<IEnumerable<User>> FindWithIncludesAsync(Expression<Func<User, bool>>? predicate = null, params Expression<Func<User, object>>[] includes)

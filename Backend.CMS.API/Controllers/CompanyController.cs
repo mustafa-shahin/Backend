@@ -97,10 +97,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="sortDirection">Sort direction (Asc/Desc, default: Asc)</param>
         /// <returns>Paginated list of locations</returns>
         [HttpGet("locations")]
-        [ProducesResponseType(typeof(PagedResult<LocationDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<LocationDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<LocationDto>>> GetLocations(
+        public async Task<ActionResult<PaginatedResult<LocationDto>>> GetLocations(
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? searchTerm = null,
@@ -143,10 +143,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="searchDto">Search criteria</param>
         /// <returns>Paginated search results</returns>
         [HttpPost("locations/search")]
-        [ProducesResponseType(typeof(PagedResult<LocationDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<LocationDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<LocationDto>>> SearchLocations([FromBody] LocationSearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<LocationDto>>> SearchLocations([FromBody] LocationSearchDto searchDto)
         {
             try
             {

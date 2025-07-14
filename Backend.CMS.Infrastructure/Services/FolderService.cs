@@ -97,7 +97,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         #region Paginated Operations (Core Service Logic)
 
-        public async Task<PagedResult<FolderDto>> GetFoldersPagedAsync(int? parentFolderId = null, int pageNumber = 1, int pageSize = 10)
+        public async Task<PaginatedResult<FolderDto>> GetFoldersPagedAsync(int? parentFolderId = null, int pageNumber = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
             pageNumber = Math.Max(1, pageNumber);
@@ -130,7 +130,7 @@ namespace Backend.CMS.Infrastructure.Services
                     var folderDtos = await MapFoldersToDto(folders);
 
                     // Create paginated result
-                    var result = new PagedResult<FolderDto>(folderDtos, pageNumber, pageSize, totalCount);
+                    var result = new PaginatedResult<FolderDto>(folderDtos, pageNumber, pageSize, totalCount);
 
                     // Cache individual folder metadata for future single folder requests
                     if (_enableAggressiveCaching && folderDtos.Any())
@@ -144,13 +144,13 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     _operationSemaphore.Release();
                 }
-            }, _folderListCacheTTL) ?? PagedResult<FolderDto>.Empty(pageNumber, pageSize);
+            }, _folderListCacheTTL) ?? PaginatedResult<FolderDto>.Empty(pageNumber, pageSize);
         }
 
-        public async Task<PagedResult<FolderDto>> SearchFoldersPagedAsync(string searchTerm, int pageNumber = 1, int pageSize = 10)
+        public async Task<PaginatedResult<FolderDto>> SearchFoldersPagedAsync(string searchTerm, int pageNumber = 1, int pageSize = 10)
         {
             if (string.IsNullOrWhiteSpace(searchTerm))
-                return PagedResult<FolderDto>.Empty(pageNumber, pageSize);
+                return PaginatedResult<FolderDto>.Empty(pageNumber, pageSize);
 
             // Validate and normalize pagination parameters
             pageNumber = Math.Max(1, pageNumber);
@@ -181,7 +181,7 @@ namespace Backend.CMS.Infrastructure.Services
                     var folderDtos = await MapFoldersToDto(folders);
 
                     // Create paginated result
-                    var result = new PagedResult<FolderDto>(folderDtos, pageNumber, pageSize, totalCount);
+                    var result = new PaginatedResult<FolderDto>(folderDtos, pageNumber, pageSize, totalCount);
 
                     // Cache individual folder metadata
                     if (_enableAggressiveCaching && folderDtos.Any())
@@ -195,7 +195,7 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     _operationSemaphore.Release();
                 }
-            }, _folderSearchCacheTTL) ?? PagedResult<FolderDto>.Empty(pageNumber, pageSize);
+            }, _folderSearchCacheTTL) ?? PaginatedResult<FolderDto>.Empty(pageNumber, pageSize);
         }
 
         #endregion

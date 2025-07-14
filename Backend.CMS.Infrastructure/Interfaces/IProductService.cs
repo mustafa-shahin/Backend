@@ -7,16 +7,16 @@ namespace Backend.CMS.Infrastructure.Interfaces
         // Basic CRUD operations
         Task<ProductDto?> GetProductByIdAsync(int productId);
         Task<ProductDto?> GetProductBySlugAsync(string slug);
-        Task<PagedResult<ProductDto>> GetProductsAsync(int page = 1, int pageSize = 10);
+        Task<PaginatedResult<ProductDto>> GetProductsAsync(int page = 1, int pageSize = 10);
         Task<ProductDto> CreateProductAsync(CreateProductDto createProductDto);
         Task<ProductDto> UpdateProductAsync(int productId, UpdateProductDto updateProductDto);
         Task<bool> DeleteProductAsync(int productId);
 
         // Category operations
-        Task<PagedResult<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 10);
+        Task<PaginatedResult<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 10);
 
         // Search operations
-        Task<PagedResult<ProductDto>> SearchProductsAsync(ProductSearchDto searchDto);
+        Task<PaginatedResult<ProductDto>> SearchProductsAsync(ProductSearchDto searchDto);
         Task<int> GetSearchCountAsync(ProductSearchDto searchDto);
 
         // Status operations
@@ -29,12 +29,12 @@ namespace Backend.CMS.Infrastructure.Interfaces
         Task<bool> ValidateSlugAsync(string slug, int? excludeProductId = null);
 
         // Collection operations
-        Task<PagedResult<ProductDto>> GetFeaturedProductsAsync(int page = 1, int pageSize = 10);
-        Task<PagedResult<ProductDto>> GetRelatedProductsAsync(int productId, int page = 1, int pageSize = 10);
-        Task<PagedResult<ProductDto>> GetRecentProductsAsync(int page = 1, int pageSize = 10);
+        Task<PaginatedResult<ProductDto>> GetFeaturedProductsAsync(int page = 1, int pageSize = 10);
+        Task<PaginatedResult<ProductDto>> GetRelatedProductsAsync(int productId, int page = 1, int pageSize = 10);
+        Task<PaginatedResult<ProductDto>> GetRecentProductsAsync(int page = 1, int pageSize = 10);
 
-        Task<PagedResult<ProductDto>> GetLowStockProductsAsync(int threshold = 5, int page = 1, int pageSize = 10);
-        Task<PagedResult<ProductDto>> GetOutOfStockProductsAsync(int page = 1, int pageSize = 10);
+        Task<PaginatedResult<ProductDto>> GetLowStockProductsAsync(int threshold = 5, int page = 1, int pageSize = 10);
+        Task<PaginatedResult<ProductDto>> GetOutOfStockProductsAsync(int page = 1, int pageSize = 10);
 
         // Statistics and aggregations
         Task<Dictionary<string, object>> GetProductStatisticsAsync();

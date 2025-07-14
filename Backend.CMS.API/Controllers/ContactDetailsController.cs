@@ -42,10 +42,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="createdBefore">Optional filter for contact details created before this date</param>
         /// <returns>Paginated list of contact details</returns>
         [HttpGet]
-        [ProducesResponseType(typeof(PagedResult<ContactDetailsDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ContactDetailsDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ContactDetailsDto>>> GetContactDetails(
+        public async Task<ActionResult<PaginatedResult<ContactDetailsDto>>> GetContactDetails(
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? searchTerm = null,

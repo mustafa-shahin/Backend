@@ -41,7 +41,7 @@ namespace Frontend.Services
 
         #region Paginated Operations
 
-        public async Task<PagedResult<FolderDto>> GetFoldersPagedAsync(int? parentFolderId = null, int pageNumber = 1, int pageSize = 10)
+        public async Task<PaginatedResult<FolderDto>> GetFoldersPagedAsync(int? parentFolderId = null, int pageNumber = 1, int pageSize = 10)
         {
             // Validate pagination parameters
             pageNumber = Math.Max(1, pageNumber);
@@ -64,7 +64,7 @@ namespace Frontend.Services
                 var response = await _httpClient.GetAsync(query);
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<FolderDto>>(_jsonOptions);
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<FolderDto>>(_jsonOptions);
 
                     // Cache the folders for performance
                     if (result?.Data != null)
@@ -75,7 +75,7 @@ namespace Frontend.Services
                         }
                     }
 
-                    return result ?? PagedResult<FolderDto>.Empty(pageNumber, pageSize);
+                    return result ?? PaginatedResult<FolderDto>.Empty(pageNumber, pageSize);
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
@@ -91,10 +91,10 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<FolderDto>> SearchFoldersPagedAsync(string searchTerm, int pageNumber = 1, int pageSize = 10)
+        public async Task<PaginatedResult<FolderDto>> SearchFoldersPagedAsync(string searchTerm, int pageNumber = 1, int pageSize = 10)
         {
             if (string.IsNullOrWhiteSpace(searchTerm))
-                return PagedResult<FolderDto>.Empty(pageNumber, pageSize);
+                return PaginatedResult<FolderDto>.Empty(pageNumber, pageSize);
 
             // Validate pagination parameters
             pageNumber = Math.Max(1, pageNumber);
@@ -115,7 +115,7 @@ namespace Frontend.Services
                 var response = await _httpClient.GetAsync(query);
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<FolderDto>>(_jsonOptions);
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<FolderDto>>(_jsonOptions);
 
                     // Cache the folders
                     if (result?.Data != null)
@@ -126,7 +126,7 @@ namespace Frontend.Services
                         }
                     }
 
-                    return result ?? PagedResult<FolderDto>.Empty(pageNumber, pageSize);
+                    return result ?? PaginatedResult<FolderDto>.Empty(pageNumber, pageSize);
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
@@ -473,7 +473,7 @@ namespace Frontend.Services
                 var pageSize = 50;
                 var allFolders = new List<FolderDto>();
                 var currentPage = 1;
-                PagedResult<FolderDto> result;
+                PaginatedResult<FolderDto> result;
 
                 do
                 {

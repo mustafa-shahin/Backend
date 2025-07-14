@@ -25,7 +25,7 @@ namespace Frontend.Services
 
         }
 
-        public async Task<PagedResult<CategoryDto>> GetCategoriesAsync(CategorySearchDto? searchDto = null)
+        public async Task<PaginatedResult<CategoryDto>> GetCategoriesAsync(CategorySearchDto? searchDto = null)
         {
             try
             {
@@ -35,8 +35,8 @@ namespace Frontend.Services
 
                     if (response.IsSuccessStatusCode)
                     {
-                        var result = await response.Content.ReadFromJsonAsync<PagedResult<CategoryDto>>(_jsonOptions);
-                        return result ?? new PagedResult<CategoryDto>();
+                        var result = await response.Content.ReadFromJsonAsync<PaginatedResult<CategoryDto>>(_jsonOptions);
+                        return result ?? new PaginatedResult<CategoryDto>();
                     }
 
                     throw new HttpRequestException($"Failed to search categories: {response.StatusCode}");
@@ -47,8 +47,8 @@ namespace Frontend.Services
 
                     if (response.IsSuccessStatusCode)
                     {
-                        var result = await response.Content.ReadFromJsonAsync<PagedResult<CategoryDto>>(_jsonOptions);
-                        return result ?? new PagedResult<CategoryDto>();
+                        var result = await response.Content.ReadFromJsonAsync<PaginatedResult<CategoryDto>>(_jsonOptions);
+                        return result ?? new PaginatedResult<CategoryDto>();
                     }
 
                     throw new HttpRequestException($"Failed to get categories: {response.StatusCode}");
@@ -80,7 +80,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<CategoryDto>> GetRootCategoriesAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<CategoryDto>> GetRootCategoriesAsync(int page = 1, int pageSize = 10)
         {
             try
             {
@@ -88,8 +88,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<CategoryDto>>(_jsonOptions);
-                    return result ?? new PagedResult<CategoryDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<CategoryDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<CategoryDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get root categories: {response.StatusCode}");
@@ -148,7 +148,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<CategoryDto>> GetSubCategoriesAsync(int id, int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<CategoryDto>> GetSubCategoriesAsync(int id, int page = 1, int pageSize = 10)
         {
             try
             {
@@ -156,8 +156,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<CategoryDto>>(_jsonOptions);
-                    return result ?? new PagedResult<CategoryDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<CategoryDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<CategoryDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get subcategories: {response.StatusCode}");
@@ -168,7 +168,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<CategoryDto>> SearchCategoriesAsync(CategorySearchDto searchDto)
+        public async Task<PaginatedResult<CategoryDto>> SearchCategoriesAsync(CategorySearchDto searchDto)
         {
             try
             {
@@ -176,8 +176,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<CategoryDto>>(_jsonOptions);
-                    return result ?? new PagedResult<CategoryDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<CategoryDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<CategoryDto>();
                 }
 
                 throw new HttpRequestException($"Failed to search categories: {response.StatusCode}");

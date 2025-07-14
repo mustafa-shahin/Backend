@@ -37,7 +37,7 @@ namespace Backend.CMS.Infrastructure.Services
         /// <summary>
         /// Get paginated categories with filtering and sorting - Service-level pagination
         /// </summary>
-        public async Task<PagedResult<CategoryDto>> GetCategoriesPagedAsync(CategorySearchDto searchDto)
+        public async Task<PaginatedResult<CategoryDto>> GetCategoriesPagedAsync(CategorySearchDto searchDto)
         {
             try
             {
@@ -50,7 +50,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (!pagedResult.Data.Any())
                 {
                     _logger.LogDebug("No categories found for search criteria on page {PageNumber}", searchDto.PageNumber);
-                    return new PagedResult<CategoryDto>
+                    return new PaginatedResult<CategoryDto>
                     {
                         Data = new List<CategoryDto>(),
                         PageNumber = searchDto.PageNumber,
@@ -70,7 +70,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogDebug("Retrieved {CategoryCount} categories (page {PageNumber}/{TotalPages})",
                     categoryDtos.Count, pagedResult.PageNumber, pagedResult.TotalPages);
 
-                return new PagedResult<CategoryDto>
+                return new PaginatedResult<CategoryDto>
                 {
                     Data = categoryDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -88,7 +88,7 @@ namespace Backend.CMS.Infrastructure.Services
         /// <summary>
         /// Get paginated root categories - Service-level pagination
         /// </summary>
-        public async Task<PagedResult<CategoryDto>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize)
+        public async Task<PaginatedResult<CategoryDto>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize)
         {
             try
             {
@@ -102,7 +102,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (!pagedResult.Data.Any())
                 {
                     _logger.LogDebug("No root categories found on page {PageNumber}", normalizedPageNumber);
-                    return new PagedResult<CategoryDto>
+                    return new PaginatedResult<CategoryDto>
                     {
                         Data = new List<CategoryDto>(),
                         PageNumber = normalizedPageNumber,
@@ -117,7 +117,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogDebug("Retrieved {CategoryCount} root categories (page {PageNumber}/{TotalPages})",
                     categoryDtos.Count, pagedResult.PageNumber, pagedResult.TotalPages);
 
-                return new PagedResult<CategoryDto>
+                return new PaginatedResult<CategoryDto>
                 {
                     Data = categoryDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -135,7 +135,7 @@ namespace Backend.CMS.Infrastructure.Services
         /// <summary>
         /// Get paginated subcategories - Service-level pagination
         /// </summary>
-        public async Task<PagedResult<CategoryDto>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize)
+        public async Task<PaginatedResult<CategoryDto>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize)
         {
             try
             {
@@ -151,7 +151,7 @@ namespace Backend.CMS.Infrastructure.Services
                 if (parentExists == null)
                 {
                     _logger.LogWarning("Parent category {ParentCategoryId} not found", parentCategoryId);
-                    return new PagedResult<CategoryDto>
+                    return new PaginatedResult<CategoryDto>
                     {
                         Data = new List<CategoryDto>(),
                         PageNumber = normalizedPageNumber,
@@ -167,7 +167,7 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     _logger.LogDebug("No subcategories found for parent {ParentCategoryId} on page {PageNumber}",
                         parentCategoryId, normalizedPageNumber);
-                    return new PagedResult<CategoryDto>
+                    return new PaginatedResult<CategoryDto>
                     {
                         Data = new List<CategoryDto>(),
                         PageNumber = normalizedPageNumber,
@@ -182,7 +182,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogDebug("Retrieved {CategoryCount} subcategories for parent {ParentCategoryId} (page {PageNumber}/{TotalPages})",
                     categoryDtos.Count, parentCategoryId, pagedResult.PageNumber, pagedResult.TotalPages);
 
-                return new PagedResult<CategoryDto>
+                return new PaginatedResult<CategoryDto>
                 {
                     Data = categoryDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -201,7 +201,7 @@ namespace Backend.CMS.Infrastructure.Services
         /// <summary>
         /// Search categories with pagination - Service-level pagination and filtering
         /// </summary>
-        public async Task<PagedResult<CategoryDto>> SearchCategoriesPagedAsync(CategorySearchDto searchDto)
+        public async Task<PaginatedResult<CategoryDto>> SearchCategoriesPagedAsync(CategorySearchDto searchDto)
         {
             try
             {
@@ -222,7 +222,7 @@ namespace Backend.CMS.Infrastructure.Services
                 {
                     _logger.LogDebug("No categories found for search term '{SearchTerm}' on page {PageNumber}",
                         searchDto.SearchTerm, searchDto.PageNumber);
-                    return new PagedResult<CategoryDto>
+                    return new PaginatedResult<CategoryDto>
                     {
                         Data = new List<CategoryDto>(),
                         PageNumber = searchDto.PageNumber,
@@ -245,7 +245,7 @@ namespace Backend.CMS.Infrastructure.Services
                 _logger.LogDebug("Search '{SearchTerm}' found {CategoryCount} categories (page {PageNumber}/{TotalPages})",
                     searchDto.SearchTerm, categoryDtos.Count, searchDto.PageNumber, Math.Ceiling((double)finalTotalCount / searchDto.PageSize));
 
-                return new PagedResult<CategoryDto>
+                return new PaginatedResult<CategoryDto>
                 {
                     Data = categoryDtos,
                     PageNumber = pagedResult.PageNumber,

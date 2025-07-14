@@ -360,7 +360,7 @@
     private UploadState uploadState = new();
 
     // Data
-    private PagedResult<FileDto> files = new();
+    private PaginatedResult<FileDto> files = new();
     private ViewMode currentViewMode = ViewMode.Grid;
     private FileDto? selectedFile = null;
 
@@ -481,7 +481,7 @@
         catch (Exception ex)
         {
             NotificationService.ShowError($"Failed to load {FileTypeName.ToLower()}: {ex.Message}");
-            files = new PagedResult<FileDto>();
+            files = new PaginatedResult<FileDto>();
         }
         finally
         {

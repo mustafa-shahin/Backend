@@ -3,10 +3,8 @@ using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.Interfaces;
-using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -60,7 +58,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<AddressDto>> GetAddressesPagedAsync(AddressSearchDto searchDto)
+        public async Task<PaginatedResult<AddressDto>> GetAddressesPaginatedAsync(AddressSearchDto searchDto)
         {
             if (searchDto == null)
                 throw new ArgumentNullException(nameof(searchDto));
@@ -69,12 +67,16 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var query = BuildAddressQuery(searchDto);
 
-                var totalCount = await query.CountAsync();
-
-                // Apply sorting
                 query = ApplySorting(query, searchDto.SortBy, searchDto.SortDirection);
 
-                // Apply pagination
+                var pagedResult = await _unitOfWork.Addresses.GetPagedResultAsync(
+                    searchDto.PageNumber,
+                    searchDto.PageSize,
+                    predicate: null, // predicate already applied in BuildAddressQuery
+                    orderBy: null, // ordering already applied in ApplySorting
+                    cancellationToken: default);
+
+                var totalCount = await query.CountAsync();
                 var addresses = await query
                     .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
                     .Take(searchDto.PageSize)
@@ -82,7 +84,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var addressDtos = _mapper.Map<List<AddressDto>>(addresses);
 
-                return new PagedResult<AddressDto>(
+                return new PaginatedResult<AddressDto>(
                     addressDtos,
                     searchDto.PageNumber,
                     searchDto.PageSize,
@@ -108,23 +110,119 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var query = _context.Addresses.AsQueryable();
-                var normalizedEntityType = entityType.ToLowerInvariant();
-
-                query = normalizedEntityType switch
-                {
-                    "user" => query.Where(a => EF.Property<int?>(a, "UserId") == entityId),
-                    "company" => query.Where(a => EF.Property<int?>(a, "CompanyId") == entityId),
-                    "location" => query.Where(a => EF.Property<int?>(a, "LocationId") == entityId),
-                    _ => throw new ArgumentException($"Invalid entity type: {entityType}")
-                };
-
-                var addresses = await query.OrderBy(a => a.CreatedAt).ToListAsync();
+                var addresses = await _unitOfWork.Addresses.GetAddressesByEntityAsync(entityId, entityType);
                 return _mapper.Map<List<AddressDto>>(addresses);
             }
             catch (Exception ex) when (ex is not ArgumentException)
             {
                 _logger.LogError(ex, "Error retrieving addresses for entity {EntityType} {EntityId}", entityType, entityId);
+                throw;
+            }
+        }
+
+        public async Task<PaginatedResult<AddressDto>> GetAddressesByEntityPaginatedAsync(string entityType, int entityId, int pageNumber, int pageSize)
+        {
+            if (string.IsNullOrWhiteSpace(entityType))
+                throw new ArgumentException("Entity type cannot be null or empty", nameof(entityType));
+
+            if (entityId <= 0)
+                throw new ArgumentException("Entity ID must be greater than 0", nameof(entityId));
+
+            if (!IsValidEntityType(entityType))
+                throw new ArgumentException($"Invalid entity type: {entityType}");
+
+            try
+            {
+                var query = _unitOfWork.Addresses.GetAddressesByEntityQueryable(entityId, entityType)
+                    .OrderByDescending(a => a.IsDefault)
+                    .ThenBy(a => a.AddressType)
+                    .ThenBy(a => a.Street);
+
+                var totalCount = await query.CountAsync();
+                var addresses = await query
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync();
+
+                var addressDtos = _mapper.Map<List<AddressDto>>(addresses);
+
+                return new PaginatedResult<AddressDto>(
+                    addressDtos,
+                    pageNumber,
+                    pageSize,
+                    totalCount);
+            }
+            catch (Exception ex) when (ex is not ArgumentException)
+            {
+                _logger.LogError(ex, "Error retrieving paged addresses for entity {EntityType} {EntityId}", entityType, entityId);
+                throw;
+            }
+        }
+
+        public async Task<PaginatedResult<AddressDto>> GetAddressesByTypePaginatedAsync(string addressType, int pageNumber, int pageSize)
+        {
+            if (string.IsNullOrWhiteSpace(addressType))
+                throw new ArgumentException("Address type cannot be null or empty", nameof(addressType));
+
+            try
+            {
+                var query = _unitOfWork.Addresses.GetAddressesByTypeQueryable(addressType)
+                    .OrderBy(a => a.Country)
+                    .ThenBy(a => a.State)
+                    .ThenBy(a => a.City)
+                    .ThenBy(a => a.Street);
+
+                var totalCount = await query.CountAsync();
+                var addresses = await query
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync();
+
+                var addressDtos = _mapper.Map<List<AddressDto>>(addresses);
+
+                return new PaginatedResult<AddressDto>(
+                    addressDtos,
+                    pageNumber,
+                    pageSize,
+                    totalCount);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving paged addresses by type {AddressType}", addressType);
+                throw;
+            }
+        }
+
+        public async Task<PaginatedResult<AddressDto>> SearchAddressesPaginatedAsync(string searchTerm, int pageNumber, int pageSize)
+        {
+            if (string.IsNullOrWhiteSpace(searchTerm))
+                throw new ArgumentException("Search term cannot be null or empty", nameof(searchTerm));
+
+            try
+            {
+                var query = _unitOfWork.Addresses.SearchAddressesQueryable(searchTerm)
+                    .OrderBy(a => a.Country)
+                    .ThenBy(a => a.State)
+                    .ThenBy(a => a.City)
+                    .ThenBy(a => a.Street);
+
+                var totalCount = await query.CountAsync();
+                var addresses = await query
+                    .Skip((pageNumber - 1) * pageSize)
+                    .Take(pageSize)
+                    .ToListAsync();
+
+                var addressDtos = _mapper.Map<List<AddressDto>>(addresses);
+
+                return new PaginatedResult<AddressDto>(
+                    addressDtos,
+                    pageNumber,
+                    pageSize,
+                    totalCount);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error searching paged addresses with term '{SearchTerm}'", searchTerm);
                 throw;
             }
         }
@@ -286,16 +384,8 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new ArgumentException("Address does not belong to the specified entity");
                 }
 
-                // Build query for all addresses of this entity
-                var query = _context.Addresses.AsQueryable();
-                query = normalizedEntityType switch
-                {
-                    "user" => query.Where(a => EF.Property<int?>(a, "UserId") == entityId),
-                    "company" => query.Where(a => EF.Property<int?>(a, "CompanyId") == entityId),
-                    "location" => query.Where(a => EF.Property<int?>(a, "LocationId") == entityId),
-                    _ => throw new ArgumentException($"Invalid entity type: {entityType}")
-                };
-
+                // Build query for all addresses of this entity using repository
+                var query = _unitOfWork.Addresses.GetAddressesByEntityQueryable(entityId, entityType);
                 var allAddresses = await query.ToListAsync();
 
                 // Batch update all addresses
@@ -331,12 +421,11 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var addresses = await _context.Addresses
-                    .Where(a => !a.IsDeleted)
+                var query = _unitOfWork.Addresses.GetAddressesQueryable()
                     .OrderByDescending(a => a.CreatedAt)
-                    .Take(count)
-                    .ToListAsync();
+                    .Take(count);
 
+                var addresses = await query.ToListAsync();
                 return _mapper.Map<List<AddressDto>>(addresses);
             }
             catch (Exception ex)
@@ -352,14 +441,13 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var totalAddresses = await _unitOfWork.Addresses.CountAsync();
                 var defaultAddresses = await _unitOfWork.Addresses.CountAsync(a => a.IsDefault);
-                var addressesByType = await _context.Addresses
-                    .Where(a => !a.IsDeleted)
+
+                var addressesByType = await _unitOfWork.Addresses.GetAddressesQueryable()
                     .GroupBy(a => a.AddressType ?? "Default")
                     .Select(g => new { Type = g.Key, Count = g.Count() })
                     .ToListAsync();
 
-                var addressesByCountry = await _context.Addresses
-                    .Where(a => !a.IsDeleted)
+                var addressesByCountry = await _unitOfWork.Addresses.GetAddressesQueryable()
                     .GroupBy(a => a.Country)
                     .Select(g => new { Country = g.Key, Count = g.Count() })
                     .OrderByDescending(x => x.Count)
@@ -447,21 +535,11 @@ namespace Backend.CMS.Infrastructure.Services
 
         private IQueryable<Address> BuildAddressQuery(AddressSearchDto searchDto)
         {
-            var query = _context.Addresses
-                .Where(a => !a.IsDeleted)
-                .AsQueryable();
+            var query = _unitOfWork.Addresses.GetAddressesQueryable();
 
             if (!string.IsNullOrWhiteSpace(searchDto.SearchTerm))
             {
-                var searchTerm = searchDto.SearchTerm.ToLower();
-                query = query.Where(a =>
-                    a.Street.ToLower().Contains(searchTerm) ||
-                    (a.HouseNr != null && a.HouseNr.ToLower().Contains(searchTerm)) ||
-                    a.City.ToLower().Contains(searchTerm) ||
-                    a.State.ToLower().Contains(searchTerm) ||
-                    a.Country.ToLower().Contains(searchTerm) ||
-                    a.PostalCode.Contains(searchTerm) ||
-                    (a.Notes != null && a.Notes.ToLower().Contains(searchTerm)));
+                query = _unitOfWork.Addresses.SearchAddressesQueryable(searchDto.SearchTerm);
             }
 
             if (!string.IsNullOrWhiteSpace(searchDto.Country))
@@ -491,14 +569,8 @@ namespace Backend.CMS.Infrastructure.Services
 
             if (!string.IsNullOrWhiteSpace(searchDto.EntityType) && searchDto.EntityId.HasValue)
             {
-                var normalizedEntityType = searchDto.EntityType.ToLowerInvariant();
-                query = normalizedEntityType switch
-                {
-                    "user" => query.Where(a => EF.Property<int?>(a, "UserId") == searchDto.EntityId.Value),
-                    "company" => query.Where(a => EF.Property<int?>(a, "CompanyId") == searchDto.EntityId.Value),
-                    "location" => query.Where(a => EF.Property<int?>(a, "LocationId") == searchDto.EntityId.Value),
-                    _ => query
-                };
+                var entityQuery = _unitOfWork.Addresses.GetAddressesByEntityQueryable(searchDto.EntityId.Value, searchDto.EntityType);
+                query = query.Where(a => entityQuery.Any(eq => eq.Id == a.Id));
             }
 
             if (searchDto.CreatedAfter.HasValue)

@@ -19,7 +19,7 @@ namespace Frontend.Interfaces
         /// <param name="sortBy">Sort field</param>
         /// <param name="sortDirection">Sort direction</param>
         /// <returns>Paginated result with file DTOs</returns>
-        Task<PagedResult<FileDto>> GetFilesAsync(
+        Task<PaginatedResult<FileDto>> GetFilesAsync(
             int pageNumber = 1,
             int pageSize = 10,
             int? folderId = null,
@@ -34,7 +34,7 @@ namespace Frontend.Interfaces
         /// </summary>
         /// <param name="searchDto">Search criteria with pagination</param>
         /// <returns>Paginated search results</returns>
-        Task<PagedResult<FileDto>> SearchFilesAsync(FileSearchDto searchDto);
+        Task<PaginatedResult<FileDto>> SearchFilesAsync(FileSearchDto searchDto);
 
         /// <summary>
         /// Get files by folder with pagination
@@ -43,7 +43,7 @@ namespace Frontend.Interfaces
         /// <param name="pageNumber">Page number</param>
         /// <param name="pageSize">Items per page</param>
         /// <returns>Paginated files in folder</returns>
-        Task<PagedResult<FileDto>> GetFilesByFolderAsync(int? folderId, int pageNumber = 1, int pageSize = 10);
+        Task<PaginatedResult<FileDto>> GetFilesByFolderAsync(int? folderId, int pageNumber = 1, int pageSize = 10);
 
         /// <summary>
         /// Get single file by ID

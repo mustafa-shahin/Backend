@@ -169,7 +169,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<UserDto>> GetUsersPagedAsync(int pageNumber = 1, int pageSize = DEFAULT_PAGE_SIZE, string? search = null)
+        public async Task<PaginatedResult<UserDto>> GetUsersPagedAsync(int pageNumber = 1, int pageSize = DEFAULT_PAGE_SIZE, string? search = null)
         {
             var validatedPageNumber = Math.Max(1, pageNumber);
             var validatedPageSize = Math.Clamp(pageSize, MIN_PAGE_SIZE, MAX_PAGE_SIZE);
@@ -184,7 +184,7 @@ namespace Backend.CMS.Infrastructure.Services
                     ? _cacheKeyService.GetCollectionKey<User>("list", validatedPageNumber, validatedPageSize)
                     : _cacheKeyService.GetCollectionKey<User>("search", normalizedSearch, validatedPageNumber, validatedPageSize);
 
-                var cachedResult = await _cacheService.GetAsync<PagedResult<UserDto>>(cacheKey);
+                var cachedResult = await _cacheService.GetAsync<PaginatedResult<UserDto>>(cacheKey);
                 if (cachedResult != null)
                 {
                     _logger.LogDebug("Retrieved paginated users from cache for page {Page}, size {PageSize}, search '{Search}'",
@@ -200,7 +200,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 if (totalCount == 0)
                 {
-                    var emptyResult = new PagedResult<UserDto>(
+                    var emptyResult = new PaginatedResult<UserDto>(
                         new List<UserDto>(),
                         validatedPageNumber,
                         validatedPageSize,
@@ -222,7 +222,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var userDtos = _mapper.Map<List<UserDto>>(users);
 
-                var result = new PagedResult<UserDto>(
+                var result = new PaginatedResult<UserDto>(
                     userDtos.AsReadOnly(),
                     adjustedPageNumber,
                     validatedPageSize,
@@ -566,7 +566,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         #region Additional Interface Methods
 
-        public async Task<PagedResult<UserDto>> SearchUsersPagedAsync(UserSearchDto searchDto)
+        public async Task<PaginatedResult<UserDto>> SearchUsersPagedAsync(UserSearchDto searchDto)
         {
             if (searchDto == null)
                 throw new ArgumentNullException(nameof(searchDto));
@@ -580,7 +580,7 @@ namespace Backend.CMS.Infrastructure.Services
                     validatedPageNumber, validatedPageSize, searchDto.SearchTerm, searchDto.Role);
 
                 var cacheKey = _cacheKeyService.GetQueryKey<User>("advanced-search", searchDto);
-                var cachedResult = await _cacheService.GetAsync<PagedResult<UserDto>>(cacheKey);
+                var cachedResult = await _cacheService.GetAsync<PaginatedResult<UserDto>>(cacheKey);
                 if (cachedResult != null)
                 {
                     _logger.LogDebug("Retrieved advanced search results from cache");
@@ -593,7 +593,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var userDtos = _mapper.Map<List<UserDto>>(users);
 
-                var result = new PagedResult<UserDto>(
+                var result = new PaginatedResult<UserDto>(
                     userDtos.AsReadOnly(),
                     validatedPageNumber,
                     validatedPageSize,

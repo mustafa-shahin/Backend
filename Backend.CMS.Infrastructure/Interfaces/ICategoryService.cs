@@ -14,7 +14,7 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// </summary>
         /// <param name="searchDto">Search and pagination criteria</param>
         /// <returns>Paginated category results</returns>
-        Task<PagedResult<CategoryDto>> GetCategoriesPagedAsync(CategorySearchDto searchDto);
+        Task<PaginatedResult<CategoryDto>> GetCategoriesPagedAsync(CategorySearchDto searchDto);
 
         /// <summary>
         /// Get paginated root categories
@@ -22,7 +22,7 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// <param name="pageNumber">Page number (1-based)</param>
         /// <param name="pageSize">Number of items per page</param>
         /// <returns>Paginated root category results</returns>
-        Task<PagedResult<CategoryDto>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize);
+        Task<PaginatedResult<CategoryDto>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize);
 
         /// <summary>
         /// Get paginated subcategories of a parent category
@@ -31,14 +31,14 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// <param name="pageNumber">Page number (1-based)</param>
         /// <param name="pageSize">Number of items per page</param>
         /// <returns>Paginated subcategory results</returns>
-        Task<PagedResult<CategoryDto>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize);
+        Task<PaginatedResult<CategoryDto>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize);
 
         /// <summary>
         /// Search categories with pagination
         /// </summary>
         /// <param name="searchDto">Search criteria with pagination</param>
         /// <returns>Paginated search results</returns>
-        Task<PagedResult<CategoryDto>> SearchCategoriesPagedAsync(CategorySearchDto searchDto);
+        Task<PaginatedResult<CategoryDto>> SearchCategoriesPagedAsync(CategorySearchDto searchDto);
 
         #endregion
 

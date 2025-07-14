@@ -40,10 +40,10 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of categories (10 items per page)</returns>
         [HttpGet]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
-        public async Task<ActionResult<PagedResult<CategoryDto>>> GetCategories(
+        public async Task<ActionResult<PaginatedResult<CategoryDto>>> GetCategories(
             [FromQuery] int pageNumber = 1,
             [FromQuery] int? parentCategoryId = null,
             [FromQuery] bool? isActive = null,
@@ -116,10 +116,10 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of root categories (10 items per page)</returns>
         [HttpGet("root")]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]        
-        public async Task<ActionResult<PagedResult<CategoryDto>>> GetRootCategories(
+        public async Task<ActionResult<PaginatedResult<CategoryDto>>> GetRootCategories(
             [FromQuery] int pageNumber = 1)
         {
             try
@@ -220,10 +220,10 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of subcategories (10 items per page)</returns>
         [HttpGet("{id:int}/subcategories")]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
-        public async Task<ActionResult<PagedResult<CategoryDto>>> GetSubCategories(
+        public async Task<ActionResult<PaginatedResult<CategoryDto>>> GetSubCategories(
             int id,
             [FromQuery] int pageNumber = 1)
         {
@@ -261,10 +261,10 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated search results (10 items per page)</returns>
         [HttpPost("search")]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<CategoryDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<CategoryDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]       
-        public async Task<ActionResult<PagedResult<CategoryDto>>> SearchCategories([FromBody] CategorySearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<CategoryDto>>> SearchCategories([FromBody] CategorySearchDto searchDto)
         {
             try
             {

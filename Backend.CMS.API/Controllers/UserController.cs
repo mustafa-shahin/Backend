@@ -38,10 +38,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="search">Optional search term for filtering users</param>
         /// <returns>Paginated list of users with metadata</returns>
         [HttpGet]
-        [ProducesResponseType(typeof(PagedResult<UserDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<UserDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<UserDto>>> GetUsers(
+        public async Task<ActionResult<PaginatedResult<UserDto>>> GetUsers(
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? search = null)
@@ -77,10 +77,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="searchDto">Advanced search criteria with pagination</param>
         /// <returns>Paginated search results</returns>
         [HttpPost("search")]
-        [ProducesResponseType(typeof(PagedResult<UserDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<UserDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<UserDto>>> SearchUsers([FromBody] UserSearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<UserDto>>> SearchUsers([FromBody] UserSearchDto searchDto)
         {
             try
             {

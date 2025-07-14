@@ -7,7 +7,7 @@ namespace Frontend.Interfaces
     public interface IFolderService
     {
         // Core folder operations
-        Task<PagedResult<FolderDto>> GetFoldersPagedAsync(int? parentFolderId = null, int pageNumber = 1, int pageSize = 10);
+        Task<PaginatedResult<FolderDto>> GetFoldersPagedAsync(int? parentFolderId = null, int pageNumber = 1, int pageSize = 10);
         Task<List<FolderDto>> GetFoldersAsync(int? parentFolderId = null);
         Task<FolderDto?> GetFolderByIdAsync(int id);
         Task<FolderDto?> CreateFolderAsync(CreateFolderDto createFolderDto);
@@ -26,7 +26,7 @@ namespace Frontend.Interfaces
         Task<FolderTreeDto> GetFolderTreeAsync(int? rootFolderId = null);
 
         // Search and validation
-        Task<PagedResult<FolderDto>> SearchFoldersPagedAsync(string searchTerm, int pageNumber = 1, int pageSize = 10); // Corrected to reflect paginated search
+        Task<PaginatedResult<FolderDto>> SearchFoldersPagedAsync(string searchTerm, int pageNumber = 1, int pageSize = 10); // Corrected to reflect paginated search
         Task<List<FolderDto>> SearchFoldersAsync(string searchTerm); // This method exists in implementation, calling the paginated one
         Task<bool> ValidateFolderNameAsync(string name, int? parentFolderId = null, int? excludeFolderId = null);
         Task<Dictionary<string, object>> GetFolderStatisticsAsync(int id);

@@ -297,7 +297,7 @@
             }
         }
     }
-    private async Task<PagedResult<CategoryDto>> LoadCategoriesAsync(int page, int pageSize, string? search)
+    private async Task<PaginatedResult<CategoryDto>> LoadCategoriesAsync(int page, int pageSize, string? search)
     {
         var searchDto = new CategorySearchDto
         {

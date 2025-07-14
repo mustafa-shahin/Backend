@@ -297,7 +297,7 @@
         };
     }
 
-    private void UpdateStatCards(PagedResult<PageListDto> pagesResult)
+    private void UpdateStatCards(PaginatedResult<PageListDto> pagesResult)
     {
         var totalPages = pagesResult.TotalCount;
         var publishedPages = recentPages.Count(p => p.Status == Backend.CMS.Domain.Enums.PageStatus.Published);

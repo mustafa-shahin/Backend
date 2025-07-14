@@ -40,14 +40,14 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// </summary>
         /// <param name="searchDto">Search and pagination criteria</param>
         /// <returns>Paginated result with file DTOs including URLs</returns>
-        Task<PagedResult<FileDto>> GetFilesPagedAsync(FileSearchDto searchDto);
+        Task<PaginatedResult<FileDto>> GetFilesPagedAsync(FileSearchDto searchDto);
 
         /// <summary>
         /// Search files with advanced criteria and pagination
         /// </summary>
         /// <param name="searchDto">Search criteria with pagination</param>
         /// <returns>Paginated search results</returns>
-        Task<PagedResult<FileDto>> SearchFilesPagedAsync(FileSearchDto searchDto);
+        Task<PaginatedResult<FileDto>> SearchFilesPagedAsync(FileSearchDto searchDto);
 
         /// <summary>
         /// Get files by folder with pagination
@@ -56,7 +56,7 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// <param name="pageNumber">Page number (1-based)</param>
         /// <param name="pageSize">Items per page</param>
         /// <returns>Paginated files in folder</returns>
-        Task<PagedResult<FileDto>> GetFilesByFolderPagedAsync(int? folderId, int pageNumber = 1, int pageSize = 10);
+        Task<PaginatedResult<FileDto>> GetFilesByFolderPagedAsync(int? folderId, int pageNumber = 1, int pageSize = 10);
 
         /// <summary>
         /// Get single file by ID with URLs

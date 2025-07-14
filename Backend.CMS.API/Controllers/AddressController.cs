@@ -1,3 +1,4 @@
+//Backend.CMS.API/Controllers/AddressController.cs
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -45,10 +46,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="createdBefore">Optional filter for addresses created before this date</param>
         /// <returns>Paginated list of addresses</returns>
         [HttpGet]
-        [ProducesResponseType(typeof(PagedResult<AddressDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<AddressDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<AddressDto>>> GetAddresses(
+        public async Task<ActionResult<PaginatedResult<AddressDto>>> GetAddresses(
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? searchTerm = null,
@@ -84,7 +85,7 @@ namespace Backend.CMS.API.Controllers
                     CreatedBefore = createdBefore
                 };
 
-                var result = await _addressService.GetAddressesPagedAsync(searchDto);
+                var result = await _addressService.GetAddressesPaginatedAsync(searchDto);
                 return Ok(result);
             }
             catch (ArgumentException ex)
@@ -128,7 +129,7 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get addresses by entity (user, company, location)
+        /// Get addresses by entity (user, company, location) - non-paginated
         /// </summary>
         /// <param name="entityType">Entity type (user, company, location)</param>
         /// <param name="entityId">Entity ID</param>
@@ -153,6 +154,112 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error retrieving addresses for entity {EntityType} {EntityId}", entityType, entityId);
                 return StatusCode(500, new { Message = "An error occurred while retrieving addresses" });
+            }
+        }
+
+        /// <summary>
+        /// Get paginated addresses by entity (user, company, location)
+        /// </summary>
+        /// <param name="entityType">Entity type (user, company, location)</param>
+        /// <param name="entityId">Entity ID</param>
+        /// <param name="pageNumber">Page number (1-based, default: 1)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of addresses for the specified entity</returns>
+        [HttpGet("entity/{entityType}/{entityId:int}/paginated")]
+        [ProducesResponseType(typeof(PaginatedResult<AddressDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PaginatedResult<AddressDto>>> GetAddressesByEntityPaginated(
+            string entityType,
+            int entityId,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                var result = await _addressService.GetAddressesByEntityPaginatedAsync(entityType, entityId, pageNumber, pageSize);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Invalid entity: {EntityType} {EntityId}", entityType, entityId);
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving paged addresses for entity {EntityType} {EntityId}", entityType, entityId);
+                return StatusCode(500, new { Message = "An error occurred while retrieving addresses" });
+            }
+        }
+
+        /// <summary>
+        /// Get paginated addresses by type
+        /// </summary>
+        /// <param name="addressType">Address type</param>
+        /// <param name="pageNumber">Page number (1-based, default: 1)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of addresses of the specified type</returns>
+        [HttpGet("type/{addressType}/paginated")]
+        [ProducesResponseType(typeof(PaginatedResult<AddressDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PaginatedResult<AddressDto>>> GetAddressesByTypePaginated(
+            string addressType,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                var result = await _addressService.GetAddressesByTypePaginatedAsync(addressType, pageNumber, pageSize);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Invalid address type: {AddressType}", addressType);
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving paged addresses by type {AddressType}", addressType);
+                return StatusCode(500, new { Message = "An error occurred while retrieving addresses" });
+            }
+        }
+
+        /// <summary>
+        /// Search addresses with pagination
+        /// </summary>
+        /// <param name="searchTerm">Search term for address components</param>
+        /// <param name="pageNumber">Page number (1-based, default: 1)</param>
+        /// <param name="pageSize">Number of items per page (1-100, default: 10)</param>
+        /// <returns>Paginated list of addresses matching the search term</returns>
+        [HttpGet("search")]
+        [ProducesResponseType(typeof(PaginatedResult<AddressDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<PaginatedResult<AddressDto>>> SearchAddresses(
+            [FromQuery, Required] string searchTerm,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(searchTerm))
+                {
+                    return BadRequest(new { Message = "Search term is required" });
+                }
+
+                var result = await _addressService.SearchAddressesPaginatedAsync(searchTerm, pageNumber, pageSize);
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning("Invalid search parameters: {SearchTerm}", searchTerm);
+                return BadRequest(new { Message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error searching addresses with term {SearchTerm}", searchTerm);
+                return StatusCode(500, new { Message = "An error occurred while searching addresses" });
             }
         }
 

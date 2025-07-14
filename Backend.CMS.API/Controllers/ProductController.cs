@@ -41,10 +41,10 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of products</returns>
         [HttpGet]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductDto>>> GetProducts(
+        public async Task<ActionResult<PaginatedResult<ProductDto>>> GetProducts(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
         {
@@ -128,10 +128,10 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of products in category</returns>
         [HttpGet("category/{categoryId:int}")]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductDto>>> GetProductsByCategory(
+        public async Task<ActionResult<PaginatedResult<ProductDto>>> GetProductsByCategory(
             int categoryId,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
@@ -156,10 +156,10 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated search results</returns>
         [HttpPost("search")]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductDto>>> SearchProducts([FromBody] ProductSearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<ProductDto>>> SearchProducts([FromBody] ProductSearchDto searchDto)
         {
             try
             {
@@ -186,9 +186,9 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of featured products</returns>
         [HttpGet("featured")]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductDto>>> GetFeaturedProducts(
+        public async Task<ActionResult<PaginatedResult<ProductDto>>> GetFeaturedProducts(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
         {
@@ -212,9 +212,9 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of recent products</returns>
         [HttpGet("recent")]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductDto>>> GetRecentProducts(
+        public async Task<ActionResult<PaginatedResult<ProductDto>>> GetRecentProducts(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
         {
@@ -239,9 +239,9 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of related products</returns>
         [HttpGet("{id:int}/related")]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductDto>>> GetRelatedProducts(
+        public async Task<ActionResult<PaginatedResult<ProductDto>>> GetRelatedProducts(
             int id,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
@@ -578,9 +578,9 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of low stock products</returns>
         [HttpGet("low-stock")]
         [AdminOrDev]
-        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductDto>>> GetLowStockProducts(
+        public async Task<ActionResult<PaginatedResult<ProductDto>>> GetLowStockProducts(
             [FromQuery] int threshold = 5,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
@@ -606,9 +606,9 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of out of stock products</returns>
         [HttpGet("out-of-stock")]
         [AdminOrDev]
-        [ProducesResponseType(typeof(PagedResult<ProductDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductDto>>> GetOutOfStockProducts(
+        public async Task<ActionResult<PaginatedResult<ProductDto>>> GetOutOfStockProducts(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
         {

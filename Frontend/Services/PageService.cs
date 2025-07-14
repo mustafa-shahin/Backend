@@ -23,7 +23,7 @@ namespace Frontend.Services
             };
         }
 
-        public async Task<PagedResult<PageListDto>> GetPagesAsync(int page = 1, int pageSize = 10, string? search = null)
+        public async Task<PaginatedResult<PageListDto>> GetPagesAsync(int page = 1, int pageSize = 10, string? search = null)
         {
             try
             {
@@ -37,8 +37,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<PageListDto>>(_jsonOptions);
-                    return result ?? new PagedResult<PageListDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<PageListDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<PageListDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get pages: {response.StatusCode}");

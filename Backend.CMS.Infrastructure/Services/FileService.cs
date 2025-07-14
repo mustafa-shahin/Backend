@@ -313,7 +313,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         #region File Retrieval Operations with Pagination
 
-        public async Task<PagedResult<FileDto>> GetFilesPagedAsync(FileSearchDto searchDto)
+        public async Task<PaginatedResult<FileDto>> GetFilesPagedAsync(FileSearchDto searchDto)
         {
             try
             {
@@ -339,7 +339,7 @@ namespace Backend.CMS.Infrastructure.Services
                 // Map to DTOs with URLs
                 var fileDtos = await MapFilesToDtos(files);
 
-                return new PagedResult<FileDto>(fileDtos, pageNumber, pageSize, totalCount);
+                return new PaginatedResult<FileDto>(fileDtos, pageNumber, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -348,14 +348,14 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<FileDto>> SearchFilesPagedAsync(FileSearchDto searchDto)
+        public async Task<PaginatedResult<FileDto>> SearchFilesPagedAsync(FileSearchDto searchDto)
         {
             // SearchFilesPagedAsync uses the same logic as GetFilesPagedAsync
             // but with more emphasis on search functionality
             return await GetFilesPagedAsync(searchDto);
         }
 
-        public async Task<PagedResult<FileDto>> GetFilesByFolderPagedAsync(int? folderId, int pageNumber = 1, int pageSize = 10)
+        public async Task<PaginatedResult<FileDto>> GetFilesByFolderPagedAsync(int? folderId, int pageNumber = 1, int pageSize = 10)
         {
             var searchDto = new FileSearchDto
             {

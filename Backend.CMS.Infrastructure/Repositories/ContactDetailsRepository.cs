@@ -236,7 +236,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
         }
 
-        public async Task<PagedResult<ContactDetails>> SearchContactDetailsAsync(string searchTerm, int page, int pageSize)
+        public async Task<PaginatedResult<ContactDetails>> SearchContactDetailsAsync(string searchTerm, int page, int pageSize)
         {
             try
             {
@@ -266,7 +266,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Take(pageSize)
                     .ToListAsync();
 
-                var result = new PagedResult<ContactDetails>
+                var result = new PaginatedResult<ContactDetails>
                 {
                     Data = contactDetails,
                     PageNumber = page,
@@ -340,7 +340,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
         }
 
-        public async Task<PagedResult<ContactDetails>> GetPagedContactDetailsByEntityAsync(int entityId, string entityType, int page, int pageSize)
+        public async Task<PaginatedResult<ContactDetails>> GetPagedContactDetailsByEntityAsync(int entityId, string entityType, int page, int pageSize)
         {
             try
             {
@@ -365,7 +365,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Take(pageSize)
                     .ToListAsync();
 
-                var result = new PagedResult<ContactDetails>
+                var result = new PaginatedResult<ContactDetails>
                 {
                     Data = contactDetails,
                     PageNumber = page,
@@ -386,7 +386,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
         }
 
-        public async Task<PagedResult<ContactDetails>> GetPagedContactDetailsByTypeAsync(string contactType, int page, int pageSize)
+        public async Task<PaginatedResult<ContactDetails>> GetPagedContactDetailsByTypeAsync(string contactType, int page, int pageSize)
         {
             try
             {
@@ -406,7 +406,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Take(pageSize)
                     .ToListAsync();
 
-                var result = new PagedResult<ContactDetails>
+                var result = new PaginatedResult<ContactDetails>
                 {
                     Data = contactDetails,
                     PageNumber = page,

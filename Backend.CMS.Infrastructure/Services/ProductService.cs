@@ -55,7 +55,7 @@ namespace Backend.CMS.Infrastructure.Services
             return product != null ? _mapper.Map<ProductDto>(product) : null;
         }
 
-        public async Task<PagedResult<ProductDto>> GetProductsAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductDto>> GetProductsAsync(int page = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
@@ -74,7 +74,7 @@ namespace Backend.CMS.Infrastructure.Services
                 // Map entities to DTOs
                 var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductDto>
+                return new PaginatedResult<ProductDto>
                 {
                     Data = productDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -89,7 +89,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
@@ -103,7 +103,7 @@ namespace Backend.CMS.Infrastructure.Services
                 // Map entities to DTOs
                 var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductDto>
+                return new PaginatedResult<ProductDto>
                 {
                     Data = productDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -262,7 +262,7 @@ namespace Backend.CMS.Infrastructure.Services
             return true;
         }
 
-        public async Task<PagedResult<ProductDto>> SearchProductsAsync(ProductSearchDto searchDto)
+        public async Task<PaginatedResult<ProductDto>> SearchProductsAsync(ProductSearchDto searchDto)
         {
             // Validate and normalize pagination parameters
             var page = Math.Max(1, searchDto.Page);
@@ -274,7 +274,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var pagedResult = await _unitOfWork.Products.SearchProductsPagedAsync(searchDto);
                 var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductDto>
+                return new PaginatedResult<ProductDto>
                 {
                     Data = productDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -408,7 +408,7 @@ namespace Backend.CMS.Infrastructure.Services
             return _mapper.Map<ProductDto>(createdProduct!);
         }
 
-        public async Task<PagedResult<ProductDto>> GetFeaturedProductsAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductDto>> GetFeaturedProductsAsync(int page = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
@@ -420,7 +420,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var pagedResult = await _unitOfWork.Products.GetFeaturedProductsPagedAsync(page, pageSize);
                 var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductDto>
+                return new PaginatedResult<ProductDto>
                 {
                     Data = productDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -435,7 +435,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<ProductDto>> GetRelatedProductsAsync(int productId, int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductDto>> GetRelatedProductsAsync(int productId, int page = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
@@ -447,7 +447,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var pagedResult = await _unitOfWork.Products.GetRelatedProductsPagedAsync(productId, page, pageSize);
                 var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductDto>
+                return new PaginatedResult<ProductDto>
                 {
                     Data = productDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -463,7 +463,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<ProductDto>> GetRecentProductsAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductDto>> GetRecentProductsAsync(int page = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
@@ -475,7 +475,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var pagedResult = await _unitOfWork.Products.GetRecentProductsPagedAsync(page, pageSize);
                 var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductDto>
+                return new PaginatedResult<ProductDto>
                 {
                     Data = productDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -520,7 +520,7 @@ namespace Backend.CMS.Infrastructure.Services
             return vendors.ToList();
         }
 
-        public async Task<PagedResult<ProductDto>> GetLowStockProductsAsync(int threshold = 5, int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductDto>> GetLowStockProductsAsync(int threshold = 5, int page = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
@@ -532,7 +532,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var pagedResult = await _unitOfWork.Products.GetLowStockProductsPagedAsync(threshold, page, pageSize);
                 var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductDto>
+                return new PaginatedResult<ProductDto>
                 {
                     Data = productDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -548,7 +548,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<ProductDto>> GetOutOfStockProductsAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductDto>> GetOutOfStockProductsAsync(int page = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
@@ -560,7 +560,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var pagedResult = await _unitOfWork.Products.GetOutOfStockProductsPagedAsync(page, pageSize);
                 var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductDto>
+                return new PaginatedResult<ProductDto>
                 {
                     Data = productDtos,
                     PageNumber = pagedResult.PageNumber,

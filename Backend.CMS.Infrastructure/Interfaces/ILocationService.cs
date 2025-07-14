@@ -6,8 +6,8 @@ namespace Backend.CMS.Infrastructure.Interfaces
     public interface ILocationService
     {
         Task<LocationDto> GetLocationByIdAsync(int locationId);
-        Task<PagedResult<LocationDto>> GetLocationsPagedAsync(LocationSearchDto searchDto);
-        Task<PagedResult<LocationDto>> SearchLocationsPagedAsync(LocationSearchDto searchDto);
+        Task<PaginatedResult<LocationDto>> GetLocationsPagedAsync(LocationSearchDto searchDto);
+        Task<PaginatedResult<LocationDto>> SearchLocationsPagedAsync(LocationSearchDto searchDto);
         Task<List<LocationDto>> GetLocationsByCompanyAsync(int companyId);
         Task<LocationDto> CreateLocationAsync(CreateLocationDto createLocationDto);
         Task<LocationDto> UpdateLocationAsync(int locationId, UpdateLocationDto updateLocationDto);

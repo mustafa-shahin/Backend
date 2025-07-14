@@ -35,7 +35,7 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<bool> RestoreAsync(T entity, int? restoredByUserId = null, CancellationToken cancellationToken = default);
         Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
         IQueryable<T> GetQueryable();
-        Task<PagedResult<T>> GetPagedResultAsync(
+        Task<PaginatedResult<T>> GetPagedResultAsync(
             int page,
             int pageSize,
             Expression<Func<T, bool>>? predicate = null,

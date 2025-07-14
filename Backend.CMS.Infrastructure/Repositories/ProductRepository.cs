@@ -146,7 +146,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .CountAsync();
         }
 
-        public async Task<PagedResult<Product>> GetPagedByCategoryAsync(int categoryId, int page, int pageSize)
+        public async Task<PaginatedResult<Product>> GetPagedByCategoryAsync(int categoryId, int page, int pageSize)
         {
             var query = _dbSet
                 .Where(p => p.ProductCategories.Any(pc => pc.CategoryId == categoryId && !pc.IsDeleted) && !p.IsDeleted)
@@ -163,7 +163,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Take(pageSize)
                 .ToListAsync();
 
-            return new PagedResult<Product>(items, page, pageSize, totalCount);
+            return new PaginatedResult<Product>(items, page, pageSize, totalCount);
         }
 
         #endregion
@@ -191,7 +191,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .CountAsync();
         }
 
-        public async Task<PagedResult<Product>> GetPagedByStatusAsync(ProductStatus status, int page, int pageSize)
+        public async Task<PaginatedResult<Product>> GetPagedByStatusAsync(ProductStatus status, int page, int pageSize)
         {
             var query = _dbSet
                 .Where(p => p.Status == status && !p.IsDeleted)
@@ -208,7 +208,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Take(pageSize)
                 .ToListAsync();
 
-            return new PagedResult<Product>(items, page, pageSize, totalCount);
+            return new PaginatedResult<Product>(items, page, pageSize, totalCount);
         }
 
         #endregion
@@ -238,7 +238,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await query.CountAsync();
         }
 
-        public async Task<PagedResult<Product>> SearchProductsPagedAsync(ProductSearchDto searchDto)
+        public async Task<PaginatedResult<Product>> SearchProductsPagedAsync(ProductSearchDto searchDto)
         {
             var query = BuildSearchQuery(searchDto);
             var totalCount = await query.CountAsync();
@@ -255,7 +255,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Take(searchDto.PageSize)
                 .ToListAsync();
 
-            return new PagedResult<Product>(items, searchDto.Page, searchDto.PageSize, totalCount);
+            return new PaginatedResult<Product>(items, searchDto.Page, searchDto.PageSize, totalCount);
         }
 
         private IQueryable<Product> BuildSearchQuery(ProductSearchDto searchDto)
@@ -342,7 +342,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<PagedResult<Product>> GetFeaturedProductsPagedAsync(int page, int pageSize)
+        public async Task<PaginatedResult<Product>> GetFeaturedProductsPagedAsync(int page, int pageSize)
         {
             var query = _dbSet
                 .Where(p => p.Status == ProductStatus.Active && !p.IsDeleted)
@@ -357,7 +357,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Take(pageSize)
                 .ToListAsync();
 
-            return new PagedResult<Product>(items, page, pageSize, totalCount);
+            return new PaginatedResult<Product>(items, page, pageSize, totalCount);
         }
 
         public async Task<IEnumerable<Product>> GetRelatedProductsAsync(int productId, int count)
@@ -382,7 +382,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<PagedResult<Product>> GetRelatedProductsPagedAsync(int productId, int page, int pageSize)
+        public async Task<PaginatedResult<Product>> GetRelatedProductsPagedAsync(int productId, int page, int pageSize)
         {
             var product = await _dbSet
                 .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
@@ -390,14 +390,14 @@ namespace Backend.CMS.Infrastructure.Repositories
 
             if (product == null)
             {
-                return PagedResult<Product>.Empty(page, pageSize);
+                return PaginatedResult<Product>.Empty(page, pageSize);
             }
 
             var categoryIds = product.ProductCategories.Select(pc => pc.CategoryId).ToList();
 
             if (!categoryIds.Any())
             {
-                return PagedResult<Product>.Empty(page, pageSize);
+                return PaginatedResult<Product>.Empty(page, pageSize);
             }
 
             var query = _dbSet
@@ -416,7 +416,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Take(pageSize)
                 .ToListAsync();
 
-            return new PagedResult<Product>(items, page, pageSize, totalCount);
+            return new PaginatedResult<Product>(items, page, pageSize, totalCount);
         }
 
         public async Task<IEnumerable<Product>> GetRecentProductsAsync(int count)
@@ -430,7 +430,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<PagedResult<Product>> GetRecentProductsPagedAsync(int page, int pageSize)
+        public async Task<PaginatedResult<Product>> GetRecentProductsPagedAsync(int page, int pageSize)
         {
             var query = _dbSet
                 .Where(p => p.Status == ProductStatus.Active && !p.IsDeleted)
@@ -445,7 +445,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Take(pageSize)
                 .ToListAsync();
 
-            return new PagedResult<Product>(items, page, pageSize, totalCount);
+            return new PaginatedResult<Product>(items, page, pageSize, totalCount);
         }
 
         #endregion
@@ -538,7 +538,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<PagedResult<Product>> GetLowStockProductsPagedAsync(int threshold, int page, int pageSize)
+        public async Task<PaginatedResult<Product>> GetLowStockProductsPagedAsync(int threshold, int page, int pageSize)
         {
             var query = _dbSet
                 .Where(p => !p.IsDeleted &&
@@ -555,7 +555,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Take(pageSize)
                 .ToListAsync();
 
-            return new PagedResult<Product>(items, page, pageSize, totalCount);
+            return new PaginatedResult<Product>(items, page, pageSize, totalCount);
         }
 
         public async Task<IEnumerable<Product>> GetOutOfStockProductsAsync()
@@ -569,7 +569,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<PagedResult<Product>> GetOutOfStockProductsPagedAsync(int page, int pageSize)
+        public async Task<PaginatedResult<Product>> GetOutOfStockProductsPagedAsync(int page, int pageSize)
         {
             var query = _dbSet
                 .Where(p => !p.IsDeleted &&
@@ -585,7 +585,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Take(pageSize)
                 .ToListAsync();
 
-            return new PagedResult<Product>(items, page, pageSize, totalCount);
+            return new PaginatedResult<Product>(items, page, pageSize, totalCount);
         }
 
 

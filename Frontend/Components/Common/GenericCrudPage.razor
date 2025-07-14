@@ -297,7 +297,7 @@
     [Parameter] public Func<TDetailItem, TCreateDto> EditModelFactory { get; set; } = null!;
 
     // Service Parameters
-    [Parameter] public Func<int, int, string?, Task<PagedResult<TListItem>>> LoadDataFunc { get; set; } = null!;
+    [Parameter] public Func<int, int, string?, Task<PaginatedResult<TListItem>>> LoadDataFunc { get; set; } = null!;
     [Parameter] public Func<int, Task<TDetailItem?>> GetByIdFunc { get; set; } = null!;
     [Parameter] public Func<TCreateDto, Task<TDetailItem?>> CreateFunc { get; set; } = null!;
     [Parameter] public Func<int, TUpdateDto, Task<TDetailItem?>> UpdateFunc { get; set; } = null!;
@@ -316,7 +316,7 @@
     [Parameter] public EventCallback<int> OnDuplicate { get; set; }
 
     // Private fields
-    private PagedResult<TListItem> pagedResult = new();
+    private PaginatedResult<TListItem> pagedResult = new();
     private bool isLoading = true;
     private bool isSaving = false;
     private int currentPage = 1;

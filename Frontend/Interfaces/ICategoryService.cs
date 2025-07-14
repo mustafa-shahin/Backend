@@ -4,13 +4,13 @@ namespace Frontend.Interfaces
 {
     public interface ICategoryService
     {
-        Task<PagedResult<CategoryDto>> GetCategoriesAsync(CategorySearchDto? searchDto = null);
+        Task<PaginatedResult<CategoryDto>> GetCategoriesAsync(CategorySearchDto? searchDto = null);
         Task<List<CategoryTreeDto>> GetCategoryTreeAsync();
-        Task<PagedResult<CategoryDto>> GetRootCategoriesAsync(int page = 1, int pageSize = 10);
+        Task<PaginatedResult<CategoryDto>> GetRootCategoriesAsync(int page = 1, int pageSize = 10);
         Task<CategoryDto?> GetCategoryByIdAsync(int id);
         Task<CategoryDto?> GetCategoryBySlugAsync(string slug);
-        Task<PagedResult<CategoryDto>> GetSubCategoriesAsync(int id, int page = 1, int pageSize = 10);
-        Task<PagedResult<CategoryDto>> SearchCategoriesAsync(CategorySearchDto searchDto);
+        Task<PaginatedResult<CategoryDto>> GetSubCategoriesAsync(int id, int page = 1, int pageSize = 10);
+        Task<PaginatedResult<CategoryDto>> SearchCategoriesAsync(CategorySearchDto searchDto);
         Task<CategoryDto?> CreateCategoryAsync(CreateCategoryDto createCategoryDto);
         Task<CategoryDto?> UpdateCategoryAsync(int id, UpdateCategoryDto updateCategoryDto);
         Task<bool> DeleteCategoryAsync(int id);

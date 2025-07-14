@@ -22,7 +22,7 @@ namespace Frontend.Services
             };
         }
 
-        public async Task<PagedResult<ProductListDto>> GetProductsAsync(int page = 1, int pageSize = 10, string? search = null)
+        public async Task<PaginatedResult<ProductListDto>> GetProductsAsync(int page = 1, int pageSize = 10, string? search = null)
         {
             try
             {
@@ -36,8 +36,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductListDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductListDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductListDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductListDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get products: {response.StatusCode}");
@@ -230,7 +230,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<ProductListDto>> SearchProductsAsync(ProductSearchDto searchDto)
+        public async Task<PaginatedResult<ProductListDto>> SearchProductsAsync(ProductSearchDto searchDto)
         {
             try
             {
@@ -238,8 +238,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductListDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductListDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductListDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductListDto>();
                 }
 
                 throw new HttpRequestException($"Failed to search products: {response.StatusCode}");
@@ -250,7 +250,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<ProductListDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductListDto>> GetProductsByCategoryAsync(int categoryId, int page = 1, int pageSize = 10)
         {
             try
             {
@@ -258,8 +258,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductListDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductListDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductListDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductListDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get products by category: {response.StatusCode}");
@@ -270,7 +270,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<ProductListDto>> GetFeaturedProductsAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductListDto>> GetFeaturedProductsAsync(int page = 1, int pageSize = 10)
         {
             try
             {
@@ -278,8 +278,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductListDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductListDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductListDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductListDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get featured products: {response.StatusCode}");
@@ -290,7 +290,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<ProductListDto>> GetRecentProductsAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductListDto>> GetRecentProductsAsync(int page = 1, int pageSize = 10)
         {
             try
             {
@@ -298,8 +298,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductListDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductListDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductListDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductListDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get recent products: {response.StatusCode}");
@@ -310,7 +310,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<ProductListDto>> GetRelatedProductsAsync(int id, int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductListDto>> GetRelatedProductsAsync(int id, int page = 1, int pageSize = 10)
         {
             try
             {
@@ -318,8 +318,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductListDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductListDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductListDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductListDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get related products: {response.StatusCode}");
@@ -330,7 +330,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<ProductListDto>> GetLowStockProductsAsync(int threshold = 5, int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductListDto>> GetLowStockProductsAsync(int threshold = 5, int page = 1, int pageSize = 10)
         {
             try
             {
@@ -338,8 +338,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductListDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductListDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductListDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductListDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get low stock products: {response.StatusCode}");
@@ -350,7 +350,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<ProductListDto>> GetOutOfStockProductsAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductListDto>> GetOutOfStockProductsAsync(int page = 1, int pageSize = 10)
         {
             try
             {
@@ -358,8 +358,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductListDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductListDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductListDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductListDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get out of stock products: {response.StatusCode}");

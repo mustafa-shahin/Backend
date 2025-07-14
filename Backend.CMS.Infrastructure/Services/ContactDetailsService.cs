@@ -60,7 +60,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<ContactDetailsDto>> GetContactDetailsPagedAsync(ContactDetailsSearchDto searchDto)
+        public async Task<PaginatedResult<ContactDetailsDto>> GetContactDetailsPagedAsync(ContactDetailsSearchDto searchDto)
         {
             if (searchDto == null)
                 throw new ArgumentNullException(nameof(searchDto));
@@ -82,7 +82,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var contactDetailsDtos = _mapper.Map<List<ContactDetailsDto>>(contactDetails);
 
-                return new PagedResult<ContactDetailsDto>(
+                return new PaginatedResult<ContactDetailsDto>(
                     contactDetailsDtos,
                     searchDto.PageNumber,
                     searchDto.PageSize,

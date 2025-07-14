@@ -36,7 +36,7 @@ namespace Backend.CMS.Infrastructure.Services
             return _mapper.Map<ProductVariantDto>(dbVariant);
         }
 
-        public async Task<PagedResult<ProductVariantDto>> GetVariantsAsync(int page = 1, int pageSize = 10, bool standaloneOnly = false)
+        public async Task<PaginatedResult<ProductVariantDto>> GetVariantsAsync(int page = 1, int pageSize = 10, bool standaloneOnly = false)
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
@@ -44,7 +44,7 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                PagedResult<ProductVariant> pagedResult;
+                PaginatedResult<ProductVariant> pagedResult;
 
                 if (standaloneOnly)
                 {
@@ -69,7 +69,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductVariantDto>
+                return new PaginatedResult<ProductVariantDto>
                 {
                     Data = variantDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -85,7 +85,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<ProductVariantDto>> GetStandaloneVariantsAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductVariantDto>> GetStandaloneVariantsAsync(int page = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
@@ -97,7 +97,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var pagedResult = await _unitOfWork.ProductVariants.GetStandaloneVariantsPagedAsync(page, pageSize);
                 var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductVariantDto>
+                return new PaginatedResult<ProductVariantDto>
                 {
                     Data = variantDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -308,7 +308,7 @@ namespace Backend.CMS.Infrastructure.Services
             return _mapper.Map<ProductVariantDto>(variant);
         }
 
-        public async Task<PagedResult<ProductVariantDto>> GetLowStockVariantsAsync(int threshold = 5, int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductVariantDto>> GetLowStockVariantsAsync(int threshold = 5, int page = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
@@ -320,7 +320,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var pagedResult = await _unitOfWork.ProductVariants.GetLowStockVariantsPagedAsync(threshold, page, pageSize);
                 var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductVariantDto>
+                return new PaginatedResult<ProductVariantDto>
                 {
                     Data = variantDtos,
                     PageNumber = pagedResult.PageNumber,
@@ -336,7 +336,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public async Task<PagedResult<ProductVariantDto>> GetOutOfStockVariantsAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductVariantDto>> GetOutOfStockVariantsAsync(int page = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
             page = Math.Max(1, page);
@@ -348,7 +348,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var pagedResult = await _unitOfWork.ProductVariants.GetOutOfStockVariantsPagedAsync(page, pageSize);
                 var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
 
-                return new PagedResult<ProductVariantDto>
+                return new PaginatedResult<ProductVariantDto>
                 {
                     Data = variantDtos,
                     PageNumber = pagedResult.PageNumber,

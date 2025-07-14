@@ -106,10 +106,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="updatedTo">Optional updated to date filter</param>
         /// <returns>Paginated list of pages</returns>
         [HttpGet]
-        [ProducesResponseType(typeof(PagedResult<PageListDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<PageListDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<PageListDto>>> GetPages(
+        public async Task<ActionResult<PaginatedResult<PageListDto>>> GetPages(
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? search = null,
@@ -168,10 +168,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="searchDto">Search criteria</param>
         /// <returns>Paginated search results</returns>
         [HttpPost("search")]
-        [ProducesResponseType(typeof(PagedResult<PageListDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<PageListDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<PageListDto>>> SearchPages([FromBody] PageSearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<PageListDto>>> SearchPages([FromBody] PageSearchDto searchDto)
         {
             try
             {

@@ -114,7 +114,7 @@ namespace Backend.CMS.Infrastructure.Services
                 throw;
             }
         }
-        public async Task<PagedResult<PageListDto>> GetPagesPagedAsync(PageSearchDto searchDto)
+        public async Task<PaginatedResult<PageListDto>> GetPagesPagedAsync(PageSearchDto searchDto)
         {
             try
             {
@@ -204,7 +204,7 @@ namespace Backend.CMS.Infrastructure.Services
                     }
                 }
 
-                return new PagedResult<PageListDto>(
+                return new PaginatedResult<PageListDto>(
                     pageListDtos,
                     pagedResult.PageNumber,
                     pagedResult.PageSize,
@@ -217,7 +217,7 @@ namespace Backend.CMS.Infrastructure.Services
                 throw;
             }
         }
-        public async Task<PagedResult<PageListDto>> SearchPagesPagedAsync(PageSearchDto searchDto)
+        public async Task<PaginatedResult<PageListDto>> SearchPagesPagedAsync(PageSearchDto searchDto)
         {
             return await GetPagesPagedAsync(searchDto);
         }

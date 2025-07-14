@@ -22,7 +22,7 @@ namespace Frontend.Services
             };
         }
 
-        public async Task<PagedResult<ProductVariantDto>> GetVariantsAsync(int page = 1, int pageSize = 10, bool standaloneOnly = false)
+        public async Task<PaginatedResult<ProductVariantDto>> GetVariantsAsync(int page = 1, int pageSize = 10, bool standaloneOnly = false)
         {
             try
             {
@@ -30,8 +30,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductVariantDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductVariantDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductVariantDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductVariantDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get variants: {response.StatusCode}");
@@ -42,7 +42,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<ProductVariantDto>> GetStandaloneVariantsAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductVariantDto>> GetStandaloneVariantsAsync(int page = 1, int pageSize = 10)
         {
             try
             {
@@ -50,8 +50,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductVariantDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductVariantDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductVariantDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductVariantDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get standalone variants: {response.StatusCode}");
@@ -289,7 +289,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<ProductVariantDto>> GetLowStockVariantsAsync(int threshold = 5, int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductVariantDto>> GetLowStockVariantsAsync(int threshold = 5, int page = 1, int pageSize = 10)
         {
             try
             {
@@ -297,8 +297,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductVariantDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductVariantDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductVariantDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductVariantDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get low stock variants: {response.StatusCode}");
@@ -309,7 +309,7 @@ namespace Frontend.Services
             }
         }
 
-        public async Task<PagedResult<ProductVariantDto>> GetOutOfStockVariantsAsync(int page = 1, int pageSize = 10)
+        public async Task<PaginatedResult<ProductVariantDto>> GetOutOfStockVariantsAsync(int page = 1, int pageSize = 10)
         {
             try
             {
@@ -317,8 +317,8 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var result = await response.Content.ReadFromJsonAsync<PagedResult<ProductVariantDto>>(_jsonOptions);
-                    return result ?? new PagedResult<ProductVariantDto>();
+                    var result = await response.Content.ReadFromJsonAsync<PaginatedResult<ProductVariantDto>>(_jsonOptions);
+                    return result ?? new PaginatedResult<ProductVariantDto>();
                 }
 
                 throw new HttpRequestException($"Failed to get out of stock variants: {response.StatusCode}");

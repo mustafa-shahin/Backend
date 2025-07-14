@@ -404,7 +404,7 @@ namespace Backend.CMS.Infrastructure.Repositories
         }
 
         // PagedResult methods
-        public async Task<PagedResult<Category>> GetCategoriesPagedAsync(CategorySearchDto searchDto)
+        public async Task<PaginatedResult<Category>> GetCategoriesPagedAsync(CategorySearchDto searchDto)
         {
             try
             {
@@ -504,7 +504,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Take(searchDto.PageSize)
                     .ToListAsync();
 
-                var result = new PagedResult<Category>
+                var result = new PaginatedResult<Category>
                 {
                     Data = categories,
                     PageNumber = searchDto.PageNumber,
@@ -524,7 +524,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
         }
 
-        public async Task<PagedResult<Category>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize)
+        public async Task<PaginatedResult<Category>> GetRootCategoriesPagedAsync(int pageNumber, int pageSize)
         {
             try
             {
@@ -543,7 +543,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Take(pageSize)
                     .ToListAsync();
 
-                var result = new PagedResult<Category>
+                var result = new PaginatedResult<Category>
                 {
                     Data = categories,
                     PageNumber = pageNumber,
@@ -561,7 +561,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
         }
 
-        public async Task<PagedResult<Category>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize)
+        public async Task<PaginatedResult<Category>> GetSubCategoriesPagedAsync(int parentCategoryId, int pageNumber, int pageSize)
         {
             try
             {
@@ -580,7 +580,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Take(pageSize)
                     .ToListAsync();
 
-                var result = new PagedResult<Category>
+                var result = new PaginatedResult<Category>
                 {
                     Data = categories,
                     PageNumber = pageNumber,
@@ -598,7 +598,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
         }
 
-        public async Task<PagedResult<Category>> SearchCategoriesPagedAsync(CategorySearchDto searchDto)
+        public async Task<PaginatedResult<Category>> SearchCategoriesPagedAsync(CategorySearchDto searchDto)
         {
             try
             {
@@ -618,7 +618,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Take(searchDto.PageSize)
                     .ToListAsync();
 
-                var result = new PagedResult<Category>
+                var result = new PaginatedResult<Category>
                 {
                     Data = categories,
                     PageNumber = searchDto.PageNumber,

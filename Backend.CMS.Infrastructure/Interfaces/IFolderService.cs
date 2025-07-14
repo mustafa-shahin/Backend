@@ -6,8 +6,8 @@ namespace Backend.CMS.Infrastructure.Interfaces
     public interface IFolderService
     {
         // Paginated operations
-        Task<PagedResult<FolderDto>> GetFoldersPagedAsync(int? parentFolderId = null, int pageNumber = 1, int pageSize = 10);
-        Task<PagedResult<FolderDto>> SearchFoldersPagedAsync(string searchTerm, int pageNumber = 1, int pageSize = 10);
+        Task<PaginatedResult<FolderDto>> GetFoldersPagedAsync(int? parentFolderId = null, int pageNumber = 1, int pageSize = 10);
+        Task<PaginatedResult<FolderDto>> SearchFoldersPagedAsync(string searchTerm, int pageNumber = 1, int pageSize = 10);
 
         // CRUD operations
         Task<FolderDto> CreateFolderAsync(CreateFolderDto createDto);

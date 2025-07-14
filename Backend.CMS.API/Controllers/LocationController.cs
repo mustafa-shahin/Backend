@@ -43,10 +43,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="createdBefore">Optional filter for locations created before this date</param>
         /// <returns>Paginated list of locations</returns>
         [HttpGet]
-        [ProducesResponseType(typeof(PagedResult<LocationDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<LocationDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<LocationDto>>> GetLocations(
+        public async Task<ActionResult<PaginatedResult<LocationDto>>> GetLocations(
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string? searchTerm = null,
@@ -97,10 +97,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="searchDto">Search criteria</param>
         /// <returns>Paginated search results</returns>
         [HttpPost("search")]
-        [ProducesResponseType(typeof(PagedResult<LocationDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<LocationDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<LocationDto>>> SearchLocations([FromBody] LocationSearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<LocationDto>>> SearchLocations([FromBody] LocationSearchDto searchDto)
         {
             try
             {
@@ -190,10 +190,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="sortDirection">Sort direction (Asc/Desc, default: Asc)</param>
         /// <returns>Paginated list of locations for the specified company</returns>
         [HttpGet("company/{companyId:int}")]
-        [ProducesResponseType(typeof(PagedResult<LocationDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<LocationDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<LocationDto>>> GetLocationsByCompany(
+        public async Task<ActionResult<PaginatedResult<LocationDto>>> GetLocationsByCompany(
             int companyId,
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
@@ -353,10 +353,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="sortDirection">Sort direction (Asc/Desc, default: Desc)</param>
         /// <returns>Paginated list of recent locations</returns>
         [HttpGet("recent")]
-        [ProducesResponseType(typeof(PagedResult<LocationDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<LocationDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<LocationDto>>> GetRecentLocations(
+        public async Task<ActionResult<PaginatedResult<LocationDto>>> GetRecentLocations(
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] string sortBy = "CreatedAt",

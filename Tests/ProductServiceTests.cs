@@ -101,7 +101,7 @@ public class ProductServiceTests
             new Product { Id = 2, Name = "Unavailable Product", Status = ProductStatus.Active, Variants = new List<ProductVariant> { new ProductVariant { Quantity = 0 } } },
             new Product { Id = 3, Name = "Draft Product", Status = ProductStatus.Draft, Variants = new List<ProductVariant> { new ProductVariant { Quantity = 1 } } }
         };
-        var pagedResult = new PagedResult<Product>(products.Where(p => p.IsAvailable).ToList(), 1, 10, 1);
+        var pagedResult = new PaginatedResult<Product>(products.Where(p => p.IsAvailable).ToList(), 1, 10, 1);
 
         _unitOfWorkMock.Setup(u => u.Products.SearchProductsPagedAsync(searchDto)).ReturnsAsync(pagedResult);
         _mapperMock.Setup(m => m.Map<List<ProductDto>>(It.IsAny<List<Product>>())).Returns(new List<ProductDto> { new ProductDto { Id = 1, Name = "Available Product" } });

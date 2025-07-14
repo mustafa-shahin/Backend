@@ -605,7 +605,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             return _dbSet.AsNoTracking().Where(e => !e.IsDeleted);
         }
 
-        public virtual async Task<PagedResult<T>> GetPagedResultAsync(
+        public virtual async Task<PaginatedResult<T>> GetPagedResultAsync(
             int page,
             int pageSize,
             Expression<Func<T, bool>>? predicate = null,
@@ -638,7 +638,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Take(pageSize)
                     .ToListAsync(cancellationToken);
 
-                var result = new PagedResult<T>
+                var result = new PaginatedResult<T>
                 {
                     Data = items,
                     PageNumber = page,

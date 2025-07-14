@@ -1,5 +1,4 @@
 using Backend.CMS.Domain.Entities;
-using Backend.CMS.Application.DTOs;
 
 namespace Backend.CMS.Infrastructure.IRepositories
 {
@@ -11,9 +10,10 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<IEnumerable<Address>> GetAddressesByLocationAsync(string city, string state, string country);
         Task<bool> SetDefaultAddressAsync(int addressId, int entityId, string entityType);
         Task<int> CountAddressesByEntityAsync(int entityId, string entityType);
-        Task<PagedResult<Address>> SearchAddressesAsync(string searchTerm, int page, int pageSize);
         Task<bool> AddressExistsAsync(string street, string city, string postalCode, int? excludeAddressId = null);
-        Task<PagedResult<Address>> GetPagedAddressesByEntityAsync(int entityId, string entityType, int page, int pageSize);
-        Task<PagedResult<Address>> GetPagedAddressesByTypeAsync(string addressType, int page, int pageSize);
+        IQueryable<Address> GetAddressesQueryable();
+        IQueryable<Address> GetAddressesByEntityQueryable(int entityId, string entityType);
+        IQueryable<Address> GetAddressesByTypeQueryable(string addressType);
+        IQueryable<Address> SearchAddressesQueryable(string searchTerm);
     }
 }

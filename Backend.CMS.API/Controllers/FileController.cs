@@ -54,10 +54,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="sortDirection">Sort direction (Asc/Desc, default: Desc)</param>
         /// <returns>Paginated list of files</returns>
         [HttpGet]
-        [ProducesResponseType(typeof(PagedResult<FileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<FileDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<FileDto>>> GetFiles(
+        public async Task<ActionResult<PaginatedResult<FileDto>>> GetFiles(
             [FromQuery] int pageNumber = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] int? folderId = null,
@@ -102,10 +102,10 @@ namespace Backend.CMS.API.Controllers
         /// <param name="searchDto">Search criteria</param>
         /// <returns>Paginated search results</returns>
         [HttpPost("search")]
-        [ProducesResponseType(typeof(PagedResult<FileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<FileDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<FileDto>>> SearchFiles([FromBody] FileSearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<FileDto>>> SearchFiles([FromBody] FileSearchDto searchDto)
         {
             try
             {

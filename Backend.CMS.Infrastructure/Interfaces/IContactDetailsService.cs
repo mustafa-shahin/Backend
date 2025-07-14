@@ -5,7 +5,7 @@ namespace Backend.CMS.Infrastructure.Interfaces
     public interface IContactDetailsService
     {
         Task<ContactDetailsDto> GetContactDetailsByIdAsync(int contactId);
-        Task<PagedResult<ContactDetailsDto>> GetContactDetailsPagedAsync(ContactDetailsSearchDto searchDto);
+        Task<PaginatedResult<ContactDetailsDto>> GetContactDetailsPagedAsync(ContactDetailsSearchDto searchDto);
         Task<List<ContactDetailsDto>> GetContactDetailsByEntityAsync(string entityType, int entityId);
         Task<ContactDetailsDto> CreateContactDetailsAsync(CreateContactDetailsDto createContactDetailsDto, string entityType, int entityId);
         Task<ContactDetailsDto> UpdateContactDetailsAsync(int contactId, UpdateContactDetailsDto updateContactDetailsDto);

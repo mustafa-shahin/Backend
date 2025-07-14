@@ -4,7 +4,7 @@ namespace Frontend.Interface
 {
     public interface IPageService
     {
-        Task<PagedResult<PageListDto>> GetPagesAsync(int page = 1, int pageSize = 10, string? search = null);
+        Task<PaginatedResult<PageListDto>> GetPagesAsync(int page = 1, int pageSize = 10, string? search = null);
         Task<PageDto?> GetPageByIdAsync(int id);
         Task<PageDto?> CreatePageAsync(CreatePageDto createPageDto);
         Task<PageDto?> UpdatePageAsync(int id, UpdatePageDto updatePageDto);

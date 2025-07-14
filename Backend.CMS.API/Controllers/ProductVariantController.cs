@@ -38,10 +38,10 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of variants</returns>
         [HttpGet]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<ProductVariantDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductVariantDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductVariantDto>>> GetVariants(
+        public async Task<ActionResult<PaginatedResult<ProductVariantDto>>> GetVariants(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10,
             [FromQuery] bool standaloneOnly = false)
@@ -67,9 +67,9 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of standalone variants</returns>
         [HttpGet("standalone")]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(PagedResult<ProductVariantDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductVariantDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductVariantDto>>> GetStandaloneVariants(
+        public async Task<ActionResult<PaginatedResult<ProductVariantDto>>> GetStandaloneVariants(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
         {
@@ -524,9 +524,9 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of low stock variants</returns>
         [HttpGet("low-stock")]
         [AdminOrDev]
-        [ProducesResponseType(typeof(PagedResult<ProductVariantDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductVariantDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductVariantDto>>> GetLowStockVariants(
+        public async Task<ActionResult<PaginatedResult<ProductVariantDto>>> GetLowStockVariants(
             [FromQuery] int threshold = 5,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
@@ -552,9 +552,9 @@ namespace Backend.CMS.API.Controllers
         /// <returns>Paginated list of out of stock variants</returns>
         [HttpGet("out-of-stock")]
         [AdminOrDev]
-        [ProducesResponseType(typeof(PagedResult<ProductVariantDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ProductVariantDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PagedResult<ProductVariantDto>>> GetOutOfStockVariants(
+        public async Task<ActionResult<PaginatedResult<ProductVariantDto>>> GetOutOfStockVariants(
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 10)
         {

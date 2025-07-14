@@ -15,14 +15,14 @@ namespace Backend.CMS.Infrastructure.IRepositories
 
         // Product-related queries
         Task<IEnumerable<ProductVariant>> GetByProductIdAsync(int productId);
-        Task<PagedResult<ProductVariant>> GetPagedByProductIdAsync(int productId, int page, int pageSize);
+        Task<PaginatedResult<ProductVariant>> GetPagedByProductIdAsync(int productId, int page, int pageSize);
         Task<int> GetCountByProductIdAsync(int productId);
         Task<ProductVariant?> GetDefaultVariantAsync(int productId);
         Task<IEnumerable<ProductVariant>> GetVariantsByProductIdsAsync(IEnumerable<int> productIds);
 
         // Standalone variant operations
         Task<IEnumerable<ProductVariant>> GetStandaloneVariantsAsync();
-        Task<PagedResult<ProductVariant>> GetStandaloneVariantsPagedAsync(int page, int pageSize);
+        Task<PaginatedResult<ProductVariant>> GetStandaloneVariantsPagedAsync(int page, int pageSize);
         Task<int> GetStandaloneVariantCountAsync();
 
         // Validation operations
@@ -31,9 +31,9 @@ namespace Backend.CMS.Infrastructure.IRepositories
 
         // Stock operations
         Task<IEnumerable<ProductVariant>> GetLowStockVariantsAsync(int threshold = 5);
-        Task<PagedResult<ProductVariant>> GetLowStockVariantsPagedAsync(int threshold, int page, int pageSize);
+        Task<PaginatedResult<ProductVariant>> GetLowStockVariantsPagedAsync(int threshold, int page, int pageSize);
         Task<IEnumerable<ProductVariant>> GetOutOfStockVariantsAsync();
-        Task<PagedResult<ProductVariant>> GetOutOfStockVariantsPagedAsync(int page, int pageSize);
+        Task<PaginatedResult<ProductVariant>> GetOutOfStockVariantsPagedAsync(int page, int pageSize);
         Task UpdateStockAsync(int variantId, int newQuantity);
         Task<int> GetTotalStockAsync(int productId);
         Task<int> GetTotalStockForAllProductsAsync();
@@ -83,7 +83,7 @@ namespace Backend.CMS.Infrastructure.IRepositories
 
         // Search operations
         Task<IEnumerable<ProductVariant>> SearchVariantsAsync(string searchTerm);
-        Task<PagedResult<ProductVariant>> SearchVariantsPagedAsync(string searchTerm, int page, int pageSize);
+        Task<PaginatedResult<ProductVariant>> SearchVariantsPagedAsync(string searchTerm, int page, int pageSize);
         Task<int> GetSearchCountAsync(string searchTerm);
 
         // Availability operations
