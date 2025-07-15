@@ -175,11 +175,16 @@
                      AllowFeatured="true"
                      AllowUpload="true"
                      EntityName="category"
+                     EntityId="@EditingCategoryId"
                      GetImageUrlFunc="@GetCategoryImageUrl"
                      GetImageAltFunc="@GetCategoryImageAlt"
                      GetIsFeaturedFunc="@GetCategoryImageIsFeatured"
+                     GetImageIdFunc="@GetCategoryImageId"
                      CreateImageFromFileFunc="@CreateCategoryImageFromFile"
-                     UpdateImageFunc="@UpdateCategoryImage" />
+                     UpdateImageFunc="@UpdateCategoryImage"
+                     AddImageApiFunc="@AddCategoryImageApi"
+                     UpdateImageApiFunc="@UpdateCategoryImageApi"
+                     DeleteImageApiFunc="@DeleteCategoryImageApi" />
     </div>
 
     <!-- Status & Visibility -->

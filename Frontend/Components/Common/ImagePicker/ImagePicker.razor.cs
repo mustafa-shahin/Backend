@@ -1,5 +1,4 @@
-﻿
-using Backend.CMS.Application.DTOs;
+﻿using Backend.CMS.Application.DTOs;
 using Frontend.Components.Files;
 using Frontend.Components.Files.FileBrowser;
 using Microsoft.AspNetCore.Components;
@@ -14,13 +13,20 @@ namespace Frontend.Components.Common.ImagePicker
         [Parameter] public bool AllowFeatured { get; set; } = true;
         [Parameter] public bool AllowUpload { get; set; } = true;
         [Parameter] public string EntityName { get; set; } = "item";
+        [Parameter] public int? EntityId { get; set; } 
 
         // Delegates for handling different image types
         [Parameter] public Func<object, string> GetImageUrlFunc { get; set; } = null!;
         [Parameter] public Func<object, string?> GetImageAltFunc { get; set; } = null!;
         [Parameter] public Func<object, bool> GetIsFeaturedFunc { get; set; } = null!;
+        [Parameter] public Func<object, int?> GetImageIdFunc { get; set; } = null!;
         [Parameter] public Func<FileDto, object> CreateImageFromFileFunc { get; set; } = null!;
         [Parameter] public Action<object, string?, string?, bool> UpdateImageFunc { get; set; } = null!;
+
+        // Backend API delegates - these will make immediate calls
+        [Parameter] public Func<int, CreateCategoryImageDto, Task<object?>>? AddImageApiFunc { get; set; }
+        [Parameter] public Func<int, UpdateCategoryImageDto, Task<object?>>? UpdateImageApiFunc { get; set; }
+        [Parameter] public Func<int, Task<bool>>? DeleteImageApiFunc { get; set; }
 
         private FormDialog? filePickerDialog;
         private FormDialog? imageEditDialog;
@@ -54,10 +60,8 @@ namespace Frontend.Components.Common.ImagePicker
 
         private void OnFilesSelected(List<FileDto> files)
         {
-            // Filter to only image files
             tempSelectedFiles = files?.Where(f => f.FileType == Backend.CMS.Domain.Enums.FileType.Image).ToList() ?? new List<FileDto>();
 
-            // If single image mode, only keep the first selected
             if (!AllowMultiple && tempSelectedFiles.Count > 1)
             {
                 tempSelectedFiles = tempSelectedFiles.Take(1).ToList();
@@ -65,7 +69,6 @@ namespace Frontend.Components.Common.ImagePicker
 
             StateHasChanged();
         }
-
 
         private void RemoveTempFile(FileDto file)
         {
@@ -81,71 +84,41 @@ namespace Frontend.Components.Common.ImagePicker
                 return;
             }
 
-            var newImages = new List<object>();
-
-            foreach (var file in tempSelectedFiles)
+            try
             {
-                try
+                foreach (var file in tempSelectedFiles)
                 {
-                    // Check if already added (for multiple mode)
-                    if (AllowMultiple)
+                    var newImageDto = new CreateCategoryImageDto
                     {
-                        // Better duplicate check using file ID comparison
-                        bool alreadyExists = false;
-                        foreach (var existingImg in SelectedImages)
-                        {
-                            if (existingImg is CreateCategoryImageDto categoryImg && categoryImg.FileId == file.Id)
-                            {
-                                alreadyExists = true;
-                                break;
-                            }
-                        }
+                        FileId = file.Id,
+                        Position = SelectedImages.Count,
+                        IsFeatured = !SelectedImages.Any() && AllowFeatured
+                    };
 
-                        if (!alreadyExists)
+                    if (EntityId.HasValue && AddImageApiFunc != null)
+                    {
+                        var addedImage = await AddImageApiFunc(EntityId.Value, newImageDto);
+                        if (addedImage != null)
                         {
-                            var newImage = CreateImageFromFileFunc(file);
-                            newImages.Add(newImage);
-
-                            // Cache the file for later use
+                            SelectedImages.Add(addedImage);
                             cachedFiles[file.Id] = file;
                         }
                     }
                     else
                     {
-                        // Single mode - replace existing
-                        SelectedImages.Clear();
                         var newImage = CreateImageFromFileFunc(file);
-                        newImages.Add(newImage);
+                        SelectedImages.Add(newImage);
                         cachedFiles[file.Id] = file;
-                        break;
                     }
                 }
-                catch (Exception ex)
-                {
-                    NotificationService.ShowError($"Failed to add image {file.OriginalFileName}: {ex.Message}");
-                }
+
+                await SelectedImagesChanged.InvokeAsync(SelectedImages);
+                StateHasChanged();
+                NotificationService.ShowSuccess($"{tempSelectedFiles.Count} image(s) added successfully");
             }
-
-            if (newImages.Any())
+            catch (Exception ex)
             {
-                if (AllowMultiple)
-                {
-                    SelectedImages.AddRange(newImages);
-                }
-                else
-                {
-                    SelectedImages = newImages;
-                }
-
-                try
-                {
-                    await SelectedImagesChanged.InvokeAsync(SelectedImages);
-                    StateHasChanged(); // Force immediate UI update
-                }
-                catch (Exception ex)
-                {
-                    NotificationService.ShowError($"Failed to update images: {ex.Message}");
-                }
+                NotificationService.ShowError($"Failed to add images: {ex.Message}");
             }
 
             CloseFilePicker();
@@ -158,12 +131,10 @@ namespace Frontend.Components.Common.ImagePicker
                 editingImageIndex = index;
                 editingImage = SelectedImages[index];
                 editingImageAlt = GetImageAltFunc(editingImage) ?? string.Empty;
-                editingImageCaption = string.Empty; // This would need to be extracted based on your image type
+                editingImageCaption = string.Empty;
                 editingImageIsFeatured = GetIsFeaturedFunc(editingImage);
 
-                // Try to get the cached file
-                var imageUrl = GetImageUrlFunc(editingImage);
-                var fileId = ExtractFileIdFromUrl(imageUrl);
+                var fileId = ExtractFileIdFromImageObject(editingImage);
                 if (fileId.HasValue && cachedFiles.ContainsKey(fileId.Value))
                 {
                     editingImageFile = cachedFiles[fileId.Value];
@@ -188,9 +159,12 @@ namespace Frontend.Components.Common.ImagePicker
 
         private async Task SaveImageEdit()
         {
-            if (editingImage != null && editingImageIndex >= 0 && editingImageIndex < SelectedImages.Count)
+            if (editingImage == null || editingImageIndex < 0 || editingImageIndex >= SelectedImages.Count)
+                return;
+
+            try
             {
-                // If setting as featured and multiple images allowed, remove featured from others
+                // If setting as featured, remove featured from others
                 if (AllowFeatured && AllowMultiple && editingImageIsFeatured)
                 {
                     for (int i = 0; i < SelectedImages.Count; i++)
@@ -202,18 +176,46 @@ namespace Frontend.Components.Common.ImagePicker
                     }
                 }
 
-                // Update the editing image
+                // Update local image
                 UpdateImageFunc(editingImage, editingImageAlt, editingImageCaption, editingImageIsFeatured);
 
+                var imageId = GetImageIdFunc?.Invoke(editingImage);
+                if (imageId.HasValue && imageId.Value > 0 && UpdateImageApiFunc != null)
+                {
+                    var updateDto = new UpdateCategoryImageDto
+                    {
+                        Id = imageId.Value,
+                        FileId = ExtractFileIdFromImageObject(editingImage) ?? 0,
+                        Alt = editingImageAlt,
+                        Caption = editingImageCaption,
+                        Position = editingImageIndex,
+                        IsFeatured = editingImageIsFeatured
+                    };
+
+                    var updatedImage = await UpdateImageApiFunc(imageId.Value, updateDto);
+                    if (updatedImage != null)
+                    {
+                        SelectedImages[editingImageIndex] = updatedImage;
+                        NotificationService.ShowSuccess("Image updated successfully");
+                    }
+                }
+
                 await SelectedImagesChanged.InvokeAsync(SelectedImages);
-                StateHasChanged(); // Force immediate UI update
+                StateHasChanged();
                 CloseImageEdit();
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to update image: {ex.Message}");
             }
         }
 
         private async Task SetAsFeatured(int index)
         {
-            if (index >= 0 && index < SelectedImages.Count && AllowFeatured && AllowMultiple)
+            if (index < 0 || index >= SelectedImages.Count || !AllowFeatured || !AllowMultiple)
+                return;
+
+            try
             {
                 // Remove featured from all images
                 for (int i = 0; i < SelectedImages.Count; i++)
@@ -222,17 +224,44 @@ namespace Frontend.Components.Common.ImagePicker
                 }
 
                 await SelectedImagesChanged.InvokeAsync(SelectedImages);
-                StateHasChanged(); // Force immediate UI update
+                StateHasChanged();
+                NotificationService.ShowSuccess("Featured image updated");
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to set featured image: {ex.Message}");
             }
         }
 
         private async Task RemoveImage(int index)
         {
-            if (index >= 0 && index < SelectedImages.Count)
+            if (index < 0 || index >= SelectedImages.Count)
+                return;
+
+            try
             {
+                var imageToRemove = SelectedImages[index];
+                var imageId = GetImageIdFunc?.Invoke(imageToRemove);
+
+                if (imageId.HasValue && imageId.Value > 0 && DeleteImageApiFunc != null)
+                {
+                    var success = await DeleteImageApiFunc(imageId.Value);
+                    if (!success)
+                    {
+                        NotificationService.ShowError("Failed to delete image from server");
+                        return;
+                    }
+                }
+
+                // Remove from local list
                 SelectedImages.RemoveAt(index);
                 await SelectedImagesChanged.InvokeAsync(SelectedImages);
-                StateHasChanged(); // Force immediate UI update
+                StateHasChanged();
+                NotificationService.ShowSuccess("Image removed successfully");
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to remove image: {ex.Message}");
             }
         }
 
@@ -277,16 +306,12 @@ namespace Frontend.Components.Common.ImagePicker
             return file.Urls?.Thumbnail ?? file.Urls?.Download ?? FileService.GetThumbnailUrl(file.Id);
         }
 
-        private int? ExtractFileIdFromUrl(string url)
+        private int? ExtractFileIdFromImageObject(object image)
         {
-            // This is a simple implementation - you might need to adjust based on your URL structure
-            var parts = url.Split('/');
-            foreach (var part in parts)
+            var fileIdProperty = image.GetType().GetProperty("FileId");
+            if (fileIdProperty != null && fileIdProperty.PropertyType == typeof(int))
             {
-                if (int.TryParse(part, out var id))
-                {
-                    return id;
-                }
+                return (int?)fileIdProperty.GetValue(image);
             }
             return null;
         }

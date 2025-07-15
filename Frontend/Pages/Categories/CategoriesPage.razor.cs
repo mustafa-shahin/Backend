@@ -4,11 +4,11 @@ namespace Frontend.Pages.Categories
 {
     public partial class CategoriesPage
     {
-
         private string statusFilter = string.Empty;
         private string visibilityFilter = string.Empty;
         private string parentFilter = string.Empty;
         private bool ignoreFiltersOnNextLoad = false;
+
         private string StatusFilter
         {
             get => statusFilter;
@@ -21,6 +21,7 @@ namespace Frontend.Pages.Categories
                 }
             }
         }
+
         private string VisibilityFilter
         {
             get => visibilityFilter;
@@ -46,6 +47,7 @@ namespace Frontend.Pages.Categories
                 }
             }
         }
+
         private async Task<PaginatedResult<CategoryDto>> LoadCategoriesAsync(int page, int pageSize, string? search)
         {
             var searchDto = new CategorySearchDto
@@ -57,7 +59,6 @@ namespace Frontend.Pages.Categories
                 SortDirection = "Asc"
             };
 
-            // Apply filters only if not ignoring them
             if (!ignoreFiltersOnNextLoad)
             {
                 if (!string.IsNullOrEmpty(statusFilter))
@@ -77,7 +78,6 @@ namespace Frontend.Pages.Categories
             }
             else
             {
-                // Reset the flag after use
                 ignoreFiltersOnNextLoad = false;
             }
 
@@ -116,7 +116,7 @@ namespace Frontend.Pages.Categories
 
         private CreateCategoryDto EditModelFactory(CategoryDto category)
         {
-            return new CreateCategoryDto
+            var createDto = new CreateCategoryDto
             {
                 Name = category.Name,
                 Slug = category.Slug,
@@ -130,15 +130,17 @@ namespace Frontend.Pages.Categories
                 MetaDescription = category.MetaDescription,
                 MetaKeywords = category.MetaKeywords,
                 CustomFields = category.CustomFields,
-                Images = [.. category.Images.Select(img => new CreateCategoryImageDto
+                Images = category.Images.Select(img => new CreateCategoryImageDto
                 {
                     FileId = img.FileId,
                     Alt = img.Alt,
                     Caption = img.Caption,
                     Position = img.Position,
                     IsFeatured = img.IsFeatured
-                })]
+                }).ToList()
             };
+
+            return createDto;
         }
 
         private UpdateCategoryDto CreateToUpdateMapper(CreateCategoryDto createDto)
@@ -157,15 +159,15 @@ namespace Frontend.Pages.Categories
                 MetaDescription = createDto.MetaDescription,
                 MetaKeywords = createDto.MetaKeywords,
                 CustomFields = createDto.CustomFields,
-                Images = [.. createDto.Images.Select(img => new UpdateCategoryImageDto
+                Images = createDto.Images.Select(img => new UpdateCategoryImageDto
                 {
-                    Id = 0, // Will be set by the backend for new images
+                    Id = 0, // Will be handled by the backend
                     FileId = img.FileId,
                     Alt = img.Alt,
                     Caption = img.Caption,
                     Position = img.Position,
                     IsFeatured = img.IsFeatured
-                })]
+                }).ToList()
             };
         }
 
@@ -173,7 +175,6 @@ namespace Frontend.Pages.Categories
         {
             var errors = new Dictionary<string, string>();
 
-            // Only basic required field validation - let backend handle business logic
             if (string.IsNullOrWhiteSpace(model.Name))
             {
                 errors["Name"] = "Category name is required.";
@@ -194,31 +195,19 @@ namespace Frontend.Pages.Categories
 
         private void OnCategoryCreated(CategoryDto category)
         {
-            // Set flag to ignore filters on next load
             ignoreFiltersOnNextLoad = true;
-
-            // Clear all filters for future loads
             statusFilter = string.Empty;
             visibilityFilter = string.Empty;
             parentFilter = string.Empty;
-
-            // Show success message
             NotificationService.ShowSuccess($"Category '{category.Name}' created successfully!");
-
-            // The GenericCrudPage will call LoadData automatically after this
-            // The ignoreFiltersOnNextLoad flag will ensure new category is visible
         }
 
         private void OnCategoryUpdated(CategoryDto category)
         {
-            // Set flag to ignore filters on next load
             ignoreFiltersOnNextLoad = true;
-
-            // Clear filters to ensure updated category is visible
             statusFilter = string.Empty;
             visibilityFilter = string.Empty;
             parentFilter = string.Empty;
-
             NotificationService.ShowSuccess($"Category '{category.Name}' updated successfully!");
         }
 
@@ -229,4 +218,3 @@ namespace Frontend.Pages.Categories
         }
     }
 }
-

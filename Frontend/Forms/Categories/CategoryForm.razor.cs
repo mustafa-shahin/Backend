@@ -6,10 +6,10 @@ namespace Frontend.Forms.Categories
 {
     public partial class CategoryForm : ComponentBase
     {
-
-    [Parameter] public CreateCategoryDto Model { get; set; } = new();
+        [Parameter] public CreateCategoryDto Model { get; set; } = new();
         [Parameter] public Dictionary<string, string> ValidationErrors { get; set; } = new();
         [Parameter] public bool IsEditMode { get; set; }
+        [Parameter] public int? EditingCategoryId { get; set; }
 
         private List<CategoryTreeDto>? parentCategories;
         private bool isValidatingSlug = false;
@@ -17,18 +17,31 @@ namespace Frontend.Forms.Categories
         private Timer? slugValidationTimer;
         private string previousSlug = string.Empty;
 
-        // Image picker support
         private List<object> categoryImageObjects = new();
 
         protected override void OnParametersSet()
         {
-            // Convert CreateCategoryImageDto to objects for the generic ImagePicker
             categoryImageObjects = Model.Images.Cast<object>().ToList();
         }
 
         protected override async Task OnInitializedAsync()
         {
             await LoadParentCategories();
+        }
+
+        public void LoadExistingImages(List<CategoryImageDto> existingImages)
+        {
+            Model.Images = existingImages.Select(img => new CreateCategoryImageDto
+            {
+                FileId = img.FileId,
+                Alt = img.Alt,
+                Caption = img.Caption,
+                Position = img.Position,
+                IsFeatured = img.IsFeatured
+            }).ToList();
+
+            categoryImageObjects = Model.Images.Cast<object>().ToList();
+            StateHasChanged();
         }
 
         private async Task LoadParentCategories()
@@ -58,10 +71,8 @@ namespace Frontend.Forms.Categories
             }
 
             previousSlug = generatedSlug;
-
             StateHasChanged();
         }
-
 
         private void OnSlugChanged(ChangeEventArgs? e = null)
         {
@@ -70,10 +81,7 @@ namespace Frontend.Forms.Categories
                 Model.Slug = e.Value?.ToString() ?? string.Empty;
             }
 
-            // Reset validation state
             slugValidationResult = null;
-
-            // Debounce slug validation
             slugValidationTimer?.Dispose();
             slugValidationTimer = new Timer(async _ => await ValidateSlugAsync(), null, 500, Timeout.Infinite);
 
@@ -92,7 +100,7 @@ namespace Frontend.Forms.Categories
                 isValidatingSlug = true;
                 await InvokeAsync(StateHasChanged);
 
-                var isValid = await CategoryService.ValidateSlugAsync(Model.Slug, IsEditMode ? null : null);
+                var isValid = await CategoryService.ValidateSlugAsync(Model.Slug, EditingCategoryId);
                 slugValidationResult = isValid;
             }
             catch (Exception ex)
@@ -106,6 +114,7 @@ namespace Frontend.Forms.Categories
                 await InvokeAsync(StateHasChanged);
             }
         }
+
         private string GenerateSlugFromName(string name)
         {
             if (string.IsNullOrWhiteSpace(name))
@@ -120,7 +129,6 @@ namespace Frontend.Forms.Categories
               .Trim('-');
         }
 
-
         private string GetValidationClass(string fieldName)
         {
             return ValidationErrors.ContainsKey(fieldName) ? "border-red-500 dark:border-red-400" : string.Empty;
@@ -132,27 +140,24 @@ namespace Frontend.Forms.Categories
             return $"{prefix} {category.Name}";
         }
 
-        // ImagePicker helper methods
         private async Task OnCategoryImagesChanged(List<object> images)
         {
             categoryImageObjects = images;
             Model.Images = images.Cast<CreateCategoryImageDto>().ToList();
 
-            // Update positions to ensure proper ordering
             for (int i = 0; i < Model.Images.Count; i++)
             {
                 Model.Images[i].Position = i;
             }
 
             StateHasChanged();
-            await Task.CompletedTask; // Ensure this is async-compatible
+            await Task.CompletedTask;
         }
 
         private string GetCategoryImageUrl(object image)
         {
             if (image is CreateCategoryImageDto categoryImage)
             {
-                // Return a URL based on FileId - you might need to adjust this based on your file service
                 return FileService.GetThumbnailUrl(categoryImage.FileId);
             }
             return string.Empty;
@@ -176,13 +181,22 @@ namespace Frontend.Forms.Categories
             return false;
         }
 
+        private int? GetCategoryImageId(object image)
+        {
+            if (image is CategoryImageDto categoryImage)
+            {
+                return categoryImage.Id;
+            }
+            return null;
+        }
+
         private object CreateCategoryImageFromFile(FileDto file)
         {
             return new CreateCategoryImageDto
             {
                 FileId = file.Id,
                 Position = Model.Images.Count,
-                IsFeatured = !Model.Images.Any() // First image is featured by default
+                IsFeatured = !Model.Images.Any()
             };
         }
 
@@ -196,10 +210,72 @@ namespace Frontend.Forms.Categories
             }
         }
 
+        private async Task<object?> AddCategoryImageApi(int categoryId, CreateCategoryImageDto createImageDto)
+        {
+            try
+            {
+                var addedImage = await CategoryService.AddCategoryImageAsync(categoryId, createImageDto);
+                if (addedImage != null)
+                {
+                    return new CreateCategoryImageDto
+                    {
+                        FileId = addedImage.FileId,
+                        Alt = addedImage.Alt,
+                        Caption = addedImage.Caption,
+                        Position = addedImage.Position,
+                        IsFeatured = addedImage.IsFeatured
+                    };
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to add image: {ex.Message}");
+                return null;
+            }
+        }
+
+        private async Task<object?> UpdateCategoryImageApi(int imageId, UpdateCategoryImageDto updateImageDto)
+        {
+            try
+            {
+                var updatedImage = await CategoryService.UpdateCategoryImageAsync(imageId, updateImageDto);
+                if (updatedImage != null)
+                {
+                    return new CreateCategoryImageDto
+                    {
+                        FileId = updatedImage.FileId,
+                        Alt = updatedImage.Alt,
+                        Caption = updatedImage.Caption,
+                        Position = updatedImage.Position,
+                        IsFeatured = updatedImage.IsFeatured
+                    };
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to update image: {ex.Message}");
+                return null;
+            }
+        }
+
+        private async Task<bool> DeleteCategoryImageApi(int imageId)
+        {
+            try
+            {
+                return await CategoryService.DeleteCategoryImageAsync(imageId);
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to delete image: {ex.Message}");
+                return false;
+            }
+        }
+
         public void Dispose()
         {
             slugValidationTimer?.Dispose();
         }
     }
 }
-
