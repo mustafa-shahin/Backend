@@ -2,7 +2,7 @@
 using Microsoft.AspNetCore.Components;
 using System.Text;
 
-namespace Frontend.Components.Categories
+namespace Frontend.Forms.Categories
 {
     public partial class CategoryForm : ComponentBase
     {

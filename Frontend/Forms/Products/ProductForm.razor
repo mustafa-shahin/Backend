@@ -1,0 +1,532 @@
+﻿@* Frontend/Components/Products/ProductForm.razor *@
+@using Backend.CMS.Application.DTOs
+@using Backend.CMS.Domain.Enums
+@using Frontend.Components.Common.ImagePicker
+@using Frontend.Interfaces
+@using Frontend.Components.Files
+@using Frontend.Components.Common
+@using System.Text
+@inject ICategoryService CategoryService
+@inject IFileService FileService
+@inject IStyleService StyleService
+@inject INotificationService NotificationService
+
+<div class="space-y-6">
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center mb-4">
+            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
+                <i class="fas fa-info-circle text-white text-sm"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Basic Information</h3>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Product Name *
+                </label>
+                <input @oninput="OnNameChanged"
+                       type="text"
+                       placeholder="Enter product name"
+                       value="@Model.Name"
+                       class="@StyleService.GetFormInputClass(addtionalClasses: GetValidationClass("Name"))" />
+                @if (ValidationErrors.ContainsKey("Name"))
+                {
+                    <p class="text-red-600 dark:text-red-400 text-sm mt-1">
+                        <i class="fas fa-exclamation-triangle mr-1"></i>
+                        @ValidationErrors["Name"]
+                    </p>
+                }
+            </div>
+
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    URL Slug *
+                </label>
+                <div class="relative">
+                    <input @oninput="OnSlugChanged"
+                           type="text"
+                           placeholder="product-slug"
+                           value="@Model.Slug"
+                           class="@StyleService.GetFormInputClass(addtionalClasses: GetValidationClass("Slug"))" />
+                    @if (isValidatingSlug)
+                    {
+                        <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
+                            <div class="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></div>
+                        </div>
+                    }
+                    else if (slugValidationResult.HasValue)
+                    {
+                        <div class="absolute inset-y-0 right-0 pr-3 flex items-center">
+                            @if (slugValidationResult.Value)
+                            {
+                                <i class="fas fa-check-circle text-green-500"></i>
+                            }
+                            else
+                            {
+                                <i class="fas fa-times-circle text-red-500"></i>
+                            }
+                        </div>
+                    }
+                </div>
+                @if (ValidationErrors.ContainsKey("Slug"))
+                {
+                    <p class="text-red-600 dark:text-red-400 text-sm mt-1">
+                        <i class="fas fa-exclamation-triangle mr-1"></i>
+                        @ValidationErrors["Slug"]
+                    </p>
+                }
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    Used in URLs. Only lowercase letters, numbers, and hyphens allowed.
+                </p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Product Type *
+                </label>
+                <select @bind="Model.Type" class="@StyleService.GetFormSelectClass()">
+                    <option value="@ProductType.Physical">Physical Product</option>
+                    <option value="@ProductType.Digital">Digital Product</option>
+                    <option value="@ProductType.Service">Service</option>
+                    <option value="@ProductType.GiftCard">Gift Card</option>
+                </select>
+            </div>
+
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Vendor
+                </label>
+                <input @bind="Model.Vendor"
+                       type="text"
+                       placeholder="Product vendor/manufacturer"
+                       class="@StyleService.GetFormInputClass()" />
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-6 mt-6">
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Short Description
+                </label>
+                <input @bind="Model.ShortDescription"
+                       type="text"
+                       placeholder="Brief description for listings"
+                       maxlength="1000"
+                       class="@StyleService.GetFormInputClass()" />
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    @(Model.ShortDescription?.Length ?? 0)/1000 characters. Used in product listings.
+                </p>
+            </div>
+
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Description
+                </label>
+                <textarea @bind="Model.Description"
+                          rows="4"
+                          placeholder="Detailed product description"
+                          maxlength="2000"
+                          class="@StyleService.GetFormTextareaClass()"></textarea>
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    @(Model.Description?.Length ?? 0)/2000 characters. Detailed description for product pages.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center mb-4">
+            <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center mr-3">
+                <i class="fas fa-images text-white text-sm"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Product Images</h3>
+        </div>
+        <ImagePicker SelectedImages="@productImageObjects"
+                     SelectedImagesChanged="@OnProductImagesChanged"
+                     AllowMultiple="true"
+                     AllowFeatured="true"
+                     AllowUpload="true"
+                     EntityName="product"
+                     GetImageUrlFunc="@GetProductImageUrl"
+                     GetImageAltFunc="@GetProductImageAlt"
+                     GetIsFeaturedFunc="@GetProductImageIsFeatured"
+                     CreateImageFromFileFunc="@CreateProductImageFromFile"
+                     UpdateImageFunc="@UpdateProductImage" />
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center mb-4">
+            <div class="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center mr-3">
+                <i class="fas fa-tags text-white text-sm"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Categories</h3>
+        </div>
+
+        @if (isLoadingCategories)
+        {
+            <div class="flex items-center justify-center py-4">
+                <div class="animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent mr-2"></div>
+                <span class="text-gray-500 dark:text-gray-400">Loading categories...</span>
+            </div>
+        }
+        else if (availableCategories?.Any() == true)
+        {
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-64 overflow-y-auto">
+                @foreach (var category in availableCategories)
+                {
+                    <label class="flex items-center cursor-pointer p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors @(Model.CategoryIds.Contains(category.Id) ? "bg-blue-50 border-blue-300 dark:bg-blue-900/30 dark:border-blue-600" : "")">
+                        <input type="checkbox"
+                               checked="@Model.CategoryIds.Contains(category.Id)"
+                               @onchange="@(e => ToggleCategory(category.Id, (bool)e.Value!))"
+                               class="@StyleService.GetFormCheckboxClass() mr-3" />
+                        <div class="min-w-0 flex-1">
+                            <div class="text-sm font-medium text-gray-900 dark:text-white">
+                                @GetCategoryDisplayName(category)
+                            </div>
+                        </div>
+                    </label>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="text-center py-4">
+                <p class="text-gray-500 dark:text-gray-400">No categories available. Create categories first.</p>
+            </div>
+        }
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center">
+                <div class="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center mr-3">
+                    <i class="fas fa-layer-group text-white text-sm"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Product Variants</h3>
+            </div>
+            <div class="flex items-center space-x-3">
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox"
+                           @bind="Model.HasVariants"
+                           @onchange="OnHasVariantsChanged"
+                           class="@StyleService.GetFormCheckboxClass()" />
+                    <span class="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                        This product has multiple variants
+                    </span>
+                </label>
+            </div>
+        </div>
+
+        @if (Model.HasVariants)
+        {
+            <div class="space-y-4">
+                @if (Model.Variants?.Any() == true)
+                {
+                    <div class="space-y-3">
+                        @for (int i = 0; i < Model.Variants.Count; i++)
+                        {
+                            var index = i;
+                            var variant = Model.Variants[index];
+                            <div class="border border-gray-200 dark:border-gray-600 rounded-lg p-4 @(variant.IsDefault ? "bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-600" : "")">
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="flex items-center space-x-3">
+                                        <h4 class="text-sm font-medium text-gray-900 dark:text-white">
+                                            Variant @(index + 1)
+                                            @if (variant.IsDefault)
+                                            {
+                                                <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                                                    <i class="fas fa-star mr-1"></i>
+                                                    Default
+                                                </span>
+                                            }
+                                        </h4>
+                                    </div>
+                                    <div class="flex items-center space-x-2">
+                                        @if (!variant.IsDefault)
+                                        {
+                                            <button type="button"
+                                                    @onclick="() => SetDefaultVariant(index)"
+                                                    class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50">
+                                                Set as Default
+                                            </button>
+                                        }
+                                        <button type="button"
+                                                @onclick="() => RemoveVariant(index)"
+                                                class="text-xs px-2 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50">
+                                            Remove
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    <div class="space-y-1">
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            Title *
+                                        </label>
+                                        <input @bind="variant.Title"
+                                               type="text"
+                                               placeholder="e.g., Small, Red, 32GB"
+                                               class="@StyleService.GetFormInputClass() text-sm" />
+                                    </div>
+
+                                    <div class="space-y-1">
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            Price *
+                                        </label>
+                                        <input @bind="variant.Price"
+                                               type="number"
+                                               step="0.01"
+                                               min="0"
+                                               placeholder="0.00"
+                                               class="@StyleService.GetFormInputClass() text-sm" />
+                                    </div>
+
+                                    <div class="space-y-1">
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            Compare At Price
+                                        </label>
+                                        <input @bind="variant.CompareAtPrice"
+                                               type="number"
+                                               step="0.01"
+                                               min="0"
+                                               placeholder="0.00"
+                                               class="@StyleService.GetFormInputClass() text-sm" />
+                                    </div>
+
+                                    <div class="space-y-1">
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            Quantity
+                                        </label>
+                                        <input @bind="variant.Quantity"
+                                               type="number"
+                                               min="0"
+                                               placeholder="0"
+                                               class="@StyleService.GetFormInputClass() text-sm" />
+                                    </div>
+
+                                    <div class="space-y-1">
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            SKU/Barcode
+                                        </label>
+                                        <input @bind="variant.Barcode"
+                                               type="text"
+                                               placeholder="SKU or barcode"
+                                               class="@StyleService.GetFormInputClass() text-sm" />
+                                    </div>
+
+                                    <div class="space-y-1">
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            Weight
+                                        </label>
+                                        <div class="flex space-x-2">
+                                            <input @bind="variant.Weight"
+                                                   type="number"
+                                                   step="0.01"
+                                                   min="0"
+                                                   placeholder="0.0"
+                                                   class="@StyleService.GetFormInputClass() text-sm flex-1" />
+                                            <select @bind="variant.WeightUnit" class="@StyleService.GetFormSelectClass() text-sm w-20">
+                                                <option value="kg">kg</option>
+                                                <option value="g">g</option>
+                                                <option value="lb">lb</option>
+                                                <option value="oz">oz</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                                    <div class="space-y-1">
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            Option 1 (e.g., Size)
+                                        </label>
+                                        <input @bind="variant.Option1"
+                                               type="text"
+                                               placeholder="Small, Medium, Large"
+                                               class="@StyleService.GetFormInputClass() text-sm" />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            Option 2 (e.g., Color)
+                                        </label>
+                                        <input @bind="variant.Option2"
+                                               type="text"
+                                               placeholder="Red, Blue, Green"
+                                               class="@StyleService.GetFormInputClass() text-sm" />
+                                    </div>
+                                    <div class="space-y-1">
+                                        <label class="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                            Option 3 (e.g., Material)
+                                        </label>
+                                        <input @bind="variant.Option3"
+                                               type="text"
+                                               placeholder="Cotton, Polyester"
+                                               class="@StyleService.GetFormInputClass() text-sm" />
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap gap-4 mt-4">
+                                    <label class="flex items-center cursor-pointer">
+                                        <input type="checkbox" @bind="variant.TrackQuantity" class="@StyleService.GetFormCheckboxClass()" />
+                                        <span class="ml-2 text-xs text-gray-700 dark:text-gray-300">Track quantity</span>
+                                    </label>
+                                    <label class="flex items-center cursor-pointer">
+                                        <input type="checkbox" @bind="variant.ContinueSellingWhenOutOfStock" class="@StyleService.GetFormCheckboxClass()" />
+                                        <span class="ml-2 text-xs text-gray-700 dark:text-gray-300">Continue selling when out of stock</span>
+                                    </label>
+                                    <label class="flex items-center cursor-pointer">
+                                        <input type="checkbox" @bind="variant.RequiresShipping" class="@StyleService.GetFormCheckboxClass()" />
+                                        <span class="ml-2 text-xs text-gray-700 dark:text-gray-300">Requires shipping</span>
+                                    </label>
+                                    <label class="flex items-center cursor-pointer">
+                                        <input type="checkbox" @bind="variant.IsTaxable" class="@StyleService.GetFormCheckboxClass()" />
+                                        <span class="ml-2 text-xs text-gray-700 dark:text-gray-300">Taxable</span>
+                                    </label>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <button type="button"
+                        @onclick="AddVariant"
+                        class="w-full border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 text-center hover:border-blue-400 dark:hover:border-blue-500 transition-colors">
+                    <div class="space-y-2">
+                        <div class="w-8 h-8 mx-auto bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                            <i class="fas fa-plus text-gray-400 text-sm"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-900 dark:text-white">Add Variant</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Add another product variant</p>
+                        </div>
+                    </div>
+                </button>
+            </div>
+        }
+        else
+        {
+            <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                <p class="text-sm text-gray-600 dark:text-gray-400">
+                    This product will have a single variant. Enable "This product has multiple variants" to add more variants with different options like size, color, etc.
+                </p>
+            </div>
+        }
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center mb-4">
+            <div class="w-8 h-8 bg-yellow-600 rounded-lg flex items-center justify-center mr-3">
+                <i class="fas fa-cog text-white text-sm"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Status & Settings</h3>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Status
+                </label>
+                <select @bind="Model.Status" class="@StyleService.GetFormSelectClass()">
+                    <option value="@ProductStatus.Draft">Draft</option>
+                    <option value="@ProductStatus.Active">Active</option>
+                    <option value="@ProductStatus.Archived">Archived</option>
+                </select>
+            </div>
+
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Search Keywords
+                </label>
+                <input @bind="Model.SearchKeywords"
+                       type="text"
+                       placeholder="keywords, separated, by, commas"
+                       class="@StyleService.GetFormInputClass()" />
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    Help customers find this product with relevant keywords.
+                </p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+            <div class="space-y-3">
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" @bind="Model.RequiresShipping" class="@StyleService.GetFormCheckboxClass()" />
+                    <span class="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Requires Shipping
+                    </span>
+                </label>
+                <p class="text-gray-500 dark:text-gray-400 text-xs">
+                    Uncheck for digital products or services that don't require shipping.
+                </p>
+            </div>
+
+            <div class="space-y-3">
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" @bind="Model.ContinueSellingWhenOutOfStock" class="@StyleService.GetFormCheckboxClass()" />
+                    <span class="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Continue Selling When Out of Stock
+                    </span>
+                </label>
+                <p class="text-gray-500 dark:text-gray-400 text-xs">
+                    Allow customers to purchase this product even when out of stock.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+        <div class="flex items-center mb-4">
+            <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center mr-3">
+                <i class="fas fa-search text-white text-sm"></i>
+            </div>
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">SEO Information</h3>
+        </div>
+
+        <div class="space-y-6">
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Meta Title
+                </label>
+                <input @bind="Model.MetaTitle"
+                       type="text"
+                       placeholder="SEO-optimized title for search engines"
+                       maxlength="255"
+                       class="@StyleService.GetFormInputClass()" />
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    @(Model.MetaTitle?.Length ?? 0)/255 characters. Leave empty to use product name.
+                </p>
+            </div>
+
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Meta Description
+                </label>
+                <textarea @bind="Model.MetaDescription"
+                          rows="3"
+                          placeholder="Brief description for search engine results"
+                          maxlength="1000"
+                          class="@StyleService.GetFormTextareaClass()"></textarea>
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    @(Model.MetaDescription?.Length ?? 0)/1000 characters. Appears in search engine results.
+                </p>
+            </div>
+
+            <div class="space-y-2">
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Meta Keywords
+                </label>
+                <input @bind="Model.MetaKeywords"
+                       type="text"
+                       placeholder="keyword1, keyword2, keyword3"
+                       maxlength="500"
+                       class="@StyleService.GetFormInputClass()" />
+                <p class="text-gray-500 dark:text-gray-400 text-xs mt-1">
+                    @(Model.MetaKeywords?.Length ?? 0)/500 characters. Comma-separated keywords for SEO.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
