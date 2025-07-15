@@ -1,9 +1,7 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
-using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Interfaces;
-using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
 
 namespace Backend.CMS.Infrastructure.Services
@@ -44,38 +42,29 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                PaginatedResult<ProductVariant> pagedResult;
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
+
+                int totalCount;
+                IEnumerable<ProductVariant> variants;
 
                 if (standaloneOnly)
                 {
                     // Get standalone variants (variants without product association or with ProductId = 0)
-                    pagedResult = await _unitOfWork.ProductVariants.GetPagedResultAsync(
-                        page,
-                        pageSize,
-                        predicate: v => v.ProductId == 0,
-                        orderBy: query => query.OrderBy(v => v.Position).ThenBy(v => v.Title)
-                    );
+                    totalCount = await _unitOfWork.ProductVariants.GetStandaloneVariantCountAsync();
+                    variants = await _unitOfWork.ProductVariants.GetStandaloneVariantsAsync(skip, take);
                 }
                 else
                 {
                     // Get all variants
-                    pagedResult = await _unitOfWork.ProductVariants.GetPagedResultAsync(
-                        page,
-                        pageSize,
-                        predicate: null,
-                        orderBy: query => query.OrderBy(v => v.Position).ThenBy(v => v.Title)
-                    );
+                    totalCount = await _unitOfWork.ProductVariants.CountAsync();
+                    variants = await _unitOfWork.ProductVariants.GetPagedAsync(page, pageSize);
                 }
 
-                var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
+                var variantDtos = _mapper.Map<List<ProductVariantDto>>(variants);
 
-                return new PaginatedResult<ProductVariantDto>
-                {
-                    Data = variantDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                return new PaginatedResult<ProductVariantDto>(variantDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -93,17 +82,17 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Use the repository's dedicated pagination method for standalone variants
-                var pagedResult = await _unitOfWork.ProductVariants.GetStandaloneVariantsPagedAsync(page, pageSize);
-                var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
 
-                return new PaginatedResult<ProductVariantDto>
-                {
-                    Data = variantDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                // Get total count and data
+                var totalCount = await _unitOfWork.ProductVariants.GetStandaloneVariantCountAsync();
+                var variants = await _unitOfWork.ProductVariants.GetStandaloneVariantsAsync(skip, take);
+
+                var variantDtos = _mapper.Map<List<ProductVariantDto>>(variants);
+
+                return new PaginatedResult<ProductVariantDto>(variantDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -111,7 +100,6 @@ namespace Backend.CMS.Infrastructure.Services
                 throw;
             }
         }
-
 
         public async Task<List<ProductVariantDto>> GetVariantsByProductIdAsync(int productId)
         {
@@ -134,7 +122,6 @@ namespace Backend.CMS.Infrastructure.Services
                 if (product == null)
                     throw new ArgumentException($"Product with ID {productId} not found");
             }
-
 
             // Validate images
             if (createVariantDto.Images.Any())
@@ -188,7 +175,6 @@ namespace Backend.CMS.Infrastructure.Services
             var variant = await _unitOfWork.ProductVariants.GetByIdAsync(variantId);
             if (variant == null)
                 throw new ArgumentException($"Product variant with ID {variantId} not found");
-
 
             // Validate images
             if (updateVariantDto.Images.Any())
@@ -316,17 +302,17 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Use the repository's dedicated pagination method for low stock variants
-                var pagedResult = await _unitOfWork.ProductVariants.GetLowStockVariantsPagedAsync(threshold, page, pageSize);
-                var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
 
-                return new PaginatedResult<ProductVariantDto>
-                {
-                    Data = variantDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                // Get total count and data
+                var totalCount = await _unitOfWork.ProductVariants.GetLowStockVariantsCountAsync(threshold);
+                var variants = await _unitOfWork.ProductVariants.GetLowStockVariantsAsync(threshold, skip, take);
+
+                var variantDtos = _mapper.Map<List<ProductVariantDto>>(variants);
+
+                return new PaginatedResult<ProductVariantDto>(variantDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -344,17 +330,17 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Use the repository's dedicated pagination method for out of stock variants
-                var pagedResult = await _unitOfWork.ProductVariants.GetOutOfStockVariantsPagedAsync(page, pageSize);
-                var variantDtos = _mapper.Map<List<ProductVariantDto>>(pagedResult.Data);
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
 
-                return new PaginatedResult<ProductVariantDto>
-                {
-                    Data = variantDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                // Get total count and data
+                var totalCount = await _unitOfWork.ProductVariants.GetOutOfStockVariantsCountAsync();
+                var variants = await _unitOfWork.ProductVariants.GetOutOfStockVariantsAsync(skip, take);
+
+                var variantDtos = _mapper.Map<List<ProductVariantDto>>(variants);
+
+                return new PaginatedResult<ProductVariantDto>(variantDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {

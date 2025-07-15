@@ -63,24 +63,18 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Get paginated result using the repository's built-in pagination
-                var pagedResult = await _unitOfWork.Products.GetPagedResultAsync(
-                    page,
-                    pageSize,
-                    predicate: null,
-                    orderBy: query => query.OrderBy(p => p.Name)
-                );
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
+
+                // Get total count and data
+                var totalCount = await _unitOfWork.Products.CountAsync();
+                var products = await _unitOfWork.Products.GetPagedAsync(page, pageSize);
 
                 // Map entities to DTOs
-                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                var productDtos = _mapper.Map<List<ProductDto>>(products);
 
-                return new PaginatedResult<ProductDto>
-                {
-                    Data = productDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -97,19 +91,18 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Use the repository's dedicated pagination method for categories
-                var pagedResult = await _unitOfWork.Products.GetPagedByCategoryAsync(categoryId, page, pageSize);
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
+
+                // Get total count and data
+                var totalCount = await _unitOfWork.Products.GetCountByCategoryAsync(categoryId);
+                var products = await _unitOfWork.Products.GetByCategoryAsync(categoryId, skip, take);
 
                 // Map entities to DTOs
-                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                var productDtos = _mapper.Map<List<ProductDto>>(products);
 
-                return new PaginatedResult<ProductDto>
-                {
-                    Data = productDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -203,7 +196,6 @@ namespace Backend.CMS.Infrastructure.Services
             if (await _unitOfWork.Products.SlugExistsAsync(updateProductDto.Slug, productId))
                 throw new ArgumentException($"Product with slug '{updateProductDto.Slug}' already exists");
 
-
             // Validate images
             if (updateProductDto.Images.Any())
             {
@@ -270,17 +262,18 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Use the repository's search method that returns a paged result
-                var pagedResult = await _unitOfWork.Products.SearchProductsPagedAsync(searchDto);
-                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
 
-                return new PaginatedResult<ProductDto>
-                {
-                    Data = productDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                // Get total count and data
+                var totalCount = await _unitOfWork.Products.GetSearchCountAsync(searchDto);
+                var products = await _unitOfWork.Products.SearchProductsAsync(searchDto, skip, take);
+
+                // Map entities to DTOs
+                var productDtos = _mapper.Map<List<ProductDto>>(products);
+
+                return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -416,17 +409,18 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Use the repository's dedicated pagination method for featured products
-                var pagedResult = await _unitOfWork.Products.GetFeaturedProductsPagedAsync(page, pageSize);
-                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
 
-                return new PaginatedResult<ProductDto>
-                {
-                    Data = productDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                // Get total count and data
+                var totalCount = await _unitOfWork.Products.GetFeaturedProductsCountAsync();
+                var products = await _unitOfWork.Products.GetFeaturedProductsAsync(skip, take);
+
+                // Map entities to DTOs
+                var productDtos = _mapper.Map<List<ProductDto>>(products);
+
+                return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -434,7 +428,6 @@ namespace Backend.CMS.Infrastructure.Services
                 throw;
             }
         }
-
         public async Task<PaginatedResult<ProductDto>> GetRelatedProductsAsync(int productId, int page = 1, int pageSize = 10)
         {
             // Validate and normalize pagination parameters
@@ -443,17 +436,18 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Use the repository's dedicated pagination method for related products
-                var pagedResult = await _unitOfWork.Products.GetRelatedProductsPagedAsync(productId, page, pageSize);
-                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
 
-                return new PaginatedResult<ProductDto>
-                {
-                    Data = productDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                // Get total count and data
+                var totalCount = await _unitOfWork.Products.GetRelatedProductsCountAsync(productId);
+                var products = await _unitOfWork.Products.GetRelatedProductsAsync(productId, skip, take);
+
+                // Map entities to DTOs
+                var productDtos = _mapper.Map<List<ProductDto>>(products);
+
+                return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -471,17 +465,18 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Use the repository's dedicated pagination method for recent products
-                var pagedResult = await _unitOfWork.Products.GetRecentProductsPagedAsync(page, pageSize);
-                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
 
-                return new PaginatedResult<ProductDto>
-                {
-                    Data = productDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                // Get total count and data
+                var totalCount = await _unitOfWork.Products.GetRecentProductsCountAsync();
+                var products = await _unitOfWork.Products.GetRecentProductsAsync(skip, take);
+
+                // Map entities to DTOs
+                var productDtos = _mapper.Map<List<ProductDto>>(products);
+
+                return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -528,17 +523,18 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Use the repository's dedicated pagination method for low stock products
-                var pagedResult = await _unitOfWork.Products.GetLowStockProductsPagedAsync(threshold, page, pageSize);
-                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
 
-                return new PaginatedResult<ProductDto>
-                {
-                    Data = productDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                // Get total count and data
+                var totalCount = await _unitOfWork.Products.GetLowStockProductsCountAsync(threshold);
+                var products = await _unitOfWork.Products.GetLowStockProductsAsync(threshold, skip, take);
+
+                // Map entities to DTOs
+                var productDtos = _mapper.Map<List<ProductDto>>(products);
+
+                return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -556,17 +552,18 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                // Use the repository's dedicated pagination method for out of stock products
-                var pagedResult = await _unitOfWork.Products.GetOutOfStockProductsPagedAsync(page, pageSize);
-                var productDtos = _mapper.Map<List<ProductDto>>(pagedResult.Data);
+                // Calculate skip and take
+                var skip = (page - 1) * pageSize;
+                var take = pageSize;
 
-                return new PaginatedResult<ProductDto>
-                {
-                    Data = productDtos,
-                    PageNumber = pagedResult.PageNumber,
-                    PageSize = pagedResult.PageSize,
-                    TotalCount = pagedResult.TotalCount
-                };
+                // Get total count and data
+                var totalCount = await _unitOfWork.Products.GetOutOfStockProductsCountAsync();
+                var products = await _unitOfWork.Products.GetOutOfStockProductsAsync(skip, take);
+
+                // Map entities to DTOs
+                var productDtos = _mapper.Map<List<ProductDto>>(products);
+
+                return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
             catch (Exception ex)
             {
@@ -671,7 +668,6 @@ namespace Backend.CMS.Infrastructure.Services
 
             return slug;
         }
-
 
         private async Task ValidateImagesAsync(List<int> fileIds)
         {

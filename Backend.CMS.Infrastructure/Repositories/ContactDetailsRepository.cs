@@ -9,7 +9,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class ContactDetailsRepository : Repository<ContactDetails>, IContactDetailsRepository
     {
-        public ContactDetailsRepository(ApplicationDbContext context, ILogger<ContactDetailsRepository> logger) 
+        public ContactDetailsRepository(ApplicationDbContext context, ILogger<ContactDetailsRepository> logger)
             : base(context, logger)
         {
         }
@@ -32,14 +32,14 @@ namespace Backend.CMS.Infrastructure.Repositories
                                (entityType == "Location" && EF.Property<int?>(c, "LocationId") == entityId))
                     .FirstOrDefaultAsync();
 
-                _logger.LogDebug("Retrieved default contact details for {EntityType} {EntityId}: {Found}", 
+                _logger.LogDebug("Retrieved default contact details for {EntityType} {EntityId}: {Found}",
                     entityType, entityId, contactDetails != null ? "Found" : "Not found");
 
                 return contactDetails;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving default contact details for {EntityType} {EntityId}", 
+                _logger.LogError(ex, "Error retrieving default contact details for {EntityType} {EntityId}",
                     entityType, entityId);
                 throw;
             }
@@ -61,14 +61,14 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .ThenBy(c => c.ContactType)
                     .ToListAsync();
 
-                _logger.LogDebug("Retrieved {Count} contact details for {EntityType} {EntityId}", 
+                _logger.LogDebug("Retrieved {Count} contact details for {EntityType} {EntityId}",
                     contactDetails.Count, entityType, entityId);
 
                 return contactDetails;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error retrieving contact details for {EntityType} {EntityId}", 
+                _logger.LogError(ex, "Error retrieving contact details for {EntityType} {EntityId}",
                     entityType, entityId);
                 throw;
             }
@@ -87,7 +87,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .ThenBy(c => c.PrimaryPhone)
                     .ToListAsync();
 
-                _logger.LogDebug("Retrieved {Count} contact details of type {ContactType}", 
+                _logger.LogDebug("Retrieved {Count} contact details of type {ContactType}",
                     contactDetails.Count, contactType);
 
                 return contactDetails;
@@ -110,7 +110,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Where(c => !c.IsDeleted && (c.Email == email || c.SecondaryEmail == email))
                     .FirstOrDefaultAsync();
 
-                _logger.LogDebug("Retrieved contact details by email {Email}: {Found}", 
+                _logger.LogDebug("Retrieved contact details by email {Email}: {Found}",
                     email, contactDetails != null ? "Found" : "Not found");
 
                 return contactDetails;
@@ -130,13 +130,13 @@ namespace Backend.CMS.Infrastructure.Repositories
                     throw new ArgumentException("Phone cannot be null or empty", nameof(phone));
 
                 var contactDetails = await _dbSet
-                    .Where(c => !c.IsDeleted && (c.PrimaryPhone == phone || 
-                                                c.SecondaryPhone == phone || 
-                                                c.Mobile == phone || 
+                    .Where(c => !c.IsDeleted && (c.PrimaryPhone == phone ||
+                                                c.SecondaryPhone == phone ||
+                                                c.Mobile == phone ||
                                                 c.WhatsAppNumber == phone))
                     .FirstOrDefaultAsync();
 
-                _logger.LogDebug("Retrieved contact details by phone {Phone}: {Found}", 
+                _logger.LogDebug("Retrieved contact details by phone {Phone}: {Found}",
                     phone, contactDetails != null ? "Found" : "Not found");
 
                 return contactDetails;
@@ -179,7 +179,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
                     if (newDefaultContactDetails == null)
                     {
-                        _logger.LogWarning("Contact details {ContactDetailsId} not found for setting as default", 
+                        _logger.LogWarning("Contact details {ContactDetailsId} not found for setting as default",
                             contactDetailsId);
                         return false;
                     }
@@ -190,7 +190,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
 
-                    _logger.LogDebug("Set contact details {ContactDetailsId} as default for {EntityType} {EntityId}", 
+                    _logger.LogDebug("Set contact details {ContactDetailsId} as default for {EntityType} {EntityId}",
                         contactDetailsId, entityType, entityId);
 
                     return true;
@@ -203,7 +203,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error setting default contact details {ContactDetailsId} for {EntityType} {EntityId}", 
+                _logger.LogError(ex, "Error setting default contact details {ContactDetailsId} for {EntityType} {EntityId}",
                     contactDetailsId, entityType, entityId);
                 throw;
             }
@@ -223,65 +223,15 @@ namespace Backend.CMS.Infrastructure.Repositories
                                (entityType == "Location" && EF.Property<int?>(c, "LocationId") == entityId))
                     .CountAsync();
 
-                _logger.LogDebug("Count of contact details for {EntityType} {EntityId}: {Count}", 
+                _logger.LogDebug("Count of contact details for {EntityType} {EntityId}: {Count}",
                     entityType, entityId, count);
 
                 return count;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error counting contact details for {EntityType} {EntityId}", 
+                _logger.LogError(ex, "Error counting contact details for {EntityType} {EntityId}",
                     entityType, entityId);
-                throw;
-            }
-        }
-
-        public async Task<PaginatedResult<ContactDetails>> SearchContactDetailsAsync(string searchTerm, int page, int pageSize)
-        {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(searchTerm))
-                    throw new ArgumentException("Search term cannot be null or empty", nameof(searchTerm));
-
-                ValidatePagination(page, pageSize);
-
-                var query = _dbSet
-                    .Where(c => !c.IsDeleted && (
-                        (c.Email != null && c.Email.Contains(searchTerm)) ||
-                        (c.SecondaryEmail != null && c.SecondaryEmail.Contains(searchTerm)) ||
-                        (c.PrimaryPhone != null && c.PrimaryPhone.Contains(searchTerm)) ||
-                        (c.SecondaryPhone != null && c.SecondaryPhone.Contains(searchTerm)) ||
-                        (c.Mobile != null && c.Mobile.Contains(searchTerm)) ||
-                        (c.WhatsAppNumber != null && c.WhatsAppNumber.Contains(searchTerm)) ||
-                        (c.ContactType != null && c.ContactType.Contains(searchTerm)) ||
-                        (c.Website != null && c.Website.Contains(searchTerm))));
-
-                var totalCount = await query.CountAsync();
-
-                var contactDetails = await query
-                    .OrderBy(c => c.Email)
-                    .ThenBy(c => c.PrimaryPhone)
-                    .ThenBy(c => c.ContactType)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                var result = new PaginatedResult<ContactDetails>
-                {
-                    Data = contactDetails,
-                    PageNumber = page,
-                    PageSize = pageSize,
-                    TotalCount = totalCount
-                };
-
-                _logger.LogDebug("Searched contact details with term '{SearchTerm}': {Count} results", 
-                    searchTerm, contactDetails.Count);
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error searching contact details with term '{SearchTerm}'", searchTerm);
                 throw;
             }
         }
@@ -319,9 +269,9 @@ namespace Backend.CMS.Infrastructure.Repositories
                     throw new ArgumentException("Phone cannot be null or empty", nameof(phone));
 
                 var query = _dbSet.Where(c => !c.IsDeleted && (
-                    c.PrimaryPhone == phone || 
-                    c.SecondaryPhone == phone || 
-                    c.Mobile == phone || 
+                    c.PrimaryPhone == phone ||
+                    c.SecondaryPhone == phone ||
+                    c.Mobile == phone ||
                     c.WhatsAppNumber == phone));
 
                 if (excludeContactDetailsId.HasValue)
@@ -340,102 +290,40 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
         }
 
-        public async Task<PaginatedResult<ContactDetails>> GetPagedContactDetailsByEntityAsync(int entityId, string entityType, int page, int pageSize)
+        public IQueryable<ContactDetails> GetQueryableWithEntityFilter(string? entityType = null, int? entityId = null)
         {
-            try
+            var query = _dbSet.Where(c => !c.IsDeleted);
+
+            if (!string.IsNullOrWhiteSpace(entityType) && entityId.HasValue)
             {
-                if (string.IsNullOrWhiteSpace(entityType))
-                    throw new ArgumentException("Entity type cannot be null or empty", nameof(entityType));
-
-                ValidatePagination(page, pageSize);
-
-                var query = _context.ContactDetails
-                    .Where(c => !c.IsDeleted)
-                    .Where(c => (entityType == "User" && EF.Property<int?>(c, "UserId") == entityId) ||
-                               (entityType == "Company" && EF.Property<int?>(c, "CompanyId") == entityId) ||
-                               (entityType == "Location" && EF.Property<int?>(c, "LocationId") == entityId));
-
-                var totalCount = await query.CountAsync();
-
-                var contactDetails = await query
-                    .OrderByDescending(c => c.IsDefault)
-                    .ThenBy(c => c.ContactType)
-                    .ThenBy(c => c.Email)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                var result = new PaginatedResult<ContactDetails>
+                var normalizedEntityType = entityType.ToLowerInvariant();
+                query = normalizedEntityType switch
                 {
-                    Data = contactDetails,
-                    PageNumber = page,
-                    PageSize = pageSize,
-                    TotalCount = totalCount
+                    "user" => query.Where(c => EF.Property<int?>(c, "UserId") == entityId.Value),
+                    "company" => query.Where(c => EF.Property<int?>(c, "CompanyId") == entityId.Value),
+                    "location" => query.Where(c => EF.Property<int?>(c, "LocationId") == entityId.Value),
+                    _ => query
                 };
-
-                _logger.LogDebug("Retrieved paged contact details for {EntityType} {EntityId}: {Count} results", 
-                    entityType, entityId, contactDetails.Count);
-
-                return result;
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving paged contact details for {EntityType} {EntityId}", 
-                    entityType, entityId);
-                throw;
-            }
+
+            return query;
         }
 
-        public async Task<PaginatedResult<ContactDetails>> GetPagedContactDetailsByTypeAsync(string contactType, int page, int pageSize)
+        public IQueryable<ContactDetails> ApplySearchFilter(IQueryable<ContactDetails> query, string searchTerm)
         {
-            try
-            {
-                if (string.IsNullOrWhiteSpace(contactType))
-                    throw new ArgumentException("Contact type cannot be null or empty", nameof(contactType));
+            if (string.IsNullOrWhiteSpace(searchTerm))
+                return query;
 
-                ValidatePagination(page, pageSize);
-
-                var query = _dbSet.Where(c => !c.IsDeleted && c.ContactType == contactType);
-
-                var totalCount = await query.CountAsync();
-
-                var contactDetails = await query
-                    .OrderBy(c => c.Email)
-                    .ThenBy(c => c.PrimaryPhone)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                var result = new PaginatedResult<ContactDetails>
-                {
-                    Data = contactDetails,
-                    PageNumber = page,
-                    PageSize = pageSize,
-                    TotalCount = totalCount
-                };
-
-                _logger.LogDebug("Retrieved paged contact details of type {ContactType}: {Count} results", 
-                    contactType, contactDetails.Count);
-
-                return result;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error retrieving paged contact details by type {ContactType}", contactType);
-                throw;
-            }
-        }
-
-        private static void ValidatePagination(int page, int pageSize)
-        {
-            if (page < 1)
-                throw new ArgumentException("Page number must be greater than 0", nameof(page));
-            
-            if (pageSize < 1)
-                throw new ArgumentException("Page size must be greater than 0", nameof(pageSize));
-            
-            if (pageSize > 1000)
-                throw new ArgumentException("Page size cannot exceed 1000", nameof(pageSize));
+            var lowerSearchTerm = searchTerm.ToLower();
+            return query.Where(c =>
+                (c.Email != null && c.Email.ToLower().Contains(lowerSearchTerm)) ||
+                (c.SecondaryEmail != null && c.SecondaryEmail.ToLower().Contains(lowerSearchTerm)) ||
+                (c.PrimaryPhone != null && c.PrimaryPhone.Contains(searchTerm)) ||
+                (c.SecondaryPhone != null && c.SecondaryPhone.Contains(searchTerm)) ||
+                (c.Mobile != null && c.Mobile.Contains(searchTerm)) ||
+                (c.WhatsAppNumber != null && c.WhatsAppNumber.Contains(searchTerm)) ||
+                (c.ContactType != null && c.ContactType.ToLower().Contains(lowerSearchTerm)) ||
+                (c.Website != null && c.Website.ToLower().Contains(lowerSearchTerm)));
         }
     }
 }

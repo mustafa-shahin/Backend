@@ -21,27 +21,24 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<bool> SlugExistsAsync(string slug, int? excludeProductId = null);
 
         // Category-based queries
-        Task<IEnumerable<Product>> GetByCategoryAsync(int categoryId, int page, int pageSize);
+        Task<IEnumerable<Product>> GetByCategoryAsync(int categoryId, int skip = 0, int take = int.MaxValue);
         Task<int> GetCountByCategoryAsync(int categoryId);
-        Task<PaginatedResult<Product>> GetPagedByCategoryAsync(int categoryId, int page, int pageSize);
 
         // Status-based queries
-        Task<IEnumerable<Product>> GetByStatusAsync(ProductStatus status, int page, int pageSize);
+        Task<IEnumerable<Product>> GetByStatusAsync(ProductStatus status, int skip = 0, int take = int.MaxValue);
         Task<int> GetCountByStatusAsync(ProductStatus status);
-        Task<PaginatedResult<Product>> GetPagedByStatusAsync(ProductStatus status, int page, int pageSize);
 
         // Search operations
-        Task<IEnumerable<Product>> SearchProductsAsync(ProductSearchDto searchDto);
+        Task<IEnumerable<Product>> SearchProductsAsync(ProductSearchDto searchDto, int skip = 0, int take = int.MaxValue);
         Task<int> GetSearchCountAsync(ProductSearchDto searchDto);
-        Task<PaginatedResult<Product>> SearchProductsPagedAsync(ProductSearchDto searchDto);
 
         // Featured and special collections
-        Task<IEnumerable<Product>> GetFeaturedProductsAsync(int count);
-        Task<PaginatedResult<Product>> GetFeaturedProductsPagedAsync(int page, int pageSize);
-        Task<IEnumerable<Product>> GetRelatedProductsAsync(int productId, int count);
-        Task<PaginatedResult<Product>> GetRelatedProductsPagedAsync(int productId, int page, int pageSize);
-        Task<IEnumerable<Product>> GetRecentProductsAsync(int count);
-        Task<PaginatedResult<Product>> GetRecentProductsPagedAsync(int page, int pageSize);
+        Task<IEnumerable<Product>> GetFeaturedProductsAsync(int skip = 0, int take = int.MaxValue);
+        Task<int> GetFeaturedProductsCountAsync();
+        Task<IEnumerable<Product>> GetRelatedProductsAsync(int productId, int skip = 0, int take = int.MaxValue);
+        Task<int> GetRelatedProductsCountAsync(int productId);
+        Task<IEnumerable<Product>> GetRecentProductsAsync(int skip = 0, int take = int.MaxValue);
+        Task<int> GetRecentProductsCountAsync();
 
         // Price operations
         Task<decimal> GetMinPriceAsync();
@@ -54,10 +51,10 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<IEnumerable<Product>> GetByVendorAsync(string vendor);
 
         // Stock operations
-        Task<IEnumerable<Product>> GetLowStockProductsAsync(int threshold = 5);
-        Task<PaginatedResult<Product>> GetLowStockProductsPagedAsync(int threshold, int page, int pageSize);
-        Task<IEnumerable<Product>> GetOutOfStockProductsAsync();
-        Task<PaginatedResult<Product>> GetOutOfStockProductsPagedAsync(int page, int pageSize);
+        Task<IEnumerable<Product>> GetLowStockProductsAsync(int threshold = 5, int skip = 0, int take = int.MaxValue);
+        Task<int> GetLowStockProductsCountAsync(int threshold = 5);
+        Task<IEnumerable<Product>> GetOutOfStockProductsAsync(int skip = 0, int take = int.MaxValue);
+        Task<int> GetOutOfStockProductsCountAsync();
         Task<int> GetTotalStockAsync();
         Task<int> GetTotalStockByStatusAsync(ProductStatus status);
 
@@ -77,7 +74,6 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<IEnumerable<ProductImage>> GetProductImagesAsync(int productId);
         Task<ProductImage?> GetFeaturedImageAsync(int productId);
         Task<int> GetImageCountAsync(int productId);
-
 
         // Bulk operations
         Task<IEnumerable<Product>> GetProductsByIdsAsync(IEnumerable<int> productIds);

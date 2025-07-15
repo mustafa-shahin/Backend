@@ -14,15 +14,13 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<ProductVariant?> GetWithAllRelationsAsync(int variantId);
 
         // Product-related queries
-        Task<IEnumerable<ProductVariant>> GetByProductIdAsync(int productId);
-        Task<PaginatedResult<ProductVariant>> GetPagedByProductIdAsync(int productId, int page, int pageSize);
+        Task<IEnumerable<ProductVariant>> GetByProductIdAsync(int productId, int skip = 0, int take = int.MaxValue);
         Task<int> GetCountByProductIdAsync(int productId);
         Task<ProductVariant?> GetDefaultVariantAsync(int productId);
         Task<IEnumerable<ProductVariant>> GetVariantsByProductIdsAsync(IEnumerable<int> productIds);
 
         // Standalone variant operations
-        Task<IEnumerable<ProductVariant>> GetStandaloneVariantsAsync();
-        Task<PaginatedResult<ProductVariant>> GetStandaloneVariantsPagedAsync(int page, int pageSize);
+        Task<IEnumerable<ProductVariant>> GetStandaloneVariantsAsync(int skip = 0, int take = int.MaxValue);
         Task<int> GetStandaloneVariantCountAsync();
 
         // Validation operations
@@ -30,10 +28,10 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<bool> HasProductVariantsAsync(int productId);
 
         // Stock operations
-        Task<IEnumerable<ProductVariant>> GetLowStockVariantsAsync(int threshold = 5);
-        Task<PaginatedResult<ProductVariant>> GetLowStockVariantsPagedAsync(int threshold, int page, int pageSize);
-        Task<IEnumerable<ProductVariant>> GetOutOfStockVariantsAsync();
-        Task<PaginatedResult<ProductVariant>> GetOutOfStockVariantsPagedAsync(int page, int pageSize);
+        Task<IEnumerable<ProductVariant>> GetLowStockVariantsAsync(int threshold = 5, int skip = 0, int take = int.MaxValue);
+        Task<int> GetLowStockVariantsCountAsync(int threshold = 5);
+        Task<IEnumerable<ProductVariant>> GetOutOfStockVariantsAsync(int skip = 0, int take = int.MaxValue);
+        Task<int> GetOutOfStockVariantsCountAsync();
         Task UpdateStockAsync(int variantId, int newQuantity);
         Task<int> GetTotalStockAsync(int productId);
         Task<int> GetTotalStockForAllProductsAsync();
@@ -82,8 +80,7 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<Dictionary<int, int>> GetVariantCountByProductAsync();
 
         // Search operations
-        Task<IEnumerable<ProductVariant>> SearchVariantsAsync(string searchTerm);
-        Task<PaginatedResult<ProductVariant>> SearchVariantsPagedAsync(string searchTerm, int page, int pageSize);
+        Task<IEnumerable<ProductVariant>> SearchVariantsAsync(string searchTerm, int skip = 0, int take = int.MaxValue);
         Task<int> GetSearchCountAsync(string searchTerm);
 
         // Availability operations
