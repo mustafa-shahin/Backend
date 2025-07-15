@@ -3,11 +3,11 @@ using Frontend.Components.Common.ConfirmationDialogComponent;
 using Frontend.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
+
 namespace Frontend.Components.Common.GenericCrudPage
 {
     public partial class GenericCrudPage<TListItem, TDetailItem, TCreateDto, TUpdateDto> : ComponentBase
     {
-
         public enum ViewMode { Grid, List }
 
         // Parameters
@@ -27,7 +27,7 @@ namespace Frontend.Components.Common.GenericCrudPage
         [Parameter] public RenderFragment? TableColumns { get; set; }
         [Parameter] public RenderFragment<TListItem>? RowTemplate { get; set; }
         [Parameter] public RenderFragment<TListItem>? CustomRowActions { get; set; }
-        [Parameter] public RenderFragment<(object Model, Dictionary<string, string> ValidationErrors, bool IsEditMode)>? FormContent { get; set; }
+        [Parameter] public RenderFragment<FormContext>? FormContent { get; set; }
         [Parameter] public RenderFragment<IEnumerable<TListItem>>? GridContent { get; set; }
         [Parameter] public RenderFragment? FilterContent { get; set; }
         [Parameter] public RenderFragment? CustomHeaderActions { get; set; }
@@ -340,6 +340,14 @@ namespace Frontend.Components.Common.GenericCrudPage
         {
             searchTimer?.Dispose();
         }
+
+        // Form context class for passing data to form content
+        public class FormContext
+        {
+            public object? Model { get; set; }
+            public Dictionary<string, string> ValidationErrors { get; set; } = new();
+            public bool IsEditMode { get; set; }
+            public bool IsSaving { get; set; }
+        }
     }
 }
-

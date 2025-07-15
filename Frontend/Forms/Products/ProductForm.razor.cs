@@ -1,4 +1,5 @@
-﻿using Backend.CMS.Application.DTOs;
+﻿// Frontend/Forms/Products/ProductForm.razor.cs
+using Backend.CMS.Application.DTOs;
 using Microsoft.AspNetCore.Components;
 using System.Text;
 
@@ -21,6 +22,9 @@ namespace Frontend.Forms.Products
         // Image picker support
         private List<object> productImageObjects = new();
 
+        // State tracking for immediate updates
+        private int variantCounter = 0;
+
         protected override void OnParametersSet()
         {
             // Convert CreateProductImageDto to objects for the generic ImagePicker
@@ -30,7 +34,11 @@ namespace Frontend.Forms.Products
             if (!Model.HasVariants && Model.Variants.Count == 0)
             {
                 Model.Variants.Add(CreateDefaultVariant());
+                StateHasChanged();
             }
+
+            // Ensure exactly one default variant
+            EnsureDefaultVariant();
         }
 
         protected override async Task OnInitializedAsync()
@@ -43,6 +51,8 @@ namespace Frontend.Forms.Products
             try
             {
                 isLoadingCategories = true;
+                StateHasChanged();
+
                 availableCategories = await CategoryService.GetCategoryTreeAsync();
             }
             catch (Exception ex)
@@ -59,14 +69,14 @@ namespace Frontend.Forms.Products
         private void OnNameChanged(ChangeEventArgs e)
         {
             var name = e.Value?.ToString() ?? string.Empty;
-            Model.Name = name; // Directly set Model.Name here as @bind is removed
+            Model.Name = name;
 
             var generatedSlug = GenerateSlugFromName(name);
 
             if (string.IsNullOrEmpty(Model.Slug) || Model.Slug == previousSlug)
             {
                 Model.Slug = generatedSlug;
-                OnSlugChanged(); // Call without ChangeEventArgs to re-trigger slug logic
+                OnSlugChanged();
             }
 
             previousSlug = generatedSlug;
@@ -77,7 +87,7 @@ namespace Frontend.Forms.Products
         {
             if (e != null)
             {
-                Model.Slug = e.Value?.ToString() ?? string.Empty; 
+                Model.Slug = e.Value?.ToString() ?? string.Empty;
             }
 
             // Reset validation state
@@ -157,7 +167,7 @@ namespace Frontend.Forms.Products
             StateHasChanged();
         }
 
-        // Variant Management
+        // Variant Management with immediate UI updates
         private void OnHasVariantsChanged(ChangeEventArgs e)
         {
             var hasVariants = (bool)(e.Value ?? false);
@@ -182,13 +192,23 @@ namespace Frontend.Forms.Products
         {
             var newVariant = CreateDefaultVariant();
             newVariant.Position = Model.Variants.Count;
+            newVariant.Title = $"Variant {Model.Variants.Count + 1}";
             Model.Variants.Add(newVariant);
+
+            // Immediate UI update
             StateHasChanged();
+
+            // Focus on the new variant's title field
+            _ = Task.Delay(100).ContinueWith(_ => InvokeAsync(() =>
+            {
+                // This would focus the newly added variant's title input
+                StateHasChanged();
+            }));
         }
 
         private void RemoveVariant(int index)
         {
-            if (index >= 0 && index < Model.Variants.Count)
+            if (index >= 0 && index < Model.Variants.Count && Model.Variants.Count > 1)
             {
                 var wasDefault = Model.Variants[index].IsDefault;
                 Model.Variants.RemoveAt(index);
@@ -205,6 +225,7 @@ namespace Frontend.Forms.Products
                     Model.Variants[i].Position = i;
                 }
 
+                // Immediate UI update
                 StateHasChanged();
             }
         }
@@ -221,7 +242,30 @@ namespace Frontend.Forms.Products
 
                 // Set the selected variant as default
                 Model.Variants[index].IsDefault = true;
+
+                // Immediate UI update
                 StateHasChanged();
+            }
+        }
+
+        private void EnsureDefaultVariant()
+        {
+            if (Model.Variants.Any())
+            {
+                var defaultVariants = Model.Variants.Where(v => v.IsDefault).ToList();
+
+                if (defaultVariants.Count == 0)
+                {
+                    Model.Variants.First().IsDefault = true;
+                }
+                else if (defaultVariants.Count > 1)
+                {
+                    // Keep only the first default
+                    for (int i = 1; i < defaultVariants.Count; i++)
+                    {
+                        defaultVariants[i].IsDefault = false;
+                    }
+                }
             }
         }
 
@@ -238,12 +282,12 @@ namespace Frontend.Forms.Products
                 IsTaxable = true,
                 Weight = 0,
                 WeightUnit = "kg",
-                Position = 0,
+                Position = Model.Variants.Count,
                 IsDefault = !Model.Variants.Any() // First variant is default
             };
         }
 
-        // Image picker helper methods
+        // Image picker helper methods with immediate UI updates
         private async Task OnProductImagesChanged(List<object> images)
         {
             productImageObjects = images;
@@ -255,6 +299,7 @@ namespace Frontend.Forms.Products
                 Model.Images[i].Position = i;
             }
 
+            // Immediate UI update
             StateHasChanged();
             await Task.CompletedTask;
         }
@@ -288,12 +333,17 @@ namespace Frontend.Forms.Products
 
         private object CreateProductImageFromFile(FileDto file)
         {
-            return new CreateProductImageDto
+            var newImage = new CreateProductImageDto
             {
                 FileId = file.Id,
                 Position = Model.Images.Count,
                 IsFeatured = !Model.Images.Any() // First image is featured by default
             };
+
+            // Trigger immediate update
+            StateHasChanged();
+
+            return newImage;
         }
 
         private void UpdateProductImage(object image, string? alt, string? caption, bool isFeatured)
@@ -303,7 +353,139 @@ namespace Frontend.Forms.Products
                 productImage.Alt = alt;
                 productImage.Caption = caption;
                 productImage.IsFeatured = isFeatured;
+
+                // Immediate UI update
+                StateHasChanged();
             }
+        }
+
+        // Variant field change handlers for immediate updates
+        private void OnVariantFieldChanged(int index, Action updateAction)
+        {
+            if (index >= 0 && index < Model.Variants.Count)
+            {
+                updateAction();
+                StateHasChanged();
+            }
+        }
+
+        private void UpdateVariantTitle(int index, ChangeEventArgs e)
+        {
+            OnVariantFieldChanged(index, () =>
+            {
+                Model.Variants[index].Title = e.Value?.ToString() ?? string.Empty;
+            });
+        }
+
+        private void UpdateVariantPrice(int index, ChangeEventArgs e)
+        {
+            OnVariantFieldChanged(index, () =>
+            {
+                if (decimal.TryParse(e.Value?.ToString(), out var price))
+                {
+                    Model.Variants[index].Price = price;
+                }
+            });
+        }
+
+        private void UpdateVariantQuantity(int index, ChangeEventArgs e)
+        {
+            OnVariantFieldChanged(index, () =>
+            {
+                if (int.TryParse(e.Value?.ToString(), out var quantity))
+                {
+                    Model.Variants[index].Quantity = quantity;
+                }
+            });
+        }
+
+        private void UpdateVariantCompareAtPrice(int index, ChangeEventArgs e)
+        {
+            OnVariantFieldChanged(index, () =>
+            {
+                if (decimal.TryParse(e.Value?.ToString(), out var price))
+                {
+                    Model.Variants[index].CompareAtPrice = price;
+                }
+                else
+                {
+                    Model.Variants[index].CompareAtPrice = null;
+                }
+            });
+        }
+
+        private void UpdateVariantBarcode(int index, ChangeEventArgs e)
+        {
+            OnVariantFieldChanged(index, () =>
+            {
+                Model.Variants[index].Barcode = e.Value?.ToString();
+            });
+        }
+
+        private void UpdateVariantWeight(int index, ChangeEventArgs e)
+        {
+            OnVariantFieldChanged(index, () =>
+            {
+                if (decimal.TryParse(e.Value?.ToString(), out var weight))
+                {
+                    Model.Variants[index].Weight = weight;
+                }
+            });
+        }
+
+        private void UpdateVariantWeightUnit(int index, ChangeEventArgs e)
+        {
+            OnVariantFieldChanged(index, () =>
+            {
+                Model.Variants[index].WeightUnit = e.Value?.ToString();
+            });
+        }
+
+        private void UpdateVariantOption1(int index, ChangeEventArgs e)
+        {
+            OnVariantFieldChanged(index, () =>
+            {
+                Model.Variants[index].Option1 = e.Value?.ToString();
+            });
+        }
+
+        private void UpdateVariantOption2(int index, ChangeEventArgs e)
+        {
+            OnVariantFieldChanged(index, () =>
+            {
+                Model.Variants[index].Option2 = e.Value?.ToString();
+            });
+        }
+
+        private void UpdateVariantOption3(int index, ChangeEventArgs e)
+        {
+            OnVariantFieldChanged(index, () =>
+            {
+                Model.Variants[index].Option3 = e.Value?.ToString();
+            });
+        }
+
+        private void ToggleVariantCheckbox(int index, string property, bool value)
+        {
+            OnVariantFieldChanged(index, () =>
+            {
+                var variant = Model.Variants[index];
+                switch (property)
+                {
+                    case "TrackQuantity":
+                        variant.TrackQuantity = value;
+                        break;
+                    case "ContinueSellingWhenOutOfStock":
+                        variant.ContinueSellingWhenOutOfStock = value;
+                        break;
+                    case "RequiresShipping":
+                        variant.RequiresShipping = value;
+                        break;
+                    case "IsTaxable":
+                        variant.IsTaxable = value;
+                        break;
+                }
+            });
         }
 
         public void Dispose()

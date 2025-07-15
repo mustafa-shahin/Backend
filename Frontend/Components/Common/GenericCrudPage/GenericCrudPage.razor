@@ -216,8 +216,14 @@
     <FormContent Context="formContext">
         @if (FormContent != null)
         {
-            @FormContent((formContext.Model, formContext.ValidationErrors, formContext.IsEditMode))
-        }
+            @FormContent(new FormContext
+            {
+                Model = formContext.Model,
+                ValidationErrors = formContext.ValidationErrors,
+                IsEditMode = formContext.IsEditMode,
+                IsSaving = formContext.IsSaving
+                })
+                }
         else
         {
             <div class="text-center py-8">
@@ -266,4 +272,3 @@
                     ConfirmClass="@StyleService.GetButtonClass("danger")"
                     ConfirmIcon="fas fa-trash"
                     OnConfirm="@DeleteEntity" />
-
