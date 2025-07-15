@@ -1,0 +1,298 @@
+﻿@using Frontend.Components.Common.ConfirmationDialogComponent
+@using Frontend.Components.Files.FilePreviewComponent
+
+@inject IFileService FileService
+@inject INotificationService NotificationService
+@inject IStyleService StyleService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <!-- Page Header -->
+    <div class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+        <div class="mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between py-6 space-y-4 sm:space-y-0">
+                <div>
+                    <div class="flex items-center">
+                        <div class="w-10 h-10 bg-gradient-to-br @StyleService.GetHeaderGradient(TargetFileType.Value) rounded-lg flex items-center justify-center mr-4">
+                            <i class="@StyleService.GetFileTypeIcon(TargetFileType.Value) text-white text-lg"></i>
+                        </div>
+                        <div>
+                            <h1 class="text-2xl font-bold text-gray-900 dark:text-white">@PageTitle</h1>
+                            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                                @PageDescription
+                                @if (files.TotalCount > 0)
+                                {
+                                    <span class="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium @StyleService.GetCountBadgeClass(TargetFileType.Value)">
+                                        @files.TotalCount total
+                                    </span>
+                                }
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button @onclick="ShowUploadDialog"
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white @StyleService.GetPrimaryButtonClass(TargetFileType.Value) transition-colors duration-200">
+                        <i class="fas fa-upload mr-2"></i>
+                        Upload @FileTypeName
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <!-- Search and Filters -->
+        <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden mb-6">
+            <div class="p-6">
+                <div class="flex flex-col lg:flex-row gap-4">
+                    <!-- Search -->
+                    <div class="flex-1">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-search text-gray-400"></i>
+                            </div>
+                            <input @bind="searchState.SearchTerm"
+                                   @bind:event="oninput"
+                                   @onkeyup="OnSearchKeyUp"
+                                   type="text"
+                                   placeholder="Search @FileTypeName.ToLower() by name, description, or tags..."
+                                   class="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 sm:text-sm" />
+                            @if (!string.IsNullOrEmpty(searchState.SearchTerm))
+                            {
+                                <button @onclick="ClearSearch"
+                                        class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Filters and Controls -->
+                    <div class="flex items-center space-x-3">
+                        <!-- View Mode Toggle -->
+                        <div class="inline-flex rounded-lg shadow-sm" role="group">
+                            <button @onclick="() => SetViewMode(ViewMode.Grid)"
+                                    type="button"
+                                    class="@StyleService.GetViewToggleClass(currentViewMode == ViewMode.Grid, true)">
+                                <i class="fas fa-th mr-1"></i>
+                                Grid
+                            </button>
+                            <button @onclick="() => SetViewMode(ViewMode.List)"
+                                    type="button"
+                                    class="@StyleService.GetViewToggleClass(currentViewMode == ViewMode.List, false)">
+                                <i class="fas fa-list mr-1"></i>
+                                List
+                            </button>
+                        </div>
+
+                        <!-- Refresh Button -->
+                        <button @onclick="RefreshData"
+                                class="inline-flex items-center p-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"
+                                title="Refresh"
+                                disabled="@loadingState.IsLoading">
+                            <i class="fas fa-refresh @(loadingState.IsLoading ? "fa-spin" : "") text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Results Summary -->
+                @if (!loadingState.IsLoading && (files.Data?.Any() == true || !string.IsNullOrEmpty(searchState.SearchTerm)))
+                {
+                    <div class="mt-4 flex items-center justify-between text-sm text-gray-600 dark:text-gray-400">
+                        <div>
+                            @if (!string.IsNullOrEmpty(searchState.SearchTerm))
+                            {
+                                <span>
+                                    Found <strong class="text-gray-900 dark:text-gray-100">@files.TotalCount</strong> @FileTypeName.ToLower() matching
+                                    <strong class="text-gray-900 dark:text-gray-100">"@searchState.SearchTerm"</strong>
+                                </span>
+                            }
+                            else
+                            {
+                                <span>
+                                    Showing <strong class="text-gray-900 dark:text-gray-100">@files.Data?.Count()</strong> of
+                                    <strong class="text-gray-900 dark:text-gray-100">@files.TotalCount</strong> @FileTypeName.ToLower()
+                                </span>
+                            }
+                        </div>
+                        @if (files.TotalCount > 0)
+                        {
+                            <div class="text-xs text-gray-500 dark:text-gray-400">
+                                Page @paginationState.CurrentPage of @paginationState.TotalPages
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="bg-white dark:bg-gray-800 shadow-sm rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+            @if (loadingState.IsLoading)
+            {
+                <div class="p-6">
+                    <div class="flex items-center justify-center py-12">
+                        <div class="text-center">
+                            <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-gray-200 dark:border-gray-600 border-t-green-600 dark:border-t-green-400 mb-4"></div>
+                            <p class="text-gray-500 dark:text-gray-400 text-lg font-medium">Loading @FileTypeName.ToLower()...</p>
+                            <p class="text-gray-400 dark:text-gray-500 text-sm mt-1">Please wait while we fetch your files</p>
+                        </div>
+                    </div>
+                </div>
+            }
+            else if (files.Data?.Any() == true)
+            {
+                @if (currentViewMode == ViewMode.Grid)
+                {
+                    <div class="p-6">
+                        <FileGridView Files="@files.Data"
+                                      OnEditFile="@ShowEditFileDialog"
+                                      OnDeleteFile="@ShowDeleteFileConfirmation"
+                                      OnDownloadFile="@DownloadFile"
+                                      OnPreviewFile="@PreviewFile" />
+                    </div>
+                }
+                else
+                {
+                    <div class="overflow-x-auto">
+                        <FileTableView Files="@files.Data"
+                                       FileType="@TargetFileType.Value"
+                                       OnEditFile="@ShowEditFileDialog"
+                                       OnDeleteFile="@ShowDeleteFileConfirmation"
+                                       OnDownloadFile="@DownloadFile"
+                                       OnPreviewFile="@PreviewFile" />
+                    </div>
+                }
+            }
+            else
+            {
+                <!-- Enhanced Empty State -->
+                <div class="p-6">
+                    <div class="text-center py-12">
+                        <div class="mx-auto w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
+                            @if (!string.IsNullOrEmpty(searchState.SearchTerm))
+                            {
+                                <i class="fas fa-search text-gray-400 text-2xl"></i>
+                            }
+                            else
+                            {
+                                <i class="@StyleService.GetFileTypeIcon(TargetFileType.Value) text-gray-400 text-2xl"></i>
+                            }
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(searchState.SearchTerm))
+                        {
+                            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                                No @FileTypeName.ToLower() found matching "@searchState.SearchTerm"
+                            </h3>
+                            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                                Try adjusting your search terms or browse all @FileTypeName.ToLower() instead.
+                            </p>
+                            <div class="flex flex-col sm:flex-row gap-3 justify-center">
+                                <button @onclick="ClearSearch"
+                                        class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
+                                    <i class="fas fa-times mr-2"></i>
+                                    Clear Search
+                                </button>
+                                <button @onclick="ShowUploadDialog"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @StyleService.GetPrimaryButtonClass(TargetFileType.Value) transition-colors">
+                                    <i class="fas fa-upload mr-2"></i>
+                                    Upload @FileTypeName
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <h3 class="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+                                Welcome to your @FileTypeName.ToLower() library
+                            </h3>
+                            <p class="text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
+                                Get started by uploading your first @FileTypeName.ToLower(). You can organize them and manage them easily.
+                            </p>
+                            <button @onclick="ShowUploadDialog"
+                                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white @StyleService.GetPrimaryButtonClass(TargetFileType.Value) transition-colors">
+                                <i class="fas fa-upload mr-2"></i>
+                                Upload Your First @FileTypeName
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+
+        <!-- Pagination -->
+        @if (files.TotalCount > 0 && paginationState.TotalPages > 1)
+        {
+            <div class="mt-6">
+                <Pagination CurrentPage="@paginationState.CurrentPage"
+                            TotalPages="@paginationState.TotalPages"
+                            TotalItems="@files.TotalCount"
+                            OnPageChanged="@OnPageChanged"
+                            IsLoading="@loadingState.IsLoading" />
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Edit File Dialog -->
+<FormDialog @ref="fileDialog"
+            Title="@DialogTitle"
+            Description="@DialogDescription"
+            HeaderIcon="fas fa-edit"
+            IsVisible="@dialogState.ShowFileDialog"
+            IsSaving="@loadingState.IsSaving"
+            Size="large"
+            Model="@fileModel"
+            ValidationErrors="@fileValidationErrors"
+            IsEditMode="true"
+            OnClose="@CloseFileDialog"
+            OnSave="@SaveFile"
+            CloseOnBackdrop="false">
+
+    <FormContent Context="formContext">
+        <FileEditForm Model="@((UpdateFileDto)formContext.Model)"
+                      ValidationErrors="@formContext.ValidationErrors"
+                      OriginalFile="@selectedFile" />
+    </FormContent>
+</FormDialog>
+
+<!-- Upload Files Dialog -->
+<GenericDialog @ref="uploadDialog"
+               Title="@UploadDialogTitle"
+               Description="@UploadDialogDescription"
+               HeaderIcon="fas fa-upload"
+               IsVisible="@dialogState.ShowUploadDialog"
+               OnClose="@CloseUploadDialog"
+               OnSave="@UploadFiles"
+               IsSaving="@loadingState.IsUploading"
+               SaveText="Upload"
+               SavingText="Uploading..."
+               Size="large">
+
+    <BodyContent>
+        <FileUpload @ref="fileUpload"
+                    Files="@uploadState.SelectedFiles"
+                    FilesChanged="@OnFilesChanged"
+                    UploadProgress="@uploadState.UploadProgress"
+                    UploadProgressChanged="@OnUploadProgressChanged"
+                    IsUploading="@loadingState.IsUploading" />
+    </BodyContent>
+</GenericDialog>
+
+<!-- File Preview Dialog -->
+<FilePreview @ref="filePreview" />
+
+<!-- Delete Confirmation -->
+<ConfirmationDialog @ref="deleteFileDialog"
+                    Title="@DeleteDialogTitle"
+                    Message="@DeleteDialogMessage"
+                    ConfirmText="Delete"
+                    ConfirmClass="@StyleService.GetButtonClass("danger")"
+                    ConfirmIcon="fas fa-trash"
+                    OnConfirm="@DeleteFile"
+                    OnCancel="@CancelDelete"
+                    IsVisible="@dialogState.ShowDeleteDialog"
+                    IsProcessing="@loadingState.IsDeleting" />
+
