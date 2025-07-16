@@ -1,0 +1,155 @@
+@* Frontend/Components/Files/FilePicker.razor *@
+@using Backend.CMS.Application.DTOs
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Http
+@inject IFileService FileService
+@inject INotificationService NotificationService
+@inject IStyleService StyleService
+
+<div class="space-y-4">
+    <InputFile @ref="fileInput" OnChange="OnFilesSelected" multiple class="hidden" />
+    <button type="button" class="@StyleService.GetButtonClass("primary","small")" @onclick="TriggerFileDialog">
+        <i class="fas fa-upload mr-2"></i>Upload Files
+    </button>
+
+    @if (files.Any())
+    {
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+            @foreach (var file in files)
+            {
+                <div class="relative group border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                    @if (file.IsImage)
+                    {
+                        <img src="@FileService.GetThumbnailUrl(file.Id)" alt="@(file.Alt ?? file.OriginalFileName)" class="w-full h-32 object-cover" />
+                    }
+                    else
+                    {
+                        <div class="w-full h-32 flex items-center justify-center bg-gray-100 dark:bg-gray-800">
+                            <span class="text-xs text-gray-700 dark:text-gray-300 px-2 text-center break-all">@file.OriginalFileName</span>
+                        </div>
+                    }
+                    <button type="button" class="absolute top-1 right-1 text-red-600 hover:text-red-800 bg-white dark:bg-gray-800 rounded-full p-1 shadow"
+                            @onclick="() => DeleteFileAsync(file)">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string EntityType { get; set; } = string.Empty;
+    [Parameter] public int EntityId { get; set; }
+    [Parameter] public EventCallback<List<FileDto>> OnFilesChanged { get; set; }
+
+    private InputFile? fileInput;
+    private List<FileDto> files = new();
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadFilesAsync();
+    }
+
+    private async Task LoadFilesAsync()
+    {
+        if (string.IsNullOrWhiteSpace(EntityType) || EntityId <= 0)
+        {
+            files.Clear();
+            return;
+        }
+
+        try
+        {
+            files = await FileService.GetFilesForEntityAsync(EntityType, EntityId);
+            await OnFilesChanged.InvokeAsync(files);
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to load files: {ex.Message}");
+        }
+    }
+
+    private async Task TriggerFileDialog()
+    {
+        if (fileInput?.Element != null)
+        {
+            await fileInput.Element.ClickAsync();
+        }
+    }
+
+    private async Task OnFilesSelected(InputFileChangeEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(EntityType) || EntityId <= 0)
+        {
+            NotificationService.ShowError("Please save the entity before uploading files.");
+            return;
+        }
+
+        foreach (var browserFile in e.GetMultipleFiles())
+        {
+            var formFile = new FormFileWrapper(browserFile);
+            var uploadDto = new FileUploadDto
+            {
+                File = formFile,
+                EntityType = EntityType,
+                EntityId = EntityId,
+                IsPublic = true,
+                GenerateThumbnail = true
+            };
+
+            var result = await FileService.UploadFileAsync(uploadDto);
+            if (result?.Success == true && result.File != null)
+            {
+                files.Add(result.File);
+                NotificationService.ShowSuccess($"Uploaded {browserFile.Name}");
+            }
+            else
+            {
+                NotificationService.ShowError(result?.ErrorMessage ?? $"Failed to upload {browserFile.Name}");
+            }
+        }
+
+        await OnFilesChanged.InvokeAsync(files);
+        StateHasChanged();
+    }
+
+    private async Task DeleteFileAsync(FileDto file)
+    {
+        try
+        {
+            var success = await FileService.DeleteFileAsync(file.Id);
+            if (success)
+            {
+                files.Remove(file);
+                NotificationService.ShowSuccess($"Deleted {file.OriginalFileName}");
+                await OnFilesChanged.InvokeAsync(files);
+            }
+            else
+            {
+                NotificationService.ShowError($"Failed to delete {file.OriginalFileName}");
+            }
+        }
+        catch (Exception ex)
+        {
+            NotificationService.ShowError($"Failed to delete {file.OriginalFileName}: {ex.Message}");
+        }
+    }
+
+    private class FormFileWrapper : IFormFile
+    {
+        private readonly IBrowserFile _file;
+        public FormFileWrapper(IBrowserFile file) => _file = file;
+
+        public string ContentType => _file.ContentType;
+        public string ContentDisposition => string.Empty;
+        public IHeaderDictionary Headers => new HeaderDictionary();
+        public long Length => _file.Size;
+        public string Name => _file.Name;
+        public string FileName => _file.Name;
+        public void CopyTo(Stream target) => throw new NotImplementedException();
+        public Task CopyToAsync(Stream target, CancellationToken cancellationToken = default)
+            => _file.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100, cancellationToken).CopyToAsync(target, cancellationToken);
+        public Stream OpenReadStream() => _file.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100);
+    }
+}

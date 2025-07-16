@@ -1,5 +1,6 @@
 @using Backend.CMS.Application.DTOs
 @using Frontend.Interfaces
+@using Frontend.Components.Files
 @using System.Text
 @inject ICategoryService CategoryService
 @inject IFileService FileService
@@ -177,6 +178,10 @@
                 </div>
             </div>
         }
+
+        <FilePicker EntityType="Category"
+                    EntityId="@EditingCategoryId ?? 0"
+                    OnFilesChanged="OnCategoryFilesChanged" />
     </div>
 
     <!-- Status & Visibility -->
