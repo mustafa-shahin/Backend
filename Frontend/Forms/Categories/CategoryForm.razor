@@ -1,5 +1,8 @@
+@*Frontend/Forms/Categories/CategoryForm.razor*@
 @using Backend.CMS.Application.DTOs
+@using Frontend.Components.Common.ConfirmationDialogComponent
 @using Frontend.Components.Common.ImagePicker
+@using Frontend.Components.Files.FileBrowser
 @using Frontend.Interfaces
 @using System.Text
 @inject ICategoryService CategoryService
@@ -161,7 +164,6 @@
     </div>
 
     <!-- Images -->
-
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
         <div class="flex items-center justify-between mb-4">
             <div class="flex items-center">
@@ -170,40 +172,139 @@
                 </div>
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Category Images</h3>
             </div>
-            <button type="button" class="@StyleService.GetButtonClass("primary", "small")" @onclick="OpenFileBrowser">
-                <i class="fas fa-plus mr-1"></i>Select Images
+            <button type="button" 
+                    class="@StyleService.GetButtonClass("primary", "small")" 
+                    @onclick="OpenFileBrowser"
+                    disabled="@isProcessingImages">
+                <i class="fas @(isProcessingImages ? "fa-spinner fa-spin" : "fa-plus") mr-1"></i>
+                @(isProcessingImages ? "Processing..." : "Add Images")
             </button>
         </div>
 
-        @if (categoryFiles.Any())
+        @if (isLoadingImages)
         {
-            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                @foreach (var file in categoryFiles)
+            <div class="flex items-center justify-center py-8">
+                <div class="text-center">
+                    <div class="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-2"></div>
+                    <p class="text-gray-500 dark:text-gray-400 text-sm">Loading images...</p>
+                </div>
+            </div>
+        }
+        else if (categoryImages.Any())
+        {
+            <div class="space-y-4">
+                <!-- Images Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    @foreach (var image in categoryImages.OrderBy(i => i.Position))
+                    {
+                        <div class="relative group border-2 @(image.IsFeatured ? "border-yellow-400" : "border-gray-200 dark:border-gray-700") rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow-sm">
+                            <!-- Image -->
+                            <div class="aspect-square relative">
+                                <img src="@image.ImageUrl" 
+                                     alt="@(image.Alt ?? "Category image")" 
+                                     class="w-full h-full object-cover" 
+                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
+                                <!-- Fallback for failed image load -->
+                                <div class="w-full h-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center" style="display: none;">
+                                    <i class="fas fa-image text-gray-400 text-2xl"></i>
+                                </div>
+
+                                <!-- Featured Badge -->
+                                @if (image.IsFeatured)
+                                {
+                                    <div class="absolute top-2 left-2">
+                                        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                                            <i class="fas fa-star mr-1"></i>
+                                            Featured
+                                        </span>
+                                    </div>
+                                }
+
+                                <!-- Position Badge -->
+                                <div class="absolute top-2 right-2">
+                                    <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium bg-gray-900 bg-opacity-75 text-white">
+                                        @(image.Position + 1)
+                                    </span>
+                                </div>
+
+                                <!-- Overlay Actions -->
+                                <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                    <div class="flex space-x-2">
+                                        <button type="button" 
+                                                class="p-2 bg-white text-gray-700 rounded-full hover:bg-gray-100 transition-colors shadow-lg"
+                                                @onclick="() => EditImage(image)"
+                                                title="Edit image">
+                                            <i class="fas fa-edit text-sm"></i>
+                                        </button>
+                                        <button type="button" 
+                                                class="p-2 bg-yellow-500 text-white rounded-full hover:bg-yellow-600 transition-colors shadow-lg"
+                                                @onclick="() => ToggleFeatured(image)"
+                                                title="@(image.IsFeatured ? "Remove featured" : "Set as featured")">
+                                            <i class="fas fa-star text-sm"></i>
+                                        </button>
+                                        <button type="button" 
+                                                class="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+                                                @onclick="() => ShowDeleteImageConfirmation(image)"
+                                                title="Delete image">
+                                            <i class="fas fa-trash text-sm"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Image Info -->
+                            <div class="p-3 space-y-1">
+                                <p class="text-sm font-medium text-gray-900 dark:text-white truncate" title="@(image.Alt ?? "No alt text")">
+                                    @(image.Alt ?? "No alt text")
+                                </p>
+                                @if (!string.IsNullOrEmpty(image.Caption))
+                                {
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 truncate" title="@image.Caption">
+                                        @image.Caption
+                                    </p>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <!-- Reorder Controls -->
+                @if (categoryImages.Count > 1)
                 {
-                    <div class="relative group border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                        <img src="@FileService.GetThumbnailUrl(file.Id)" alt="@file.OriginalFileName" class="w-full h-32 object-cover" />
-                        <button type="button" class="absolute top-1 right-1 text-red-600 hover:text-red-800 bg-white dark:bg-gray-800 rounded-full p-1 shadow" @onclick="() => RemoveImage(file)">
-                            <i class="fas fa-trash"></i>
+                    <div class="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <p class="text-sm text-gray-600 dark:text-gray-400">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Drag and drop to reorder images (feature coming soon)
+                        </p>
+                        <button type="button" 
+                                class="@StyleService.GetButtonClass("secondary", "small")"
+                                @onclick="AutoArrangeImages"
+                                title="Auto-arrange by position">
+                            <i class="fas fa-sort mr-1"></i>
+                            Auto-arrange
                         </button>
                     </div>
                 }
             </div>
         }
+        else
+        {
+            <div class="text-center py-8">
+                <div class="w-16 h-16 mx-auto bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
+                    <i class="fas fa-images text-2xl text-gray-400"></i>
+                </div>
+                <h4 class="text-lg font-medium text-gray-900 dark:text-white mb-2">No images yet</h4>
+                <p class="text-gray-500 dark:text-gray-400 mb-4">Add images to make your category more attractive</p>
+                <button type="button" 
+                        class="@StyleService.GetButtonClass("primary")" 
+                        @onclick="OpenFileBrowser">
+                    <i class="fas fa-plus mr-2"></i>
+                    Add First Image
+                </button>
+            </div>
+        }
     </div>
-        <FormDialog @ref="fileBrowserDialog"
-                Title="Select Images"
-                HeaderIcon="fas fa-images"
-                IsVisible="@showFileBrowserDialog"
-                OnClose="@CloseFileBrowser"
-                OnSave="@AddSelectedFiles"
-                SaveText="Add Selected"
-                Size="large">
-        <BodyContent>
-            <FileBrowser AllowMultiSelect="true"
-                                     ShowUpload="true"
-                                     OnFilesSelected="OnFileBrowserSelectionChanged" />
-        </BodyContent>
-    </FormDialog>
+
     <!-- Status & Visibility -->
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
         <div class="flex items-center mb-4">
@@ -244,7 +345,7 @@
 
     <!-- SEO Information -->
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-        <div class="flexl items-center mb-4">
+        <div class="flex items-center mb-4">
             <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center mr-3">
                 <i class="fas fa-search text-white text-sm"></i>
             </div>
@@ -299,3 +400,130 @@
         </div>
     </div>
 </div>
+
+<!-- File Browser Dialog -->
+<FormDialog @ref="fileBrowserDialog"
+            Title="Select Images"
+            Description="Choose images to add to your category"
+            HeaderIcon="fas fa-images"
+            IsVisible="@showFileBrowserDialog"
+            OnClose="@CloseFileBrowser"
+            OnSave="@AddSelectedFiles"
+            SaveText="Add Selected Images"
+            SaveIcon="fas fa-plus"
+            Size="xlarge">
+    <BodyContent>
+        <FileBrowser AllowMultiSelect="true"
+                     FileTypes="new[] { Backend.CMS.Domain.Enums.FileType.Image }"
+                     ShowUpload="true"
+                     OnFilesSelected="OnFileBrowserSelectionChanged" />
+    </BodyContent>
+</FormDialog>
+
+<!-- Image Edit Dialog -->
+<FormDialog @ref="imageEditDialog"
+            Title="@($"Edit Image")"
+            Description="Update image properties and settings"
+            HeaderIcon="fas fa-edit"
+            IsVisible="@showImageEditDialog"
+            IsSaving="@isSavingImageEdit"
+            OnClose="@CloseImageEditDialog"
+            OnSave="@SaveImageChanges"
+            SaveText="Save Changes"
+            SaveIcon="fas fa-save"
+            Size="large">
+    <BodyContent>
+        @if (editingImage != null)
+        {
+            <div class="space-y-6">
+                <!-- Image Preview -->
+                <div class="flex items-start space-x-4">
+                    <div class="flex-shrink-0">
+                        <img src="@GetImageUrl(editingImage)" 
+                             alt="@(editingImage.Alt ?? "Preview")" 
+                             class="w-24 h-24 object-cover rounded-lg border border-gray-200 dark:border-gray-700" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h4 class="text-lg font-medium text-gray-900 dark:text-white">Image Properties</h4>
+                        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                            Configure how this image appears in your category
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Image Properties Form -->
+                <div class="space-y-4">
+                    <!-- Alt Text -->
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Alt Text (Accessibility) *
+                        </label>
+                        <input @bind="editingImageAlt"
+                               type="text"
+                               placeholder="Describe this image for accessibility"
+                               class="@StyleService.GetFormInputClass()"
+                               maxlength="255" />
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            @(editingImageAlt?.Length ?? 0)/255 characters. Important for SEO and accessibility.
+                        </p>
+                    </div>
+
+                    <!-- Caption -->
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Caption
+                        </label>
+                        <input @bind="editingImageCaption"
+                               type="text"
+                               placeholder="Optional caption for the image"
+                               class="@StyleService.GetFormInputClass()"
+                               maxlength="500" />
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            @(editingImageCaption?.Length ?? 0)/500 characters. Displayed below the image if shown.
+                        </p>
+                    </div>
+
+                    <!-- Position -->
+                    <div class="space-y-2">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Display Position
+                        </label>
+                        <input @bind="editingImagePosition"
+                               type="number"
+                               min="0"
+                               max="999"
+                               class="@StyleService.GetFormInputClass()" />
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            Lower numbers appear first. Use 0 for automatic ordering.
+                        </p>
+                    </div>
+
+                    <!-- Featured Status -->
+                    <div class="space-y-2">
+                        <label class="flex items-center cursor-pointer">
+                            <input type="checkbox" 
+                                   @bind="editingImageIsFeatured" 
+                                   class="@StyleService.GetFormCheckboxClass()" />
+                            <span class="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300">
+                                Featured Image
+                            </span>
+                        </label>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            Featured images are highlighted and may be used as the main category image.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        }
+    </BodyContent>
+</FormDialog>
+
+<!-- Delete Confirmation Dialog -->
+<ConfirmationDialog @ref="deleteImageDialog"
+                    Title="Delete Image"
+                    Message="@($"Are you sure you want to remove this image from the category? This action cannot be undone.")"
+                    ConfirmText="Delete Image"
+                    ConfirmClass="@StyleService.GetButtonClass("danger")"
+                    ConfirmIcon="fas fa-trash"
+                    Type="danger"
+                    OnConfirm="@DeleteSelectedImage" />
