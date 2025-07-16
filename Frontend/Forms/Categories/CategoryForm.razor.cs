@@ -72,13 +72,23 @@ namespace Frontend.Forms.Categories
             {
                 categoryImages.Clear();
 
-                if (IsEditMode && ExistingCategory != null)
+                if (IsEditMode && EditingCategoryId.HasValue)
                 {
                     isLoadingImages = true;
                     StateHasChanged();
 
-                    // Load images from existing category
-                    categoryImages = ExistingCategory.Images?.ToList() ?? new List<CategoryImageDto>();
+                    // Load fresh category data from backend to ensure we have latest images
+                    var freshCategory = await CategoryService.GetCategoryByIdAsync(EditingCategoryId.Value);
+                    if (freshCategory != null)
+                    {
+                        ExistingCategory = freshCategory;
+                        categoryImages = freshCategory.Images?.ToList() ?? new List<CategoryImageDto>();
+                    }
+                    else if (ExistingCategory != null)
+                    {
+                        // Fallback to existing category data
+                        categoryImages = ExistingCategory.Images?.ToList() ?? new List<CategoryImageDto>();
+                    }
 
                     // Update the model's images collection
                     UpdateModelImagesFromCategoryImages();
@@ -160,6 +170,8 @@ namespace Frontend.Forms.Categories
                 isProcessingImages = true;
                 StateHasChanged();
 
+                var addedCount = 0;
+
                 foreach (var file in selectedBrowserFiles)
                 {
                     // Check if image already exists
@@ -180,7 +192,15 @@ namespace Frontend.Forms.Categories
                         var newImage = await CategoryService.AddCategoryImageAsync(EditingCategoryId.Value, createImageDto);
                         if (newImage != null)
                         {
+                            // Ensure proper URL population
+                            if (string.IsNullOrEmpty(newImage.ImageUrl) && string.IsNullOrEmpty(newImage.ThumbnailUrl))
+                            {
+                                newImage.ThumbnailUrl = FileService.GetThumbnailUrl(newImage.FileId);
+                                newImage.ImageUrl = FileService.GetFileUrl(newImage.FileId);
+                            }
+
                             categoryImages.Add(newImage);
+                            addedCount++;
                         }
                     }
                     else
@@ -194,13 +214,14 @@ namespace Frontend.Forms.Categories
                             Alt = file.Alt ?? file.OriginalFileName,
                             Position = categoryImages.Count,
                             IsFeatured = false,
-                            ImageUrl = file.Urls?.Download,
-                            ThumbnailUrl = file.Urls?.Thumbnail,
+                            ImageUrl = file.Urls?.Download ?? FileService.GetFileUrl(file.Id),
+                            ThumbnailUrl = file.Urls?.Thumbnail ?? FileService.GetThumbnailUrl(file.Id),
                             CreatedAt = DateTime.UtcNow,
                             UpdatedAt = DateTime.UtcNow
                         };
 
                         categoryImages.Add(newImage);
+                        addedCount++;
                     }
                 }
 
@@ -208,7 +229,11 @@ namespace Frontend.Forms.Categories
                 UpdateModelImagesFromCategoryImages();
                 await OnImagesChanged.InvokeAsync(categoryImages);
 
-                NotificationService.ShowSuccess($"Added {selectedBrowserFiles.Count} image(s) to category");
+                if (addedCount > 0)
+                {
+                    NotificationService.ShowSuccess($"Added {addedCount} image(s) to category");
+                }
+
                 CloseFileBrowser();
             }
             catch (Exception ex)
@@ -278,6 +303,13 @@ namespace Frontend.Forms.Categories
                     var updatedImage = await CategoryService.UpdateCategoryImageAsync(editingImage.Id, updateDto);
                     if (updatedImage != null)
                     {
+                        // Ensure proper URL population
+                        if (string.IsNullOrEmpty(updatedImage.ImageUrl) && string.IsNullOrEmpty(updatedImage.ThumbnailUrl))
+                        {
+                            updatedImage.ThumbnailUrl = FileService.GetThumbnailUrl(updatedImage.FileId);
+                            updatedImage.ImageUrl = FileService.GetFileUrl(updatedImage.FileId);
+                        }
+
                         // Update local collection
                         var index = categoryImages.FindIndex(img => img.Id == editingImage.Id);
                         if (index >= 0)
@@ -357,7 +389,24 @@ namespace Frontend.Forms.Categories
                         Position = image.Position,
                         IsFeatured = image.IsFeatured
                     };
-                    await CategoryService.UpdateCategoryImageAsync(image.Id, updateDto);
+
+                    var updatedImage = await CategoryService.UpdateCategoryImageAsync(image.Id, updateDto);
+                    if (updatedImage != null)
+                    {
+                        // Ensure proper URL population
+                        if (string.IsNullOrEmpty(updatedImage.ImageUrl) && string.IsNullOrEmpty(updatedImage.ThumbnailUrl))
+                        {
+                            updatedImage.ThumbnailUrl = FileService.GetThumbnailUrl(updatedImage.FileId);
+                            updatedImage.ImageUrl = FileService.GetFileUrl(updatedImage.FileId);
+                        }
+
+                        // Update local collection
+                        var index = categoryImages.FindIndex(img => img.Id == image.Id);
+                        if (index >= 0)
+                        {
+                            categoryImages[index] = updatedImage;
+                        }
+                    }
                 }
 
                 // Update model and notify parent
@@ -699,6 +748,14 @@ namespace Frontend.Forms.Categories
         public List<CategoryImageDto> GetCurrentImages()
         {
             return categoryImages.ToList();
+        }
+
+        /// <summary>
+        /// Refresh images from backend
+        /// </summary>
+        public async Task RefreshImages()
+        {
+            await LoadCategoryImages();
         }
 
         #endregion

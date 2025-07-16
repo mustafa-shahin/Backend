@@ -1,3 +1,4 @@
+// Frontend/Services/CategoryService.cs
 using Backend.CMS.Application.DTOs;
 using Frontend.Interfaces;
 using Microsoft.JSInterop;
@@ -12,17 +13,34 @@ namespace Frontend.Services
         private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonOptions;
         private readonly IJSRuntime _jsRuntime;
-        public CategoryService(HttpClient httpClient, IJSRuntime jsRuntime)
+        private readonly IFileService _fileService;
+        private readonly string _backendBaseUrl;
+
+        public CategoryService(HttpClient httpClient, IJSRuntime jsRuntime, IFileService fileService)
         {
             _httpClient = httpClient;
             _jsRuntime = jsRuntime;
+            _fileService = fileService;
+            _backendBaseUrl = GetBackendBaseUrl(httpClient);
+
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
             };
+        }
 
+        private string GetBackendBaseUrl(HttpClient httpClient)
+        {
+            if (httpClient.BaseAddress != null)
+            {
+                return httpClient.BaseAddress.ToString().TrimEnd('/');
+            }
+
+            return Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development"
+                ? "https://localhost:7206"
+                : "https://api.domain.com";
         }
 
         public async Task<PaginatedResult<CategoryDto>> GetCategoriesAsync(CategorySearchDto? searchDto = null)
@@ -36,6 +54,10 @@ namespace Frontend.Services
                     if (response.IsSuccessStatusCode)
                     {
                         var result = await response.Content.ReadFromJsonAsync<PaginatedResult<CategoryDto>>(_jsonOptions);
+                        if (result != null)
+                        {
+                            await PopulateImageUrlsForCategories(result.Data);
+                        }
                         return result ?? new PaginatedResult<CategoryDto>();
                     }
 
@@ -48,6 +70,10 @@ namespace Frontend.Services
                     if (response.IsSuccessStatusCode)
                     {
                         var result = await response.Content.ReadFromJsonAsync<PaginatedResult<CategoryDto>>(_jsonOptions);
+                        if (result != null)
+                        {
+                            await PopulateImageUrlsForCategories(result.Data);
+                        }
                         return result ?? new PaginatedResult<CategoryDto>();
                     }
 
@@ -89,6 +115,10 @@ namespace Frontend.Services
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<PaginatedResult<CategoryDto>>(_jsonOptions);
+                    if (result != null)
+                    {
+                        await PopulateImageUrlsForCategories(result.Data);
+                    }
                     return result ?? new PaginatedResult<CategoryDto>();
                 }
 
@@ -108,7 +138,12 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<CategoryDto>(_jsonOptions);
+                    var category = await response.Content.ReadFromJsonAsync<CategoryDto>(_jsonOptions);
+                    if (category != null)
+                    {
+                        await PopulateImageUrlsForCategory(category);
+                    }
+                    return category;
                 }
 
                 if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -132,7 +167,12 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<CategoryDto>(_jsonOptions);
+                    var category = await response.Content.ReadFromJsonAsync<CategoryDto>(_jsonOptions);
+                    if (category != null)
+                    {
+                        await PopulateImageUrlsForCategory(category);
+                    }
+                    return category;
                 }
 
                 if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -157,6 +197,10 @@ namespace Frontend.Services
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<PaginatedResult<CategoryDto>>(_jsonOptions);
+                    if (result != null)
+                    {
+                        await PopulateImageUrlsForCategories(result.Data);
+                    }
                     return result ?? new PaginatedResult<CategoryDto>();
                 }
 
@@ -177,6 +221,10 @@ namespace Frontend.Services
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<PaginatedResult<CategoryDto>>(_jsonOptions);
+                    if (result != null)
+                    {
+                        await PopulateImageUrlsForCategories(result.Data);
+                    }
                     return result ?? new PaginatedResult<CategoryDto>();
                 }
 
@@ -196,7 +244,12 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<CategoryDto>(_jsonOptions);
+                    var category = await response.Content.ReadFromJsonAsync<CategoryDto>(_jsonOptions);
+                    if (category != null)
+                    {
+                        await PopulateImageUrlsForCategory(category);
+                    }
+                    return category;
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
@@ -216,7 +269,12 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<CategoryDto>(_jsonOptions);
+                    var category = await response.Content.ReadFromJsonAsync<CategoryDto>(_jsonOptions);
+                    if (category != null)
+                    {
+                        await PopulateImageUrlsForCategory(category);
+                    }
+                    return category;
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
@@ -232,7 +290,6 @@ namespace Frontend.Services
                 throw;
             }
         }
-
 
         public async Task<bool> DeleteCategoryAsync(int id)
         {
@@ -256,7 +313,12 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<CategoryDto>(_jsonOptions);
+                    var category = await response.Content.ReadFromJsonAsync<CategoryDto>(_jsonOptions);
+                    if (category != null)
+                    {
+                        await PopulateImageUrlsForCategory(category);
+                    }
+                    return category;
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
@@ -282,6 +344,10 @@ namespace Frontend.Services
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<List<CategoryDto>>(_jsonOptions);
+                    if (result != null)
+                    {
+                        await PopulateImageUrlsForCategories(result);
+                    }
                     return result ?? new List<CategoryDto>();
                 }
 
@@ -347,7 +413,12 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<CategoryImageDto>(_jsonOptions);
+                    var image = await response.Content.ReadFromJsonAsync<CategoryImageDto>(_jsonOptions);
+                    if (image != null)
+                    {
+                        await PopulateImageUrls(image);
+                    }
+                    return image;
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
@@ -367,7 +438,12 @@ namespace Frontend.Services
 
                 if (response.IsSuccessStatusCode)
                 {
-                    return await response.Content.ReadFromJsonAsync<CategoryImageDto>(_jsonOptions);
+                    var image = await response.Content.ReadFromJsonAsync<CategoryImageDto>(_jsonOptions);
+                    if (image != null)
+                    {
+                        await PopulateImageUrls(image);
+                    }
+                    return image;
                 }
 
                 var errorContent = await response.Content.ReadAsStringAsync();
@@ -406,6 +482,13 @@ namespace Frontend.Services
                 if (response.IsSuccessStatusCode)
                 {
                     var result = await response.Content.ReadFromJsonAsync<List<CategoryImageDto>>(_jsonOptions);
+                    if (result != null)
+                    {
+                        foreach (var image in result)
+                        {
+                            await PopulateImageUrls(image);
+                        }
+                    }
                     return result ?? new List<CategoryImageDto>();
                 }
 
@@ -416,6 +499,86 @@ namespace Frontend.Services
                 throw new Exception($"Error reordering images for category {id}: {ex.Message}", ex);
             }
         }
+
+        #region Image URL Population
+
+        private async Task PopulateImageUrlsForCategories(IEnumerable<CategoryDto> categories)
+        {
+            if (categories == null) return;
+
+            foreach (var category in categories)
+            {
+                await PopulateImageUrlsForCategory(category);
+            }
+        }
+
+        private async Task PopulateImageUrlsForCategory(CategoryDto category)
+        {
+            if (category?.Images == null) return;
+
+            foreach (var image in category.Images)
+            {
+                await PopulateImageUrls(image);
+            }
+
+            // Set featured image URL if available
+            var featuredImage = category.Images.FirstOrDefault(i => i.IsFeatured);
+            if (featuredImage != null)
+            {
+                category.FeaturedImageUrl = featuredImage.ThumbnailUrl ?? featuredImage.ImageUrl;
+            }
+            else if (category.Images.Any())
+            {
+                // Use first image as featured if no explicit featured image
+                var firstImage = category.Images.OrderBy(i => i.Position).First();
+                category.FeaturedImageUrl = firstImage.ThumbnailUrl ?? firstImage.ImageUrl;
+            }
+        }
+
+        private async Task PopulateImageUrls(CategoryImageDto image)
+        {
+            try
+            {
+                // Only populate URLs if they're missing
+                if (string.IsNullOrEmpty(image.ImageUrl) && string.IsNullOrEmpty(image.ThumbnailUrl))
+                {
+                    // Get file info to determine proper URLs
+                    var fileInfo = await _fileService.GetFileByIdAsync(image.FileId);
+                    if (fileInfo != null)
+                    {
+                        image.ImageUrl = fileInfo.Urls?.Download ?? _fileService.GetFileUrl(image.FileId);
+                        image.ThumbnailUrl = fileInfo.Urls?.Thumbnail ?? _fileService.GetThumbnailUrl(image.FileId);
+                    }
+                    else
+                    {
+                        // Fallback to service URL generation
+                        image.ImageUrl = _fileService.GetFileUrl(image.FileId);
+                        image.ThumbnailUrl = _fileService.GetThumbnailUrl(image.FileId);
+                    }
+                }
+                else if (string.IsNullOrEmpty(image.ThumbnailUrl))
+                {
+                    // Ensure thumbnail URL is set
+                    image.ThumbnailUrl = _fileService.GetThumbnailUrl(image.FileId);
+                }
+                else if (string.IsNullOrEmpty(image.ImageUrl))
+                {
+                    // Ensure image URL is set
+                    image.ImageUrl = _fileService.GetFileUrl(image.FileId);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Log error but don't throw - use fallback URLs
+                await _jsRuntime.InvokeVoidAsync("console.warn", $"Failed to populate image URLs for file {image.FileId}: {ex.Message}");
+
+                // Fallback URL generation
+                image.ImageUrl ??= _fileService.GetFileUrl(image.FileId);
+                image.ThumbnailUrl ??= _fileService.GetThumbnailUrl(image.FileId);
+            }
+        }
+
+        #endregion
 
         // Helper DTOs that should match the controller DTOs
         private class MoveCategoryDto

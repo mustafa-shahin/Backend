@@ -172,8 +172,8 @@
                 </div>
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Category Images</h3>
             </div>
-            <button type="button" 
-                    class="@StyleService.GetButtonClass("primary", "small")" 
+            <button type="button"
+                    class="@StyleService.GetButtonClass("primary", "small")"
                     @onclick="OpenFileBrowser"
                     disabled="@isProcessingImages">
                 <i class="fas @(isProcessingImages ? "fa-spinner fa-spin" : "fa-plus") mr-1"></i>
@@ -200,9 +200,9 @@
                         <div class="relative group border-2 @(image.IsFeatured ? "border-yellow-400" : "border-gray-200 dark:border-gray-700") rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow-sm">
                             <!-- Image -->
                             <div class="aspect-square relative">
-                                <img src="@image.ImageUrl" 
-                                     alt="@(image.Alt ?? "Category image")" 
-                                     class="w-full h-full object-cover" 
+                                <img src="@GetImageUrl(image)"
+                                     alt="@(image.Alt ?? "Category image")"
+                                     class="w-full h-full object-cover"
                                      onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
                                 <!-- Fallback for failed image load -->
                                 <div class="w-full h-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center" style="display: none;">
@@ -230,19 +230,19 @@
                                 <!-- Overlay Actions -->
                                 <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
                                     <div class="flex space-x-2">
-                                        <button type="button" 
+                                        <button type="button"
                                                 class="p-2 bg-white text-gray-700 rounded-full hover:bg-gray-100 transition-colors shadow-lg"
                                                 @onclick="() => EditImage(image)"
                                                 title="Edit image">
                                             <i class="fas fa-edit text-sm"></i>
                                         </button>
-                                        <button type="button" 
+                                        <button type="button"
                                                 class="p-2 bg-yellow-500 text-white rounded-full hover:bg-yellow-600 transition-colors shadow-lg"
                                                 @onclick="() => ToggleFeatured(image)"
                                                 title="@(image.IsFeatured ? "Remove featured" : "Set as featured")">
                                             <i class="fas fa-star text-sm"></i>
                                         </button>
-                                        <button type="button" 
+                                        <button type="button"
                                                 class="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
                                                 @onclick="() => ShowDeleteImageConfirmation(image)"
                                                 title="Delete image">
@@ -274,9 +274,9 @@
                     <div class="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
                         <p class="text-sm text-gray-600 dark:text-gray-400">
                             <i class="fas fa-info-circle mr-1"></i>
-                            Drag and drop to reorder images (feature coming soon)
+                            Images are ordered by position value
                         </p>
-                        <button type="button" 
+                        <button type="button"
                                 class="@StyleService.GetButtonClass("secondary", "small")"
                                 @onclick="AutoArrangeImages"
                                 title="Auto-arrange by position">
@@ -295,8 +295,8 @@
                 </div>
                 <h4 class="text-lg font-medium text-gray-900 dark:text-white mb-2">No images yet</h4>
                 <p class="text-gray-500 dark:text-gray-400 mb-4">Add images to make your category more attractive</p>
-                <button type="button" 
-                        class="@StyleService.GetButtonClass("primary")" 
+                <button type="button"
+                        class="@StyleService.GetButtonClass("primary")"
                         @onclick="OpenFileBrowser">
                     <i class="fas fa-plus mr-2"></i>
                     Add First Image
@@ -439,8 +439,8 @@
                 <!-- Image Preview -->
                 <div class="flex items-start space-x-4">
                     <div class="flex-shrink-0">
-                        <img src="@GetImageUrl(editingImage)" 
-                             alt="@(editingImage.Alt ?? "Preview")" 
+                        <img src="@GetImageUrl(editingImage)"
+                             alt="@(editingImage.Alt ?? "Preview")"
                              class="w-24 h-24 object-cover rounded-lg border border-gray-200 dark:border-gray-700" />
                     </div>
                     <div class="flex-1 min-w-0">
@@ -501,8 +501,8 @@
                     <!-- Featured Status -->
                     <div class="space-y-2">
                         <label class="flex items-center cursor-pointer">
-                            <input type="checkbox" 
-                                   @bind="editingImageIsFeatured" 
+                            <input type="checkbox"
+                                   @bind="editingImageIsFeatured"
                                    class="@StyleService.GetFormCheckboxClass()" />
                             <span class="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300">
                                 Featured Image
