@@ -55,7 +55,12 @@ namespace Frontend.Forms.Categories
                 NotificationService.ShowError($"Failed to load category files: {ex.Message}");
             }
         }
-
+        private async Task OnCategoryFilesChanged(List<FileDto> files)
+        {
+            categoryFiles = files;
+            await OnImagesChanged.InvokeAsync(categoryFiles);
+            StateHasChanged();
+        }
         private async Task LoadParentCategories()
         {
             try
@@ -221,30 +226,7 @@ namespace Frontend.Forms.Categories
             return $"{prefix} {category.Name}";
         }
 
-        private async Task OnCategoryFilesChanged(List<FileDto> files)
-        {
-            categoryFiles = files;
-            await OnImagesChanged.InvokeAsync(categoryFiles);
-            StateHasChanged();
-        }
-
-        private async Task OnCategoryFileUploaded(FileDto file)
-        {
-            // File was successfully uploaded
-            NotificationService.ShowSuccess($"Image {file.OriginalFileName} uploaded successfully");
-
-            // The files list will be refreshed by OnCategoryFilesChanged
-            await Task.CompletedTask;
-        }
-
-        private async Task OnCategoryFileDeleted(FileDto file)
-        {
-            // File was successfully deleted
-            NotificationService.ShowSuccess($"Image {file.OriginalFileName} deleted successfully");
-
-            // The files list will be refreshed by OnCategoryFilesChanged
-            await Task.CompletedTask;
-        }
+      
 
         public void Dispose()
         {
