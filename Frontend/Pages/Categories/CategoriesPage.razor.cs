@@ -48,61 +48,80 @@ namespace Frontend.Pages.Categories
             }
         }
 
-        private async Task<PaginatedResult<CategoryDto>> LoadCategoriesAsync(int page, int pageSize, string? search)
+        private async Task<PaginatedResult<CategoryDto>> LoadCategories(int page, int pageSize, string? searchTerm)
         {
-            var searchDto = new CategorySearchDto
+            try
             {
-                SearchTerm = search,
-                PageNumber = page,
-                PageSize = pageSize,
-                SortBy = "Name",
-                SortDirection = "Asc"
-            };
-
-            if (!ignoreFiltersOnNextLoad)
-            {
-                if (!string.IsNullOrEmpty(statusFilter))
+                var searchDto = new CategorySearchDto
                 {
-                    searchDto.IsActive = statusFilter == "active";
-                }
+                    PageNumber = page,
+                    PageSize = pageSize,
+                    SearchTerm = searchTerm,
+                    SortBy = "Name",
+                    SortDirection = "Asc"
+                };
 
-                if (!string.IsNullOrEmpty(visibilityFilter))
-                {
-                    searchDto.IsVisible = visibilityFilter == "visible";
-                }
-
-                if (!string.IsNullOrEmpty(parentFilter))
-                {
-                    searchDto.ParentCategoryId = parentFilter == "root" ? null : (parentFilter == "sub" ? -1 : null);
-                }
+                return await CategoryService.SearchCategoriesAsync(searchDto);
             }
-            else
+            catch (Exception ex)
             {
-                ignoreFiltersOnNextLoad = false;
+                NotificationService.ShowError($"Failed to load categories: {ex.Message}");
+                return new PaginatedResult<CategoryDto>();
             }
-
-            return await CategoryService.GetCategoriesAsync(searchDto);
         }
 
-        private async Task<CategoryDto?> GetCategoryByIdAsync(int id)
+        private async Task<CategoryDto?> GetCategoryById(int id)
         {
-            return await CategoryService.GetCategoryByIdAsync(id);
+            try
+            {
+                return await CategoryService.GetCategoryByIdAsync(id);
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to load category: {ex.Message}");
+                return null;
+            }
         }
 
-        private async Task<CategoryDto?> CreateCategoryAsync(CreateCategoryDto createDto)
+        private async Task<CategoryDto?> CreateCategory(CreateCategoryDto createDto)
         {
-            return await CategoryService.CreateCategoryAsync(createDto);
+            try
+            {
+                return await CategoryService.CreateCategoryAsync(createDto);
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to create category: {ex.Message}");
+                return null;
+            }
         }
 
-        private async Task<CategoryDto?> UpdateCategoryAsync(int id, UpdateCategoryDto updateDto)
+        private async Task<CategoryDto?> UpdateCategory(int id, UpdateCategoryDto updateDto)
         {
-            return await CategoryService.UpdateCategoryAsync(id, updateDto);
+            try
+            {
+                return await CategoryService.UpdateCategoryAsync(id, updateDto);
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to update category: {ex.Message}");
+                return null;
+            }
         }
 
-        private async Task<bool> DeleteCategoryAsync(int id)
+        private async Task<bool> DeleteCategory(int id)
         {
-            return await CategoryService.DeleteCategoryAsync(id);
+            try
+            {
+                return await CategoryService.DeleteCategoryAsync(id);
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to delete category: {ex.Message}");
+                return false;
+            }
         }
+
 
         private CreateCategoryDto CreateModelFactory()
         {
@@ -110,13 +129,13 @@ namespace Frontend.Pages.Categories
             {
                 IsActive = true,
                 IsVisible = true,
-                SortOrder = 0
+                SortOrder = 0,
+                Images = new List<CreateCategoryImageDto>()
             };
         }
-
         private CreateCategoryDto EditModelFactory(CategoryDto category)
         {
-            var createDto = new CreateCategoryDto
+            return new CreateCategoryDto
             {
                 Name = category.Name,
                 Slug = category.Slug,
@@ -129,21 +148,18 @@ namespace Frontend.Pages.Categories
                 MetaTitle = category.MetaTitle,
                 MetaDescription = category.MetaDescription,
                 MetaKeywords = category.MetaKeywords,
-                CustomFields = category.CustomFields,
-                Images = category.Images.Select(img => new CreateCategoryImageDto
+                CustomFields = category.CustomFields ?? new Dictionary<string, object>(),
+                Images = category.Images?.Select(img => new CreateCategoryImageDto
                 {
                     FileId = img.FileId,
                     Alt = img.Alt,
                     Caption = img.Caption,
                     Position = img.Position,
                     IsFeatured = img.IsFeatured
-                }).ToList()
+                }).ToList() ?? new List<CreateCategoryImageDto>()
             };
-
-            return createDto;
         }
-
-        private UpdateCategoryDto CreateToUpdateMapper(CreateCategoryDto createDto)
+        private UpdateCategoryDto MapCreateToUpdate(CreateCategoryDto createDto)
         {
             return new UpdateCategoryDto
             {
@@ -158,42 +174,117 @@ namespace Frontend.Pages.Categories
                 MetaTitle = createDto.MetaTitle,
                 MetaDescription = createDto.MetaDescription,
                 MetaKeywords = createDto.MetaKeywords,
-                CustomFields = createDto.CustomFields,
-                Images = createDto.Images.Select(img => new UpdateCategoryImageDto
-                {
-                    Id = 0, // Will be handled by the backend
-                    FileId = img.FileId,
-                    Alt = img.Alt,
-                    Caption = img.Caption,
-                    Position = img.Position,
-                    IsFeatured = img.IsFeatured
-                }).ToList()
+                CustomFields = createDto.CustomFields
             };
         }
+        //private UpdateCategoryDto CreateToUpdateMapper(CreateCategoryDto createDto)
+        //{
+        //    return new UpdateCategoryDto
+        //    {
+        //        Name = createDto.Name,
+        //        Slug = createDto.Slug,
+        //        Description = createDto.Description,
+        //        ShortDescription = createDto.ShortDescription,
+        //        ParentCategoryId = createDto.ParentCategoryId,
+        //        IsActive = createDto.IsActive,
+        //        IsVisible = createDto.IsVisible,
+        //        SortOrder = createDto.SortOrder,
+        //        MetaTitle = createDto.MetaTitle,
+        //        MetaDescription = createDto.MetaDescription,
+        //        MetaKeywords = createDto.MetaKeywords,
+        //        CustomFields = createDto.CustomFields,
+        //        Images = createDto.Images.Select(img => new UpdateCategoryImageDto
+        //        {
+        //            Id = 0, // Will be handled by the backend
+        //            FileId = img.FileId,
+        //            Alt = img.Alt,
+        //            Caption = img.Caption,
+        //            Position = img.Position,
+        //            IsFeatured = img.IsFeatured
+        //        }).ToList()
+        //    };
+        //}
 
-        private async Task<Dictionary<string, string>> ValidateCategoryAsync(CreateCategoryDto model, bool isEdit)
-        {
-            var errors = new Dictionary<string, string>();
+        //private async Task<Dictionary<string, string>> ValidateCategory(CreateCategoryDto model, bool isEditMode)
+        //{
+        //    var errors = new Dictionary<string, string>();
 
-            if (string.IsNullOrWhiteSpace(model.Name))
-            {
-                errors["Name"] = "Category name is required.";
-            }
+        //    try
+        //    {
+        //        // Basic validation
+        //        if (string.IsNullOrWhiteSpace(model.Name))
+        //        {
+        //            errors["Name"] = "Category name is required";
+        //        }
+        //        else if (model.Name.Length > 255)
+        //        {
+        //            errors["Name"] = "Category name cannot exceed 255 characters";
+        //        }
 
-            if (string.IsNullOrWhiteSpace(model.Slug))
-            {
-                errors["Slug"] = "Category slug is required.";
-            }
+        //        if (string.IsNullOrWhiteSpace(model.Slug))
+        //        {
+        //            errors["Slug"] = "URL slug is required";
+        //        }
+        //        else if (model.Slug.Length > 255)
+        //        {
+        //            errors["Slug"] = "URL slug cannot exceed 255 characters";
+        //        }
+        //        else
+        //        {
+        //            // Validate slug format
+        //            if (!IsValidSlug(model.Slug))
+        //            {
+        //                errors["Slug"] = "URL slug can only contain lowercase letters, numbers, and hyphens";
+        //            }
+        //            // Note: Slug uniqueness validation is handled by the CategoryForm itself
+        //        }
 
-            return errors;
-        }
+        //        // Validate field lengths
+        //        if (!string.IsNullOrEmpty(model.ShortDescription) && model.ShortDescription.Length > 500)
+        //        {
+        //            errors["ShortDescription"] = "Short description cannot exceed 500 characters";
+        //        }
+
+        //        if (!string.IsNullOrEmpty(model.Description) && model.Description.Length > 1000)
+        //        {
+        //            errors["Description"] = "Description cannot exceed 1000 characters";
+        //        }
+
+        //        if (!string.IsNullOrEmpty(model.MetaTitle) && model.MetaTitle.Length > 255)
+        //        {
+        //            errors["MetaTitle"] = "Meta title cannot exceed 255 characters";
+        //        }
+
+        //        if (!string.IsNullOrEmpty(model.MetaDescription) && model.MetaDescription.Length > 500)
+        //        {
+        //            errors["MetaDescription"] = "Meta description cannot exceed 500 characters";
+        //        }
+
+        //        if (!string.IsNullOrEmpty(model.MetaKeywords) && model.MetaKeywords.Length > 500)
+        //        {
+        //            errors["MetaKeywords"] = "Meta keywords cannot exceed 500 characters";
+        //        }
+
+        //        // Validate sort order
+        //        if (model.SortOrder < 0 || model.SortOrder > 9999)
+        //        {
+        //            errors["SortOrder"] = "Sort order must be between 0 and 9999";
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        errors["General"] = $"Validation error: {ex.Message}";
+        //    }
+
+        //    return errors;
+        //}
 
         private void OnFilterChanged()
         {
             StateHasChanged();
         }
 
-        private void OnCategoryCreated(CategoryDto category)
+        private async Task OnCategoryCreated(CategoryDto category)
         {
             ignoreFiltersOnNextLoad = true;
             statusFilter = string.Empty;
@@ -202,7 +293,7 @@ namespace Frontend.Pages.Categories
             NotificationService.ShowSuccess($"Category '{category.Name}' created successfully!");
         }
 
-        private void OnCategoryUpdated(CategoryDto category)
+        private async Task OnCategoryUpdated(CategoryDto category)
         {
             ignoreFiltersOnNextLoad = true;
             statusFilter = string.Empty;
@@ -215,6 +306,22 @@ namespace Frontend.Pages.Categories
         {
             NotificationService.ShowSuccess("Category deleted successfully!");
             return Task.CompletedTask;
+        }
+        //private bool IsValidSlug(string slug)
+        //{
+        //    if (string.IsNullOrEmpty(slug))
+        //        return false;
+
+        //    // Check if slug contains only valid characters
+        //    return slug.All(c => char.IsLetterOrDigit(c) || c == '-') &&
+        //           !slug.StartsWith("-") &&
+        //           !slug.EndsWith("-") &&
+        //           !slug.Contains("--");
+        //}
+
+        private async Task OnCategoryImagesChanged(List<CategoryImageDto> images)
+        {
+
         }
     }
 }
