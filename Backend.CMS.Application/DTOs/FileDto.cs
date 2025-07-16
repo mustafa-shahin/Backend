@@ -109,6 +109,17 @@ namespace Backend.CMS.Application.DTOs
         public bool GenerateThumbnail { get; set; } = true;
 
         public bool ProcessImmediately { get; set; } = true;
+
+        /// <summary>
+        /// Entity type this file is linked to (e.g., "Category", "Product")
+        /// </summary>
+        [MaxLength(50)]
+        public string? EntityType { get; set; }
+
+        /// <summary>
+        /// Entity ID this file is linked to
+        /// </summary>
+        public int? EntityId { get; set; }
     }
 
     public class MultipleFileUploadDto
@@ -128,6 +139,17 @@ namespace Backend.CMS.Application.DTOs
         /// Whether to process files in parallel (faster but more resource intensive)
         /// </summary>
         public bool ProcessInParallel { get; set; } = true;
+
+        /// <summary>
+        /// Entity type these files are linked to (e.g., "Category", "Product")
+        /// </summary>
+        [MaxLength(50)]
+        public string? EntityType { get; set; }
+
+        /// <summary>
+        /// Entity ID these files are linked to
+        /// </summary>
+        public int? EntityId { get; set; }
     }
 
     public class UpdateFileDto
@@ -217,6 +239,16 @@ namespace Backend.CMS.Application.DTOs
         /// Search only in user's files
         /// </summary>
         public bool UserFilesOnly { get; set; } = false;
+
+        /// <summary>
+        /// Filter by entity type (e.g., "Category", "Product")
+        /// </summary>
+        public string? EntityType { get; set; }
+
+        /// <summary>
+        /// Filter by entity ID
+        /// </summary>
+        public int? EntityId { get; set; }
     }
 
     public class FolderDto

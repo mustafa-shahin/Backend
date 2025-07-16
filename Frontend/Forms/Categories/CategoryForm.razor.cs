@@ -17,31 +17,32 @@ namespace Frontend.Forms.Categories
         private Timer? slugValidationTimer;
         private string previousSlug = string.Empty;
 
-        private List<object> categoryImageObjects = new();
-
-        protected override void OnParametersSet()
-        {
-            categoryImageObjects = Model.Images.Cast<object>().ToList();
-        }
+        private List<FileDto> categoryFiles = new();
 
         protected override async Task OnInitializedAsync()
         {
             await LoadParentCategories();
+
+            if (IsEditMode && EditingCategoryId.HasValue)
+            {
+                await LoadCategoryFiles();
+            }
         }
 
-        public void LoadExistingImages(List<CategoryImageDto> existingImages)
+        private async Task LoadCategoryFiles()
         {
-            Model.Images = existingImages.Select(img => new CreateCategoryImageDto
+            try
             {
-                FileId = img.FileId,
-                Alt = img.Alt,
-                Caption = img.Caption,
-                Position = img.Position,
-                IsFeatured = img.IsFeatured
-            }).ToList();
-
-            categoryImageObjects = Model.Images.Cast<object>().ToList();
-            StateHasChanged();
+                if (EditingCategoryId.HasValue)
+                {
+                    categoryFiles = await FileService.GetFilesForEntityAsync("Category", EditingCategoryId.Value);
+                    StateHasChanged();
+                }
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to load category files: {ex.Message}");
+            }
         }
 
         private async Task LoadParentCategories()
@@ -140,137 +141,34 @@ namespace Frontend.Forms.Categories
             return $"{prefix} {category.Name}";
         }
 
-        private async Task OnCategoryImagesChanged(List<object> images)
+        private async Task OnCategoryFilesChanged(List<FileDto> files)
         {
-            categoryImageObjects = images;
-            Model.Images = images.Cast<CreateCategoryImageDto>().ToList();
+            categoryFiles = files;
 
-            for (int i = 0; i < Model.Images.Count; i++)
+            // Update the model with the featured image URL from the first image
+            if (files.Any())
             {
-                Model.Images[i].Position = i;
+                var featuredFile = files.FirstOrDefault();
+                if (featuredFile != null)
+                {
+                    // This would be handled by the backend when saving the category
+                    // For now, we just store the files reference
+                }
             }
 
             StateHasChanged();
+        }
+
+        private async Task OnCategoryFileUploaded(FileDto file)
+        {
+            // Handle individual file upload if needed
             await Task.CompletedTask;
         }
 
-        private string GetCategoryImageUrl(object image)
+        private async Task OnCategoryFileDeleted(FileDto file)
         {
-            if (image is CreateCategoryImageDto categoryImage)
-            {
-                return FileService.GetThumbnailUrl(categoryImage.FileId);
-            }
-            return string.Empty;
-        }
-
-        private string? GetCategoryImageAlt(object image)
-        {
-            if (image is CreateCategoryImageDto categoryImage)
-            {
-                return categoryImage.Alt;
-            }
-            return null;
-        }
-
-        private bool GetCategoryImageIsFeatured(object image)
-        {
-            if (image is CreateCategoryImageDto categoryImage)
-            {
-                return categoryImage.IsFeatured;
-            }
-            return false;
-        }
-
-        private int? GetCategoryImageId(object image)
-        {
-            if (image is CategoryImageDto categoryImage)
-            {
-                return categoryImage.Id;
-            }
-            return null;
-        }
-
-        private object CreateCategoryImageFromFile(FileDto file)
-        {
-            return new CreateCategoryImageDto
-            {
-                FileId = file.Id,
-                Position = Model.Images.Count,
-                IsFeatured = !Model.Images.Any()
-            };
-        }
-
-        private void UpdateCategoryImage(object image, string? alt, string? caption, bool isFeatured)
-        {
-            if (image is CreateCategoryImageDto categoryImage)
-            {
-                categoryImage.Alt = alt;
-                categoryImage.Caption = caption;
-                categoryImage.IsFeatured = isFeatured;
-            }
-        }
-
-        private async Task<object?> AddCategoryImageApi(int categoryId, CreateCategoryImageDto createImageDto)
-        {
-            try
-            {
-                var addedImage = await CategoryService.AddCategoryImageAsync(categoryId, createImageDto);
-                if (addedImage != null)
-                {
-                    return new CreateCategoryImageDto
-                    {
-                        FileId = addedImage.FileId,
-                        Alt = addedImage.Alt,
-                        Caption = addedImage.Caption,
-                        Position = addedImage.Position,
-                        IsFeatured = addedImage.IsFeatured
-                    };
-                }
-                return null;
-            }
-            catch (Exception ex)
-            {
-                NotificationService.ShowError($"Failed to add image: {ex.Message}");
-                return null;
-            }
-        }
-
-        private async Task<object?> UpdateCategoryImageApi(int imageId, UpdateCategoryImageDto updateImageDto)
-        {
-            try
-            {
-                var updatedImage = await CategoryService.UpdateCategoryImageAsync(imageId, updateImageDto);
-                if (updatedImage != null)
-                {
-                    return new CreateCategoryImageDto
-                    {
-                        FileId = updatedImage.FileId,
-                        Alt = updatedImage.Alt,
-                        Caption = updatedImage.Caption,
-                        Position = updatedImage.Position,
-                        IsFeatured = updatedImage.IsFeatured
-                    };
-                }
-                return null;
-            }
-            catch (Exception ex)
-            {
-                NotificationService.ShowError($"Failed to update image: {ex.Message}");
-                return null;
-            }
-        }
-
-        private async Task<bool> DeleteCategoryImageApi(int imageId)
-        {
-            try
-            {
-                return await CategoryService.DeleteCategoryImageAsync(imageId);
-            }
-            catch (Exception ex)
-            {
-                NotificationService.ShowError($"Failed to delete image: {ex.Message}");
-                return false;
-            }
+            // Handle individual file deletion if needed
+            await Task.CompletedTask;
         }
 
         public void Dispose()

@@ -1213,5 +1213,169 @@ namespace Frontend.Services
         }
 
         #endregion
+
+        #region Entity-Specific Operations
+
+        public async Task<List<FileDto>> GetFilesForEntityAsync(string entityType, int entityId, FileType? fileType = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(entityType) || entityId <= 0)
+                {
+                    return new List<FileDto>();
+                }
+
+                // Use the search functionality with tags to find entity-specific files
+                var searchDto = new FileSearchDto
+                {
+                    PageNumber = 1,
+                    PageSize = 1000, // Get all files for the entity
+                    FileType = fileType,
+                    SortBy = "CreatedAt",
+                    SortDirection = "Desc",
+                    Tags = new List<string> { $"EntityType:{entityType}", $"EntityId:{entityId}" }
+                };
+
+                var result = await SearchFilesAsync(searchDto);
+                var entityFiles = result.Data?.ToList() ?? new List<FileDto>();
+
+                // Cache the files
+                foreach (var file in entityFiles)
+                {
+                    _fileCache.TryAdd(file.Id, file);
+                }
+
+                return entityFiles;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error getting files for entity {entityType}:{entityId}: {ex.Message}", ex);
+            }
+        }
+
+        public async Task<FileUploadResultDto?> UploadFileForEntityAsync(FileUploadDto uploadDto)
+        {
+            try
+            {
+                if (uploadDto?.File == null)
+                    throw new ArgumentException("File is required");
+
+                // Add entity information to tags
+                if (!string.IsNullOrEmpty(uploadDto.EntityType) && uploadDto.EntityId.HasValue)
+                {
+                    uploadDto.Tags = uploadDto.Tags ?? new Dictionary<string, object>();
+                    uploadDto.Tags["EntityType"] = uploadDto.EntityType;
+                    uploadDto.Tags["EntityId"] = uploadDto.EntityId.Value.ToString();
+                }
+
+                return await UploadFileAsync(uploadDto);
+            }
+            catch (Exception ex)
+            {
+                return new FileUploadResultDto
+                {
+                    Success = false,
+                    ErrorMessage = $"Error uploading file for entity: {ex.Message}"
+                };
+            }
+        }
+
+        public async Task<BulkOperationResultDto> UploadMultipleFilesForEntityAsync(MultipleFileUploadDto uploadDto)
+        {
+            try
+            {
+                if (uploadDto?.Files == null || !uploadDto.Files.Any())
+                {
+                    return new BulkOperationResultDto
+                    {
+                        TotalRequested = 0,
+                        SuccessCount = 0,
+                        FailureCount = 0
+                    };
+                }
+
+                // Add entity information for tracking
+                if (!string.IsNullOrEmpty(uploadDto.EntityType) && uploadDto.EntityId.HasValue)
+                {
+                    // We'll handle entity tagging in individual uploads
+                }
+
+                return await UploadMultipleFilesAsync(uploadDto);
+            }
+            catch (Exception ex)
+            {
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = uploadDto?.Files?.Count ?? 0,
+                    SuccessCount = 0,
+                    FailureCount = uploadDto?.Files?.Count ?? 0,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Error uploading files for entity: {ex.Message}" }
+                    }
+                };
+            }
+        }
+
+        public async Task<BulkOperationResultDto> DeleteFilesForEntityAsync(string entityType, int entityId)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(entityType) || entityId <= 0)
+                {
+                    return new BulkOperationResultDto();
+                }
+
+                // Get all files for the entity
+                var entityFiles = await GetFilesForEntityAsync(entityType, entityId);
+
+                if (!entityFiles.Any())
+                {
+                    return new BulkOperationResultDto
+                    {
+                        TotalRequested = 0,
+                        SuccessCount = 0,
+                        FailureCount = 0
+                    };
+                }
+
+                var fileIds = entityFiles.Select(f => f.Id).ToList();
+                var result = await DeleteMultipleFilesAsync(fileIds);
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = 0,
+                    FailureCount = 0,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Error deleting files for entity: {ex.Message}" }
+                    }
+                };
+            }
+        }
+
+        public async Task<int> CountFilesForEntityAsync(string entityType, int entityId, FileType? fileType = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(entityType) || entityId <= 0)
+                {
+                    return 0;
+                }
+
+                var entityFiles = await GetFilesForEntityAsync(entityType, entityId, fileType);
+                return entityFiles.Count;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error counting files for entity {entityType}:{entityId}: {ex.Message}", ex);
+            }
+        }
+
+        #endregion
     }
 }
