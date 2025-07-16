@@ -1,4 +1,5 @@
 @using Backend.CMS.Application.DTOs
+@using Frontend.Components.Common.ImagePicker
 @using Frontend.Interfaces
 @using System.Text
 @inject ICategoryService CategoryService
@@ -162,26 +163,47 @@
     <!-- Images -->
 
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-        <div class="flex">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center">
                 <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center mr-3">
                     <i class="fas fa-images text-white text-sm"></i>
                 </div>
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Category Images</h3>
+            </div>
+            <button type="button" class="@StyleService.GetButtonClass("primary", "small")" @onclick="OpenFileBrowser">
+                <i class="fas fa-plus mr-1"></i>Select Images
+            </button>
         </div>
+
         @if (categoryFiles.Any())
         {
-            <div class="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <div class="flex items-center text-sm text-blue-700 dark:text-blue-300">
-                    <i class="fas fa-info-circle mr-2"></i>
-                    <span>@categoryFiles.Count image(s) uploaded. The first image will be used as the featured image.</span>
-                </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                @foreach (var file in categoryFiles)
+                {
+                    <div class="relative group border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                        <img src="@FileService.GetThumbnailUrl(file.Id)" alt="@file.OriginalFileName" class="w-full h-32 object-cover" />
+                        <button type="button" class="absolute top-1 right-1 text-red-600 hover:text-red-800 bg-white dark:bg-gray-800 rounded-full p-1 shadow" @onclick="() => RemoveImage(file)">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                }
             </div>
         }
-        <FilePicker EntityType="Category"
-                    EntityId="@EditingCategoryId.GetValueOrDefault()"
-                    OnFilesChanged="OnCategoryFilesChanged" />
     </div>
-
+        <FormDialog @ref="fileBrowserDialog"
+                Title="Select Images"
+                HeaderIcon="fas fa-images"
+                IsVisible="@showFileBrowserDialog"
+                OnClose="@CloseFileBrowser"
+                OnSave="@AddSelectedFiles"
+                SaveText="Add Selected"
+                Size="large">
+        <BodyContent>
+            <FileBrowser AllowMultiSelect="true"
+                                     ShowUpload="true"
+                                     OnFilesSelected="OnFileBrowserSelectionChanged" />
+        </BodyContent>
+    </FormDialog>
     <!-- Status & Visibility -->
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
         <div class="flex items-center mb-4">

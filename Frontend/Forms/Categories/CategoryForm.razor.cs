@@ -1,4 +1,5 @@
 ﻿using Backend.CMS.Application.DTOs;
+using Frontend.Components.Common;
 using Microsoft.AspNetCore.Components;
 using System.Text;
 
@@ -19,7 +20,9 @@ namespace Frontend.Forms.Categories
         private string previousSlug = string.Empty;
 
         private List<FileDto> categoryFiles = new();
-
+        private bool showFileBrowserDialog = false;
+        private FormDialog? fileBrowserDialog;
+        private List<FileDto> selectedBrowserFiles = new();
         protected override async Task OnInitializedAsync()
         {
             await LoadParentCategories();
@@ -54,12 +57,6 @@ namespace Frontend.Forms.Categories
             {
                 NotificationService.ShowError($"Failed to load category files: {ex.Message}");
             }
-        }
-        private async Task OnCategoryFilesChanged(List<FileDto> files)
-        {
-            categoryFiles = files;
-            await OnImagesChanged.InvokeAsync(categoryFiles);
-            StateHasChanged();
         }
         private async Task LoadParentCategories()
         {
@@ -225,8 +222,54 @@ namespace Frontend.Forms.Categories
             var prefix = new string('—', category.Level * 2);
             return $"{prefix} {category.Name}";
         }
+        private async Task RemoveImage(FileDto file)
+        {
+            categoryFiles.Remove(file);
+            var image = Model.Images.FirstOrDefault(i => i.FileId == file.Id);
+            if (image != null)
+            {
+                Model.Images.Remove(image);
+            }
+            await OnImagesChanged.InvokeAsync(categoryFiles);
+            StateHasChanged();
+        }
 
-      
+        private void OpenFileBrowser()
+        {
+            showFileBrowserDialog = true;
+            selectedBrowserFiles.Clear();
+        }
+
+        private void CloseFileBrowser()
+        {
+            showFileBrowserDialog = false;
+            selectedBrowserFiles.Clear();
+        }
+
+        private void OnFileBrowserSelectionChanged(List<FileDto> files)
+        {
+            selectedBrowserFiles = files;
+        }
+
+        private async Task AddSelectedFiles()
+        {
+            foreach (var file in selectedBrowserFiles)
+            {
+                if (categoryFiles.All(f => f.Id != file.Id))
+                {
+                    categoryFiles.Add(file);
+                    Model.Images.Add(new CreateCategoryImageDto
+                    {
+                        FileId = file.Id,
+                        Position = Model.Images.Count
+                    });
+                }
+            }
+
+            await OnImagesChanged.InvokeAsync(categoryFiles);
+            CloseFileBrowser();
+            StateHasChanged();
+        }
 
         public void Dispose()
         {
