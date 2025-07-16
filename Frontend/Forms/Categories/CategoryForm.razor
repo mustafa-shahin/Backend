@@ -1,5 +1,4 @@
 @using Backend.CMS.Application.DTOs
-@using Frontend.Components.Common.FilePicker
 @using Frontend.Interfaces
 @using System.Text
 @inject ICategoryService CategoryService
@@ -168,18 +167,6 @@
             </div>
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Category Images</h3>
         </div>
-
-        <FilePicker EntityType="Category"
-                    EntityId="@(EditingCategoryId ?? 0)"
-                    AllowMultiple="true"
-                    AllowedFileTypes="@(new string[] { "image/" })"
-                    Title="Category Images"
-                    EmptyStateTitle="No images uploaded"
-                    EmptyStateDescription="Upload images to showcase this category"
-                    MaxFileSize="@(5 * 1024 * 1024)"
-                    OnFilesChanged="@OnCategoryFilesChanged"
-                    OnFileUploaded="@OnCategoryFileUploaded"
-                    OnFileDeleted="@OnCategoryFileDeleted" />
 
         @if (categoryFiles.Any())
         {
