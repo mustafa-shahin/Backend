@@ -1,4 +1,4 @@
-﻿// Frontend/Forms/Categories/CategoryForm.razor.cs
+﻿
 using Backend.CMS.Application.DTOs;
 using Frontend.Components.Common.GenericCrudPage;
 using Microsoft.AspNetCore.Components;
@@ -29,21 +29,36 @@ namespace Frontend.Forms.Categories
         private FileDto? previewingFile = null;
         private List<FileDto> currentCategoryImages = new();
         private bool imagesLoaded = false;
+        private bool isLoadingImages = false;
+        private readonly SemaphoreSlim loadingSemaphore = new(1, 1);
 
         // Context extraction
         private int? contextEditingId;
         private CategoryDto? contextOriginalCategory;
 
+        // Stable entity ID to prevent FilePicker reloads
+        private int stableEntityId = 0;
+        private bool hasInitialized = false;
+
         protected override async Task OnInitializedAsync()
         {
             ExtractContextInformation();
             await LoadParentCategories();
+            hasInitialized = true;
         }
 
         protected override async Task OnParametersSetAsync()
         {
+            if (!hasInitialized) return;
+
+            var oldEntityId = stableEntityId;
             ExtractContextInformation();
-            await HandleParameterChanges();
+
+            // Only handle parameter changes if the entity ID actually changed
+            if (oldEntityId != stableEntityId)
+            {
+                await HandleParameterChanges();
+            }
         }
 
         private void ExtractContextInformation()
@@ -65,31 +80,42 @@ namespace Frontend.Forms.Categories
                     ExistingCategory = contextOriginalCategory;
                 }
             }
+
+            // Set stable entity ID
+            var newEntityId = EditingCategoryId ?? contextEditingId ?? 0;
+            if (stableEntityId != newEntityId)
+            {
+                stableEntityId = newEntityId;
+                // Reset loading state when entity changes
+                imagesLoaded = false;
+                isLoadingImages = false;
+            }
         }
 
         private int GetEffectiveEntityId()
         {
-            return EditingCategoryId ?? contextEditingId ?? 0;
+            return stableEntityId;
         }
 
         private async Task HandleParameterChanges()
         {
+            if (!await loadingSemaphore.WaitAsync(100))
+            {
+                return; // Skip if already loading
+            }
+
             try
             {
-                if (IsEditMode && (EditingCategoryId.HasValue || contextEditingId.HasValue))
+                if (IsEditMode && stableEntityId > 0 && !imagesLoaded && !isLoadingImages)
                 {
-                    var effectiveId = EditingCategoryId ?? contextEditingId;
-
-                    if (effectiveId.HasValue && !imagesLoaded)
-                    {
-                        await LoadCategoryImagesFromFiles(effectiveId.Value);
-                        imagesLoaded = true;
-                    }
+                    await LoadCategoryImagesFromFiles(stableEntityId);
                 }
-                else if (!IsEditMode)
+                else if (!IsEditMode && imagesLoaded)
                 {
+                    // Clear images when switching from edit to create mode
                     currentCategoryImages.Clear();
                     imagesLoaded = false;
+                    isLoadingImages = false;
                     await InvokeAsync(StateHasChanged);
                 }
             }
@@ -97,32 +123,52 @@ namespace Frontend.Forms.Categories
             {
                 NotificationService.ShowError($"Error handling parameter changes: {ex.Message}");
             }
+            finally
+            {
+                loadingSemaphore.Release();
+            }
         }
 
         #region Image Management
 
         private async Task LoadCategoryImagesFromFiles(int categoryId)
         {
+            if (isLoadingImages || imagesLoaded) return;
+
             try
             {
+                isLoadingImages = true;
+                await InvokeAsync(StateHasChanged);
+
                 var categoryFiles = await FileService.GetFilesForEntityAsync("Category", categoryId, Backend.CMS.Domain.Enums.FileType.Image);
                 currentCategoryImages = categoryFiles?.ToList() ?? new List<FileDto>();
-                await UpdateModelFromCurrentImages();
-                await InvokeAsync(StateHasChanged);
+
+                // Update model without triggering external events during initial load
+                await UpdateModelFromCurrentImages(suppressEvents: true);
+
+                imagesLoaded = true;
             }
             catch (Exception ex)
             {
                 NotificationService.ShowError($"Failed to load category images: {ex.Message}");
                 currentCategoryImages.Clear();
+                imagesLoaded = false;
+            }
+            finally
+            {
+                isLoadingImages = false;
+                await InvokeAsync(StateHasChanged);
             }
         }
 
         private async Task OnCategoryImagesChanged(List<FileDto> files)
         {
+            if (isLoadingImages) return; // Ignore events during initial loading
+
             try
             {
                 currentCategoryImages = files?.ToList() ?? new List<FileDto>();
-                await UpdateModelFromCurrentImages();
+                await UpdateModelFromCurrentImages(suppressEvents: false);
                 await InvokeAsync(StateHasChanged);
             }
             catch (Exception ex)
@@ -131,7 +177,7 @@ namespace Frontend.Forms.Categories
             }
         }
 
-        private async Task UpdateModelFromCurrentImages()
+        private async Task UpdateModelFromCurrentImages(bool suppressEvents = false)
         {
             try
             {
@@ -144,23 +190,24 @@ namespace Frontend.Forms.Categories
                     IsFeatured = index == 0
                 }).ToList();
 
-                var categoryImages = currentCategoryImages.Select((file, index) => new CategoryImageDto
+                // Only invoke external events if not suppressing them (i.e., not during initial load)
+                if (!suppressEvents && OnImagesChanged.HasDelegate)
                 {
-                    Id = 0,
-                    CategoryId = GetEffectiveEntityId(),
-                    FileId = file.Id,
-                    Alt = file.Alt ?? file.OriginalFileName,
-                    Caption = file.Description,
-                    Position = index,
-                    IsFeatured = index == 0,
-                    ImageUrl = file.Urls?.Download ?? FileService.GetFileUrl(file.Id),
-                    ThumbnailUrl = file.Urls?.Thumbnail ?? FileService.GetThumbnailUrl(file.Id),
-                    CreatedAt = file.CreatedAt,
-                    UpdatedAt = file.UpdatedAt
-                }).ToList();
+                    var categoryImages = currentCategoryImages.Select((file, index) => new CategoryImageDto
+                    {
+                        Id = 0,
+                        CategoryId = GetEffectiveEntityId(),
+                        FileId = file.Id,
+                        Alt = file.Alt ?? file.OriginalFileName,
+                        Caption = file.Description,
+                        Position = index,
+                        IsFeatured = index == 0,
+                        ImageUrl = file.Urls?.Download ?? FileService.GetFileUrl(file.Id),
+                        ThumbnailUrl = file.Urls?.Thumbnail ?? FileService.GetThumbnailUrl(file.Id),
+                        CreatedAt = file.CreatedAt,
+                        UpdatedAt = file.UpdatedAt
+                    }).ToList();
 
-                if (OnImagesChanged.HasDelegate)
-                {
                     await OnImagesChanged.InvokeAsync(categoryImages);
                 }
             }
@@ -206,10 +253,9 @@ namespace Frontend.Forms.Categories
             {
                 parentCategories = await CategoryService.GetCategoryTreeAsync();
 
-                var effectiveId = EditingCategoryId ?? contextEditingId;
-                if (IsEditMode && effectiveId.HasValue)
+                if (IsEditMode && stableEntityId > 0)
                 {
-                    parentCategories = FilterParentCategories(parentCategories, effectiveId.Value);
+                    parentCategories = FilterParentCategories(parentCategories, stableEntityId);
                 }
 
                 await InvokeAsync(StateHasChanged);
@@ -312,7 +358,7 @@ namespace Frontend.Forms.Categories
                 isValidatingSlug = true;
                 await InvokeAsync(StateHasChanged);
 
-                var excludeId = EditingCategoryId ?? contextEditingId;
+                var excludeId = stableEntityId > 0 ? stableEntityId : (int?)null;
                 var isValid = await CategoryService.ValidateSlugAsync(Model.Slug, excludeId);
                 slugValidationResult = isValid;
 
@@ -372,6 +418,7 @@ namespace Frontend.Forms.Categories
         public void Dispose()
         {
             slugValidationTimer?.Dispose();
+            loadingSemaphore?.Dispose();
         }
 
         #endregion

@@ -1,5 +1,4 @@
-﻿// Frontend/Components/Files/FilePicker/FilePicker.razor.cs
-using Backend.CMS.Application.DTOs;
+﻿using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Enums;
 using Frontend.Components.Common;
 using Frontend.Components.Common.ConfirmationDialogComponent;
@@ -35,38 +34,60 @@ namespace Frontend.Components.Files.FilePicker
         // File removal state
         private FileDto? fileToRemove = null;
 
-        // Debounce timer for entity changes
-        private Timer? entityChangeTimer;
+        // Parameter change tracking to prevent unnecessary reloads
+        private string? lastEntityType;
+        private int lastEntityId;
+        private bool hasInitialized = false;
+        private readonly SemaphoreSlim loadingSemaphore = new(1, 1);
 
         protected override async Task OnInitializedAsync()
         {
+            lastEntityType = EntityType;
+            lastEntityId = EntityId;
+            hasInitialized = true;
             await LoadFilesAsync();
         }
 
         protected override async Task OnParametersSetAsync()
         {
-            // Debounce entity changes to avoid rapid reloads
-            entityChangeTimer?.Dispose();
-            entityChangeTimer = new Timer(async _ =>
+            if (!hasInitialized) return;
+
+            // Only reload if the entity actually changed
+            if (EntityType != lastEntityType || EntityId != lastEntityId)
             {
-                await InvokeAsync(LoadFilesAsync);
-            }, null, 300, Timeout.Infinite);
+                lastEntityType = EntityType;
+                lastEntityId = EntityId;
+
+                // Use a small delay to debounce rapid parameter changes
+                await Task.Delay(50);
+
+                // Only proceed if parameters haven't changed again during the delay
+                if (EntityType == lastEntityType && EntityId == lastEntityId)
+                {
+                    await LoadFilesAsync();
+                }
+            }
         }
 
         #region File Loading and Management
 
         private async Task LoadFilesAsync()
         {
-            if (string.IsNullOrWhiteSpace(EntityType) || EntityId <= 0)
+            if (!await loadingSemaphore.WaitAsync(100))
             {
-                files.Clear();
-                isLoading = false;
-                StateHasChanged();
-                return;
+                return; // Skip if already loading
             }
 
             try
             {
+                if (string.IsNullOrWhiteSpace(EntityType) || EntityId <= 0)
+                {
+                    files.Clear();
+                    isLoading = false;
+                    StateHasChanged();
+                    return;
+                }
+
                 isLoading = true;
                 StateHasChanged();
 
@@ -98,6 +119,7 @@ namespace Frontend.Components.Files.FilePicker
             finally
             {
                 isLoading = false;
+                loadingSemaphore.Release();
                 StateHasChanged();
             }
         }
@@ -626,7 +648,7 @@ namespace Frontend.Components.Files.FilePicker
 
         public void Dispose()
         {
-            entityChangeTimer?.Dispose();
+            loadingSemaphore?.Dispose();
         }
 
         #endregion
