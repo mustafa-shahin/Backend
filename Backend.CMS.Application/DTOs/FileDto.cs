@@ -378,6 +378,8 @@ namespace Backend.CMS.Application.DTOs
         public string? ErrorMessage { get; set; }
         public List<string> Warnings { get; set; } = new();
         public Dictionary<string, object> ProcessingInfo { get; set; } = new();
+        public int SuccessCount { get; set; }
+        public List<FileDto> SuccessfulFiles { get; set; } = new();
     }
     public class ThumbnailResult
     {

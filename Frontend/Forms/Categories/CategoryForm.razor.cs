@@ -4,12 +4,13 @@ using System.Text;
 
 namespace Frontend.Forms.Categories
 {
-    public partial class CategoryForm : ComponentBase
+    public partial class CategoryForm : ComponentBase, IDisposable
     {
         [Parameter] public CreateCategoryDto Model { get; set; } = new();
         [Parameter] public Dictionary<string, string> ValidationErrors { get; set; } = new();
         [Parameter] public bool IsEditMode { get; set; }
         [Parameter] public int? EditingCategoryId { get; set; }
+        [Parameter] public EventCallback<List<FileDto>> OnImagesChanged { get; set; }
 
         private List<CategoryTreeDto>? parentCategories;
         private bool isValidatingSlug = false;
@@ -29,13 +30,23 @@ namespace Frontend.Forms.Categories
             }
         }
 
+        protected override async Task OnParametersSetAsync()
+        {
+            // Reload files when EditingCategoryId changes
+            if (IsEditMode && EditingCategoryId.HasValue)
+            {
+                await LoadCategoryFiles();
+            }
+        }
+
         private async Task LoadCategoryFiles()
         {
             try
             {
-                if (EditingCategoryId.HasValue)
+                if (EditingCategoryId.HasValue && EditingCategoryId.Value > 0)
                 {
                     categoryFiles = await FileService.GetFilesForEntityAsync("Category", EditingCategoryId.Value);
+                    await OnImagesChanged.InvokeAsync(categoryFiles);
                     StateHasChanged();
                 }
             }
@@ -50,6 +61,13 @@ namespace Frontend.Forms.Categories
             try
             {
                 parentCategories = await CategoryService.GetCategoryTreeAsync();
+
+                // Filter out the current category and its descendants if editing
+                if (IsEditMode && EditingCategoryId.HasValue)
+                {
+                    parentCategories = FilterParentCategories(parentCategories, EditingCategoryId.Value);
+                }
+
                 StateHasChanged();
             }
             catch (Exception ex)
@@ -58,11 +76,56 @@ namespace Frontend.Forms.Categories
             }
         }
 
+        private List<CategoryTreeDto> FilterParentCategories(List<CategoryTreeDto> categories, int categoryToExclude)
+        {
+            var filtered = new List<CategoryTreeDto>();
+
+            foreach (var category in categories)
+            {
+                if (category.Id != categoryToExclude && !IsDescendantOf(category, categoryToExclude))
+                {
+                    var filteredCategory = new CategoryTreeDto
+                    {
+                        Id = category.Id,
+                        Name = category.Name,
+                        Slug = category.Slug,
+                        ParentCategoryId = category.ParentCategoryId,
+                        IsActive = category.IsActive,
+                        IsVisible = category.IsVisible,
+                        SortOrder = category.SortOrder,
+                        Level = category.Level,
+                        Path = category.Path,
+                        ProductCount = category.ProductCount,
+                        TotalDescendants = category.TotalDescendants,
+                        CreatedAt = category.CreatedAt,
+                        UpdatedAt = category.UpdatedAt,
+                        Children = FilterParentCategories(category.Children, categoryToExclude)
+                    };
+                    filtered.Add(filteredCategory);
+                }
+            }
+
+            return filtered;
+        }
+
+        private bool IsDescendantOf(CategoryTreeDto category, int ancestorId)
+        {
+            foreach (var child in category.Children)
+            {
+                if (child.Id == ancestorId || IsDescendantOf(child, ancestorId))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private void OnNameChanged(ChangeEventArgs e)
         {
             var name = e.Value?.ToString() ?? string.Empty;
             Model.Name = name;
 
+            // Auto-generate slug if it's empty or matches the previous auto-generated slug
             var generatedSlug = GenerateSlugFromName(name);
 
             if (string.IsNullOrEmpty(Model.Slug) || Model.Slug == previousSlug)
@@ -82,9 +145,17 @@ namespace Frontend.Forms.Categories
                 Model.Slug = e.Value?.ToString() ?? string.Empty;
             }
 
+            // Reset validation state
             slugValidationResult = null;
+
+            // Cancel previous validation timer
             slugValidationTimer?.Dispose();
-            slugValidationTimer = new Timer(async _ => await ValidateSlugAsync(), null, 500, Timeout.Infinite);
+
+            // Start new validation timer (debounce)
+            if (!string.IsNullOrWhiteSpace(Model.Slug))
+            {
+                slugValidationTimer = new Timer(async _ => await ValidateSlugAsync(), null, 500, Timeout.Infinite);
+            }
 
             StateHasChanged();
         }
@@ -103,6 +174,15 @@ namespace Frontend.Forms.Categories
 
                 var isValid = await CategoryService.ValidateSlugAsync(Model.Slug, EditingCategoryId);
                 slugValidationResult = isValid;
+
+                if (!isValid)
+                {
+                    ValidationErrors["Slug"] = "This slug is already in use. Please choose a different one.";
+                }
+                else
+                {
+                    ValidationErrors.Remove("Slug");
+                }
             }
             catch (Exception ex)
             {
@@ -122,12 +202,12 @@ namespace Frontend.Forms.Categories
                 return string.Empty;
 
             return name.ToLowerInvariant()
-              .Replace(" ", "-")
-              .Replace("_", "-")
-              .Where(c => char.IsLetterOrDigit(c) || c == '-')
-              .Aggregate(new StringBuilder(), (sb, c) => sb.Append(c))
-              .ToString()
-              .Trim('-');
+                .Replace(" ", "-")
+                .Replace("_", "-")
+                .Where(c => char.IsLetterOrDigit(c) || c == '-')
+                .Aggregate(new StringBuilder(), (sb, c) => sb.Append(c))
+                .ToString()
+                .Trim('-');
         }
 
         private string GetValidationClass(string fieldName)
@@ -144,30 +224,25 @@ namespace Frontend.Forms.Categories
         private async Task OnCategoryFilesChanged(List<FileDto> files)
         {
             categoryFiles = files;
-
-            // Update the model with the featured image URL from the first image
-            if (files.Any())
-            {
-                var featuredFile = files.FirstOrDefault();
-                if (featuredFile != null)
-                {
-                    // This would be handled by the backend when saving the category
-                    // For now, we just store the files reference
-                }
-            }
-
+            await OnImagesChanged.InvokeAsync(categoryFiles);
             StateHasChanged();
         }
 
         private async Task OnCategoryFileUploaded(FileDto file)
         {
-            // Handle individual file upload if needed
+            // File was successfully uploaded
+            NotificationService.ShowSuccess($"Image {file.OriginalFileName} uploaded successfully");
+
+            // The files list will be refreshed by OnCategoryFilesChanged
             await Task.CompletedTask;
         }
 
         private async Task OnCategoryFileDeleted(FileDto file)
         {
-            // Handle individual file deletion if needed
+            // File was successfully deleted
+            NotificationService.ShowSuccess($"Image {file.OriginalFileName} deleted successfully");
+
+            // The files list will be refreshed by OnCategoryFilesChanged
             await Task.CompletedTask;
         }
 

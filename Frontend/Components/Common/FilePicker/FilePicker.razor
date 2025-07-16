@@ -1,9 +1,6 @@
-﻿
-
-@using Backend.CMS.Application.DTOs
+﻿@using Backend.CMS.Application.DTOs
 @using Backend.CMS.Domain.Enums
 @using Microsoft.AspNetCore.Components.Forms
-@using Microsoft.AspNetCore.Http
 @using Frontend.Interfaces
 @inject IFileService FileService
 @inject IStyleService StyleService
@@ -445,8 +442,6 @@
             var uploadDto = new FileUploadDto
             {
                 File = formFile,
-                EntityType = EntityType,
-                EntityId = EntityId,
                 IsPublic = false,
                 GenerateThumbnail = true,
                 ProcessImmediately = true,
@@ -464,8 +459,11 @@
                 for (int i = 10; i <= 90; i += 10)
                 {
                     await Task.Delay(100);
-                    uploadProgress[file.Name] = i;
-                    await InvokeAsync(StateHasChanged);
+                    if (uploadProgress.ContainsKey(file.Name))
+                    {
+                        uploadProgress[file.Name] = i;
+                        await InvokeAsync(StateHasChanged);
+                    }
                 }
             });
 
@@ -583,7 +581,7 @@
 
     private string GetFilePreviewUrl(FileDto file)
     {
-        return file.Urls?.Thumbnail ?? file.Urls?.Download ?? FileService.GetThumbnailUrl(file.Id);
+        return FileService.GetThumbnailUrl(file.Id);
     }
 
     private string GetAcceptedFileTypes()

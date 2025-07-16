@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 
 namespace Backend.CMS.Infrastructure.Caching.Services
@@ -690,7 +691,7 @@ namespace Backend.CMS.Infrastructure.Caching.Services
             return _redis.GetServer(endpoints.First());
         }
 
-        private async IAsyncEnumerable<IEnumerable<RedisKey>> GetKeysBatchedAsync(IServer server, string pattern, int batchSize, CancellationToken cancellationToken)
+        private async IAsyncEnumerable<IEnumerable<RedisKey>> GetKeysBatchedAsync(IServer server, string pattern, int batchSize, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             var keys = new List<RedisKey>();
 

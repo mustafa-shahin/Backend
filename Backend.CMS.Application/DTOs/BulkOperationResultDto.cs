@@ -25,6 +25,10 @@ namespace Backend.CMS.Application.DTOs
         public bool IsCompleteFailure => SuccessCount == 0 && FailureCount > 0;
         public double SuccessRate => TotalRequested > 0 ? (double)SuccessCount / TotalRequested : 0;
         public DateTime ProcessedAt { get; set; } = DateTime.UtcNow;
+
+        public bool Success { get; set; }
+
+        public FileDto? File { get; set; }
     }
 
     /// <summary>

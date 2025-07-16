@@ -1246,9 +1246,14 @@ namespace Backend.CMS.API.Controllers
                 var deleteResult = await _fileService.DeleteMultipleFilesAsync(fileIds);
 
                 _logger.LogInformation("Deleted {SuccessCount} of {TotalCount} files for entity {EntityType}:{EntityId}",
-                    deleteResult.SuccessCount, fileIds.Count, deleteDto.EntityType, deleteDto.EntityId);
+                    deleteResult ? fileIds.Count : 0, fileIds.Count, deleteDto.EntityType, deleteDto.EntityId);
 
-                return Ok(deleteResult);
+                return Ok(new BulkOperationResultDto
+                {
+                    TotalRequested = fileIds.Count,
+                    SuccessCount = deleteResult ? fileIds.Count : 0,
+                    FailureCount = deleteResult ? 0 : fileIds.Count
+                });
             }
             catch (Exception ex)
             {
@@ -1305,7 +1310,7 @@ namespace Backend.CMS.API.Controllers
 
                 var result = await _fileService.UploadFileAsync(standardUploadDto);
 
-                if (result?.Success == true && result.File != null)
+                if (result != null)
                 {
                     _logger.LogInformation("Successfully uploaded file {FileName} for entity {EntityType}:{EntityId}",
                         uploadDto.File.FileName, uploadDto.EntityType, uploadDto.EntityId);
@@ -1373,9 +1378,9 @@ namespace Backend.CMS.API.Controllers
                 var results = await _fileService.UploadMultipleFilesAsync(standardUploadDto);
 
                 // Update the uploaded files with entity information
-                if (results?.SuccessfulFiles != null)
+                if (results != null)
                 {
-                    foreach (var file in results.SuccessfulFiles)
+                    foreach (var file in results)
                     {
                         // Add entity tags to each uploaded file
                         var updateDto = new UpdateFileDto
@@ -1400,7 +1405,7 @@ namespace Backend.CMS.API.Controllers
                     }
 
                     _logger.LogInformation("Successfully uploaded {FileCount} files for entity {EntityType}:{EntityId}",
-                        results.SuccessfulFiles.Count, uploadDto.EntityType, uploadDto.EntityId);
+                        results.Count, uploadDto.EntityType, uploadDto.EntityId);
                 }
 
                 return Ok(results);

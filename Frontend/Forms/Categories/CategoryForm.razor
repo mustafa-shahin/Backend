@@ -1,7 +1,6 @@
 @using Backend.CMS.Application.DTOs
 @using Frontend.Components.Common.FilePicker
 @using Frontend.Interfaces
-@using Frontend.Components.Files
 @using System.Text
 @inject ICategoryService CategoryService
 @inject IFileService FileService
@@ -28,13 +27,13 @@
                        type="text"
                        placeholder="Enter category name"
                        class="@StyleService.GetFormInputClass(addtionalClasses: GetValidationClass("Name"))" />
-                        @if (ValidationErrors.ContainsKey("Name"))
-                        {
-                            <p class="text-red-600 dark:text-red-400 text-sm mt-1">
-                                <i class="fas fa-exclamation-triangle mr-1"></i>
-                                @ValidationErrors["Name"]
-                            </p>
-                        }
+                @if (ValidationErrors.ContainsKey("Name"))
+                {
+                    <p class="text-red-600 dark:text-red-400 text-sm mt-1">
+                        <i class="fas fa-exclamation-triangle mr-1"></i>
+                        @ValidationErrors["Name"]
+                    </p>
+                }
             </div>
 
             <!-- Slug -->
@@ -161,7 +160,7 @@
         </div>
     </div>
 
-<!-- Images -->
+    <!-- Images -->
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
         <div class="flex items-center mb-4">
             <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center mr-3">
@@ -169,7 +168,7 @@
             </div>
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Category Images</h3>
         </div>
-        
+
         <FilePicker EntityType="Category"
                     EntityId="@(EditingCategoryId ?? 0)"
                     AllowMultiple="true"
@@ -181,6 +180,16 @@
                     OnFilesChanged="@OnCategoryFilesChanged"
                     OnFileUploaded="@OnCategoryFileUploaded"
                     OnFileDeleted="@OnCategoryFileDeleted" />
+
+        @if (categoryFiles.Any())
+        {
+            <div class="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <div class="flex items-center text-sm text-blue-700 dark:text-blue-300">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    <span>@categoryFiles.Count image(s) uploaded. The first image will be used as the featured image.</span>
+                </div>
+            </div>
+        }
     </div>
 
     <!-- Status & Visibility -->
@@ -278,4 +287,3 @@
         </div>
     </div>
 </div>
-
