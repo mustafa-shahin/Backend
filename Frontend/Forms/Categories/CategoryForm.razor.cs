@@ -7,6 +7,8 @@ using Frontend.Components.Common.ObjectSelector;
 using Frontend.Extensions;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Internal;
 using System.Text;
 
 namespace Frontend.Forms.Categories
@@ -478,7 +480,7 @@ namespace Frontend.Forms.Categories
                     {
                         var uploadDto = new FileUploadDto
                         {
-                            File = (Microsoft.AspNetCore.Http.IFormFile)file,
+                            File = await ConvertToFormFileAsync(file),
                             Description = $"Category image: {file.Name}",
                             Alt = Path.GetFileNameWithoutExtension(file.Name),
                             IsPublic = true,
@@ -804,6 +806,21 @@ namespace Frontend.Forms.Categories
         }
 
         #endregion
+
+        private async Task<IFormFile> ConvertToFormFileAsync(IBrowserFile browserFile)
+        {
+            var stream = browserFile.OpenReadStream(browserFile.Size);
+            var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+
+            // Minimal implementation of IFormFile for upload
+            return new FormFile(memoryStream, 0, browserFile.Size, browserFile.Name, browserFile.Name)
+            {
+                Headers = new HeaderDictionary(),
+                ContentType = browserFile.ContentType
+            };
+        }
 
         #region IDisposable
 

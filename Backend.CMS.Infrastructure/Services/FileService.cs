@@ -341,7 +341,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var totalCount = await query.CountAsync();
 
                 // Apply pagination at database level
-                var files = await query
+                var files = await query.Where(f => !f.IsDeleted)
                     .Skip((pageNumber - 1) * pageSize)
                     .Take(pageSize)
                     .ToListAsync();
