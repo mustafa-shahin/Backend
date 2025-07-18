@@ -1,5 +1,4 @@
-﻿
-using Backend.CMS.Application.DTOs;
+﻿using Backend.CMS.Application.DTOs;
 using Frontend.Components.Common.GenericCrudPage;
 using Microsoft.AspNetCore.Components;
 using System.Text;
@@ -8,7 +7,7 @@ namespace Frontend.Forms.Categories
 {
     public partial class CategoryForm : ComponentBase, IDisposable
     {
-        // Form context integration - these will be set by the parent component
+        // Form context integration
         [Parameter] public CreateCategoryDto Model { get; set; } = new();
         [Parameter] public Dictionary<string, string> ValidationErrors { get; set; } = new();
         [Parameter] public bool IsEditMode { get; set; }
@@ -27,23 +26,25 @@ namespace Frontend.Forms.Categories
         private string previousSlug = string.Empty;
         private bool showImagePreviewDialog = false;
         private FileDto? previewingFile = null;
-        private List<FileDto> currentCategoryImages = new();
-        private bool imagesLoaded = false;
-        private bool isLoadingImages = false;
-        private readonly SemaphoreSlim loadingSemaphore = new(1, 1);
+
+        // Temporary file storage - reactive state
+        private List<FileDto> temporaryFiles = new();
+        private int? featuredImageId = null;
 
         // Context extraction
         private int? contextEditingId;
         private CategoryDto? contextOriginalCategory;
 
-        // Stable entity ID to prevent FilePicker reloads
+        // State tracking
         private int stableEntityId = 0;
         private bool hasInitialized = false;
+        private bool isUpdatingImages = false;
 
         protected override async Task OnInitializedAsync()
         {
             ExtractContextInformation();
             await LoadParentCategories();
+            await InitializeImages();
             hasInitialized = true;
         }
 
@@ -54,7 +55,6 @@ namespace Frontend.Forms.Categories
             var oldEntityId = stableEntityId;
             ExtractContextInformation();
 
-            // Only handle parameter changes if the entity ID actually changed
             if (oldEntityId != stableEntityId)
             {
                 await HandleParameterChanges();
@@ -63,13 +63,11 @@ namespace Frontend.Forms.Categories
 
         private void ExtractContextInformation()
         {
-            // Extract information from FormContext if available (for GenericCrudPage integration)
             if (FormContext is GenericCrudPage<CategoryDto, CategoryDto, CreateCategoryDto, UpdateCategoryDto>.FormContext context)
             {
                 contextEditingId = context.EditingEntityId;
                 contextOriginalCategory = context.OriginalEntity as CategoryDto;
 
-                // Override parameters with context information if available
                 if (contextEditingId.HasValue && !EditingCategoryId.HasValue)
                 {
                     EditingCategoryId = contextEditingId;
@@ -81,15 +79,8 @@ namespace Frontend.Forms.Categories
                 }
             }
 
-            // Set stable entity ID
             var newEntityId = EditingCategoryId ?? contextEditingId ?? 0;
-            if (stableEntityId != newEntityId)
-            {
-                stableEntityId = newEntityId;
-                // Reset loading state when entity changes
-                imagesLoaded = false;
-                isLoadingImages = false;
-            }
+            stableEntityId = newEntityId;
         }
 
         private int GetEffectiveEntityId()
@@ -99,101 +90,114 @@ namespace Frontend.Forms.Categories
 
         private async Task HandleParameterChanges()
         {
-            if (!await loadingSemaphore.WaitAsync(100))
-            {
-                return; // Skip if already loading
-            }
-
             try
             {
-                if (IsEditMode && stableEntityId > 0 && !imagesLoaded && !isLoadingImages)
-                {
-                    await LoadCategoryImagesFromFiles(stableEntityId);
-                }
-                else if (!IsEditMode && imagesLoaded)
-                {
-                    // Clear images when switching from edit to create mode
-                    currentCategoryImages.Clear();
-                    imagesLoaded = false;
-                    isLoadingImages = false;
-                    await InvokeAsync(StateHasChanged);
-                }
+                await InitializeImages();
             }
             catch (Exception ex)
             {
                 NotificationService.ShowError($"Error handling parameter changes: {ex.Message}");
             }
-            finally
-            {
-                loadingSemaphore.Release();
-            }
         }
 
         #region Image Management
 
-        private async Task LoadCategoryImagesFromFiles(int categoryId)
+        private async Task InitializeImages()
         {
-            if (isLoadingImages || imagesLoaded) return;
-
             try
             {
-                isLoadingImages = true;
-                await InvokeAsync(StateHasChanged);
+                isUpdatingImages = true;
 
-                var categoryFiles = await FileService.GetFilesForEntityAsync("Category", categoryId, Backend.CMS.Domain.Enums.FileType.Image);
-                currentCategoryImages = categoryFiles?.ToList() ?? new List<FileDto>();
+                // Reset state
+                temporaryFiles.Clear();
+                featuredImageId = null;
 
-                // Update model without triggering external events during initial load
-                await UpdateModelFromCurrentImages(suppressEvents: true);
+                if (IsEditMode && stableEntityId > 0)
+                {
+                    // Load existing category images
+                    var existingImages = await FileService.GetFilesForEntityAsync("Category", stableEntityId, Backend.CMS.Domain.Enums.FileType.Image);
+                    temporaryFiles = existingImages.ToList();
 
-                imagesLoaded = true;
+                    // Find featured image from existing category data
+                    var existingCategory = ExistingCategory ?? contextOriginalCategory;
+                    if (existingCategory?.Images?.Any() == true)
+                    {
+                        var featuredImage = existingCategory.Images.FirstOrDefault(i => i.IsFeatured);
+                        if (featuredImage != null)
+                        {
+                            var matchingFile = temporaryFiles.FirstOrDefault(f => f.Id == featuredImage.FileId);
+                            if (matchingFile != null)
+                            {
+                                featuredImageId = matchingFile.Id;
+                            }
+                        }
+                    }
+                }
+
+                // Update model immediately
+                await UpdateModelFromCurrentImages();
             }
             catch (Exception ex)
             {
-                NotificationService.ShowError($"Failed to load category images: {ex.Message}");
-                currentCategoryImages.Clear();
-                imagesLoaded = false;
+                NotificationService.ShowError($"Failed to initialize images: {ex.Message}");
             }
             finally
             {
-                isLoadingImages = false;
+                isUpdatingImages = false;
                 await InvokeAsync(StateHasChanged);
             }
         }
 
-        private async Task OnCategoryImagesChanged(List<FileDto> files)
+        private async Task OnTemporaryFilesChanged(List<FileDto> files)
         {
-            if (isLoadingImages) return; // Ignore events during initial loading
+            if (isUpdatingImages) return;
 
             try
             {
-                currentCategoryImages = files?.ToList() ?? new List<FileDto>();
-                await UpdateModelFromCurrentImages(suppressEvents: false);
+                temporaryFiles = files?.ToList() ?? new List<FileDto>();
+                await UpdateModelFromCurrentImages();
                 await InvokeAsync(StateHasChanged);
             }
             catch (Exception ex)
             {
-                NotificationService.ShowError($"Failed to update category images: {ex.Message}");
+                NotificationService.ShowError($"Failed to update temporary files: {ex.Message}");
             }
         }
 
-        private async Task UpdateModelFromCurrentImages(bool suppressEvents = false)
+        private async Task OnFeaturedImageChanged(int? fileId)
+        {
+            if (isUpdatingImages) return;
+
+            try
+            {
+                featuredImageId = fileId;
+                await UpdateModelFromCurrentImages();
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to update featured image: {ex.Message}");
+            }
+        }
+
+        private async Task UpdateModelFromCurrentImages()
         {
             try
             {
-                Model.Images = currentCategoryImages.Select((file, index) => new CreateCategoryImageDto
+                // Update the model's images collection
+                Model.Images = temporaryFiles.Select((file, index) => new CreateCategoryImageDto
                 {
                     FileId = file.Id,
                     Alt = file.Alt ?? file.OriginalFileName,
                     Caption = file.Description,
                     Position = index,
-                    IsFeatured = index == 0
+                    IsFeatured = featuredImageId == file.Id
                 }).ToList();
 
-                // Only invoke external events if not suppressing them (i.e., not during initial load)
-                if (!suppressEvents && OnImagesChanged.HasDelegate)
+                // Notify parent components
+                if (OnImagesChanged.HasDelegate)
                 {
-                    var categoryImages = currentCategoryImages.Select((file, index) => new CategoryImageDto
+                    var categoryImages = temporaryFiles.Select((file, index) => new CategoryImageDto
                     {
                         Id = 0,
                         CategoryId = GetEffectiveEntityId(),
@@ -201,7 +205,7 @@ namespace Frontend.Forms.Categories
                         Alt = file.Alt ?? file.OriginalFileName,
                         Caption = file.Description,
                         Position = index,
-                        IsFeatured = index == 0,
+                        IsFeatured = featuredImageId == file.Id,
                         ImageUrl = file.Urls?.Download ?? FileService.GetFileUrl(file.Id),
                         ThumbnailUrl = file.Urls?.Thumbnail ?? FileService.GetThumbnailUrl(file.Id),
                         CreatedAt = file.CreatedAt,
@@ -228,7 +232,14 @@ namespace Frontend.Forms.Categories
         {
             try
             {
-                await FileService.DownloadFileAsync(file.Id);
+                if (file.Id > 0)
+                {
+                    await FileService.DownloadFileAsync(file.Id);
+                }
+                else
+                {
+                    NotificationService.ShowInfo($"File {file.OriginalFileName} is in temporary storage. Save the category first to download.");
+                }
             }
             catch (Exception ex)
             {
@@ -241,6 +252,19 @@ namespace Frontend.Forms.Categories
             showImagePreviewDialog = false;
             previewingFile = null;
             StateHasChanged();
+        }
+
+        private string GetImagePreviewUrl(FileDto file)
+        {
+            if (file.Id > 0)
+            {
+                return file.Urls?.Download ?? FileService.GetFileUrl(file.Id);
+            }
+            else
+            {
+                // For temporary files, use the thumbnail data if available
+                return file.Urls?.Thumbnail ?? file.Urls?.Download ?? "#";
+            }
         }
 
         #endregion
@@ -413,12 +437,30 @@ namespace Frontend.Forms.Categories
 
         #endregion
 
+        #region Public API
+
+        public List<FileDto> GetTemporaryFiles()
+        {
+            return temporaryFiles.ToList();
+        }
+
+        public int? GetFeaturedImageId()
+        {
+            return featuredImageId;
+        }
+
+        public bool HasTemporaryFiles()
+        {
+            return temporaryFiles.Any(f => f.Id < 0);
+        }
+
+        #endregion
+
         #region IDisposable
 
         public void Dispose()
         {
             slugValidationTimer?.Dispose();
-            loadingSemaphore?.Dispose();
         }
 
         #endregion

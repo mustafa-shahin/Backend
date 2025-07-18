@@ -1,5 +1,4 @@
-﻿
-@using Backend.CMS.Application.DTOs
+﻿@using Backend.CMS.Application.DTOs
 @using Backend.CMS.Domain.Enums
 @using Frontend.Components.Common.ConfirmationDialogComponent
 @using Frontend.Components.Files.FileBrowser
@@ -24,6 +23,13 @@
             {
                 <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">
                     @files.Count @(files.Count == 1 ? "file" : "files")
+                </span>
+            }
+            @if (featuredFileId.HasValue)
+            {
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-700 dark:text-blue-200">
+                    <i class="fas fa-star mr-1"></i>
+                    Featured Set
                 </span>
             }
         </div>
@@ -108,7 +114,18 @@
             <div class="grid @GetGridClasses() gap-4">
                 @foreach (var file in files)
                 {
-                    <div class="relative group @GetFileCardClasses()">
+                    <div class="relative group @GetFileCardClasses(file)">
+                        <!-- Featured Badge -->
+                        @if (featuredFileId == file.Id)
+                        {
+                            <div class="absolute top-2 left-2 z-10">
+                                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 shadow-sm">
+                                    <i class="fas fa-star mr-1"></i>
+                                    Featured
+                                </span>
+                            </div>
+                        }
+
                         <!-- File Preview -->
                         <div class="@GetFilePreviewClasses()">
                             @if (file.IsImage && ShowThumbnails)
@@ -134,6 +151,16 @@
                             <!-- Overlay Actions -->
                             <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
                                 <div class="flex space-x-1">
+                                    @if (AllowFeaturedSelection && file.IsImage)
+                                    {
+                                        <button type="button"
+                                                class="p-2 @(featuredFileId == file.Id ? "bg-yellow-500 text-white" : "bg-white text-gray-700 hover:bg-yellow-100") rounded-full transition-colors shadow-lg"
+                                                @onclick="() => ToggleFeaturedFile(file)"
+                                                title="@(featuredFileId == file.Id ? "Remove Featured" : "Set as Featured")">
+                                            <i class="fas fa-star text-sm"></i>
+                                        </button>
+                                    }
+
                                     @if (ShowPreview)
                                     {
                                         <button type="button"
@@ -193,8 +220,17 @@
             <div class="space-y-2">
                 @foreach (var file in files)
                 {
-                    <div class="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                    <div class="flex items-center justify-between p-3 @GetFileListItemClasses(file) rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
                         <div class="flex items-center space-x-3 flex-1 min-w-0">
+                            @if (featuredFileId == file.Id)
+                            {
+                                <div class="flex-shrink-0">
+                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                                        <i class="fas fa-star mr-1"></i>
+                                        Featured
+                                    </span>
+                                </div>
+                            }
                             <div class="w-10 h-10 @GetFileIconBackgroundClass(file.FileType) rounded-lg flex items-center justify-center flex-shrink-0">
                                 <i class="@StyleService.GetFileIcon(file.ContentType) text-white"></i>
                             </div>
@@ -217,6 +253,16 @@
                         </div>
 
                         <div class="flex items-center space-x-2 flex-shrink-0">
+                            @if (AllowFeaturedSelection && file.IsImage)
+                            {
+                                <button type="button"
+                                        class="@StyleService.GetTableActionButtonClass(featuredFileId == file.Id ? "warning" : "")"
+                                        @onclick="() => ToggleFeaturedFile(file)"
+                                        title="@(featuredFileId == file.Id ? "Remove Featured" : "Set as Featured")">
+                                    <i class="fas fa-star"></i>
+                                </button>
+                            }
+
                             @if (ShowPreview)
                             {
                                 <button type="button"
@@ -353,6 +399,7 @@
     [Parameter] public bool AllowRemove { get; set; } = true;
     [Parameter] public bool AllowClear { get; set; } = true;
     [Parameter] public bool AllowMultiple { get; set; } = true;
+    [Parameter] public bool AllowFeaturedSelection { get; set; } = false;
 
     // File restrictions
     [Parameter] public List<FileType>? AllowedFileTypes { get; set; }
@@ -363,6 +410,15 @@
     // Permissions
     [Parameter] public bool CanUpload { get; set; } = true;
     [Parameter] public bool CanBrowse { get; set; } = true;
+
+    // Temporary storage support
+    [Parameter] public bool AllowTemporaryStorage { get; set; } = false;
+    [Parameter] public List<FileDto> TemporaryFiles { get; set; } = new();
+    [Parameter] public EventCallback<List<FileDto>> OnTemporaryFilesChanged { get; set; }
+
+    // Featured file support
+    [Parameter] public int? FeaturedFileId { get; set; }
+    [Parameter] public EventCallback<int?> OnFeaturedFileChanged { get; set; }
 
     // Empty state customization
     [Parameter] public string EmptyStateTitle { get; set; } = "No files uploaded";

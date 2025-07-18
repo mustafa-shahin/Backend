@@ -515,3 +515,313 @@ button, .cursor-pointer {
         background-color: rgba(0, 0, 0, 0.7);
     }
 }
+/* Frontend/wwwroot/css/file-picker.css */
+
+/* File Picker Container */
+.file-picker-container {
+    @apply w-full;
+}
+
+    /* Upload Area Styles */
+    .file-picker-container .upload-area {
+        @apply border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center transition-all duration-200;
+    }
+
+        .file-picker-container .upload-area:hover:not(.readonly) {
+            @apply border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/10;
+        }
+
+        .file-picker-container .upload-area.drag-over {
+            @apply border-blue-500 bg-blue-50 dark:bg-blue-900/20 scale-[1.02];
+        }
+
+        .file-picker-container .upload-area.uploading {
+            @apply border-blue-500 bg-blue-50 dark:bg-blue-900/20;
+        }
+
+        .file-picker-container .upload-area.readonly {
+            @apply opacity-60 cursor-not-allowed;
+        }
+
+    /* Upload Icon Animations */
+    .file-picker-container .upload-icon-container {
+        @apply transition-all duration-300;
+    }
+
+    .file-picker-container .upload-area:hover .upload-icon-container:not(.readonly) {
+        @apply scale-110;
+    }
+
+    .file-picker-container .upload-area.uploading .upload-icon-container {
+        @apply animate-pulse;
+    }
+
+    /* File Grid Styles */
+    .file-picker-container .file-grid {
+        @apply grid gap-4;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+
+@media (max-width: 640px) {
+    .file-picker-container .file-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    }
+}
+
+/* File Card Styles */
+.file-picker-container .file-card {
+    @apply relative p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 transition-all duration-200 hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600;
+}
+
+    .file-picker-container .file-card:hover {
+        @apply transform -translate-y-1;
+    }
+
+    .file-picker-container .file-card .file-preview {
+        @apply aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden mb-3 relative;
+    }
+
+        .file-picker-container .file-card .file-preview img {
+            @apply w-full h-full object-cover transition-transform duration-200;
+        }
+
+    .file-picker-container .file-card:hover .file-preview img {
+        @apply scale-105;
+    }
+
+    .file-picker-container .file-card .file-actions {
+        @apply absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-1;
+    }
+
+    .file-picker-container .file-card .file-action-btn {
+        @apply p-1 rounded-full text-white shadow-md transition-all duration-200 hover:scale-110;
+    }
+
+        .file-picker-container .file-card .file-action-btn.preview {
+            @apply bg-blue-600 hover:bg-blue-700;
+        }
+
+        .file-picker-container .file-card .file-action-btn.delete {
+            @apply bg-red-600 hover:bg-red-700;
+        }
+
+/* File List Styles */
+.file-picker-container .file-list {
+    @apply space-y-2;
+}
+
+.file-picker-container .file-list-item {
+    @apply flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg transition-all duration-200 hover:bg-gray-100 dark:hover:bg-gray-600;
+}
+
+    .file-picker-container .file-list-item .file-icon {
+        @apply w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center;
+    }
+
+/* Progress Bar Styles */
+.file-picker-container .progress-container {
+    @apply bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4;
+}
+
+.file-picker-container .progress-bar {
+    @apply w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 overflow-hidden;
+}
+
+.file-picker-container .progress-bar-fill {
+    @apply bg-blue-600 h-2 rounded-full transition-all duration-300 ease-out;
+}
+
+/* Preview Modal Styles */
+.file-picker-container .preview-modal {
+    @apply fixed inset-0 z-50 overflow-y-auto;
+}
+
+.file-picker-container .preview-backdrop {
+    @apply fixed inset-0 bg-black bg-opacity-75 transition-opacity;
+}
+
+.file-picker-container .preview-content {
+    @apply inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full max-w-4xl;
+}
+
+.file-picker-container .preview-image {
+    @apply max-w-full max-h-96 object-contain rounded-lg;
+}
+
+/* Empty State Styles */
+.file-picker-container .empty-state {
+    @apply text-center py-8;
+}
+
+.file-picker-container .empty-state-icon {
+    @apply w-16 h-16 mx-auto bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4;
+}
+
+    .file-picker-container .empty-state-icon i {
+        @apply text-gray-400 text-xl;
+    }
+
+/* View Toggle Styles */
+.file-picker-container .view-toggle {
+    @apply flex rounded-lg shadow-sm;
+}
+
+.file-picker-container .view-toggle-btn {
+    @apply inline-flex items-center px-4 py-2 text-sm font-medium border transition-colors duration-200;
+}
+
+    .file-picker-container .view-toggle-btn.active {
+        @apply bg-blue-50 dark:bg-blue-900 border-blue-200 dark:border-blue-700 text-blue-700 dark:text-blue-300;
+    }
+
+    .file-picker-container .view-toggle-btn:not(.active) {
+        @apply bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700;
+    }
+
+    .file-picker-container .view-toggle-btn:first-child {
+        @apply rounded-l-lg border-r-0;
+    }
+
+    .file-picker-container .view-toggle-btn:last-child {
+        @apply rounded-r-lg border-l-0;
+    }
+
+/* Loading States */
+.file-picker-container .loading-spinner {
+    @apply animate-spin rounded-full border-2 border-gray-200 border-t-blue-600;
+}
+
+.file-picker-container .loading-text {
+    @apply text-gray-500 dark:text-gray-400;
+}
+
+/* Responsive Design */
+@media (max-width: 640px) {
+    .file-picker-container .file-card .file-actions {
+        @apply opacity-100; /* Always show on mobile */
+    }
+
+    .file-picker-container .file-list-item {
+        @apply flex-col items-start space-y-3;
+    }
+
+        .file-picker-container .file-list-item .file-actions {
+            @apply w-full flex justify-end;
+        }
+}
+
+/* Dark Mode Adjustments */
+@media (prefers-color-scheme: dark) {
+    .file-picker-container .file-card {
+        @apply shadow-gray-900/20;
+    }
+
+        .file-picker-container .file-card:hover {
+            @apply shadow-gray-900/40;
+        }
+}
+
+/* Animation Classes */
+.file-picker-container .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+}
+
+.file-picker-container .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+.file-picker-container .animate-scale-in {
+    animation: scaleIn 0.3s ease-out;
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(1rem);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* File Type Specific Styles */
+.file-picker-container .file-icon.image {
+    @apply text-green-500;
+}
+
+.file-picker-container .file-icon.video {
+    @apply text-purple-500;
+}
+
+.file-picker-container .file-icon.audio {
+    @apply text-blue-500;
+}
+
+.file-picker-container .file-icon.document {
+    @apply text-red-500;
+}
+
+.file-picker-container .file-icon.archive {
+    @apply text-yellow-500;
+}
+
+/* Accessibility Improvements */
+.file-picker-container .sr-only {
+    @apply absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0;
+}
+
+.file-picker-container button:focus {
+    @apply outline-none ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-gray-800;
+}
+
+.file-picker-container .file-card:focus-within {
+    @apply ring-2 ring-blue-500 ring-offset-2 dark:ring-offset-gray-800;
+}
+
+/* High Contrast Mode Support */
+@media (prefers-contrast: high) {
+    .file-picker-container .file-card {
+        @apply border-2 border-gray-900 dark:border-gray-100;
+    }
+
+    .file-picker-container .upload-area {
+        @apply border-4;
+    }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+    .file-picker-container * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+
+    .file-picker-container .file-card:hover {
+        @apply transform-none;
+    }
+}

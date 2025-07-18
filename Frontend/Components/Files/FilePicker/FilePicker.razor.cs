@@ -2,6 +2,7 @@
 using Backend.CMS.Domain.Enums;
 using Frontend.Components.Common;
 using Frontend.Components.Common.ConfirmationDialogComponent;
+using Frontend.Components.Files.FilePreviewComponent;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Http;
@@ -13,7 +14,9 @@ namespace Frontend.Components.Files.FilePicker
     {
         // Private fields
         private List<FileDto> files = new();
-        private bool isLoading = true;
+        private List<FileDto> temporaryFiles = new();
+        private int? featuredFileId = null;
+        private bool isLoading = false;
         private bool isUploading = false;
         private bool isProcessing = false;
         private bool showFileCount = true;
@@ -34,39 +37,123 @@ namespace Frontend.Components.Files.FilePicker
         // File removal state
         private FileDto? fileToRemove = null;
 
-        // Parameter change tracking to prevent unnecessary reloads
+        // Parameter change tracking
         private string? lastEntityType;
         private int lastEntityId;
         private bool hasInitialized = false;
         private readonly SemaphoreSlim loadingSemaphore = new(1, 1);
 
+        // Temporary storage tracking
+        private int nextTemporaryId = -1;
+
+        // State tracking for immediate updates
+        private bool isInternalUpdate = false;
+
         protected override async Task OnInitializedAsync()
         {
             lastEntityType = EntityType;
             lastEntityId = EntityId;
+
+            // Initialize from parameters
+            InitializeFromParameters();
+
             hasInitialized = true;
-            await LoadFilesAsync();
+
+            // Load files from backend if entity exists
+            if (!string.IsNullOrEmpty(EntityType) && EntityId > 0)
+            {
+                await LoadFilesAsync();
+            }
+            else
+            {
+                // Use temporary storage mode
+                files = temporaryFiles.ToList();
+                isLoading = false;
+                await InvokeAsync(StateHasChanged);
+            }
         }
 
         protected override async Task OnParametersSetAsync()
         {
             if (!hasInitialized) return;
 
-            // Only reload if the entity actually changed
+            // Skip if this is an internal update to prevent loops
+            if (isInternalUpdate)
+            {
+                isInternalUpdate = false;
+                return;
+            }
+
+            var parametersChanged = false;
+
+            // Handle temporary files parameter changes
+            if (AllowTemporaryStorage && !AreFileListsEqual(TemporaryFiles, temporaryFiles))
+            {
+                temporaryFiles = TemporaryFiles?.ToList() ?? new List<FileDto>();
+                files = temporaryFiles.ToList();
+                parametersChanged = true;
+            }
+
+            // Handle featured file parameter changes
+            if (FeaturedFileId != featuredFileId)
+            {
+                featuredFileId = FeaturedFileId;
+                parametersChanged = true;
+            }
+
+            // Handle entity parameter changes
             if (EntityType != lastEntityType || EntityId != lastEntityId)
             {
                 lastEntityType = EntityType;
                 lastEntityId = EntityId;
 
-                // Use a small delay to debounce rapid parameter changes
-                await Task.Delay(50);
-
-                // Only proceed if parameters haven't changed again during the delay
-                if (EntityType == lastEntityType && EntityId == lastEntityId)
+                if (!string.IsNullOrEmpty(EntityType) && EntityId > 0)
                 {
                     await LoadFilesAsync();
                 }
+                else if (AllowTemporaryStorage)
+                {
+                    files = temporaryFiles.ToList();
+                    isLoading = false;
+                }
+                parametersChanged = true;
             }
+
+            if (parametersChanged)
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+
+        private void InitializeFromParameters()
+        {
+            // Initialize temporary files if provided
+            if (TemporaryFiles?.Any() == true)
+            {
+                temporaryFiles = TemporaryFiles.ToList();
+            }
+
+            // Initialize featured file
+            featuredFileId = FeaturedFileId;
+
+            // Set initial files state
+            files = temporaryFiles.ToList();
+        }
+
+        private bool AreFileListsEqual(List<FileDto>? list1, List<FileDto> list2)
+        {
+            if (list1 == null && list2.Count == 0) return true;
+            if (list1 == null || list1.Count != list2.Count) return false;
+
+            for (int i = 0; i < list1.Count; i++)
+            {
+                if (list1[i].Id != list2[i].Id ||
+                    list1[i].OriginalFileName != list2[i].OriginalFileName)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         #region File Loading and Management
@@ -75,32 +162,29 @@ namespace Frontend.Components.Files.FilePicker
         {
             if (!await loadingSemaphore.WaitAsync(100))
             {
-                return; // Skip if already loading
+                return;
             }
 
             try
             {
+                isLoading = true;
+                await InvokeAsync(StateHasChanged);
+
                 if (string.IsNullOrWhiteSpace(EntityType) || EntityId <= 0)
                 {
-                    files.Clear();
+                    files = temporaryFiles.ToList();
                     isLoading = false;
-                    StateHasChanged();
+                    await InvokeAsync(StateHasChanged);
                     return;
                 }
 
-                isLoading = true;
-                StateHasChanged();
-
-                // Get files for the specific entity
                 var entityFiles = await FileService.GetFilesForEntityAsync(EntityType, EntityId);
 
-                // Filter by allowed file types if specified
                 if (AllowedFileTypes?.Any() == true)
                 {
                     entityFiles = entityFiles.Where(f => AllowedFileTypes.Contains(f.FileType)).ToList();
                 }
 
-                // Filter by allowed extensions if specified
                 if (AllowedExtensions?.Any() == true)
                 {
                     entityFiles = entityFiles.Where(f =>
@@ -109,7 +193,7 @@ namespace Frontend.Components.Files.FilePicker
                 }
 
                 files = entityFiles;
-                await OnFilesChanged.InvokeAsync(files);
+                await NotifyFilesChanged();
             }
             catch (Exception ex)
             {
@@ -120,13 +204,109 @@ namespace Frontend.Components.Files.FilePicker
             {
                 isLoading = false;
                 loadingSemaphore.Release();
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
             }
         }
 
-        private async Task RefreshFiles()
+        #endregion
+
+        #region Temporary File Management
+
+        private async Task AddTemporaryFile(FileDto file)
         {
-            await LoadFilesAsync();
+            // Assign temporary ID if not set
+            if (file.Id == 0)
+            {
+                file.Id = nextTemporaryId--;
+            }
+
+            // Check file count limit
+            if (temporaryFiles.Count >= MaxFiles)
+            {
+                NotificationService.ShowError($"Cannot add more than {MaxFiles} files.");
+                return;
+            }
+
+            // Check for duplicates by filename
+            if (temporaryFiles.Any(f => f.OriginalFileName == file.OriginalFileName))
+            {
+                NotificationService.ShowError($"File '{file.OriginalFileName}' already exists.");
+                return;
+            }
+
+            temporaryFiles.Add(file);
+            files = temporaryFiles.ToList();
+
+            // Automatically set first image as featured if none is set
+            if (AllowFeaturedSelection && file.IsImage && !featuredFileId.HasValue)
+            {
+                featuredFileId = file.Id;
+                await NotifyFeaturedFileChanged();
+            }
+
+            await NotifyTemporaryFilesChanged();
+            await NotifyFilesChanged();
+            await InvokeAsync(StateHasChanged);
+        }
+
+        private async Task RemoveTemporaryFile(FileDto file)
+        {
+            temporaryFiles.RemoveAll(f => f.Id == file.Id);
+            files = temporaryFiles.ToList();
+
+            // Clear featured if this was the featured file
+            if (featuredFileId == file.Id)
+            {
+                featuredFileId = null;
+                await NotifyFeaturedFileChanged();
+            }
+
+            await NotifyTemporaryFilesChanged();
+            await NotifyFilesChanged();
+            await InvokeAsync(StateHasChanged);
+        }
+
+        private async Task ClearTemporaryFiles()
+        {
+            temporaryFiles.Clear();
+            files.Clear();
+            featuredFileId = null;
+
+            await NotifyTemporaryFilesChanged();
+            await NotifyFilesChanged();
+            await NotifyFeaturedFileChanged();
+            await InvokeAsync(StateHasChanged);
+        }
+
+        #endregion
+
+        #region Event Notifications
+
+        private async Task NotifyFilesChanged()
+        {
+            isInternalUpdate = true;
+            if (OnFilesChanged.HasDelegate)
+            {
+                await OnFilesChanged.InvokeAsync(files.ToList());
+            }
+        }
+
+        private async Task NotifyTemporaryFilesChanged()
+        {
+            isInternalUpdate = true;
+            if (OnTemporaryFilesChanged.HasDelegate)
+            {
+                await OnTemporaryFilesChanged.InvokeAsync(temporaryFiles.ToList());
+            }
+        }
+
+        private async Task NotifyFeaturedFileChanged()
+        {
+            isInternalUpdate = true;
+            if (OnFeaturedFileChanged.HasDelegate)
+            {
+                await OnFeaturedFileChanged.InvokeAsync(featuredFileId);
+            }
         }
 
         #endregion
@@ -150,18 +330,12 @@ namespace Frontend.Components.Files.FilePicker
 
         private async Task OnFilesSelected(InputFileChangeEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(EntityType) || EntityId <= 0)
-            {
-                NotificationService.ShowError("Please save the item before uploading files.");
-                return;
-            }
-
             var selectedFiles = e.GetMultipleFiles(MaxFiles).ToList();
 
             if (!selectedFiles.Any())
                 return;
 
-            // Validate file count
+            // Check file count limit
             if (files.Count + selectedFiles.Count > MaxFiles)
             {
                 NotificationService.ShowError($"Cannot upload more than {MaxFiles} files. Currently {files.Count} files uploaded.");
@@ -172,40 +346,17 @@ namespace Frontend.Components.Files.FilePicker
             {
                 isUploading = true;
                 uploadProgress.Clear();
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
 
-                var uploadTasks = new List<Task>();
-
-                foreach (var file in selectedFiles)
+                if (AllowTemporaryStorage && (string.IsNullOrEmpty(EntityType) || EntityId <= 0))
                 {
-                    // Validate file size
-                    if (file.Size > MaxFileSize)
-                    {
-                        NotificationService.ShowError($"File {file.Name} is too large. Maximum size is {FileService.FormatFileSize(MaxFileSize)}.");
-                        continue;
-                    }
-
-                    // Validate file type
-                    if (AllowedExtensions?.Any() == true)
-                    {
-                        var extension = Path.GetExtension(file.Name);
-                        if (!AllowedExtensions.Any(ext => ext.Equals(extension, StringComparison.OrdinalIgnoreCase)))
-                        {
-                            NotificationService.ShowError($"File type {extension} is not allowed.");
-                            continue;
-                        }
-                    }
-
-                    uploadTasks.Add(UploadSingleFile(file));
+                    // Handle temporary storage
+                    await ProcessTemporaryFiles(selectedFiles);
                 }
-
-                await Task.WhenAll(uploadTasks);
-
-                var successCount = uploadTasks.Count;
-                if (successCount > 0)
+                else
                 {
-                    NotificationService.ShowSuccess($"Successfully uploaded {successCount} file(s)");
-                    await LoadFilesAsync();
+                    // Handle direct upload to entity
+                    await ProcessDirectUpload(selectedFiles);
                 }
             }
             catch (Exception ex)
@@ -216,15 +367,188 @@ namespace Frontend.Components.Files.FilePicker
             {
                 isUploading = false;
                 uploadProgress.Clear();
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
             }
+        }
+
+        private async Task ProcessTemporaryFiles(List<IBrowserFile> selectedFiles)
+        {
+            var processedFiles = new List<FileDto>();
+
+            foreach (var file in selectedFiles)
+            {
+                if (!ValidateFile(file))
+                    continue;
+
+                try
+                {
+                    uploadProgress[file.Name] = 0;
+                    await InvokeAsync(StateHasChanged);
+
+                    // Create temporary file DTO
+                    var tempFile = await CreateTemporaryFileDto(file);
+
+                    // Simulate progress
+                    for (int i = 20; i <= 100; i += 20)
+                    {
+                        uploadProgress[file.Name] = i;
+                        await InvokeAsync(StateHasChanged);
+                        await Task.Delay(50);
+                    }
+
+                    processedFiles.Add(tempFile);
+                }
+                catch (Exception ex)
+                {
+                    NotificationService.ShowError($"Failed to process {file.Name}: {ex.Message}");
+                    uploadProgress.Remove(file.Name);
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+
+            // Add processed files to temporary storage
+            foreach (var file in processedFiles)
+            {
+                await AddTemporaryFile(file);
+            }
+
+            if (processedFiles.Any())
+            {
+                NotificationService.ShowSuccess($"Added {processedFiles.Count} file(s)");
+            }
+        }
+
+        private async Task ProcessDirectUpload(List<IBrowserFile> selectedFiles)
+        {
+            var uploadTasks = new List<Task>();
+
+            foreach (var file in selectedFiles)
+            {
+                if (!ValidateFile(file))
+                    continue;
+
+                uploadTasks.Add(UploadSingleFile(file));
+            }
+
+            await Task.WhenAll(uploadTasks);
+
+            var successCount = uploadTasks.Count;
+            if (successCount > 0)
+            {
+                NotificationService.ShowSuccess($"Successfully uploaded {successCount} file(s)");
+                await LoadFilesAsync();
+            }
+        }
+
+        private async Task<FileDto> CreateTemporaryFileDto(IBrowserFile file)
+        {
+            var tempFile = new FileDto
+            {
+                Id = nextTemporaryId--,
+                OriginalFileName = file.Name,
+                ContentType = file.ContentType,
+                FileSize = file.Size,
+                FileSizeFormatted = FileService.FormatFileSize(file.Size),
+                FileExtension = Path.GetExtension(file.Name).ToLower(),
+                FileType = DetermineFileType(file.ContentType),
+                IsPublic = false,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                Urls = new FileUrlsDto(),
+                HasThumbnail = false,
+                CanPreview = false
+            };
+
+            // Set file type name
+            tempFile.FileTypeName = tempFile.FileType.ToString();
+
+            // Generate thumbnail for images
+            if (tempFile.IsImage && ShowThumbnails)
+            {
+                try
+                {
+                    var thumbnailData = await GenerateThumbnailFromFile(file);
+                    if (thumbnailData != null)
+                    {
+                        tempFile.Urls.Thumbnail = thumbnailData;
+                        tempFile.Urls.Download = thumbnailData;
+                        tempFile.HasThumbnail = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to generate thumbnail: {ex.Message}");
+                }
+            }
+
+            return tempFile;
+        }
+
+        private async Task<string?> GenerateThumbnailFromFile(IBrowserFile file)
+        {
+            try
+            {
+                const int maxSize = 2 * 1024 * 1024; // 2MB limit for preview
+                using var stream = file.OpenReadStream(maxAllowedSize: Math.Min(file.Size, maxSize));
+                using var memoryStream = new MemoryStream();
+                await stream.CopyToAsync(memoryStream);
+
+                var bytes = memoryStream.ToArray();
+                var base64 = Convert.ToBase64String(bytes);
+                return $"data:{file.ContentType};base64,{base64}";
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private FileType DetermineFileType(string contentType)
+        {
+            if (string.IsNullOrEmpty(contentType))
+                return FileType.Other;
+
+            if (contentType.StartsWith("image/"))
+                return FileType.Image;
+            if (contentType.StartsWith("video/"))
+                return FileType.Video;
+            if (contentType.StartsWith("audio/"))
+                return FileType.Audio;
+            if (contentType.Contains("pdf") || contentType.Contains("document") || contentType.Contains("text"))
+                return FileType.Document;
+            if (contentType.Contains("zip") || contentType.Contains("compressed"))
+                return FileType.Archive;
+
+            return FileType.Other;
+        }
+
+        private bool ValidateFile(IBrowserFile file)
+        {
+            // Validate file size
+            if (file.Size > MaxFileSize)
+            {
+                NotificationService.ShowError($"File {file.Name} is too large. Maximum size is {FileService.FormatFileSize(MaxFileSize)}.");
+                return false;
+            }
+
+            // Validate file type
+            if (AllowedExtensions?.Any() == true)
+            {
+                var extension = Path.GetExtension(file.Name);
+                if (!AllowedExtensions.Any(ext => ext.Equals(extension, StringComparison.OrdinalIgnoreCase)))
+                {
+                    NotificationService.ShowError($"File type {extension} is not allowed.");
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private async Task UploadSingleFile(IBrowserFile file)
         {
             try
             {
-                // Initialize progress
                 uploadProgress[file.Name] = 0;
                 await InvokeAsync(StateHasChanged);
 
@@ -234,12 +558,11 @@ namespace Frontend.Components.Files.FilePicker
                     File = formFile,
                     EntityType = EntityType,
                     EntityId = EntityId,
-                    IsPublic = false, // Default to private for entity files
+                    IsPublic = false,
                     GenerateThumbnail = ShowThumbnails,
                     ProcessImmediately = true
                 };
 
-                // Simulate progress updates
                 var progressTask = Task.Run(async () =>
                 {
                     for (int i = 10; i <= 90; i += 10)
@@ -258,8 +581,6 @@ namespace Frontend.Components.Files.FilePicker
                 {
                     uploadProgress[file.Name] = 100;
                     await InvokeAsync(StateHasChanged);
-
-                    // Small delay to show completion
                     await Task.Delay(200);
                 }
                 else
@@ -273,6 +594,30 @@ namespace Frontend.Components.Files.FilePicker
                 uploadProgress.Remove(file.Name);
                 await InvokeAsync(StateHasChanged);
             }
+        }
+
+        #endregion
+
+        #region Featured File Management
+
+        private async Task ToggleFeaturedFile(FileDto file)
+        {
+            if (!AllowFeaturedSelection)
+                return;
+
+            if (featuredFileId == file.Id)
+            {
+                // Remove featured
+                featuredFileId = null;
+            }
+            else
+            {
+                // Set as featured
+                featuredFileId = file.Id;
+            }
+
+            await NotifyFeaturedFileChanged();
+            await InvokeAsync(StateHasChanged);
         }
 
         #endregion
@@ -304,58 +649,73 @@ namespace Frontend.Components.Files.FilePicker
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(EntityType) || EntityId <= 0)
-            {
-                NotificationService.ShowError("Please save the item before adding files.");
-                CloseFileBrowser();
-                return;
-            }
-
             try
             {
                 isProcessing = true;
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
 
-                var addedCount = 0;
-
-                foreach (var file in selectedBrowserFiles)
+                if (AllowTemporaryStorage && (string.IsNullOrEmpty(EntityType) || EntityId <= 0))
                 {
-                    // Check if file already exists
-                    if (files.Any(f => f.Id == file.Id))
-                        continue;
-
-                    // Validate file count
-                    if (files.Count + addedCount >= MaxFiles)
+                    // Add to temporary storage
+                    var addedCount = 0;
+                    foreach (var file in selectedBrowserFiles)
                     {
-                        NotificationService.ShowError($"Cannot add more files. Maximum {MaxFiles} files allowed.");
-                        break;
-                    }
+                        if (temporaryFiles.Any(f => f.Id == file.Id))
+                            continue;
 
-                    // For entity-specific files, we need to create a link between the file and entity
-                    // This could be done via file tags or a separate entity-file relationship table
-                    // For now, we'll update the file with entity information via tags
-                    var updateDto = new UpdateFileDto
-                    {
-                        Description = file.Description,
-                        Alt = file.Alt,
-                        IsPublic = file.IsPublic,
-                        Tags = file.Tags ?? new Dictionary<string, object>()
-                    };
+                        if (temporaryFiles.Count >= MaxFiles)
+                        {
+                            NotificationService.ShowError($"Cannot add more files. Maximum {MaxFiles} files allowed.");
+                            break;
+                        }
 
-                    updateDto.Tags["EntityType"] = EntityType;
-                    updateDto.Tags["EntityId"] = EntityId.ToString();
-
-                    var updatedFile = await FileService.UpdateFileAsync(file.Id, updateDto);
-                    if (updatedFile != null)
-                    {
+                        await AddTemporaryFile(file);
                         addedCount++;
                     }
-                }
 
-                if (addedCount > 0)
+                    if (addedCount > 0)
+                    {
+                        NotificationService.ShowSuccess($"Added {addedCount} file(s)");
+                    }
+                }
+                else
                 {
-                    NotificationService.ShowSuccess($"Added {addedCount} file(s)");
-                    await LoadFilesAsync();
+                    // Add to entity (existing logic)
+                    var addedCount = 0;
+                    foreach (var file in selectedBrowserFiles)
+                    {
+                        if (files.Any(f => f.Id == file.Id))
+                            continue;
+
+                        if (files.Count >= MaxFiles)
+                        {
+                            NotificationService.ShowError($"Cannot add more files. Maximum {MaxFiles} files allowed.");
+                            break;
+                        }
+
+                        var updateDto = new UpdateFileDto
+                        {
+                            Description = file.Description,
+                            Alt = file.Alt,
+                            IsPublic = file.IsPublic,
+                            Tags = file.Tags ?? new Dictionary<string, object>()
+                        };
+
+                        updateDto.Tags["EntityType"] = EntityType;
+                        updateDto.Tags["EntityId"] = EntityId.ToString();
+
+                        var updatedFile = await FileService.UpdateFileAsync(file.Id, updateDto);
+                        if (updatedFile != null)
+                        {
+                            addedCount++;
+                        }
+                    }
+
+                    if (addedCount > 0)
+                    {
+                        NotificationService.ShowSuccess($"Added {addedCount} file(s)");
+                        await LoadFilesAsync();
+                    }
                 }
 
                 CloseFileBrowser();
@@ -367,7 +727,7 @@ namespace Frontend.Components.Files.FilePicker
             finally
             {
                 isProcessing = false;
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
             }
         }
 
@@ -385,7 +745,6 @@ namespace Frontend.Components.Files.FilePicker
                 }
                 else
                 {
-                    // Default preview action - could open a preview dialog
                     NotificationService.ShowInfo($"Preview for {file.OriginalFileName}");
                 }
             }
@@ -403,9 +762,13 @@ namespace Frontend.Components.Files.FilePicker
                 {
                     await OnFileDownload.InvokeAsync(file);
                 }
-                else
+                else if (file.Id > 0)
                 {
                     await FileService.DownloadFileAsync(file.Id);
+                }
+                else
+                {
+                    NotificationService.ShowInfo($"File {file.OriginalFileName} is in temporary storage and cannot be downloaded until saved.");
                 }
             }
             catch (Exception ex)
@@ -427,29 +790,38 @@ namespace Frontend.Components.Files.FilePicker
             try
             {
                 isProcessing = true;
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
 
-                // Remove entity association by clearing entity tags
-                var updateDto = new UpdateFileDto
+                if (AllowTemporaryStorage && fileToRemove.Id < 0)
                 {
-                    Description = fileToRemove.Description,
-                    Alt = fileToRemove.Alt,
-                    IsPublic = fileToRemove.IsPublic,
-                    Tags = fileToRemove.Tags?.Where(t =>
-                        t.Key != "EntityType" && t.Key != "EntityId")
-                        .ToDictionary(t => t.Key, t => t.Value) ?? new Dictionary<string, object>()
-                };
-
-                var updatedFile = await FileService.UpdateFileAsync(fileToRemove.Id, updateDto);
-                if (updatedFile != null)
-                {
-                    files.Remove(fileToRemove);
-                    await OnFilesChanged.InvokeAsync(files);
+                    // Remove from temporary storage
+                    await RemoveTemporaryFile(fileToRemove);
                     NotificationService.ShowSuccess($"Removed {fileToRemove.OriginalFileName}");
                 }
                 else
                 {
-                    NotificationService.ShowError("Failed to remove file association");
+                    // Remove from entity
+                    var updateDto = new UpdateFileDto
+                    {
+                        Description = fileToRemove.Description,
+                        Alt = fileToRemove.Alt,
+                        IsPublic = fileToRemove.IsPublic,
+                        Tags = fileToRemove.Tags?.Where(t =>
+                            t.Key != "EntityType" && t.Key != "EntityId")
+                            .ToDictionary(t => t.Key, t => t.Value) ?? new Dictionary<string, object>()
+                    };
+
+                    var updatedFile = await FileService.UpdateFileAsync(fileToRemove.Id, updateDto);
+                    if (updatedFile != null)
+                    {
+                        files.Remove(fileToRemove);
+                        await NotifyFilesChanged();
+                        NotificationService.ShowSuccess($"Removed {fileToRemove.OriginalFileName}");
+                    }
+                    else
+                    {
+                        NotificationService.ShowError("Failed to remove file association");
+                    }
                 }
             }
             catch (Exception ex)
@@ -460,7 +832,7 @@ namespace Frontend.Components.Files.FilePicker
             {
                 isProcessing = false;
                 fileToRemove = null;
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
             }
         }
 
@@ -474,19 +846,29 @@ namespace Frontend.Components.Files.FilePicker
             try
             {
                 isProcessing = true;
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
 
-                var result = await FileService.DeleteFilesForEntityAsync(EntityType, EntityId);
-
-                if (result.IsCompleteSuccess || result.IsPartialSuccess)
+                if (AllowTemporaryStorage && (string.IsNullOrEmpty(EntityType) || EntityId <= 0))
                 {
-                    files.Clear();
-                    await OnFilesChanged.InvokeAsync(files);
-                    NotificationService.ShowSuccess($"Cleared {result.SuccessCount} file(s)");
+                    // Clear temporary storage
+                    await ClearTemporaryFiles();
+                    NotificationService.ShowSuccess("Cleared all files");
                 }
                 else
                 {
-                    NotificationService.ShowError("Failed to clear files");
+                    // Clear entity files
+                    var result = await FileService.DeleteFilesForEntityAsync(EntityType, EntityId);
+
+                    if (result.IsCompleteSuccess || result.IsPartialSuccess)
+                    {
+                        files.Clear();
+                        await NotifyFilesChanged();
+                        NotificationService.ShowSuccess($"Cleared {result.SuccessCount} file(s)");
+                    }
+                    else
+                    {
+                        NotificationService.ShowError("Failed to clear files");
+                    }
                 }
             }
             catch (Exception ex)
@@ -496,7 +878,7 @@ namespace Frontend.Components.Files.FilePicker
             finally
             {
                 isProcessing = false;
-                StateHasChanged();
+                await InvokeAsync(StateHasChanged);
             }
         }
 
@@ -551,9 +933,28 @@ namespace Frontend.Components.Files.FilePicker
             };
         }
 
-        private string GetFileCardClasses()
+        private string GetFileCardClasses(FileDto file)
         {
-            return "border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow duration-200";
+            var baseClass = "border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden bg-white dark:bg-gray-800 shadow-sm hover:shadow-md transition-shadow duration-200";
+
+            if (featuredFileId == file.Id)
+            {
+                baseClass += " ring-2 ring-yellow-400 dark:ring-yellow-500";
+            }
+
+            return baseClass;
+        }
+
+        private string GetFileListItemClasses(FileDto file)
+        {
+            var baseClass = "bg-gray-50 dark:bg-gray-700";
+
+            if (featuredFileId == file.Id)
+            {
+                baseClass = "bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800";
+            }
+
+            return baseClass;
         }
 
         private string GetFilePreviewClasses()
@@ -602,44 +1003,39 @@ namespace Frontend.Components.Files.FilePicker
 
         #region Public API Methods
 
-        /// <summary>
-        /// Get current files
-        /// </summary>
         public List<FileDto> GetFiles()
         {
             return files.ToList();
         }
 
-        /// <summary>
-        /// Get file count
-        /// </summary>
         public int GetFileCount()
         {
             return files.Count;
         }
 
-        /// <summary>
-        /// Check if max files reached
-        /// </summary>
         public bool IsMaxFilesReached()
         {
             return files.Count >= MaxFiles;
         }
 
-        /// <summary>
-        /// Refresh files from backend
-        /// </summary>
         public async Task Refresh()
         {
             await LoadFilesAsync();
         }
 
-        /// <summary>
-        /// Clear all files
-        /// </summary>
         public async Task Clear()
         {
             await ClearAllFiles();
+        }
+
+        public int? GetFeaturedFileId()
+        {
+            return featuredFileId;
+        }
+
+        public List<FileDto> GetTemporaryFiles()
+        {
+            return temporaryFiles.ToList();
         }
 
         #endregion
