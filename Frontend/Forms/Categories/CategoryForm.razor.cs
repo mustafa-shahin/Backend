@@ -1,6 +1,12 @@
-﻿using Backend.CMS.Application.DTOs;
+﻿// Frontend/Forms/Categories/CategoryForm.razor.cs
+using Backend.CMS.Application.DTOs;
+using Backend.CMS.Domain.Enums;
+using Frontend.Components.Common;
 using Frontend.Components.Common.GenericCrudPage;
+using Frontend.Components.Common.ObjectSelector;
+using Frontend.Extensions;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Forms;
 using System.Text;
 
 namespace Frontend.Forms.Categories
@@ -24,12 +30,22 @@ namespace Frontend.Forms.Categories
         private bool? slugValidationResult = null;
         private Timer? slugValidationTimer;
         private string previousSlug = string.Empty;
+
+        // Image management with ObjectSelector
+        private ObjectSelector<FileDto>? imageSelector;
+        private List<FileDto> selectedImages = new();
+        private int? featuredImageId = null;
+        private bool isProcessingImages = false;
+
+        // Upload functionality
+        private GenericDialog? uploadDialog;
+        private bool showUploadDialog = false;
+        private bool isUploadingImages = false;
+        private List<IBrowserFile> pendingUploadFiles = new();
+
+        // Image preview
         private bool showImagePreviewDialog = false;
         private FileDto? previewingFile = null;
-
-        // Temporary file storage - reactive state
-        private List<FileDto> temporaryFiles = new();
-        private int? featuredImageId = null;
 
         // Context extraction
         private int? contextEditingId;
@@ -38,7 +54,7 @@ namespace Frontend.Forms.Categories
         // State tracking
         private int stableEntityId = 0;
         private bool hasInitialized = false;
-        private bool isUpdatingImages = false;
+        private readonly SemaphoreSlim initializationSemaphore = new(1, 1);
 
         protected override async Task OnInitializedAsync()
         {
@@ -90,6 +106,11 @@ namespace Frontend.Forms.Categories
 
         private async Task HandleParameterChanges()
         {
+            if (!await initializationSemaphore.WaitAsync(100))
+            {
+                return;
+            }
+
             try
             {
                 await InitializeImages();
@@ -98,25 +119,30 @@ namespace Frontend.Forms.Categories
             {
                 NotificationService.ShowError($"Error handling parameter changes: {ex.Message}");
             }
+            finally
+            {
+                initializationSemaphore.Release();
+            }
         }
 
-        #region Image Management
+        #region Image Management with ObjectSelector
 
         private async Task InitializeImages()
         {
             try
             {
-                isUpdatingImages = true;
+                isProcessingImages = true;
+                await InvokeAsync(StateHasChanged);
 
                 // Reset state
-                temporaryFiles.Clear();
+                selectedImages.Clear();
                 featuredImageId = null;
 
                 if (IsEditMode && stableEntityId > 0)
                 {
-                    // Load existing category images
-                    var existingImages = await FileService.GetFilesForEntityAsync("Category", stableEntityId, Backend.CMS.Domain.Enums.FileType.Image);
-                    temporaryFiles = existingImages.ToList();
+                    // Load existing category images from the backend
+                    var existingImages = await FileService.GetFilesForEntityAsync("Category", stableEntityId, FileType.Image);
+                    selectedImages = existingImages.ToList();
 
                     // Find featured image from existing category data
                     var existingCategory = ExistingCategory ?? contextOriginalCategory;
@@ -125,12 +151,18 @@ namespace Frontend.Forms.Categories
                         var featuredImage = existingCategory.Images.FirstOrDefault(i => i.IsFeatured);
                         if (featuredImage != null)
                         {
-                            var matchingFile = temporaryFiles.FirstOrDefault(f => f.Id == featuredImage.FileId);
+                            var matchingFile = selectedImages.FirstOrDefault(f => f.Id == featuredImage.FileId);
                             if (matchingFile != null)
                             {
                                 featuredImageId = matchingFile.Id;
                             }
                         }
+                    }
+
+                    // If no featured image set but images exist, set first as featured
+                    if (!featuredImageId.HasValue && selectedImages.Any())
+                    {
+                        featuredImageId = selectedImages.First().Id;
                     }
                 }
 
@@ -143,41 +175,153 @@ namespace Frontend.Forms.Categories
             }
             finally
             {
-                isUpdatingImages = false;
+                isProcessingImages = false;
                 await InvokeAsync(StateHasChanged);
             }
         }
 
-        private async Task OnTemporaryFilesChanged(List<FileDto> files)
+        private async Task<FileDto?> GetImageByIdAsync(int imageId)
         {
-            if (isUpdatingImages) return;
+            try
+            {
+                var file = await FileService.GetFileByIdAsync(imageId);
+
+                // Ensure it's an image file
+                if (file?.FileType == FileType.Image)
+                {
+                    return file;
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to load image: {ex.Message}");
+                return null;
+            }
+        }
+
+        private async Task<PaginatedResult<FileDto>> LoadImageFiles(int page, int pageSize, string? searchTerm)
+        {
+            try
+            {
+                var searchDto = new FileSearchDto
+                {
+                    PageNumber = page,
+                    PageSize = pageSize,
+                    SearchTerm = searchTerm,
+                    FileType = FileType.Image,
+                    SortBy = "CreatedAt",
+                    SortDirection = "Desc"
+                };
+
+                return await FileService.SearchFilesAsync(searchDto);
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to load images: {ex.Message}");
+                return PaginatedResult<FileDto>.Empty(page, pageSize);
+            }
+        }
+
+        private async Task<List<FileDto>> SearchImageFiles(string searchTerm)
+        {
+            try
+            {
+                var searchDto = new FileSearchDto
+                {
+                    PageNumber = 1,
+                    PageSize = 50,
+                    SearchTerm = searchTerm,
+                    FileType = FileType.Image,
+                    SortBy = "CreatedAt",
+                    SortDirection = "Desc"
+                };
+
+                var result = await FileService.SearchFilesAsync(searchDto);
+                return result.Data?.ToList() ?? new List<FileDto>();
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to search images: {ex.Message}");
+                return new List<FileDto>();
+            }
+        }
+
+        private async Task OnSelectedImagesChanged(List<FileDto> images)
+        {
+            if (isProcessingImages) return;
 
             try
             {
-                temporaryFiles = files?.ToList() ?? new List<FileDto>();
+                selectedImages = images?.ToList() ?? new List<FileDto>();
+
+                // If featured image is no longer in selection, clear it
+                if (featuredImageId.HasValue && !selectedImages.Any(img => img.Id == featuredImageId.Value))
+                {
+                    featuredImageId = null;
+                }
+
+                // If no featured image but images exist, set first as featured
+                if (!featuredImageId.HasValue && selectedImages.Any())
+                {
+                    featuredImageId = selectedImages.First().Id;
+                }
+
                 await UpdateModelFromCurrentImages();
                 await InvokeAsync(StateHasChanged);
             }
             catch (Exception ex)
             {
-                NotificationService.ShowError($"Failed to update temporary files: {ex.Message}");
+                NotificationService.ShowError($"Failed to update selected images: {ex.Message}");
             }
         }
 
-        private async Task OnFeaturedImageChanged(int? fileId)
+        private async Task OnImageAdded(FileDto image)
         {
-            if (isUpdatingImages) return;
-
             try
             {
-                featuredImageId = fileId;
-                await UpdateModelFromCurrentImages();
-                await InvokeAsync(StateHasChanged);
+                NotificationService.ShowSuccess($"Added image: {image.OriginalFileName}");
+
+                // If this is the first image, make it featured
+                if (!featuredImageId.HasValue)
+                {
+                    featuredImageId = image.Id;
+                    await UpdateModelFromCurrentImages();
+                    await InvokeAsync(StateHasChanged);
+                }
             }
             catch (Exception ex)
             {
-                NotificationService.ShowError($"Failed to update featured image: {ex.Message}");
+                NotificationService.ShowError($"Error processing added image: {ex.Message}");
             }
+        }
+
+        private async Task OnImageRemoved(FileDto image)
+        {
+            try
+            {
+                NotificationService.ShowSuccess($"Removed image: {image.OriginalFileName}");
+
+                // If removed image was featured, clear featured status
+                if (featuredImageId == image.Id)
+                {
+                    featuredImageId = selectedImages.FirstOrDefault()?.Id;
+                    await UpdateModelFromCurrentImages();
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Error processing removed image: {ex.Message}");
+            }
+        }
+
+        private async Task OnImagePreview(FileDto file)
+        {
+            previewingFile = file;
+            showImagePreviewDialog = true;
+            await InvokeAsync(StateHasChanged);
         }
 
         private async Task UpdateModelFromCurrentImages()
@@ -185,7 +329,7 @@ namespace Frontend.Forms.Categories
             try
             {
                 // Update the model's images collection
-                Model.Images = temporaryFiles.Select((file, index) => new CreateCategoryImageDto
+                Model.Images = selectedImages.Select((file, index) => new CreateCategoryImageDto
                 {
                     FileId = file.Id,
                     Alt = file.Alt ?? file.OriginalFileName,
@@ -197,7 +341,7 @@ namespace Frontend.Forms.Categories
                 // Notify parent components
                 if (OnImagesChanged.HasDelegate)
                 {
-                    var categoryImages = temporaryFiles.Select((file, index) => new CategoryImageDto
+                    var categoryImages = selectedImages.Select((file, index) => new CategoryImageDto
                     {
                         Id = 0,
                         CategoryId = GetEffectiveEntityId(),
@@ -206,8 +350,8 @@ namespace Frontend.Forms.Categories
                         Caption = file.Description,
                         Position = index,
                         IsFeatured = featuredImageId == file.Id,
-                        ImageUrl = file.Urls?.Download ?? FileService.GetFileUrl(file.Id),
-                        ThumbnailUrl = file.Urls?.Thumbnail ?? FileService.GetThumbnailUrl(file.Id),
+                        ImageUrl = GetImagePreviewUrl(file),
+                        ThumbnailUrl = GetImageThumbnailUrl(file),
                         CreatedAt = file.CreatedAt,
                         UpdatedAt = file.UpdatedAt
                     }).ToList();
@@ -221,49 +365,191 @@ namespace Frontend.Forms.Categories
             }
         }
 
-        private async Task OnImagePreview(FileDto file)
-        {
-            previewingFile = file;
-            showImagePreviewDialog = true;
-            await InvokeAsync(StateHasChanged);
-        }
+        #endregion
 
-        private async Task OnImageDownload(FileDto file)
+        #region Featured Image Management
+
+        private async Task SetFeaturedImage(int imageId)
         {
             try
             {
-                if (file.Id > 0)
+                if (!selectedImages.Any(img => img.Id == imageId))
                 {
-                    await FileService.DownloadFileAsync(file.Id);
+                    NotificationService.ShowError("Image not found in selection");
+                    return;
                 }
-                else
+
+                featuredImageId = imageId;
+                await UpdateModelFromCurrentImages();
+
+                var featuredImage = selectedImages.First(img => img.Id == imageId);
+                NotificationService.ShowSuccess($"Set '{featuredImage.OriginalFileName}' as featured image");
+
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to set featured image: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region Upload Functionality
+
+        private void ShowUploadDialog()
+        {
+            pendingUploadFiles.Clear();
+            showUploadDialog = true;
+            StateHasChanged();
+        }
+
+        private void CloseUploadDialog()
+        {
+            showUploadDialog = false;
+            pendingUploadFiles.Clear();
+            StateHasChanged();
+        }
+
+        private async Task OnFileInputChange(InputFileChangeEventArgs e)
+        {
+            try
+            {
+                pendingUploadFiles.Clear();
+
+                var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg" };
+                const long maxFileSize = 5 * 1024 * 1024; // 5MB
+
+                foreach (var file in e.GetMultipleFiles(10)) // Max 10 files
                 {
-                    NotificationService.ShowInfo($"File {file.OriginalFileName} is in temporary storage. Save the category first to download.");
+                    // Use the extension method for comprehensive validation
+                    var validationResult = file.Validate(
+                        maxSizeInBytes: maxFileSize,
+                        allowedExtensions: allowedExtensions,
+                        requireImage: true
+                    );
+
+                    if (!validationResult.IsValid)
+                    {
+                        NotificationService.ShowWarning($"File '{file.Name}': {validationResult.ErrorMessage}");
+                        continue;
+                    }
+
+                    pendingUploadFiles.Add(file);
+                }
+
+                if (pendingUploadFiles.Any())
+                {
+                    NotificationService.ShowSuccess($"Selected {pendingUploadFiles.Count} valid image(s) for upload");
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Error processing selected files: {ex.Message}");
+            }
+        }
+
+        private void RemovePendingFile(IBrowserFile file)
+        {
+            pendingUploadFiles.Remove(file);
+            StateHasChanged();
+        }
+
+        private async Task UploadImages()
+        {
+            if (!pendingUploadFiles.Any())
+            {
+                NotificationService.ShowWarning("No files selected for upload");
+                return;
+            }
+
+            try
+            {
+                isUploadingImages = true;
+                await InvokeAsync(StateHasChanged);
+
+                var uploadResults = new List<FileDto>();
+
+                foreach (var file in pendingUploadFiles)
+                {
+                    try
+                    {
+                        var uploadDto = new FileUploadDto
+                        {
+                            File = (Microsoft.AspNetCore.Http.IFormFile)file,
+                            Description = $"Category image: {file.Name}",
+                            Alt = Path.GetFileNameWithoutExtension(file.Name),
+                            IsPublic = true,
+                            GenerateThumbnail = true,
+                            ProcessImmediately = true,
+                            EntityType = "Category",
+                            EntityId = GetEffectiveEntityId() > 0 ? GetEffectiveEntityId() : null
+                        };
+
+                        var result = await FileService.UploadFileAsync(uploadDto);
+
+                        if (result?.Success == true && result.File != null)
+                        {
+                            uploadResults.Add(result.File);
+                        }
+                        else
+                        {
+                            NotificationService.ShowError($"Failed to upload '{file.Name}': {result?.ErrorMessage ?? "Unknown error"}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        NotificationService.ShowError($"Failed to upload '{file.Name}': {ex.Message}");
+                    }
+                }
+
+                if (uploadResults.Any())
+                {
+                    // Add uploaded files to selection using ObjectSelector's public API
+                    foreach (var uploadedFile in uploadResults)
+                    {
+                        await AddImageToSelection(uploadedFile);
+                    }
+
+                    NotificationService.ShowSuccess($"Successfully uploaded {uploadResults.Count} image(s)");
+                    CloseUploadDialog();
                 }
             }
             catch (Exception ex)
             {
-                NotificationService.ShowError($"Failed to download image: {ex.Message}");
+                NotificationService.ShowError($"Error during upload: {ex.Message}");
+            }
+            finally
+            {
+                isUploadingImages = false;
+                await InvokeAsync(StateHasChanged);
             }
         }
 
-        private void CloseImagePreview()
+        private async Task AddImageToSelection(FileDto file)
         {
-            showImagePreviewDialog = false;
-            previewingFile = null;
-            StateHasChanged();
-        }
-
-        private string GetImagePreviewUrl(FileDto file)
-        {
-            if (file.Id > 0)
+            try
             {
-                return file.Urls?.Download ?? FileService.GetFileUrl(file.Id);
+                if (imageSelector != null)
+                {
+                    // Add using ObjectSelector's AddEntityById method
+                    await imageSelector.AddEntityById(file.Id);
+                }
+                else
+                {
+                    // Fallback: add directly to selection
+                    if (!selectedImages.Any(img => img.Id == file.Id))
+                    {
+                        selectedImages.Add(file);
+                        await OnSelectedImagesChanged(selectedImages);
+                    }
+                }
             }
-            else
+            catch (Exception ex)
             {
-                // For temporary files, use the thumbnail data if available
-                return file.Urls?.Thumbnail ?? file.Urls?.Download ?? "#";
+                NotificationService.ShowError($"Failed to add uploaded image to selection: {ex.Message}");
             }
         }
 
@@ -435,13 +721,35 @@ namespace Frontend.Forms.Categories
             return $"{prefix} {category.Name}";
         }
 
+        private string GetImagePreviewUrl(FileDto file)
+        {
+            return file.Urls?.Download ?? FileService.GetFileUrl(file.Id);
+        }
+
+        private string GetImageThumbnailUrl(FileDto file)
+        {
+            return file.Urls?.Thumbnail ?? FileService.GetThumbnailUrl(file.Id);
+        }
+
+        private void CloseImagePreview()
+        {
+            showImagePreviewDialog = false;
+            previewingFile = null;
+            StateHasChanged();
+        }
+
+        private string FormatFileSize(long bytes)
+        {
+            return FileService.FormatFileSize(bytes);
+        }
+
         #endregion
 
         #region Public API
 
-        public List<FileDto> GetTemporaryFiles()
+        public List<FileDto> GetSelectedImages()
         {
-            return temporaryFiles.ToList();
+            return selectedImages.ToList();
         }
 
         public int? GetFeaturedImageId()
@@ -449,9 +757,50 @@ namespace Frontend.Forms.Categories
             return featuredImageId;
         }
 
-        public bool HasTemporaryFiles()
+        public bool HasSelectedImages()
         {
-            return temporaryFiles.Any(f => f.Id < 0);
+            return selectedImages.Any();
+        }
+
+        public async Task AddImageByIdAsync(int imageId)
+        {
+            try
+            {
+                var file = await FileService.GetFileByIdAsync(imageId);
+                if (file?.FileType == FileType.Image)
+                {
+                    await AddImageToSelection(file);
+                }
+                else
+                {
+                    NotificationService.ShowError("File not found or is not an image");
+                }
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to add image: {ex.Message}");
+            }
+        }
+
+        public async Task RefreshImages()
+        {
+            await InitializeImages();
+        }
+
+        public async Task ClearAllImages()
+        {
+            try
+            {
+                selectedImages.Clear();
+                featuredImageId = null;
+                await UpdateModelFromCurrentImages();
+                await InvokeAsync(StateHasChanged);
+                NotificationService.ShowSuccess("All images cleared");
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to clear images: {ex.Message}");
+            }
         }
 
         #endregion
@@ -461,6 +810,7 @@ namespace Frontend.Forms.Categories
         public void Dispose()
         {
             slugValidationTimer?.Dispose();
+            initializationSemaphore?.Dispose();
         }
 
         #endregion

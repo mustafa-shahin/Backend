@@ -1,4 +1,5 @@
-﻿using Backend.CMS.Application.DTOs;
+﻿// Frontend/Components/Common/ObjectSelector/ObjectSelector.razor.cs
+using Backend.CMS.Application.DTOs;
 using Frontend.Components.Common;
 using Frontend.Components.Common.ConfirmationDialogComponent;
 using Microsoft.AspNetCore.Components;
@@ -31,6 +32,9 @@ namespace Frontend.Components.Common.ObjectSelector
 
         // State tracking for immediate updates
         private bool isInternalUpdate = false;
+
+        // Enhanced entity loading for AddEntityById
+        [Parameter] public Func<int, Task<TEntity?>>? GetEntityByIdFunc { get; set; }
 
         protected override async Task OnInitializedAsync()
         {
@@ -437,17 +441,245 @@ namespace Frontend.Components.Common.ObjectSelector
             return selectedEntities.Count >= MaxEntities;
         }
 
+        /// <summary>
+        /// Add an entity by its ID - loads the entity and adds it to the selection
+        /// </summary>
+        /// <param name="entityId">The ID of the entity to add</param>
+        /// <returns>Task representing the async operation</returns>
         public async Task AddEntityById(int entityId)
         {
             try
             {
-                // This would require a GetByIdFunc parameter to be added
-                // For now, entities should be added through the browser
-                NotificationService.ShowInfo($"Use the browser to add {EntityPluralName.ToLower()}");
+                // Check if entity is already selected
+                if (selectedEntities.Any(e => GetEntityId(e) == entityId))
+                {
+                    NotificationService.ShowWarning($"{EntitySingularName} is already selected");
+                    return;
+                }
+
+                // Check entity count limit
+                if (selectedEntities.Count >= MaxEntities)
+                {
+                    NotificationService.ShowError($"Cannot add more than {MaxEntities} {EntityPluralName.ToLower()}.");
+                    return;
+                }
+
+                TEntity? entity = null;
+
+                // Try to use provided GetEntityByIdFunc first
+                if (GetEntityByIdFunc != null)
+                {
+                    entity = await GetEntityByIdFunc(entityId);
+                }
+                else
+                {
+                    // Fallback: search through loaded entities using LoadEntitiesFunc
+                    // This is less efficient but works when GetEntityByIdFunc is not provided
+                    var searchResult = await LoadEntitiesFunc(1, 1000, null);
+                    entity = searchResult.Data?.FirstOrDefault(e => GetEntityId(e) == entityId);
+
+                    // If not found in first page, try searching by ID (if the entity has a searchable ID)
+                    if (entity == null && SearchFunc != null)
+                    {
+                        var searchResults = await SearchFunc(entityId.ToString());
+                        entity = searchResults.FirstOrDefault(e => GetEntityId(e) == entityId);
+                    }
+                }
+
+                if (entity != null)
+                {
+                    await AddEntity(entity);
+                    NotificationService.ShowSuccess($"Added {EntitySingularName.ToLower()}: {GetEntityDisplayName(entity)}");
+                }
+                else
+                {
+                    NotificationService.ShowError($"{EntitySingularName} with ID {entityId} not found");
+                }
             }
             catch (Exception ex)
             {
                 NotificationService.ShowError($"Failed to add {EntitySingularName.ToLower()}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Add multiple entities by their IDs
+        /// </summary>
+        /// <param name="entityIds">List of entity IDs to add</param>
+        /// <returns>Task representing the async operation</returns>
+        public async Task AddEntitiesByIds(List<int> entityIds)
+        {
+            if (entityIds?.Any() != true)
+            {
+                return;
+            }
+
+            try
+            {
+                isProcessing = true;
+                await InvokeAsync(StateHasChanged);
+
+                var addedCount = 0;
+                var failedCount = 0;
+
+                foreach (var entityId in entityIds)
+                {
+                    try
+                    {
+                        // Check if we've reached the limit
+                        if (selectedEntities.Count >= MaxEntities)
+                        {
+                            NotificationService.ShowWarning($"Reached maximum limit of {MaxEntities} {EntityPluralName.ToLower()}");
+                            break;
+                        }
+
+                        // Skip if already selected
+                        if (selectedEntities.Any(e => GetEntityId(e) == entityId))
+                        {
+                            continue;
+                        }
+
+                        TEntity? entity = null;
+
+                        // Try to get entity by ID
+                        if (GetEntityByIdFunc != null)
+                        {
+                            entity = await GetEntityByIdFunc(entityId);
+                        }
+                        else
+                        {
+                            // Fallback search
+                            var searchResult = await LoadEntitiesFunc(1, 1000, null);
+                            entity = searchResult.Data?.FirstOrDefault(e => GetEntityId(e) == entityId);
+                        }
+
+                        if (entity != null)
+                        {
+                            selectedEntities.Add(entity);
+                            await NotifyEntityAdded(entity);
+                            addedCount++;
+                        }
+                        else
+                        {
+                            failedCount++;
+                        }
+                    }
+                    catch
+                    {
+                        failedCount++;
+                    }
+                }
+
+                if (addedCount > 0)
+                {
+                    await NotifyEntitiesChanged();
+                    await InvokeAsync(StateHasChanged);
+                }
+
+                // Show results
+                if (addedCount > 0 && failedCount == 0)
+                {
+                    NotificationService.ShowSuccess($"Added {addedCount} {(addedCount == 1 ? EntitySingularName.ToLower() : EntityPluralName.ToLower())}");
+                }
+                else if (addedCount > 0 && failedCount > 0)
+                {
+                    NotificationService.ShowWarning($"Added {addedCount} {EntityPluralName.ToLower()}, {failedCount} failed");
+                }
+                else if (failedCount > 0)
+                {
+                    NotificationService.ShowError($"Failed to add {failedCount} {EntityPluralName.ToLower()}");
+                }
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Error adding {EntityPluralName.ToLower()}: {ex.Message}");
+            }
+            finally
+            {
+                isProcessing = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+
+        /// <summary>
+        /// Remove an entity by its ID
+        /// </summary>
+        /// <param name="entityId">The ID of the entity to remove</param>
+        /// <returns>Task representing the async operation</returns>
+        public async Task RemoveEntityById(int entityId)
+        {
+            try
+            {
+                var entity = selectedEntities.FirstOrDefault(e => GetEntityId(e) == entityId);
+                if (entity != null)
+                {
+                    await RemoveEntity(entity);
+                    NotificationService.ShowSuccess($"Removed {EntitySingularName.ToLower()}: {GetEntityDisplayName(entity)}");
+                }
+                else
+                {
+                    NotificationService.ShowWarning($"{EntitySingularName} with ID {entityId} not found in selection");
+                }
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to remove {EntitySingularName.ToLower()}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Check if an entity is selected by its ID
+        /// </summary>
+        /// <param name="entityId">The ID to check</param>
+        /// <returns>True if the entity is selected</returns>
+        public bool IsEntitySelected(int entityId)
+        {
+            return selectedEntities.Any(e => GetEntityId(e) == entityId);
+        }
+
+        /// <summary>
+        /// Get a selected entity by its ID
+        /// </summary>
+        /// <param name="entityId">The ID of the entity to get</param>
+        /// <returns>The entity if found, null otherwise</returns>
+        public TEntity? GetSelectedEntityById(int entityId)
+        {
+            return selectedEntities.FirstOrDefault(e => GetEntityId(e) == entityId);
+        }
+
+        /// <summary>
+        /// Replace the current selection with new entities
+        /// </summary>
+        /// <param name="entities">The new entities to select</param>
+        /// <returns>Task representing the async operation</returns>
+        public async Task SetSelectedEntities(List<TEntity> entities)
+        {
+            try
+            {
+                isProcessing = true;
+                await InvokeAsync(StateHasChanged);
+
+                var entitiesToSelect = entities?.Take(MaxEntities).ToList() ?? new List<TEntity>();
+
+                selectedEntities.Clear();
+                selectedEntities.AddRange(entitiesToSelect);
+
+                await NotifyEntitiesChanged();
+                await InvokeAsync(StateHasChanged);
+
+                if (entitiesToSelect.Count > 0)
+                {
+                    NotificationService.ShowSuccess($"Selected {entitiesToSelect.Count} {(entitiesToSelect.Count == 1 ? EntitySingularName.ToLower() : EntityPluralName.ToLower())}");
+                }
+            }
+            catch (Exception ex)
+            {
+                NotificationService.ShowError($"Failed to set selected {EntityPluralName.ToLower()}: {ex.Message}");
+            }
+            finally
+            {
+                isProcessing = false;
+                await InvokeAsync(StateHasChanged);
             }
         }
 

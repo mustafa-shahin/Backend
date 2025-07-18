@@ -1,4 +1,5 @@
-﻿@typeparam TEntity where TEntity : class
+﻿@* Frontend/Components/Common/ObjectSelector/ObjectSelector.razor *@
+@typeparam TEntity where TEntity : class
 @using Backend.CMS.Application.DTOs
 @using Frontend.Components.Common.ConfirmationDialogComponent
 @using Frontend.Interfaces
@@ -23,6 +24,11 @@
         </div>
 
         <div class="flex items-center space-x-2">
+            @if (CustomHeaderActions != null)
+            {
+                @CustomHeaderActions
+            }
+
             @if (ShowBrowse && CanBrowse)
             {
                 <button type="button"
@@ -288,6 +294,9 @@
     [Parameter] public EventCallback<TEntity> OnEntityPreview { get; set; }
     [Parameter] public EventCallback<TEntity> OnEntityAdded { get; set; }
     [Parameter] public EventCallback<TEntity> OnEntityRemoved { get; set; }
+
+    // Custom content parameters
+    [Parameter] public RenderFragment? CustomHeaderActions { get; set; }
 
     public enum EntityDisplayMode
     {
