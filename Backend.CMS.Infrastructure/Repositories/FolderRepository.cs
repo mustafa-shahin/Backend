@@ -1,10 +1,10 @@
 ﻿using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Data;
-using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.EntityFrameworkCore;
-using System.Linq;
+
 
 namespace Backend.CMS.Infrastructure.Repositories
 {
@@ -124,7 +124,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public async Task<bool> HasFilesAsync(int folderId)
         {
-            return await _context.Set<FileEntity>()
+            return await _context.Set<BaseFileEntity>()
                                 .AnyAsync(f => !f.IsDeleted && f.FolderId == folderId);
         }
 
@@ -132,7 +132,7 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             if (!includeSubfolders)
             {
-                return await _context.Set<FileEntity>()
+                return await _context.Set<BaseFileEntity>()
                                    .Where(f => !f.IsDeleted && f.FolderId == folderId)
                                    .CountAsync();
             }
@@ -141,7 +141,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             var descendantIds = await GetDescendantIdsAsync(folderId);
             descendantIds.Add(folderId);
 
-            return await _context.Set<FileEntity>()
+            return await _context.Set<BaseFileEntity>()
                                .Where(f => !f.IsDeleted && descendantIds.Contains(f.Id))
                                .CountAsync();
         }
@@ -150,7 +150,7 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             if (!includeSubfolders)
             {
-                return await _context.Set<FileEntity>()
+                return await _context.Set<BaseFileEntity>()
                                    .Where(f => !f.IsDeleted && f.FolderId == folderId)
                                    .SumAsync(f => f.FileSize);
             }
@@ -159,7 +159,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             var descendantIds = await GetDescendantIdsAsync(folderId);
             descendantIds.Add(folderId);
 
-            return await _context.Set<FileEntity>()
+            return await _context.Set<BaseFileEntity>()
                                .Where(f => !f.IsDeleted && descendantIds.Contains(f.Id))
                                .SumAsync(f => f.FileSize);
         }
@@ -233,7 +233,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public async Task<IEnumerable<Folder>> GetEmptyFoldersAsync()
         {
-            var foldersWithFiles = await _context.Set<FileEntity>()
+            var foldersWithFiles = await _context.Set<BaseFileEntity>()
                                                 .Where(f => !f.IsDeleted && f.FolderId.HasValue)
                                                 .Select(f => f.FolderId.Value)
                                                 .Distinct()

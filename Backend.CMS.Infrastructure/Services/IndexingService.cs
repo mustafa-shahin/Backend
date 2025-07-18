@@ -1,4 +1,5 @@
 ﻿using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
@@ -627,7 +628,7 @@ namespace Backend.CMS.Infrastructure.Services
             _lastIndexedTimes[$"Page_{page.Id}"] = DateTime.UtcNow;
         }
 
-        private async Task IndexFileAsync(FileEntity file, CancellationToken cancellationToken = default)
+        private async Task IndexFileAsync(BaseFileEntity file, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 

@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using Backend.CMS.API.Authorization;
 using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Services;
@@ -441,8 +442,8 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
-                await _cacheInvalidationService.InvalidateEntityAsync<FileEntity>(fileId);
-                await _cacheInvalidationService.InvalidateRelatedAsync<FileEntity>(fileId);
+                await _cacheInvalidationService.InvalidateEntityAsync<BaseFileEntity>(fileId);
+                await _cacheInvalidationService.InvalidateRelatedAsync<BaseFileEntity>(fileId);
 
                 _logger.LogInformation("File cache cleared for file {FileId} by user {UserId}", fileId, GetCurrentUserId());
                 return Ok(new { Message = $"File cache cleared for file {fileId}" });
@@ -462,7 +463,7 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
-                await _cacheInvalidationService.InvalidateEntityTypeAsync<FileEntity>();
+                await _cacheInvalidationService.InvalidateEntityTypeAsync<BaseFileEntity>();
                 await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.FilePattern);
 
                 _logger.LogInformation("All file cache cleared by user {UserId}", GetCurrentUserId());
@@ -590,7 +591,7 @@ namespace Backend.CMS.API.Controllers
 
                 if (includeHeavyOperations)
                 {
-                    warmupTasks.Add(WarmupEntityType<FileEntity>("files", warmedItems));
+                    warmupTasks.Add(WarmupEntityType<BaseFileEntity>("files", warmedItems));
                     warmupTasks.Add(WarmupEntityType<Folder>("folders", warmedItems));
                 }
 

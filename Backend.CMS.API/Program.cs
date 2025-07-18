@@ -847,7 +847,74 @@ static async Task InitializeDatabaseSchemaAsync(WebApplication app)
     try
     {
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await context.Database.MigrateAsync();
+
+        // Check if database can connect
+        var canConnect = await context.Database.CanConnectAsync();
+        if (!canConnect)
+        {
+            Log.Information("Database does not exist, creating database...");
+            await context.Database.EnsureCreatedAsync();
+            return;
+        }
+
+        // Get pending and applied migrations
+        var pendingMigrations = await context.Database.GetPendingMigrationsAsync();
+        var appliedMigrations = await context.Database.GetAppliedMigrationsAsync();
+
+        Log.Information("Applied migrations: {Applied}", string.Join(", ", appliedMigrations));
+        Log.Information("Pending migrations: {Pending}", string.Join(", ", pendingMigrations));
+
+        if (pendingMigrations.Any())
+        {
+            Log.Information("Applying {Count} pending migrations...", pendingMigrations.Count());
+            await context.Database.MigrateAsync();
+            Log.Information("Migrations applied successfully.");
+        }
+        else
+        {
+            Log.Information("Database is up to date, no migrations needed.");
+        }
+    }
+    catch (Npgsql.PostgresException ex) when (ex.SqlState == "42P07") // relation already exists
+    {
+        Log.Warning("Tables already exist, likely due to missing migration history. Attempting to fix...");
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        try
+        {
+            // Create the migration history table if it doesn't exist
+            await context.Database.ExecuteSqlRawAsync(
+                @"CREATE TABLE IF NOT EXISTS ""__EFMigrationsHistory"" (
+                    ""MigrationId"" varchar(150) NOT NULL,
+                    ""ProductVersion"" varchar(32) NOT NULL,
+                    CONSTRAINT ""PK___EFMigrationsHistory"" PRIMARY KEY (""MigrationId"")
+                )"
+            );
+
+            // Get all migration IDs and mark them as applied
+            var allMigrations = context.Database.GetMigrations().ToList();
+            Log.Information("Marking {Count} migrations as applied: {Migrations}",
+                allMigrations.Count, string.Join(", ", allMigrations));
+
+            foreach (var migration in allMigrations)
+            {
+                await context.Database.ExecuteSqlRawAsync(
+                    @"INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") 
+                      VALUES ({0}, {1}) 
+                      ON CONFLICT (""MigrationId"") DO NOTHING",
+                    migration,
+                    "8.0.0"
+                );
+            }
+
+            Log.Information("Migration history synchronized successfully.");
+        }
+        catch (Exception syncEx)
+        {
+            Log.Error(syncEx, "Failed to synchronize migration history. Manual intervention may be required.");
+            Log.Information("You may need to manually drop and recreate the database, or run: dotnet ef database drop --force && dotnet ef database update");
+            throw;
+        }
     }
     catch (Exception ex)
     {

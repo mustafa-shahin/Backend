@@ -1,4 +1,5 @@
 ﻿using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
 using System.Text.Json.Serialization;
 
@@ -38,7 +39,7 @@ namespace Backend.CMS.Application.DTOs
         public UserRole Role { get; set; } = UserRole.Customer;
         public List<CreateAddressDto> Addresses { get; set; } = [];
         public List<CreateContactDetailsDto> ContactDetails { get; set; } = [];
-        public FileEntity? Picture { get; set; }
+        public BaseFileEntity? Picture { get; set; }
     }
 
     public class UpdateUserDto

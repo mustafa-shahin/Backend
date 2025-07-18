@@ -1,4 +1,5 @@
-﻿using Backend.CMS.Domain.Entities;
+﻿using Backend.CMS.Application.DTOs;
+using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
 
 namespace Backend.CMS.Infrastructure.Interfaces
@@ -23,7 +24,7 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// <summary>
         /// Generates all applicable URLs for a file entity
         /// </summary>
-        FileUrlSet GenerateFileUrls(FileEntity file);
+        FileUrlsDto GenerateFileUrls(BaseFileEntity file);
 
         /// <summary>
         /// Generates download token URL for secure file access
@@ -44,14 +45,5 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// Validates if a file type supports thumbnails
         /// </summary>
         bool SupportsThumbnails(FileType fileType);
-    }
-
-    public class FileUrlSet
-    {
-        public string DownloadUrl { get; set; } = string.Empty;
-        public string? PreviewUrl { get; set; }
-        public string? ThumbnailUrl { get; set; }
-        public string? DirectAccessUrl { get; set; }
-        public Dictionary<string, string> AdditionalUrls { get; set; } = new();
     }
 }

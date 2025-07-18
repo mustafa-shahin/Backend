@@ -2,6 +2,7 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 using Backend.CMS.Domain.Common;
+using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
 
 namespace Backend.CMS.Domain.Entities
@@ -52,7 +53,7 @@ namespace Backend.CMS.Domain.Entities
 
         [ForeignKey("PictureFileId")]
         [JsonIgnore] 
-        public FileEntity? Picture { get; set; }
+        public BaseFileEntity? Picture { get; set; }
 
         public DateTime? EmailVerifiedAt { get; set; }
 

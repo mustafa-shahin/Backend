@@ -1,4 +1,4 @@
-﻿using Backend.CMS.Application.DTOs;
+using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Enums;
 using Microsoft.AspNetCore.Http;
 
@@ -254,6 +254,175 @@ namespace Backend.CMS.Infrastructure.Interfaces
         /// <param name="destinationFolderId">Target folder ID</param>
         /// <returns>List of new file DTOs with URLs</returns>
         Task<List<FileDto>> BulkCopyFilesAsync(List<int> fileIds, int? destinationFolderId);
+
+        #endregion
+
+        #region Type-Specific Upload Operations
+
+        /// <summary>
+        /// Upload and process an image file with metadata extraction
+        /// </summary>
+        /// <param name="uploadDto">Image upload data</param>
+        /// <returns>Image file DTO with extracted metadata</returns>
+        Task<ImageFileDto> UploadImageAsync(FileUploadDto uploadDto);
+
+        /// <summary>
+        /// Upload and process a video file with metadata extraction
+        /// </summary>
+        /// <param name="uploadDto">Video upload data</param>
+        /// <returns>Video file DTO with extracted metadata</returns>
+        Task<VideoFileDto> UploadVideoAsync(FileUploadDto uploadDto);
+
+        /// <summary>
+        /// Upload and process an audio file with metadata extraction
+        /// </summary>
+        /// <param name="uploadDto">Audio upload data</param>
+        /// <returns>Audio file DTO with extracted metadata</returns>
+        Task<AudioFileDto> UploadAudioAsync(FileUploadDto uploadDto);
+
+        /// <summary>
+        /// Upload and process a document file with metadata extraction
+        /// </summary>
+        /// <param name="uploadDto">Document upload data</param>
+        /// <returns>Document file DTO with extracted metadata</returns>
+        Task<DocumentFileDto> UploadDocumentAsync(FileUploadDto uploadDto);
+
+        /// <summary>
+        /// Upload and process an archive file with content analysis
+        /// </summary>
+        /// <param name="uploadDto">Archive upload data</param>
+        /// <returns>Archive file DTO with extracted metadata</returns>
+        Task<ArchiveFileDto> UploadArchiveAsync(FileUploadDto uploadDto);
+
+        #endregion
+
+        #region Type-Specific Retrieval Operations
+
+        /// <summary>
+        /// Get image files with type-specific properties
+        /// </summary>
+        /// <param name="searchDto">Search criteria</param>
+        /// <returns>Paginated image files</returns>
+        Task<PaginatedResult<ImageFileDto>> GetImageFilesAsync(ImageSearchDto searchDto);
+
+        /// <summary>
+        /// Get video files with type-specific properties
+        /// </summary>
+        /// <param name="searchDto">Search criteria</param>
+        /// <returns>Paginated video files</returns>
+        Task<PaginatedResult<VideoFileDto>> GetVideoFilesAsync(VideoSearchDto searchDto);
+
+        /// <summary>
+        /// Get audio files with type-specific properties
+        /// </summary>
+        /// <param name="searchDto">Search criteria</param>
+        /// <returns>Paginated audio files</returns>
+        Task<PaginatedResult<AudioFileDto>> GetAudioFilesAsync(AudioSearchDto searchDto);
+
+        /// <summary>
+        /// Get document files with type-specific properties
+        /// </summary>
+        /// <param name="searchDto">Search criteria</param>
+        /// <returns>Paginated document files</returns>
+        Task<PaginatedResult<DocumentFileDto>> GetDocumentFilesAsync(DocumentSearchDto searchDto);
+
+        /// <summary>
+        /// Get archive files with type-specific properties
+        /// </summary>
+        /// <param name="searchDto">Search criteria</param>
+        /// <returns>Paginated archive files</returns>
+        Task<PaginatedResult<ArchiveFileDto>> GetArchiveFilesAsync(ArchiveSearchDto searchDto);
+
+        #endregion
+
+        #region Type-Specific Operations
+
+        /// <summary>
+        /// Get image file by ID with full image metadata
+        /// </summary>
+        /// <param name="fileId">File identifier</param>
+        /// <returns>Image file DTO with metadata</returns>
+        Task<ImageFileDto?> GetImageByIdAsync(int fileId);
+
+        /// <summary>
+        /// Get video file by ID with full video metadata
+        /// </summary>
+        /// <param name="fileId">File identifier</param>
+        /// <returns>Video file DTO with metadata</returns>
+        Task<VideoFileDto?> GetVideoByIdAsync(int fileId);
+
+        /// <summary>
+        /// Get audio file by ID with full audio metadata
+        /// </summary>
+        /// <param name="fileId">File identifier</param>
+        /// <returns>Audio file DTO with metadata</returns>
+        Task<AudioFileDto?> GetAudioByIdAsync(int fileId);
+
+        /// <summary>
+        /// Get document file by ID with full document metadata
+        /// </summary>
+        /// <param name="fileId">File identifier</param>
+        /// <returns>Document file DTO with metadata</returns>
+        Task<DocumentFileDto?> GetDocumentByIdAsync(int fileId);
+
+        /// <summary>
+        /// Get archive file by ID with full archive metadata
+        /// </summary>
+        /// <param name="fileId">File identifier</param>
+        /// <returns>Archive file DTO with metadata</returns>
+        Task<ArchiveFileDto?> GetArchiveByIdAsync(int fileId);
+
+        /// <summary>
+        /// Extract and update metadata for an existing image file
+        /// </summary>
+        /// <param name="fileId">Image file ID</param>
+        /// <returns>True if metadata was updated successfully</returns>
+        Task<bool> ExtractImageMetadataAsync(int fileId);
+
+        /// <summary>
+        /// Generate thumbnail for an image at specific size
+        /// </summary>
+        /// <param name="fileId">Image file ID</param>
+        /// <param name="width">Thumbnail width</param>
+        /// <param name="height">Thumbnail height</param>
+        /// <returns>True if thumbnail was generated successfully</returns>
+        Task<bool> GenerateImageThumbnailAsync(int fileId, int width = 200, int height = 200);
+
+        /// <summary>
+        /// Extract video metadata and generate thumbnail
+        /// </summary>
+        /// <param name="fileId">Video file ID</param>
+        /// <param name="thumbnailTimestamp">Timestamp for thumbnail generation</param>
+        /// <returns>True if processing was successful</returns>
+        Task<bool> ProcessVideoFileAsync(int fileId, TimeSpan? thumbnailTimestamp = null);
+
+        /// <summary>
+        /// Extract audio metadata including ID3 tags and album art
+        /// </summary>
+        /// <param name="fileId">Audio file ID</param>
+        /// <returns>True if metadata extraction was successful</returns>
+        Task<bool> ExtractAudioMetadataAsync(int fileId);
+
+        /// <summary>
+        /// Extract document metadata and generate thumbnail
+        /// </summary>
+        /// <param name="fileId">Document file ID</param>
+        /// <returns>True if processing was successful</returns>
+        Task<bool> ProcessDocumentFileAsync(int fileId);
+
+        /// <summary>
+        /// Analyze archive contents and extract file list
+        /// </summary>
+        /// <param name="fileId">Archive file ID</param>
+        /// <returns>True if analysis was successful</returns>
+        Task<bool> AnalyzeArchiveContentsAsync(int fileId);
+
+        /// <summary>
+        /// Test archive integrity
+        /// </summary>
+        /// <param name="fileId">Archive file ID</param>
+        /// <returns>True if archive is valid</returns>
+        Task<bool> TestArchiveIntegrityAsync(int fileId);
 
         #endregion
     }

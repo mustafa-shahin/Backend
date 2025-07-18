@@ -1,4 +1,5 @@
-﻿using Backend.CMS.Domain.Entities;
+﻿using Backend.CMS.Application.DTOs;
+using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Http;
@@ -79,52 +80,52 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        public FileUrlSet GenerateFileUrls(FileEntity file)
+        public FileUrlsDto GenerateFileUrls(BaseFileEntity file)
         {
             try
             {
-                var urlSet = new FileUrlSet();
+                var urlSet = new FileUrlsDto();
 
                 // For video and audio files, use streaming URLs as primary
                 if (IsStreamableFileType(file.FileType, file.ContentType))
                 {
                     // Primary URL for video/audio is streaming
-                    urlSet.DownloadUrl = GenerateStreamingUrl(file.Id, file.IsPublic);
+                    urlSet.Download = GenerateStreamingUrl(file.Id, file.IsPublic);
 
                     // Add traditional download URL as additional option
-                    urlSet.AdditionalUrls["download_attachment"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download";
+                    urlSet.Additional["download_attachment"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download";
 
                     // Add streaming-specific URLs
-                    urlSet.AdditionalUrls["stream"] = GenerateStreamingUrl(file.Id, file.IsPublic);
+                    urlSet.Stream = GenerateStreamingUrl(file.Id, file.IsPublic);
 
                     if (!file.IsPublic)
                     {
-                        urlSet.AdditionalUrls["stream_token_endpoint"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download-token";
+                        urlSet.Additional["stream_token_endpoint"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download-token";
                     }
                 }
                 else
                 {
                     // For other file types, use regular download URL
-                    urlSet.DownloadUrl = GenerateDownloadUrl(file.Id, file.IsPublic);
+                    urlSet.Download = GenerateDownloadUrl(file.Id, file.IsPublic);
                 }
 
                 // Generate preview URL for supported types
                 if (SupportsPreview(file.FileType, file.ContentType))
                 {
-                    urlSet.PreviewUrl = GeneratePreviewUrl(file.Id, file.FileType, file.IsPublic);
+                    urlSet.Preview = GeneratePreviewUrl(file.Id, file.FileType, file.IsPublic);
                 }
 
                 // Generate thumbnail URL if available
-                var hasThumbnail = file.ThumbnailContent != null && file.ThumbnailContent.Length > 0;
+                var hasThumbnail = HasThumbnailContent(file);
                 if (SupportsThumbnails(file.FileType) && hasThumbnail)
                 {
-                    urlSet.ThumbnailUrl = GenerateThumbnailUrl(file.Id, file.FileType, hasThumbnail);
+                    urlSet.Thumbnail = GenerateThumbnailUrl(file.Id, file.FileType, hasThumbnail);
                 }
 
                 // Generate direct access URL for public files
                 if (file.IsPublic)
                 {
-                    urlSet.DirectAccessUrl = GenerateDirectAccessUrl(file.Id);
+                    urlSet.DirectAccess = GenerateDirectAccessUrl(file.Id);
                 }
 
                 // Add additional URLs based on file type
@@ -135,9 +136,9 @@ namespace Backend.CMS.Infrastructure.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error generating URLs for file {FileId}", file.Id);
-                return new FileUrlSet
+                return new FileUrlsDto
                 {
-                    DownloadUrl = GenerateDownloadUrl(file.Id, file.IsPublic)
+                    Download = GenerateDownloadUrl(file.Id, file.IsPublic)
                 };
             }
         }
@@ -280,53 +281,53 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private void GenerateAdditionalUrls(FileEntity file, FileUrlSet urlSet)
+        private void GenerateAdditionalUrls(BaseFileEntity file, FileUrlsDto urlSet)
         {
             try
             {
                 // Generate diagnostic URL for debugging
-                urlSet.AdditionalUrls["diagnostic"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/diagnostic";
+                urlSet.Additional["diagnostic"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/diagnostic";
 
                 // Generate integrity verification URL
-                urlSet.AdditionalUrls["verify"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/verify-integrity";
+                urlSet.Additional["verify"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/verify-integrity";
 
                 // Generate metadata URL
-                urlSet.AdditionalUrls["metadata"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}";
+                urlSet.Additional["metadata"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}";
 
                 // For images, add resize URLs if supported
                 if (file.FileType == FileType.Image)
                 {
-                    urlSet.AdditionalUrls["resize_small"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/resize?width=200&height=200";
-                    urlSet.AdditionalUrls["resize_medium"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/resize?width=500&height=500";
-                    urlSet.AdditionalUrls["resize_large"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/resize?width=1200&height=1200";
+                    urlSet.Additional["resize_small"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/resize?width=200&height=200";
+                    urlSet.Additional["resize_medium"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/resize?width=500&height=500";
+                    urlSet.Additional["resize_large"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/resize?width=1200&height=1200";
                 }
 
                 // For videos and audio, add streaming and download URLs
                 if (IsStreamableFileType(file.FileType, file.ContentType))
                 {
                     // Ensure we have both streaming and download options
-                    if (!urlSet.AdditionalUrls.ContainsKey("stream"))
+                    if (!urlSet.Additional.ContainsKey("stream"))
                     {
-                        urlSet.AdditionalUrls["stream"] = GenerateStreamingUrl(file.Id, file.IsPublic);
+                        urlSet.Additional["stream"] = GenerateStreamingUrl(file.Id, file.IsPublic);
                     }
 
-                    if (!urlSet.AdditionalUrls.ContainsKey("download_attachment"))
+                    if (!urlSet.Additional.ContainsKey("download_attachment"))
                     {
-                        urlSet.AdditionalUrls["download_attachment"] = GenerateDownloadUrl(file.Id, file.IsPublic);
+                        urlSet.Additional["download_attachment"] = GenerateDownloadUrl(file.Id, file.IsPublic);
                     }
 
                     // Add potential future streaming formats
                     if (file.FileType == FileType.Video)
                     {
-                        urlSet.AdditionalUrls["stream_hls"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/stream/hls";
-                        urlSet.AdditionalUrls["stream_dash"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/stream/dash";
+                        urlSet.Additional["stream_hls"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/stream/hls";
+                        urlSet.Additional["stream_dash"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/stream/dash";
                     }
                 }
 
                 // Add download token generation URL for private files
                 if (!file.IsPublic)
                 {
-                    urlSet.AdditionalUrls["generate_token"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download-token";
+                    urlSet.Additional["generate_token"] = $"{_baseUrl}/api/v{_apiVersion}/file/{file.Id}/download-token";
                 }
             }
             catch (Exception ex)
@@ -400,6 +401,22 @@ namespace Backend.CMS.Infrastructure.Services
             };
 
             return previewableTypes.Any(type => contentType.Contains(type, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Checks if a file has thumbnail content based on its type
+        /// </summary>
+        /// <param name="file">The file entity</param>
+        /// <returns>True if the file has thumbnail content</returns>
+        private static bool HasThumbnailContent(BaseFileEntity file)
+        {
+            return file switch
+            {
+                ImageFileEntity imageFile => imageFile.ThumbnailContent != null,
+                VideoFileEntity videoFile => videoFile.ThumbnailContent != null,
+                DocumentFileEntity docFile => docFile.ThumbnailContent != null,
+                _ => false
+            };
         }
     }
 }

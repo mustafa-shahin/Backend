@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
 
 namespace Backend.CMS.Infrastructure.Mapping
@@ -349,27 +350,84 @@ namespace Backend.CMS.Infrastructure.Mapping
 
         private void ConfigureFileMappings()
         {
+            // Base file entity mappings
+            CreateMap<BaseFileEntity, FileDto>()
+                .ForMember(dest => dest.Urls, opt => opt.Ignore()) // Will be populated by URL builder
+                .ForMember(dest => dest.HasThumbnail, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.CanPreview, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.FileSizeFormatted, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.FileTypeName, opt => opt.MapFrom(src => src.FileType.ToString()))
+                .ForMember(dest => dest.DurationFormatted, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.FolderPath, opt => opt.MapFrom(src => src.Folder != null ? src.Folder.Path : null));
 
-            CreateMap<FileUploadDto, FileEntity>()
+            // Type-specific entity to DTO mappings
+            CreateMap<ImageFileEntity, ImageFileDto>()
+                .IncludeBase<BaseFileEntity, FileDto>()
+                .ForMember(dest => dest.AspectRatio, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.HasGeoLocation, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.PixelCount, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.CameraInfo, opt => opt.Ignore()); // Computed property
+
+            CreateMap<VideoFileEntity, VideoFileDto>()
+                .IncludeBase<BaseFileEntity, FileDto>()
+                .ForMember(dest => dest.Resolution, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.FormattedBitrate, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.IsHighDefinition, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.Is4K, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.QualityCategory, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.VideoInfo, opt => opt.Ignore()); // Computed property
+
+            CreateMap<AudioFileEntity, AudioFileDto>()
+                .IncludeBase<BaseFileEntity, FileDto>()
+                .ForMember(dest => dest.FormattedBitrate, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.ChannelConfiguration, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.QualityRating, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.TrackInfo, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.HasAlbumArt, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.FullTitle, opt => opt.Ignore()); // Computed property
+
+            CreateMap<DocumentFileEntity, DocumentFileDto>()
+                .IncludeBase<BaseFileEntity, FileDto>()
+                .ForMember(dest => dest.DocumentInfo, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.SecurityInfo, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.ContentInfo, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.FeaturesInfo, opt => opt.Ignore()); // Computed property
+
+            CreateMap<ArchiveFileEntity, ArchiveFileDto>()
+                .IncludeBase<BaseFileEntity, FileDto>()
+                .ForMember(dest => dest.CompressionInfo, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.SizeInfo, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.SecurityInfo, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.ArchiveInfo, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.RequiresPassword, opt => opt.Ignore()) // Computed property
+                .ForMember(dest => dest.IntegrityStatus, opt => opt.Ignore()); // Computed property
+
+            CreateMap<OtherFileEntity, FileDto>()
+                .IncludeBase<BaseFileEntity, FileDto>();
+
+            // Archive entry mappings
+            CreateMap<ArchiveEntry, ArchiveEntryDto>()
+                .ForMember(dest => dest.CompressionRatio, opt => opt.Ignore()); // Computed property
+
+            // Upload DTO to entity mappings - these will be handled by factory
+            CreateMap<FileUploadDto, BaseFileEntity>()
                 .IgnoreAuditProperties()
                 .ForMember(dest => dest.StoredFileName, opt => opt.Ignore())
                 .ForMember(dest => dest.FileContent, opt => opt.Ignore())
                 .ForMember(dest => dest.FileSize, opt => opt.Ignore())
                 .ForMember(dest => dest.ContentType, opt => opt.Ignore())
                 .ForMember(dest => dest.FileExtension, opt => opt.Ignore())
-                .ForMember(dest => dest.FileType, opt => opt.Ignore())
                 .ForMember(dest => dest.Hash, opt => opt.Ignore())
-                .ForMember(dest => dest.ThumbnailContent, opt => opt.Ignore())
-                .ForMember(dest => dest.Width, opt => opt.Ignore())
-                .ForMember(dest => dest.Height, opt => opt.Ignore())
-                .ForMember(dest => dest.Duration, opt => opt.Ignore())
                 .ForMember(dest => dest.IsProcessed, opt => opt.Ignore())
                 .ForMember(dest => dest.ProcessingStatus, opt => opt.Ignore())
                 .ForMember(dest => dest.DownloadCount, opt => opt.Ignore())
                 .ForMember(dest => dest.LastAccessedAt, opt => opt.Ignore())
-                .ForMember(dest => dest.Folder, opt => opt.Ignore());
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.FileAccesses, opt => opt.Ignore())
+                .ForMember(dest => dest.FileType, opt => opt.Ignore()); // Will be set by factory
 
-            CreateMap<UpdateFileDto, FileEntity>()
+            // Update DTO mappings
+            CreateMap<UpdateFileDto, BaseFileEntity>()
                 .IgnoreBaseEntityProperties()
                 .ForMember(dest => dest.OriginalFileName, opt => opt.Ignore())
                 .ForMember(dest => dest.StoredFileName, opt => opt.Ignore())
@@ -377,17 +435,15 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.FileSize, opt => opt.Ignore())
                 .ForMember(dest => dest.ContentType, opt => opt.Ignore())
                 .ForMember(dest => dest.FileExtension, opt => opt.Ignore())
-                .ForMember(dest => dest.FileType, opt => opt.Ignore())
                 .ForMember(dest => dest.Hash, opt => opt.Ignore())
-                .ForMember(dest => dest.ThumbnailContent, opt => opt.Ignore())
-                .ForMember(dest => dest.Width, opt => opt.Ignore())
-                .ForMember(dest => dest.Height, opt => opt.Ignore())
-                .ForMember(dest => dest.Duration, opt => opt.Ignore())
                 .ForMember(dest => dest.IsProcessed, opt => opt.Ignore())
                 .ForMember(dest => dest.ProcessingStatus, opt => opt.Ignore())
                 .ForMember(dest => dest.DownloadCount, opt => opt.Ignore())
                 .ForMember(dest => dest.LastAccessedAt, opt => opt.Ignore())
-                .ForMember(dest => dest.Folder, opt => opt.Ignore());
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.FileAccesses, opt => opt.Ignore())
+                .ForMember(dest => dest.FileType, opt => opt.Ignore());
+
         }
         private void ConfigureDesignerMapping()
         {

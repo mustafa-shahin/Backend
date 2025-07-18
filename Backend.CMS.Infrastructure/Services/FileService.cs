@@ -1,9 +1,9 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
-using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
+using Backend.CMS.Domain.Factories;
 using Backend.CMS.Infrastructure.Interfaces;
-using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -11,7 +11,6 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
-using System.Linq.Expressions;
 
 namespace Backend.CMS.Infrastructure.Services
 {
@@ -126,26 +125,26 @@ namespace Backend.CMS.Infrastructure.Services
                     // Create file entity and save to database within transaction
                     var fileEntity = await _unitOfWork.ExecuteInTransactionAsync(async () =>
                     {
-                        var entity = new FileEntity
-                        {
-                            OriginalFileName = originalFileName,
-                            StoredFileName = storedFileName,
-                            FileContent = fileContent,
-                            ContentType = uploadDto.File.ContentType,
-                            FileSize = uploadDto.File.Length,
-                            FileExtension = fileExtension,
-                            FileType = fileType,
-                            Description = uploadDto.Description,
-                            Alt = uploadDto.Alt,
-                            IsPublic = uploadDto.IsPublic,
-                            FolderId = uploadDto.FolderId,
-                            Hash = fileHash,
-                            Tags = uploadDto.Tags ?? new Dictionary<string, object>(),
-                            CreatedByUserId = currentUserId,
-                            UpdatedByUserId = currentUserId,
-                            IsProcessed = false,
-                            ProcessingStatus = "Pending"
-                        };
+                        // Use factory to create appropriate file entity type
+                        var entity = FileEntityFactory.CreateFileEntity(uploadDto.File.ContentType, fileExtension);
+                        
+                        // Set common properties
+                        entity.OriginalFileName = originalFileName;
+                        entity.StoredFileName = storedFileName;
+                        entity.FileContent = fileContent;
+                        entity.ContentType = uploadDto.File.ContentType;
+                        entity.FileSize = uploadDto.File.Length;
+                        entity.FileExtension = fileExtension;
+                        entity.Description = uploadDto.Description;
+                        entity.Alt = uploadDto.Alt;
+                        entity.IsPublic = uploadDto.IsPublic;
+                        entity.FolderId = uploadDto.FolderId;
+                        entity.Hash = fileHash;
+                        entity.Tags = uploadDto.Tags ?? new Dictionary<string, object>();
+                        entity.CreatedByUserId = currentUserId;
+                        entity.UpdatedByUserId = currentUserId;
+                        entity.IsProcessed = false;
+                        entity.ProcessingStatus = "Pending";
 
                         await _unitOfWork.Files.AddAsync(entity);
                         await _unitOfWork.SaveChangesAsync();
@@ -432,14 +431,23 @@ namespace Backend.CMS.Infrastructure.Services
             if (file.IsDeleted)
                 return new ThumbnailResult { Reason = "Deleted" };
 
-            if (file.ThumbnailContent == null || file.ThumbnailContent.Length == 0)
+            // Check for thumbnail content using pattern matching
+            byte[]? thumbnailContent = file switch
+            {
+                ImageFileEntity imageFile => imageFile.ThumbnailContent,
+                VideoFileEntity videoFile => videoFile.ThumbnailContent,
+                DocumentFileEntity docFile => docFile.ThumbnailContent,
+                _ => null
+            };
+
+            if (thumbnailContent == null || thumbnailContent.Length == 0)
                 return new ThumbnailResult { Reason = "NoThumbnail" };
 
             await RecordFileAccessAsync(fileId, FileAccessType.Preview);
 
             return new ThumbnailResult
             {
-                Stream = new MemoryStream(file.ThumbnailContent, writable: false),
+                Stream = new MemoryStream(thumbnailContent, writable: false),
                 ContentType = "image/jpeg",
                 FileName = $"thumb_{file.OriginalFileName}"
             };
@@ -612,29 +620,28 @@ namespace Backend.CMS.Infrastructure.Services
                 var newFileName = copyDto.NewName ?? $"Copy of {originalFile.OriginalFileName}";
                 var newStoredFileName = $"copy_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid().ToString()[..8]}{originalFile.FileExtension}";
 
-                // Create new file entity with copied content
-                var newFile = new FileEntity
-                {
-                    OriginalFileName = newFileName,
-                    StoredFileName = newStoredFileName,
-                    FileContent = (byte[])originalFile.FileContent.Clone(),
-                    ContentType = originalFile.ContentType,
-                    FileSize = originalFile.FileSize,
-                    FileExtension = originalFile.FileExtension,
-                    FileType = originalFile.FileType,
-                    Description = originalFile.Description,
-                    Alt = originalFile.Alt,
-                    IsPublic = originalFile.IsPublic,
-                    FolderId = copyDto.DestinationFolderId ?? originalFile.FolderId,
-                    Hash = originalFile.Hash,
-                    Width = originalFile.Width,
-                    Height = originalFile.Height,
-                    Duration = originalFile.Duration,
-                    IsProcessed = originalFile.IsProcessed,
-                    ProcessingStatus = originalFile.ProcessingStatus,
-                    CreatedByUserId = currentUserId,
-                    UpdatedByUserId = currentUserId
-                };
+                // Create new file entity using factory
+                var newFile = FileEntityFactory.CreateFileEntity(originalFile.FileType);
+                
+                // Set common properties
+                newFile.OriginalFileName = newFileName;
+                newFile.StoredFileName = newStoredFileName;
+                newFile.FileContent = (byte[])originalFile.FileContent.Clone();
+                newFile.ContentType = originalFile.ContentType;
+                newFile.FileSize = originalFile.FileSize;
+                newFile.FileExtension = originalFile.FileExtension;
+                newFile.Description = originalFile.Description;
+                newFile.Alt = originalFile.Alt;
+                newFile.IsPublic = originalFile.IsPublic;
+                newFile.FolderId = copyDto.DestinationFolderId ?? originalFile.FolderId;
+                newFile.Hash = originalFile.Hash;
+                newFile.IsProcessed = originalFile.IsProcessed;
+                newFile.ProcessingStatus = originalFile.ProcessingStatus;
+                newFile.CreatedByUserId = currentUserId;
+                newFile.UpdatedByUserId = currentUserId;
+
+                // Copy type-specific properties using pattern matching
+                CopyTypeSpecificProperties(originalFile, newFile);
 
                 // Copy metadata and tags if requested
                 if (copyDto.CopyMetadata)
@@ -644,9 +651,9 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 // Copy thumbnail if exists and requested
-                if (copyDto.CopyThumbnail && originalFile.ThumbnailContent != null && originalFile.ThumbnailContent.Length > 0)
+                if (copyDto.CopyThumbnail)
                 {
-                    newFile.ThumbnailContent = (byte[])originalFile.ThumbnailContent.Clone();
+                    CopyThumbnailContent(originalFile, newFile);
                 }
 
                 await _unitOfWork.Files.AddAsync(newFile);
@@ -697,17 +704,10 @@ namespace Backend.CMS.Infrastructure.Services
                 OriginalFileName = file.OriginalFileName,
                 ContentType = file.ContentType,
                 FileType = file.FileType,
-                Urls = new FileUrlsDto
-                {
-                    Download = urlSet.DownloadUrl,
-                    Preview = urlSet.PreviewUrl,
-                    Thumbnail = urlSet.ThumbnailUrl,
-                    DirectAccess = urlSet.DirectAccessUrl,
-                    Additional = urlSet.AdditionalUrls
-                },
-                Width = file.Width,
-                Height = file.Height,
-                Duration = file.Duration,
+                Urls = urlSet,
+                Width = GetFileWidth(file),
+                Height = GetFileHeight(file),
+                Duration = GetFileDuration(file),
                 CanPreview = CanPreviewFile(file.FileType, file.ContentType),
                 Metadata = file.Metadata
             };
@@ -729,14 +729,31 @@ namespace Backend.CMS.Infrastructure.Services
             });
         }
 
-        private async Task<bool> GenerateThumbnailInternalAsync(FileEntity file)
+        private async Task<bool> GenerateThumbnailInternalAsync(BaseFileEntity file)
         {
             try
             {
                 var thumbnailBytes = await _imageProcessingService.GenerateThumbnailFromBytesAsync(file.FileContent);
 
                 var currentUserId = _userSessionService.GetCurrentUserId();
-                file.ThumbnailContent = thumbnailBytes;
+                
+                // Set thumbnail based on file type
+                switch (file)
+                {
+                    case ImageFileEntity imageFile:
+                        imageFile.ThumbnailContent = thumbnailBytes;
+                        break;
+                    case VideoFileEntity videoFile:
+                        videoFile.ThumbnailContent = thumbnailBytes;
+                        break;
+                    case DocumentFileEntity documentFile:
+                        documentFile.ThumbnailContent = thumbnailBytes;
+                        break;
+                    default:
+                        // Other file types don't support thumbnails
+                        return false;
+                }
+
                 file.UpdatedAt = DateTime.UtcNow;
                 file.UpdatedByUserId = currentUserId;
 
@@ -1092,7 +1109,7 @@ namespace Backend.CMS.Infrastructure.Services
 
         #region Private Helper Methods
 
-        private IQueryable<FileEntity> ApplySearchFilters(IQueryable<FileEntity> query, FileSearchDto searchDto)
+        private IQueryable<BaseFileEntity> ApplySearchFilters(IQueryable<BaseFileEntity> query, FileSearchDto searchDto)
         {
             // Apply filters efficiently at database level
             if (!string.IsNullOrEmpty(searchDto.SearchTerm))
@@ -1135,7 +1152,7 @@ namespace Backend.CMS.Infrastructure.Services
             return query;
         }
 
-        private static IQueryable<FileEntity> ApplySorting(IQueryable<FileEntity> query, string sortBy, string sortDirection)
+        private static IQueryable<BaseFileEntity> ApplySorting(IQueryable<BaseFileEntity> query, string sortBy, string sortDirection)
         {
             var isDescending = sortDirection.Equals("desc", StringComparison.OrdinalIgnoreCase);
 
@@ -1219,7 +1236,7 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        private async Task UpdateFileStatsAsync(FileEntity file)
+        private async Task UpdateFileStatsAsync(BaseFileEntity file)
         {
             try
             {
@@ -1240,7 +1257,7 @@ namespace Backend.CMS.Infrastructure.Services
             return file != null ? await MapFileToDto(file) : null;
         }
 
-        private async Task<bool> ProcessImageFileAsync(FileEntity file, bool generateThumbnail)
+        private async Task<bool> ProcessImageFileAsync(BaseFileEntity file, bool generateThumbnail)
         {
             var currentUserId = _userSessionService.GetCurrentUserId();
 
@@ -1253,12 +1270,17 @@ namespace Backend.CMS.Infrastructure.Services
                 if (await _imageProcessingService.IsImageFromBytesAsync(file.FileContent))
                 {
                     var (width, height) = await _imageProcessingService.GetImageDimensionsFromBytesAsync(file.FileContent);
-                    file.Width = width;
-                    file.Height = height;
-
-                    if (generateThumbnail && (file.ThumbnailContent == null || file.ThumbnailContent.Length == 0))
+                    
+                    // Set image-specific properties if this is an image file
+                    if (file is ImageFileEntity imageFile)
                     {
-                        file.ThumbnailContent = await _imageProcessingService.GenerateThumbnailFromBytesAsync(file.FileContent);
+                        imageFile.Width = width;
+                        imageFile.Height = height;
+
+                        if (generateThumbnail && (imageFile.ThumbnailContent == null || imageFile.ThumbnailContent.Length == 0))
+                        {
+                            imageFile.ThumbnailContent = await _imageProcessingService.GenerateThumbnailFromBytesAsync(file.FileContent);
+                        }
                     }
                 }
 
@@ -1300,17 +1322,6 @@ namespace Backend.CMS.Infrastructure.Services
             return $"{len:0.##} {sizes[order]}";
         }
 
-        private static string FormatDuration(TimeSpan? duration)
-        {
-            if (!duration.HasValue) return string.Empty;
-
-            var d = duration.Value;
-            if (d.TotalHours >= 1)
-            {
-                return d.ToString(@"h\:mm\:ss");
-            }
-            return d.ToString(@"m\:ss");
-        }
 
         private static bool CanPreviewFile(FileType fileType, string contentType)
         {
@@ -1324,22 +1335,22 @@ namespace Backend.CMS.Infrastructure.Services
             };
         }
 
-        private string GeneratePreviewHtml(FileEntity file, FileUrlSet urlSet)
+        private string GeneratePreviewHtml(BaseFileEntity file, FileUrlsDto urlSet)
         {
             return file.FileType switch
             {
-                FileType.Image => $"<img src=\"{urlSet.DownloadUrl}\" alt=\"{file.Alt ?? file.OriginalFileName}\" style=\"max-width: 100%; height: auto;\" />",
-                FileType.Video => $"<video controls style=\"max-width: 100%;\"><source src=\"{urlSet.DownloadUrl}\" type=\"{file.ContentType}\">Your browser does not support the video tag.</video>",
-                FileType.Audio => $"<audio controls><source src=\"{urlSet.DownloadUrl}\" type=\"{file.ContentType}\">Your browser does not support the audio tag.</audio>",
-                FileType.Document when file.ContentType == "application/pdf" => $"<embed src=\"{urlSet.DownloadUrl}\" type=\"application/pdf\" width=\"100%\" height=\"600px\" />",
+                FileType.Image => $"<img src=\"{urlSet.Download}\" alt=\"{file.Alt ?? file.OriginalFileName}\" style=\"max-width: 100%; height: auto;\" />",
+                FileType.Video => $"<video controls style=\"max-width: 100%;\"><source src=\"{urlSet.Download}\" type=\"{file.ContentType}\">Your browser does not support the video tag.</video>",
+                FileType.Audio => $"<audio controls><source src=\"{urlSet.Download}\" type=\"{file.ContentType}\">Your browser does not support the audio tag.</audio>",
+                FileType.Document when file.ContentType == "application/pdf" => $"<embed src=\"{urlSet.Download}\" type=\"application/pdf\" width=\"100%\" height=\"600px\" />",
                 _ => null
             };
         }
 
-        private async Task<FileDto> MapFileToDto(FileEntity file)
+        private async Task<FileDto> MapFileToDto(BaseFileEntity file)
         {
             var urlSet = _fileUrlBuilder.GenerateFileUrls(file);
-            var hasThumbnail = file.ThumbnailContent != null && file.ThumbnailContent.Length > 0;
+            var hasThumbnail = HasThumbnailContent(file);
 
             return new FileDto
             {
@@ -1359,30 +1370,23 @@ namespace Backend.CMS.Infrastructure.Services
                 FolderId = file.FolderId,
                 DownloadCount = file.DownloadCount,
                 LastAccessedAt = file.LastAccessedAt,
-                Width = file.Width,
-                Height = file.Height,
-                Duration = file.Duration,
-                DurationFormatted = FormatDuration(file.Duration),
+                Width = GetFileWidth(file),
+                Height = GetFileHeight(file),
+                Duration = GetFileDuration(file),
+                DurationFormatted = FormatDuration(GetFileDuration(file)),
                 Hash = file.Hash,
                 IsProcessed = file.IsProcessed,
                 ProcessingStatus = file.ProcessingStatus,
                 Tags = file.Tags,
                 CreatedAt = file.CreatedAt,
                 UpdatedAt = file.UpdatedAt,
-                Urls = new FileUrlsDto
-                {
-                    Download = urlSet.DownloadUrl,
-                    Preview = urlSet.PreviewUrl,
-                    Thumbnail = urlSet.ThumbnailUrl,
-                    DirectAccess = urlSet.DirectAccessUrl,
-                    Additional = urlSet.AdditionalUrls
-                },
+                Urls = urlSet,
                 HasThumbnail = hasThumbnail,
                 CanPreview = CanPreviewFile(file.FileType, file.ContentType)
             };
         }
 
-        private async Task<List<FileDto>> MapFilesToDtos(IEnumerable<FileEntity> files)
+        private async Task<List<FileDto>> MapFilesToDtos(IEnumerable<BaseFileEntity> files)
         {
             var fileDtos = new List<FileDto>();
             foreach (var file in files)
@@ -1390,6 +1394,509 @@ namespace Backend.CMS.Infrastructure.Services
                 fileDtos.Add(await MapFileToDto(file));
             }
             return fileDtos;
+        }
+
+        #endregion
+
+        #region Type-Specific Upload Operations
+
+        public async Task<ImageFileDto> UploadImageAsync(FileUploadDto uploadDto)
+        {
+            var fileDto = await UploadFileAsync(uploadDto);
+            return _mapper.Map<ImageFileDto>(fileDto);
+        }
+
+        public async Task<VideoFileDto> UploadVideoAsync(FileUploadDto uploadDto)
+        {
+            var fileDto = await UploadFileAsync(uploadDto);
+            return _mapper.Map<VideoFileDto>(fileDto);
+        }
+
+        public async Task<AudioFileDto> UploadAudioAsync(FileUploadDto uploadDto)
+        {
+            var fileDto = await UploadFileAsync(uploadDto);
+            return _mapper.Map<AudioFileDto>(fileDto);
+        }
+
+        public async Task<DocumentFileDto> UploadDocumentAsync(FileUploadDto uploadDto)
+        {
+            var fileDto = await UploadFileAsync(uploadDto);
+            return _mapper.Map<DocumentFileDto>(fileDto);
+        }
+
+        public async Task<ArchiveFileDto> UploadArchiveAsync(FileUploadDto uploadDto)
+        {
+            var fileDto = await UploadFileAsync(uploadDto);
+            return _mapper.Map<ArchiveFileDto>(fileDto);
+        }
+
+        #endregion
+
+        #region Type-Specific Retrieval Operations
+
+        public async Task<PaginatedResult<ImageFileDto>> GetImageFilesAsync(ImageSearchDto searchDto)
+        {
+            var imageFiles = await _unitOfWork.Files.GetImageFilesAsync(searchDto.FolderId);
+            var totalCount = imageFiles.Count();
+            
+            var pagedFiles = imageFiles
+                .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                .Take(searchDto.PageSize)
+                .ToList();
+
+            var imageDtos = new List<ImageFileDto>();
+            foreach (var file in pagedFiles)
+            {
+                var fileDto = await MapFileToDto(file);
+                imageDtos.Add(_mapper.Map<ImageFileDto>(fileDto));
+            }
+
+            return new PaginatedResult<ImageFileDto>(imageDtos, searchDto.PageNumber, searchDto.PageSize, totalCount);
+        }
+
+        public async Task<PaginatedResult<VideoFileDto>> GetVideoFilesAsync(VideoSearchDto searchDto)
+        {
+            var videoFiles = await _unitOfWork.Files.GetVideoFilesAsync(searchDto.FolderId);
+            var totalCount = videoFiles.Count();
+            
+            var pagedFiles = videoFiles
+                .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                .Take(searchDto.PageSize)
+                .ToList();
+
+            var videoDtos = new List<VideoFileDto>();
+            foreach (var file in pagedFiles)
+            {
+                var fileDto = await MapFileToDto(file);
+                videoDtos.Add(_mapper.Map<VideoFileDto>(fileDto));
+            }
+
+            return new PaginatedResult<VideoFileDto>(videoDtos, searchDto.PageNumber, searchDto.PageSize, totalCount);
+        }
+
+        public async Task<PaginatedResult<AudioFileDto>> GetAudioFilesAsync(AudioSearchDto searchDto)
+        {
+            var audioFiles = await _unitOfWork.Files.GetAudioFilesAsync(searchDto.FolderId);
+            var totalCount = audioFiles.Count();
+            
+            var pagedFiles = audioFiles
+                .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                .Take(searchDto.PageSize)
+                .ToList();
+
+            var audioDtos = new List<AudioFileDto>();
+            foreach (var file in pagedFiles)
+            {
+                var fileDto = await MapFileToDto(file);
+                audioDtos.Add(_mapper.Map<AudioFileDto>(fileDto));
+            }
+
+            return new PaginatedResult<AudioFileDto>(audioDtos, searchDto.PageNumber, searchDto.PageSize, totalCount);
+        }
+
+        public async Task<PaginatedResult<DocumentFileDto>> GetDocumentFilesAsync(DocumentSearchDto searchDto)
+        {
+            var documentFiles = await _unitOfWork.Files.GetDocumentFilesAsync(searchDto.FolderId);
+            var totalCount = documentFiles.Count();
+            
+            var pagedFiles = documentFiles
+                .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                .Take(searchDto.PageSize)
+                .ToList();
+
+            var documentDtos = new List<DocumentFileDto>();
+            foreach (var file in pagedFiles)
+            {
+                var fileDto = await MapFileToDto(file);
+                documentDtos.Add(_mapper.Map<DocumentFileDto>(fileDto));
+            }
+
+            return new PaginatedResult<DocumentFileDto>(documentDtos, searchDto.PageNumber, searchDto.PageSize, totalCount);
+        }
+
+        public async Task<PaginatedResult<ArchiveFileDto>> GetArchiveFilesAsync(ArchiveSearchDto searchDto)
+        {
+            var archiveFiles = await _unitOfWork.Files.GetArchiveFilesAsync(searchDto.FolderId);
+            var totalCount = archiveFiles.Count();
+            
+            var pagedFiles = archiveFiles
+                .Skip((searchDto.PageNumber - 1) * searchDto.PageSize)
+                .Take(searchDto.PageSize)
+                .ToList();
+
+            var archiveDtos = new List<ArchiveFileDto>();
+            foreach (var file in pagedFiles)
+            {
+                var fileDto = await MapFileToDto(file);
+                archiveDtos.Add(_mapper.Map<ArchiveFileDto>(fileDto));
+            }
+
+            return new PaginatedResult<ArchiveFileDto>(archiveDtos, searchDto.PageNumber, searchDto.PageSize, totalCount);
+        }
+
+        #endregion
+
+        #region Type-Specific Operations
+
+        public async Task<ImageFileDto?> GetImageByIdAsync(int fileId)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not ImageFileEntity imageFile)
+                return null;
+
+            var fileDto = await MapFileToDto(imageFile);
+            return _mapper.Map<ImageFileDto>(fileDto);
+        }
+
+        public async Task<VideoFileDto?> GetVideoByIdAsync(int fileId)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not VideoFileEntity videoFile)
+                return null;
+
+            var fileDto = await MapFileToDto(videoFile);
+            return _mapper.Map<VideoFileDto>(fileDto);
+        }
+
+        public async Task<AudioFileDto?> GetAudioByIdAsync(int fileId)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not AudioFileEntity audioFile)
+                return null;
+
+            var fileDto = await MapFileToDto(audioFile);
+            return _mapper.Map<AudioFileDto>(fileDto);
+        }
+
+        public async Task<DocumentFileDto?> GetDocumentByIdAsync(int fileId)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not DocumentFileEntity documentFile)
+                return null;
+
+            var fileDto = await MapFileToDto(documentFile);
+            return _mapper.Map<DocumentFileDto>(fileDto);
+        }
+
+        public async Task<ArchiveFileDto?> GetArchiveByIdAsync(int fileId)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not ArchiveFileEntity archiveFile)
+                return null;
+
+            var fileDto = await MapFileToDto(archiveFile);
+            return _mapper.Map<ArchiveFileDto>(fileDto);
+        }
+
+        public async Task<bool> ExtractImageMetadataAsync(int fileId)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not ImageFileEntity imageFile)
+                return false;
+
+            return await ProcessImageFileAsync(imageFile, false);
+        }
+
+        public async Task<bool> GenerateImageThumbnailAsync(int fileId, int width = 200, int height = 200)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not ImageFileEntity imageFile)
+                return false;
+
+            return await GenerateThumbnailInternalAsync(imageFile);
+        }
+
+        public async Task<bool> ProcessVideoFileAsync(int fileId, TimeSpan? thumbnailTimestamp = null)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not VideoFileEntity videoFile)
+                return false;
+
+            // TODO: Implement video processing logic
+            _logger.LogInformation("Video processing not yet implemented for file {FileId}", fileId);
+            return true;
+        }
+
+        public async Task<bool> ExtractAudioMetadataAsync(int fileId)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not AudioFileEntity audioFile)
+                return false;
+
+            // TODO: Implement audio metadata extraction logic
+            _logger.LogInformation("Audio metadata extraction not yet implemented for file {FileId}", fileId);
+            return true;
+        }
+
+        public async Task<bool> ProcessDocumentFileAsync(int fileId)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not DocumentFileEntity documentFile)
+                return false;
+
+            // TODO: Implement document processing logic
+            _logger.LogInformation("Document processing not yet implemented for file {FileId}", fileId);
+            return true;
+        }
+
+        public async Task<bool> AnalyzeArchiveContentsAsync(int fileId)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not ArchiveFileEntity archiveFile)
+                return false;
+
+            // TODO: Implement archive analysis logic
+            _logger.LogInformation("Archive analysis not yet implemented for file {FileId}", fileId);
+            return true;
+        }
+
+        public async Task<bool> TestArchiveIntegrityAsync(int fileId)
+        {
+            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
+            if (file is not ArchiveFileEntity archiveFile)
+                return false;
+
+            // TODO: Implement archive integrity testing logic
+            _logger.LogInformation("Archive integrity testing not yet implemented for file {FileId}", fileId);
+            return true;
+        }
+
+        #endregion
+
+        #region Private Helper Methods
+
+        /// <summary>
+        /// Checks if a file has thumbnail content
+        /// </summary>
+        private static bool HasThumbnailContent(BaseFileEntity file)
+        {
+            return file switch
+            {
+                ImageFileEntity imageFile => imageFile.ThumbnailContent != null && imageFile.ThumbnailContent.Length > 0,
+                VideoFileEntity videoFile => videoFile.ThumbnailContent != null && videoFile.ThumbnailContent.Length > 0,
+                DocumentFileEntity docFile => docFile.ThumbnailContent != null && docFile.ThumbnailContent.Length > 0,
+                _ => false
+            };
+        }
+
+        /// <summary>
+        /// Gets the width of a file (for images and videos)
+        /// </summary>
+        private static int? GetFileWidth(BaseFileEntity file)
+        {
+            return file switch
+            {
+                ImageFileEntity imageFile => imageFile.Width,
+                VideoFileEntity videoFile => videoFile.Width,
+                _ => null
+            };
+        }
+
+        /// <summary>
+        /// Gets the height of a file (for images and videos)
+        /// </summary>
+        private static int? GetFileHeight(BaseFileEntity file)
+        {
+            return file switch
+            {
+                ImageFileEntity imageFile => imageFile.Height,
+                VideoFileEntity videoFile => videoFile.Height,
+                _ => null
+            };
+        }
+
+        /// <summary>
+        /// Gets the duration of a file (for videos and audio)
+        /// </summary>
+        private static TimeSpan? GetFileDuration(BaseFileEntity file)
+        {
+            return file switch
+            {
+                VideoFileEntity videoFile => videoFile.Duration,
+                AudioFileEntity audioFile => audioFile.Duration,
+                _ => null
+            };
+        }
+
+        /// <summary>
+        /// Copies type-specific properties from source to destination file
+        /// </summary>
+        private static void CopyTypeSpecificProperties(BaseFileEntity source, BaseFileEntity destination)
+        {
+            switch (source, destination)
+            {
+                case (ImageFileEntity sourceImage, ImageFileEntity destImage):
+                    destImage.Width = sourceImage.Width;
+                    destImage.Height = sourceImage.Height;
+                    destImage.ColorProfile = sourceImage.ColorProfile;
+                    destImage.DPI = sourceImage.DPI;
+                    destImage.HasTransparency = sourceImage.HasTransparency;
+                    destImage.CameraModel = sourceImage.CameraModel;
+                    destImage.CameraMake = sourceImage.CameraMake;
+                    destImage.DateTaken = sourceImage.DateTaken;
+                    destImage.Latitude = sourceImage.Latitude;
+                    destImage.Longitude = sourceImage.Longitude;
+                    destImage.Orientation = sourceImage.Orientation;
+                    destImage.ExposureTime = sourceImage.ExposureTime;
+                    destImage.FNumber = sourceImage.FNumber;
+                    destImage.ISO = sourceImage.ISO;
+                    destImage.FocalLength = sourceImage.FocalLength;
+                    destImage.IsAnimated = sourceImage.IsAnimated;
+                    destImage.FrameCount = sourceImage.FrameCount;
+                    break;
+
+                case (VideoFileEntity sourceVideo, VideoFileEntity destVideo):
+                    destVideo.Width = sourceVideo.Width;
+                    destVideo.Height = sourceVideo.Height;
+                    destVideo.Duration = sourceVideo.Duration;
+                    destVideo.VideoCodec = sourceVideo.VideoCodec;
+                    destVideo.AudioCodec = sourceVideo.AudioCodec;
+                    destVideo.FrameRate = sourceVideo.FrameRate;
+                    destVideo.Bitrate = sourceVideo.Bitrate;
+                    destVideo.AspectRatio = sourceVideo.AspectRatio;
+                    destVideo.ThumbnailTimestamp = sourceVideo.ThumbnailTimestamp;
+                    destVideo.HasAudio = sourceVideo.HasAudio;
+                    destVideo.HasVideo = sourceVideo.HasVideo;
+                    destVideo.AudioChannels = sourceVideo.AudioChannels;
+                    destVideo.AudioSampleRate = sourceVideo.AudioSampleRate;
+                    destVideo.Container = sourceVideo.Container;
+                    destVideo.IsHDR = sourceVideo.IsHDR;
+                    destVideo.ColorSpace = sourceVideo.ColorSpace;
+                    destVideo.RotationAngle = sourceVideo.RotationAngle;
+                    destVideo.IsVR360 = sourceVideo.IsVR360;
+                    destVideo.HasSubtitles = sourceVideo.HasSubtitles;
+                    destVideo.ChapterCount = sourceVideo.ChapterCount;
+                    break;
+
+                case (AudioFileEntity sourceAudio, AudioFileEntity destAudio):
+                    destAudio.Duration = sourceAudio.Duration;
+                    destAudio.AudioCodec = sourceAudio.AudioCodec;
+                    destAudio.Bitrate = sourceAudio.Bitrate;
+                    destAudio.SampleRate = sourceAudio.SampleRate;
+                    destAudio.Channels = sourceAudio.Channels;
+                    destAudio.BitDepth = sourceAudio.BitDepth;
+                    destAudio.Artist = sourceAudio.Artist;
+                    destAudio.Album = sourceAudio.Album;
+                    destAudio.Title = sourceAudio.Title;
+                    destAudio.Genre = sourceAudio.Genre;
+                    destAudio.Year = sourceAudio.Year;
+                    destAudio.TrackNumber = sourceAudio.TrackNumber;
+                    destAudio.TotalTracks = sourceAudio.TotalTracks;
+                    destAudio.Composer = sourceAudio.Composer;
+                    destAudio.AlbumArtist = sourceAudio.AlbumArtist;
+                    destAudio.AlbumArtFormat = sourceAudio.AlbumArtFormat;
+                    destAudio.IsLossless = sourceAudio.IsLossless;
+                    destAudio.HasLyrics = sourceAudio.HasLyrics;
+                    destAudio.Lyrics = sourceAudio.Lyrics;
+                    destAudio.Copyright = sourceAudio.Copyright;
+                    destAudio.Comment = sourceAudio.Comment;
+                    destAudio.ReplayGain = sourceAudio.ReplayGain;
+                    destAudio.Peak = sourceAudio.Peak;
+                    break;
+
+                case (DocumentFileEntity sourceDoc, DocumentFileEntity destDoc):
+                    destDoc.PageCount = sourceDoc.PageCount;
+                    destDoc.Author = sourceDoc.Author;
+                    destDoc.DocumentTitle = sourceDoc.DocumentTitle;
+                    destDoc.Subject = sourceDoc.Subject;
+                    destDoc.Keywords = sourceDoc.Keywords;
+                    destDoc.Creator = sourceDoc.Creator;
+                    destDoc.Producer = sourceDoc.Producer;
+                    destDoc.CreationDate = sourceDoc.CreationDate;
+                    destDoc.ModificationDate = sourceDoc.ModificationDate;
+                    destDoc.DocumentVersion = sourceDoc.DocumentVersion;
+                    destDoc.IsPasswordProtected = sourceDoc.IsPasswordProtected;
+                    destDoc.AllowPrinting = sourceDoc.AllowPrinting;
+                    destDoc.AllowCopying = sourceDoc.AllowCopying;
+                    destDoc.AllowModification = sourceDoc.AllowModification;
+                    destDoc.IsDigitallySigned = sourceDoc.IsDigitallySigned;
+                    destDoc.SignatureAuthor = sourceDoc.SignatureAuthor;
+                    destDoc.SignatureDate = sourceDoc.SignatureDate;
+                    destDoc.HasComments = sourceDoc.HasComments;
+                    destDoc.HasAnnotations = sourceDoc.HasAnnotations;
+                    destDoc.HasBookmarks = sourceDoc.HasBookmarks;
+                    destDoc.HasForms = sourceDoc.HasForms;
+                    destDoc.HasEmbeddedFiles = sourceDoc.HasEmbeddedFiles;
+                    destDoc.Language = sourceDoc.Language;
+                    destDoc.ThumbnailPageNumber = sourceDoc.ThumbnailPageNumber;
+                    destDoc.WordCount = sourceDoc.WordCount;
+                    destDoc.CharacterCount = sourceDoc.CharacterCount;
+                    destDoc.ParagraphCount = sourceDoc.ParagraphCount;
+                    destDoc.LineCount = sourceDoc.LineCount;
+                    destDoc.DocumentFormat = sourceDoc.DocumentFormat;
+                    destDoc.IsOptimizedForWeb = sourceDoc.IsOptimizedForWeb;
+                    break;
+
+                case (ArchiveFileEntity sourceArchive, ArchiveFileEntity destArchive):
+                    destArchive.FileCount = sourceArchive.FileCount;
+                    destArchive.UncompressedSize = sourceArchive.UncompressedSize;
+                    destArchive.CompressionRatio = sourceArchive.CompressionRatio;
+                    destArchive.CompressionMethod = sourceArchive.CompressionMethod;
+                    destArchive.IsPasswordProtected = sourceArchive.IsPasswordProtected;
+                    destArchive.IsEncrypted = sourceArchive.IsEncrypted;
+                    destArchive.EncryptionMethod = sourceArchive.EncryptionMethod;
+                    destArchive.IsSelfExtracting = sourceArchive.IsSelfExtracting;
+                    destArchive.IsMultiVolume = sourceArchive.IsMultiVolume;
+                    destArchive.VolumeCount = sourceArchive.VolumeCount;
+                    destArchive.HasComment = sourceArchive.HasComment;
+                    destArchive.ArchiveComment = sourceArchive.ArchiveComment;
+                    destArchive.CreatedBy = sourceArchive.CreatedBy;
+                    destArchive.ArchiveDate = sourceArchive.ArchiveDate;
+                    destArchive.IsCorrupted = sourceArchive.IsCorrupted;
+                    destArchive.IsTestable = sourceArchive.IsTestable;
+                    destArchive.LastTestedAt = sourceArchive.LastTestedAt;
+                    destArchive.TestResult = sourceArchive.TestResult;
+                    destArchive.TestErrorMessage = sourceArchive.TestErrorMessage;
+                    break;
+
+                case (OtherFileEntity sourceOther, OtherFileEntity destOther):
+                    destOther.IsSuspicious = sourceOther.IsSuspicious;
+                    destOther.IsExecutable = sourceOther.IsExecutable;
+                    destOther.HasMacros = sourceOther.HasMacros;
+                    destOther.SecurityAnalysisResult = sourceOther.SecurityAnalysisResult;
+                    destOther.SecurityScanDate = sourceOther.SecurityScanDate;
+                    destOther.ThreatLevel = sourceOther.ThreatLevel;
+                    destOther.DetectedFileType = sourceOther.DetectedFileType;
+                    destOther.MimeTypeDetected = sourceOther.MimeTypeDetected;
+                    destOther.RequiresSpecialHandling = sourceOther.RequiresSpecialHandling;
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Copies thumbnail content from source to destination file
+        /// </summary>
+        private static void CopyThumbnailContent(BaseFileEntity source, BaseFileEntity destination)
+        {
+            switch (source, destination)
+            {
+                case (ImageFileEntity sourceImage, ImageFileEntity destImage):
+                    if (sourceImage.ThumbnailContent != null && sourceImage.ThumbnailContent.Length > 0)
+                        destImage.ThumbnailContent = (byte[])sourceImage.ThumbnailContent.Clone();
+                    break;
+
+                case (VideoFileEntity sourceVideo, VideoFileEntity destVideo):
+                    if (sourceVideo.ThumbnailContent != null && sourceVideo.ThumbnailContent.Length > 0)
+                        destVideo.ThumbnailContent = (byte[])sourceVideo.ThumbnailContent.Clone();
+                    break;
+
+                case (DocumentFileEntity sourceDoc, DocumentFileEntity destDoc):
+                    if (sourceDoc.ThumbnailContent != null && sourceDoc.ThumbnailContent.Length > 0)
+                        destDoc.ThumbnailContent = (byte[])sourceDoc.ThumbnailContent.Clone();
+                    break;
+            }
+        }
+
+        private static string FormatDuration(TimeSpan? duration)
+        {
+            if (!duration.HasValue)
+                return string.Empty;
+
+            var d = duration.Value;
+            if (d.TotalHours >= 1)
+                return $"{(int)d.TotalHours:D2}:{d.Minutes:D2}:{d.Seconds:D2}";
+            else
+                return $"{d.Minutes:D2}:{d.Seconds:D2}";
         }
 
         #endregion

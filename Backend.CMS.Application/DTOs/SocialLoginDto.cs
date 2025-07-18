@@ -1,4 +1,5 @@
 ﻿using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Entities.Files;
 namespace Backend.CMS.Application.DTOs
 {
     public class SocialLoginDto
@@ -23,7 +24,7 @@ namespace Backend.CMS.Application.DTOs
         public string Name { get; set; } = string.Empty;
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
-        public FileEntity? Picture { get; set; }
+        public BaseFileEntity? Picture { get; set; }
         public bool EmailVerified { get; set; }
         public string Provider { get; set; } = string.Empty;
     }

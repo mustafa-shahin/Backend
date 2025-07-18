@@ -1,5 +1,6 @@
 ﻿using Backend.CMS.Domain.Common;
 using Backend.CMS.Domain.Enums;
+using Backend.CMS.Domain.Entities.Files;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 namespace Backend.CMS.Domain.Entities
@@ -96,7 +97,7 @@ namespace Backend.CMS.Domain.Entities
         public int FileId { get; set; }
 
         [ForeignKey("FileId")]
-        public FileEntity File { get; set; } = null!;
+        public BaseFileEntity File { get; set; } = null!;
 
         [MaxLength(255)]
         public string? Alt { get; set; }
@@ -128,7 +129,7 @@ namespace Backend.CMS.Domain.Entities
         public int FileId { get; set; }
 
         [ForeignKey("FileId")]
-        public FileEntity File { get; set; } = null!;
+        public BaseFileEntity File { get; set; } = null!;
 
         [MaxLength(255)]
         public string? Alt { get; set; }

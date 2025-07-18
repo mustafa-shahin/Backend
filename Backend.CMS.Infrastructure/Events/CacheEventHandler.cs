@@ -1,5 +1,6 @@
 ﻿using Backend.CMS.Domain.Common;
 using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Data;
 using Microsoft.AspNetCore.Http;
@@ -330,7 +331,7 @@ namespace Backend.CMS.Infrastructure.Events
                 {
                     // Invalidate file-specific cache patterns
                     await Task.WhenAll(
-                        _cacheService.RemoveAsync(_cacheKeyService.GetEntityKey<FileEntity>(fileId)),
+                        _cacheService.RemoveAsync(_cacheKeyService.GetEntityKey<BaseFileEntity>(fileId)),
                         _cacheService.RemoveByPatternAsync($"file:*:{fileId}:*"),
                         _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("file_content", fileId)),
                         _cacheService.RemoveAsync(_cacheKeyService.GetCustomKey("file_thumbnail", fileId)),

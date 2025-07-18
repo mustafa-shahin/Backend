@@ -19,7 +19,7 @@ namespace Backend.CMS.Infrastructure.Migrations
                     Id = table.Column<int>(type: "integer", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     Street = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
-                    Street2 = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    HouseNr = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
                     City = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     State = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     Country = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
@@ -46,6 +46,35 @@ namespace Backend.CMS.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "ArchiveEntries",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    ArchiveFileId = table.Column<int>(type: "integer", nullable: false),
+                    RelativePath = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
+                    FileName = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
+                    CompressedSize = table.Column<long>(type: "bigint", nullable: false),
+                    UncompressedSize = table.Column<long>(type: "bigint", nullable: false),
+                    IsDirectory = table.Column<bool>(type: "boolean", nullable: false),
+                    ModificationDate = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    CompressionMethod = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Checksum = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    IsEncrypted = table.Column<bool>(type: "boolean", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
+                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ArchiveEntries", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Categories",
                 columns: table => new
                 {
@@ -63,6 +92,7 @@ namespace Backend.CMS.Infrastructure.Migrations
                     MetaDescription = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     MetaKeywords = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     CustomFields = table.Column<string>(type: "jsonb", nullable: false),
+                    FeaturedImageUrl = table.Column<string>(type: "text", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
@@ -94,6 +124,7 @@ namespace Backend.CMS.Infrastructure.Migrations
                     Caption = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     Position = table.Column<int>(type: "integer", nullable: false),
                     IsFeatured = table.Column<bool>(type: "boolean", nullable: false),
+                    ImageUrl = table.Column<string>(type: "text", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
@@ -140,41 +171,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Companies", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "ComponentTemplates",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
-                    DisplayName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
-                    Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
-                    Type = table.Column<int>(type: "integer", nullable: false),
-                    Icon = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    Category = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    DefaultProperties = table.Column<string>(type: "jsonb", nullable: false),
-                    DefaultStyles = table.Column<string>(type: "jsonb", nullable: false),
-                    Schema = table.Column<string>(type: "jsonb", nullable: false),
-                    PreviewHtml = table.Column<string>(type: "text", maxLength: 2147483647, nullable: true),
-                    PreviewImage = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    IsSystemTemplate = table.Column<bool>(type: "boolean", nullable: false),
-                    IsActive = table.Column<bool>(type: "boolean", nullable: false),
-                    SortOrder = table.Column<int>(type: "integer", nullable: false),
-                    Tags = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    ConfigSchema = table.Column<string>(type: "jsonb", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_ComponentTemplates", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -233,6 +229,7 @@ namespace Backend.CMS.Infrastructure.Migrations
                     UserAgent = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     AccessType = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
                     AccessedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    BaseFileEntityId = table.Column<int>(type: "integer", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
@@ -257,8 +254,7 @@ namespace Backend.CMS.Infrastructure.Migrations
                     FileContent = table.Column<byte[]>(type: "bytea", nullable: false),
                     ContentType = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     FileSize = table.Column<long>(type: "bigint", nullable: false),
-                    FileExtension = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false),
-                    FileType = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    FileExtension = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
                     Description = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
                     Alt = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     Metadata = table.Column<string>(type: "jsonb", nullable: false),
@@ -266,14 +262,161 @@ namespace Backend.CMS.Infrastructure.Migrations
                     FolderId = table.Column<int>(type: "integer", nullable: true),
                     DownloadCount = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
                     LastAccessedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    Hash = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: true),
+                    IsProcessed = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
+                    ProcessingStatus = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    Tags = table.Column<string>(type: "jsonb", nullable: false),
+                    FileTypeDiscriminator = table.Column<string>(type: "character varying(21)", maxLength: 21, nullable: false),
+                    FileCount = table.Column<int>(type: "integer", nullable: true),
+                    UncompressedSize = table.Column<long>(type: "bigint", nullable: true),
+                    CompressionRatio = table.Column<double>(type: "double precision", nullable: true),
+                    CompressionMethod = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    IsPasswordProtected = table.Column<bool>(type: "boolean", nullable: true),
+                    IsEncrypted = table.Column<bool>(type: "boolean", nullable: true),
+                    EncryptionMethod = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    IsSelfExtracting = table.Column<bool>(type: "boolean", nullable: true),
+                    IsMultiVolume = table.Column<bool>(type: "boolean", nullable: true),
+                    VolumeCount = table.Column<int>(type: "integer", nullable: true),
+                    HasComment = table.Column<bool>(type: "boolean", nullable: true),
+                    ArchiveComment = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    CreatedBy = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    ArchiveDate = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    IsCorrupted = table.Column<bool>(type: "boolean", nullable: true),
+                    IsTestable = table.Column<bool>(type: "boolean", nullable: true),
+                    LastTestedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    TestResult = table.Column<bool>(type: "boolean", nullable: true),
+                    TestErrorMessage = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    Duration = table.Column<TimeSpan>(type: "interval", nullable: true),
+                    AudioCodec = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Bitrate = table.Column<long>(type: "bigint", nullable: true),
+                    SampleRate = table.Column<int>(type: "integer", nullable: true),
+                    Channels = table.Column<int>(type: "integer", nullable: true),
+                    BitDepth = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true),
+                    Artist = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    Album = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    Title = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    Genre = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    Year = table.Column<int>(type: "integer", nullable: true),
+                    TrackNumber = table.Column<int>(type: "integer", nullable: true),
+                    TotalTracks = table.Column<int>(type: "integer", nullable: true),
+                    Composer = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    AlbumArtist = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    AlbumArt = table.Column<byte[]>(type: "bytea", nullable: true),
+                    AlbumArtFormat = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true),
+                    IsLossless = table.Column<bool>(type: "boolean", nullable: true),
+                    HasLyrics = table.Column<bool>(type: "boolean", nullable: true),
+                    Lyrics = table.Column<string>(type: "character varying(5000)", maxLength: 5000, nullable: true),
+                    Copyright = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    Comment = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    ReplayGain = table.Column<double>(type: "double precision", nullable: true),
+                    Peak = table.Column<double>(type: "double precision", nullable: true),
+                    PageCount = table.Column<int>(type: "integer", nullable: true),
+                    Author = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    DocumentTitle = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    Subject = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    Keywords = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    Creator = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    Producer = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    CreationDate = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    ModificationDate = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    DocumentVersion = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true),
+                    DocumentFileEntity_IsPasswordProtected = table.Column<bool>(type: "boolean", nullable: true),
+                    AllowPrinting = table.Column<bool>(type: "boolean", nullable: true),
+                    AllowCopying = table.Column<bool>(type: "boolean", nullable: true),
+                    AllowModification = table.Column<bool>(type: "boolean", nullable: true),
+                    IsDigitallySigned = table.Column<bool>(type: "boolean", nullable: true),
+                    SignatureAuthor = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    SignatureDate = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    HasComments = table.Column<bool>(type: "boolean", nullable: true),
+                    HasAnnotations = table.Column<bool>(type: "boolean", nullable: true),
+                    HasBookmarks = table.Column<bool>(type: "boolean", nullable: true),
+                    HasForms = table.Column<bool>(type: "boolean", nullable: true),
+                    HasEmbeddedFiles = table.Column<bool>(type: "boolean", nullable: true),
+                    Language = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
                     ThumbnailContent = table.Column<byte[]>(type: "bytea", nullable: true),
+                    ThumbnailPageNumber = table.Column<int>(type: "integer", nullable: true),
+                    WordCount = table.Column<long>(type: "bigint", nullable: true),
+                    CharacterCount = table.Column<long>(type: "bigint", nullable: true),
+                    ParagraphCount = table.Column<long>(type: "bigint", nullable: true),
+                    LineCount = table.Column<long>(type: "bigint", nullable: true),
+                    DocumentFormat = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    IsOptimizedForWeb = table.Column<bool>(type: "boolean", nullable: true),
                     Width = table.Column<int>(type: "integer", nullable: true),
                     Height = table.Column<int>(type: "integer", nullable: true),
-                    Duration = table.Column<TimeSpan>(type: "interval", nullable: true),
-                    Hash = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
-                    IsProcessed = table.Column<bool>(type: "boolean", nullable: false, defaultValue: true),
-                    ProcessingStatus = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    Tags = table.Column<string>(type: "jsonb", nullable: false),
+                    ImageFileEntity_ThumbnailContent = table.Column<byte[]>(type: "bytea", nullable: true),
+                    ColorProfile = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    DPI = table.Column<int>(type: "integer", nullable: true),
+                    HasTransparency = table.Column<bool>(type: "boolean", nullable: true),
+                    CameraModel = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    CameraMake = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    DateTaken = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    Latitude = table.Column<double>(type: "double precision", precision: 18, scale: 15, nullable: true),
+                    Longitude = table.Column<double>(type: "double precision", precision: 18, scale: 15, nullable: true),
+                    Orientation = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    ExposureTime = table.Column<double>(type: "double precision", nullable: true),
+                    FNumber = table.Column<double>(type: "double precision", nullable: true),
+                    ISO = table.Column<int>(type: "integer", nullable: true),
+                    FocalLength = table.Column<double>(type: "double precision", nullable: true),
+                    IsAnimated = table.Column<bool>(type: "boolean", nullable: true),
+                    FrameCount = table.Column<int>(type: "integer", nullable: true),
+                    ApplicationName = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    ApplicationVersion = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    IsExecutable = table.Column<bool>(type: "boolean", nullable: true),
+                    IsScript = table.Column<bool>(type: "boolean", nullable: true),
+                    ScriptLanguage = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    IsText = table.Column<bool>(type: "boolean", nullable: true),
+                    IsBinary = table.Column<bool>(type: "boolean", nullable: true),
+                    Encoding = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    OtherFileEntity_LineCount = table.Column<long>(type: "bigint", nullable: true),
+                    HasDigitalSignature = table.Column<bool>(type: "boolean", nullable: true),
+                    SignaturePublisher = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    OtherFileEntity_SignatureDate = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    SignatureValid = table.Column<bool>(type: "boolean", nullable: true),
+                    FileFormat = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    FormatVersion = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    IsCompressed = table.Column<bool>(type: "boolean", nullable: true),
+                    OtherFileEntity_IsEncrypted = table.Column<bool>(type: "boolean", nullable: true),
+                    OtherFileEntity_EncryptionMethod = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    RequiresSpecialSoftware = table.Column<bool>(type: "boolean", nullable: true),
+                    RequiredSoftware = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    FileTypeDescription = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    IsPotentiallyDangerous = table.Column<bool>(type: "boolean", nullable: true),
+                    SecurityWarning = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    IsSourceCode = table.Column<bool>(type: "boolean", nullable: true),
+                    ProgrammingLanguage = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    IsDatabase = table.Column<bool>(type: "boolean", nullable: true),
+                    DatabaseType = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    IsConfiguration = table.Column<bool>(type: "boolean", nullable: true),
+                    IsLog = table.Column<bool>(type: "boolean", nullable: true),
+                    IsSuspicious = table.Column<bool>(type: "boolean", nullable: true),
+                    HasMacros = table.Column<bool>(type: "boolean", nullable: true),
+                    SecurityAnalysisResult = table.Column<string>(type: "text", nullable: true),
+                    SecurityScanDate = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    ThreatLevel = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    DetectedFileType = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    MimeTypeDetected = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    RequiresSpecialHandling = table.Column<bool>(type: "boolean", nullable: true),
+                    VideoFileEntity_Width = table.Column<int>(type: "integer", nullable: true),
+                    VideoFileEntity_Height = table.Column<int>(type: "integer", nullable: true),
+                    VideoFileEntity_Duration = table.Column<TimeSpan>(type: "interval", nullable: true),
+                    VideoCodec = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    VideoFileEntity_AudioCodec = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    FrameRate = table.Column<double>(type: "double precision", nullable: true),
+                    VideoFileEntity_Bitrate = table.Column<long>(type: "bigint", nullable: true),
+                    AspectRatio = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true),
+                    VideoFileEntity_ThumbnailContent = table.Column<byte[]>(type: "bytea", nullable: true),
+                    ThumbnailTimestamp = table.Column<TimeSpan>(type: "interval", nullable: true),
+                    HasAudio = table.Column<bool>(type: "boolean", nullable: true),
+                    HasVideo = table.Column<bool>(type: "boolean", nullable: true),
+                    AudioChannels = table.Column<int>(type: "integer", nullable: true),
+                    AudioSampleRate = table.Column<int>(type: "integer", nullable: true),
+                    Container = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    IsHDR = table.Column<bool>(type: "boolean", nullable: true),
+                    ColorSpace = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    RotationAngle = table.Column<double>(type: "double precision", nullable: true),
+                    IsVR360 = table.Column<bool>(type: "boolean", nullable: true),
+                    HasSubtitles = table.Column<bool>(type: "boolean", nullable: true),
+                    ChapterCount = table.Column<int>(type: "integer", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
@@ -304,18 +447,13 @@ namespace Backend.CMS.Infrastructure.Migrations
                     LastLoginAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     FailedLoginAttempts = table.Column<int>(type: "integer", nullable: false),
                     LockoutEnd = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    TwoFactorEnabled = table.Column<bool>(type: "boolean", nullable: false),
-                    TwoFactorSecret = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     RecoveryCodes = table.Column<string>(type: "jsonb", nullable: false),
-                    AvatarFileId = table.Column<int>(type: "integer", nullable: true),
-                    Timezone = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    Language = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: true),
+                    PictureFileId = table.Column<int>(type: "integer", nullable: true),
                     EmailVerifiedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     EmailVerificationToken = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     PasswordChangedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     DateOfBirth = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     Gender = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
-                    Preferences = table.Column<string>(type: "jsonb", nullable: false),
                     ExternalId = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     IsExternalUser = table.Column<bool>(type: "boolean", nullable: false),
                     LastExternalSync = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
@@ -331,8 +469,8 @@ namespace Backend.CMS.Infrastructure.Migrations
                 {
                     table.PrimaryKey("PK_Users", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Users_Files_AvatarFileId",
-                        column: x => x.AvatarFileId,
+                        name: "FK_Users_Files_PictureFileId",
+                        column: x => x.PictureFileId,
                         principalTable: "Files",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.SetNull);
@@ -505,6 +643,10 @@ namespace Backend.CMS.Infrastructure.Migrations
                     ParentPageId = table.Column<int>(type: "integer", nullable: true),
                     RequiresLogin = table.Column<bool>(type: "boolean", nullable: false),
                     AdminOnly = table.Column<bool>(type: "boolean", nullable: false),
+                    Content = table.Column<string>(type: "jsonb", nullable: false),
+                    Layout = table.Column<string>(type: "jsonb", nullable: false),
+                    Settings = table.Column<string>(type: "jsonb", nullable: false),
+                    Styles = table.Column<string>(type: "jsonb", nullable: false),
                     PublishedOn = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     PublishedBy = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
@@ -648,26 +790,12 @@ namespace Backend.CMS.Infrastructure.Migrations
                     Slug = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     Description = table.Column<string>(type: "text", maxLength: 2000, nullable: true),
                     ShortDescription = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    SKU = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    Price = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
-                    CompareAtPrice = table.Column<decimal>(type: "numeric(18,2)", nullable: true),
-                    CostPerItem = table.Column<decimal>(type: "numeric(18,2)", nullable: true),
-                    TrackQuantity = table.Column<bool>(type: "boolean", nullable: false),
-                    Quantity = table.Column<int>(type: "integer", nullable: false),
-                    ContinueSellingWhenOutOfStock = table.Column<bool>(type: "boolean", nullable: false),
                     RequiresShipping = table.Column<bool>(type: "boolean", nullable: false),
-                    IsPhysicalProduct = table.Column<bool>(type: "boolean", nullable: false),
-                    Weight = table.Column<decimal>(type: "numeric(18,3)", nullable: false),
-                    WeightUnit = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: true),
-                    IsTaxable = table.Column<bool>(type: "boolean", nullable: false),
                     Status = table.Column<string>(type: "text", nullable: false),
                     Type = table.Column<string>(type: "text", nullable: false),
                     Vendor = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
-                    Barcode = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
                     HasVariants = table.Column<bool>(type: "boolean", nullable: false),
-                    Tags = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
                     PublishedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    Template = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
                     MetaTitle = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
                     MetaDescription = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     MetaKeywords = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
@@ -814,6 +942,8 @@ namespace Backend.CMS.Infrastructure.Migrations
                     UserAgent = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
                     ExpiresAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     IsRevoked = table.Column<bool>(type: "boolean", nullable: false),
+                    ApplicationContext = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    DeviceFingerprint = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
@@ -902,76 +1032,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "PageComponents",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    PageId = table.Column<int>(type: "integer", nullable: false),
-                    Type = table.Column<int>(type: "integer", nullable: false),
-                    Name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
-                    ComponentKey = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
-                    GridColumn = table.Column<int>(type: "integer", nullable: false),
-                    GridColumnSpan = table.Column<int>(type: "integer", nullable: false),
-                    GridRow = table.Column<int>(type: "integer", nullable: false),
-                    GridRowSpan = table.Column<int>(type: "integer", nullable: false),
-                    Order = table.Column<int>(type: "integer", nullable: false),
-                    ParentComponentId = table.Column<int>(type: "integer", nullable: true),
-                    Properties = table.Column<string>(type: "jsonb", nullable: false),
-                    Styles = table.Column<string>(type: "jsonb", nullable: false),
-                    Content = table.Column<string>(type: "jsonb", nullable: false),
-                    Settings = table.Column<string>(type: "jsonb", nullable: false),
-                    IsVisible = table.Column<bool>(type: "boolean", nullable: false),
-                    IsLocked = table.Column<bool>(type: "boolean", nullable: false),
-                    CssClasses = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
-                    CustomCss = table.Column<string>(type: "text", maxLength: 2147483647, nullable: true),
-                    ResponsiveSettings = table.Column<string>(type: "jsonb", nullable: false),
-                    AnimationSettings = table.Column<string>(type: "jsonb", nullable: false),
-                    InteractionSettings = table.Column<string>(type: "jsonb", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_PageComponents", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_PageComponents_PageComponents_ParentComponentId",
-                        column: x => x.ParentComponentId,
-                        principalTable: "PageComponents",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Restrict);
-                    table.ForeignKey(
-                        name: "FK_PageComponents_Pages_PageId",
-                        column: x => x.PageId,
-                        principalTable: "Pages",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_PageComponents_Users_CreatedByUserId",
-                        column: x => x.CreatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_PageComponents_Users_DeletedByUserId",
-                        column: x => x.DeletedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_PageComponents_Users_UpdatedByUserId",
-                        column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "PageVersions",
                 columns: table => new
                 {
@@ -979,8 +1039,11 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     PageId = table.Column<int>(type: "integer", nullable: false),
                     VersionNumber = table.Column<int>(type: "integer", nullable: false),
-                    Data = table.Column<string>(type: "jsonb", nullable: false),
                     ChangeNotes = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    PageSnapshot = table.Column<string>(type: "jsonb", nullable: false),
+                    Metadata = table.Column<string>(type: "jsonb", nullable: false),
+                    IsPublished = table.Column<bool>(type: "boolean", nullable: false),
+                    PublishedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
@@ -1228,52 +1291,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "ProductOptions",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    ProductId = table.Column<int>(type: "integer", nullable: false),
-                    Name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    Position = table.Column<int>(type: "integer", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_ProductOptions", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_ProductOptions_Products_ProductId",
-                        column: x => x.ProductId,
-                        principalTable: "Products",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_ProductOptions_Users_CreatedByUserId",
-                        column: x => x.CreatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_ProductOptions_Users_DeletedByUserId",
-                        column: x => x.DeletedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_ProductOptions_Users_UpdatedByUserId",
-                        column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "ProductVariants",
                 columns: table => new
                 {
@@ -1281,7 +1298,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     ProductId = table.Column<int>(type: "integer", nullable: false),
                     Title = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
-                    SKU = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     Price = table.Column<decimal>(type: "numeric(18,2)", nullable: false),
                     CompareAtPrice = table.Column<decimal>(type: "numeric(18,2)", nullable: true),
                     CostPerItem = table.Column<decimal>(type: "numeric(18,2)", nullable: true),
@@ -1330,52 +1346,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                         onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
                         name: "FK_ProductVariants_Users_UpdatedByUserId",
-                        column: x => x.UpdatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "ProductOptionValues",
-                columns: table => new
-                {
-                    Id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
-                    ProductOptionId = table.Column<int>(type: "integer", nullable: false),
-                    Value = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    Position = table.Column<int>(type: "integer", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    CreatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    UpdatedByUserId = table.Column<int>(type: "integer", nullable: true),
-                    IsDeleted = table.Column<bool>(type: "boolean", nullable: false),
-                    DeletedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
-                    DeletedByUserId = table.Column<int>(type: "integer", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_ProductOptionValues", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_ProductOptionValues_ProductOptions_ProductOptionId",
-                        column: x => x.ProductOptionId,
-                        principalTable: "ProductOptions",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_ProductOptionValues_Users_CreatedByUserId",
-                        column: x => x.CreatedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_ProductOptionValues_Users_DeletedByUserId",
-                        column: x => x.DeletedByUserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.SetNull);
-                    table.ForeignKey(
-                        name: "FK_ProductOptionValues_Users_UpdatedByUserId",
                         column: x => x.UpdatedByUserId,
                         principalTable: "Users",
                         principalColumn: "Id",
@@ -1468,6 +1438,36 @@ namespace Backend.CMS.Infrastructure.Migrations
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_ArchiveEntries_Archive_Path",
+                table: "ArchiveEntries",
+                columns: new[] { "ArchiveFileId", "RelativePath" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchiveEntries_ArchiveFileId",
+                table: "ArchiveEntries",
+                column: "ArchiveFileId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchiveEntries_CreatedByUserId",
+                table: "ArchiveEntries",
+                column: "CreatedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchiveEntries_DeletedByUserId",
+                table: "ArchiveEntries",
+                column: "DeletedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchiveEntries_IsDirectory",
+                table: "ArchiveEntries",
+                column: "IsDirectory");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchiveEntries_UpdatedByUserId",
+                table: "ArchiveEntries",
+                column: "UpdatedByUserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Categories_CreatedByUserId",
                 table: "Categories",
                 column: "CreatedByUserId");
@@ -1554,27 +1554,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 column: "UpdatedByUserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_ComponentTemplates_CreatedByUserId",
-                table: "ComponentTemplates",
-                column: "CreatedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ComponentTemplates_DeletedByUserId",
-                table: "ComponentTemplates",
-                column: "DeletedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ComponentTemplates_Name",
-                table: "ComponentTemplates",
-                column: "Name",
-                unique: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ComponentTemplates_UpdatedByUserId",
-                table: "ComponentTemplates",
-                column: "UpdatedByUserId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_ContactDetails_CompanyId",
                 table: "ContactDetails",
                 column: "CompanyId");
@@ -1608,6 +1587,11 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "IX_FileAccess_AccessedAt",
                 table: "FileAccess",
                 column: "AccessedAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_FileAccess_BaseFileEntityId",
+                table: "FileAccess",
+                column: "BaseFileEntityId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_FileAccess_CreatedByUserId",
@@ -1645,6 +1629,69 @@ namespace Backend.CMS.Infrastructure.Migrations
                 columns: new[] { "UserId", "AccessedAt" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_ArchiveFiles_CompressionMethod",
+                table: "Files",
+                column: "CompressionMethod",
+                filter: "\"CompressionMethod\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchiveFiles_Corrupted",
+                table: "Files",
+                column: "IsCorrupted");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ArchiveFiles_PasswordProtected",
+                table: "Files",
+                column: "IsPasswordProtected");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AudioFiles_Album",
+                table: "Files",
+                column: "Album",
+                filter: "\"Album\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AudioFiles_Artist",
+                table: "Files",
+                column: "Artist",
+                filter: "\"Artist\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AudioFiles_Artist_Album",
+                table: "Files",
+                columns: new[] { "Artist", "Album" },
+                filter: "\"Artist\" IS NOT NULL AND \"Album\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_AudioFiles_Genre",
+                table: "Files",
+                column: "Genre",
+                filter: "\"Genre\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentFiles_Author",
+                table: "Files",
+                column: "Author",
+                filter: "\"Author\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentFiles_PageCount",
+                table: "Files",
+                column: "PageCount",
+                filter: "\"PageCount\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentFiles_PasswordProtected",
+                table: "Files",
+                column: "DocumentFileEntity_IsPasswordProtected");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_DocumentFiles_Title",
+                table: "Files",
+                column: "DocumentTitle",
+                filter: "\"DocumentTitle\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Files_ContentType",
                 table: "Files",
                 column: "ContentType");
@@ -1665,14 +1712,14 @@ namespace Backend.CMS.Infrastructure.Migrations
                 column: "DeletedByUserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Files_FileType",
+                name: "IX_Files_FileTypeDiscriminator",
                 table: "Files",
-                column: "FileType");
+                column: "FileTypeDiscriminator");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Files_Folder_Type",
                 table: "Files",
-                columns: new[] { "FolderId", "FileType" },
+                columns: new[] { "FolderId", "FileTypeDiscriminator" },
                 filter: "\"IsDeleted\" = false");
 
             migrationBuilder.CreateIndex(
@@ -1699,13 +1746,52 @@ namespace Backend.CMS.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_Files_Type_Public",
                 table: "Files",
-                columns: new[] { "FileType", "IsPublic" },
+                columns: new[] { "FileTypeDiscriminator", "IsPublic" },
                 filter: "\"IsDeleted\" = false");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Files_UpdatedByUserId",
                 table: "Files",
                 column: "UpdatedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ImageFiles_Dimensions",
+                table: "Files",
+                columns: new[] { "Width", "Height" },
+                filter: "\"Width\" IS NOT NULL AND \"Height\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ImageFiles_GeoLocation",
+                table: "Files",
+                columns: new[] { "Latitude", "Longitude" },
+                filter: "\"Latitude\" IS NOT NULL AND \"Longitude\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_OtherFiles_DigitalSignature",
+                table: "Files",
+                column: "HasDigitalSignature");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_OtherFiles_Executable",
+                table: "Files",
+                column: "IsExecutable");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_OtherFiles_PotentiallyDangerous",
+                table: "Files",
+                column: "IsPotentiallyDangerous");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_VideoFiles_Duration",
+                table: "Files",
+                column: "VideoFileEntity_Duration",
+                filter: "\"Duration\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_VideoFiles_Quality",
+                table: "Files",
+                columns: new[] { "VideoFileEntity_Width", "VideoFileEntity_Height", "FrameRate" },
+                filter: "\"Width\" IS NOT NULL AND \"Height\" IS NOT NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Folders_CreatedByUserId",
@@ -1819,31 +1905,6 @@ namespace Backend.CMS.Infrastructure.Migrations
             migrationBuilder.CreateIndex(
                 name: "IX_Locations_UpdatedByUserId",
                 table: "Locations",
-                column: "UpdatedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_PageComponents_CreatedByUserId",
-                table: "PageComponents",
-                column: "CreatedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_PageComponents_DeletedByUserId",
-                table: "PageComponents",
-                column: "DeletedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_PageComponents_PageId",
-                table: "PageComponents",
-                column: "PageId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_PageComponents_ParentComponentId",
-                table: "PageComponents",
-                column: "ParentComponentId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_PageComponents_UpdatedByUserId",
-                table: "PageComponents",
                 column: "UpdatedByUserId");
 
             migrationBuilder.CreateIndex(
@@ -2007,56 +2068,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 column: "UpdatedByUserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_ProductOptions_CreatedByUserId",
-                table: "ProductOptions",
-                column: "CreatedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ProductOptions_DeletedByUserId",
-                table: "ProductOptions",
-                column: "DeletedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ProductOptions_ProductId",
-                table: "ProductOptions",
-                column: "ProductId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ProductOptions_ProductId_Position",
-                table: "ProductOptions",
-                columns: new[] { "ProductId", "Position" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ProductOptions_UpdatedByUserId",
-                table: "ProductOptions",
-                column: "UpdatedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ProductOptionValues_CreatedByUserId",
-                table: "ProductOptionValues",
-                column: "CreatedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ProductOptionValues_DeletedByUserId",
-                table: "ProductOptionValues",
-                column: "DeletedByUserId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ProductOptionValues_ProductOptionId",
-                table: "ProductOptionValues",
-                column: "ProductOptionId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ProductOptionValues_ProductOptionId_Position",
-                table: "ProductOptionValues",
-                columns: new[] { "ProductOptionId", "Position" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ProductOptionValues_UpdatedByUserId",
-                table: "ProductOptionValues",
-                column: "UpdatedByUserId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Products_CreatedByUserId",
                 table: "Products",
                 column: "CreatedByUserId");
@@ -2067,20 +2078,9 @@ namespace Backend.CMS.Infrastructure.Migrations
                 column: "DeletedByUserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Products_Price",
-                table: "Products",
-                column: "Price");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Products_PublishedAt",
                 table: "Products",
                 column: "PublishedAt");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Products_SKU",
-                table: "Products",
-                column: "SKU",
-                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Products_Slug",
@@ -2167,12 +2167,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "IX_ProductVariants_ProductId_Position",
                 table: "ProductVariants",
                 columns: new[] { "ProductId", "Position" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_ProductVariants_SKU",
-                table: "ProductVariants",
-                column: "SKU",
-                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_ProductVariants_UpdatedByUserId",
@@ -2309,11 +2303,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_Users_AvatarFileId",
-                table: "Users",
-                column: "AvatarFileId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_Users_CreatedByUserId",
                 table: "Users",
                 column: "CreatedByUserId");
@@ -2333,6 +2322,11 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "IX_Users_Email_IsDeleted",
                 table: "Users",
                 columns: new[] { "Email", "IsDeleted" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Users_PictureFileId",
+                table: "Users",
+                column: "PictureFileId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Users_Role_IsActive_IsDeleted",
@@ -2425,6 +2419,38 @@ namespace Backend.CMS.Infrastructure.Migrations
                 onDelete: ReferentialAction.Cascade);
 
             migrationBuilder.AddForeignKey(
+                name: "FK_ArchiveEntries_Files_ArchiveFileId",
+                table: "ArchiveEntries",
+                column: "ArchiveFileId",
+                principalTable: "Files",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ArchiveEntries_Users_CreatedByUserId",
+                table: "ArchiveEntries",
+                column: "CreatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ArchiveEntries_Users_DeletedByUserId",
+                table: "ArchiveEntries",
+                column: "DeletedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_ArchiveEntries_Users_UpdatedByUserId",
+                table: "ArchiveEntries",
+                column: "UpdatedByUserId",
+                principalTable: "Users",
+                principalColumn: "Id",
+                onDelete: ReferentialAction.SetNull);
+
+            migrationBuilder.AddForeignKey(
                 name: "FK_Categories_Users_CreatedByUserId",
                 table: "Categories",
                 column: "CreatedByUserId",
@@ -2505,30 +2531,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 onDelete: ReferentialAction.SetNull);
 
             migrationBuilder.AddForeignKey(
-                name: "FK_ComponentTemplates_Users_CreatedByUserId",
-                table: "ComponentTemplates",
-                column: "CreatedByUserId",
-                principalTable: "Users",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_ComponentTemplates_Users_DeletedByUserId",
-                table: "ComponentTemplates",
-                column: "DeletedByUserId",
-                principalTable: "Users",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_ComponentTemplates_Users_UpdatedByUserId",
-                table: "ComponentTemplates",
-                column: "UpdatedByUserId",
-                principalTable: "Users",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
-
-            migrationBuilder.AddForeignKey(
                 name: "FK_ContactDetails_Locations_LocationId",
                 table: "ContactDetails",
                 column: "LocationId",
@@ -2567,6 +2569,13 @@ namespace Backend.CMS.Infrastructure.Migrations
                 principalTable: "Users",
                 principalColumn: "Id",
                 onDelete: ReferentialAction.Cascade);
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_FileAccess_Files_BaseFileEntityId",
+                table: "FileAccess",
+                column: "BaseFileEntityId",
+                principalTable: "Files",
+                principalColumn: "Id");
 
             migrationBuilder.AddForeignKey(
                 name: "FK_FileAccess_Files_FileId",
@@ -2672,10 +2681,10 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "Addresses");
 
             migrationBuilder.DropTable(
-                name: "CategoryImages");
+                name: "ArchiveEntries");
 
             migrationBuilder.DropTable(
-                name: "ComponentTemplates");
+                name: "CategoryImages");
 
             migrationBuilder.DropTable(
                 name: "ContactDetails");
@@ -2690,9 +2699,6 @@ namespace Backend.CMS.Infrastructure.Migrations
                 name: "LocationOpeningHours");
 
             migrationBuilder.DropTable(
-                name: "PageComponents");
-
-            migrationBuilder.DropTable(
                 name: "PageVersions");
 
             migrationBuilder.DropTable(
@@ -2703,9 +2709,6 @@ namespace Backend.CMS.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "ProductImages");
-
-            migrationBuilder.DropTable(
-                name: "ProductOptionValues");
 
             migrationBuilder.DropTable(
                 name: "ProductVariantImages");
@@ -2733,9 +2736,6 @@ namespace Backend.CMS.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "Categories");
-
-            migrationBuilder.DropTable(
-                name: "ProductOptions");
 
             migrationBuilder.DropTable(
                 name: "ProductVariants");

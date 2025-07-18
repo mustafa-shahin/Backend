@@ -1,4 +1,5 @@
 ﻿using Backend.CMS.Domain.Entities;
+using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -39,38 +40,12 @@ namespace Backend.CMS.Infrastructure.Services
         /// <summary>
         /// Get file metadata without loading file content (performance optimization)
         /// </summary>
-        public async Task<IQueryable<FileEntity>> GetFileMetadataQuery()
+        public async Task<IQueryable<BaseFileEntity>> GetFileMetadataQuery()
         {
-            return _context.Set<FileEntity>()
-                .Select(f => new FileEntity
-                {
-                    Id = f.Id,
-                    OriginalFileName = f.OriginalFileName,
-                    StoredFileName = f.StoredFileName,
-                    ContentType = f.ContentType,
-                    FileSize = f.FileSize,
-                    FileExtension = f.FileExtension,
-                    FileType = f.FileType,
-                    Description = f.Description,
-                    Alt = f.Alt,
-                    Metadata = f.Metadata,
-                    IsPublic = f.IsPublic,
-                    FolderId = f.FolderId,
-                    DownloadCount = f.DownloadCount,
-                    LastAccessedAt = f.LastAccessedAt,
-                    Width = f.Width,
-                    Height = f.Height,
-                    Duration = f.Duration,
-                    IsProcessed = f.IsProcessed,
-                    ProcessingStatus = f.ProcessingStatus,
-                    Tags = f.Tags,
-                    CreatedAt = f.CreatedAt,
-                    UpdatedAt = f.UpdatedAt,
-                    Hash = f.Hash,
-                    // Explicitly exclude FileContent and ThumbnailContent
-                    FileContent = null!,
-                    ThumbnailContent = null
-                });
+            // Return query that excludes FileContent to improve performance
+            return _context.Set<BaseFileEntity>()
+                .AsNoTracking()
+                .Where(f => !f.IsDeleted);
         }
 
         /// <summary>
@@ -103,11 +78,36 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 // Remove thumbnails for non-image files
-                var nonImageFilesWithThumbnails = await _context.Set<FileEntity>()
-                    .Where(f => f.FileType != Domain.Enums.FileType.Image && f.ThumbnailContent != null)
+                // Clean up thumbnails from files that shouldn't have them
+                var imagesToClean = await _context.Set<BaseFileEntity>()
+                    .OfType<ImageFileEntity>()
+                    .Where(f => f.ThumbnailContent != null && f.IsDeleted)
                     .ToListAsync();
 
-                foreach (var file in nonImageFilesWithThumbnails)
+                foreach (var file in imagesToClean)
+                {
+                    file.ThumbnailContent = null;
+                    cleanedUp++;
+                }
+
+                // Clean up thumbnails from non-image files (in case they incorrectly have them)
+                var videoFiles = await _context.Set<BaseFileEntity>()
+                    .OfType<VideoFileEntity>()
+                    .Where(f => f.ThumbnailContent != null && f.IsDeleted)
+                    .ToListAsync();
+
+                foreach (var file in videoFiles)
+                {
+                    file.ThumbnailContent = null;
+                    cleanedUp++;
+                }
+
+                var docFiles = await _context.Set<BaseFileEntity>()
+                    .OfType<DocumentFileEntity>()
+                    .Where(f => f.ThumbnailContent != null && f.IsDeleted)
+                    .ToListAsync();
+
+                foreach (var file in docFiles)
                 {
                     file.ThumbnailContent = null;
                     cleanedUp++;
@@ -133,9 +133,10 @@ namespace Backend.CMS.Infrastructure.Services
             try
             {
                 // Find files older than cutoff that haven't been accessed recently
-                var oldFiles = await _context.Set<FileEntity>()
+                var oldFiles = await _context.Set<BaseFileEntity>()
                     .Where(f => f.CreatedAt < cutoffDate &&
-                               (f.LastAccessedAt == null || f.LastAccessedAt < cutoffDate.AddDays(-30)))
+                               (f.LastAccessedAt == null || f.LastAccessedAt < cutoffDate.AddDays(-30)) &&
+                               !f.IsDeleted)
                     .ToListAsync();
 
                 var archivedCount = 0;
