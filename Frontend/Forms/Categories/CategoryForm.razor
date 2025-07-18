@@ -1,7 +1,10 @@
+@* Frontend/Forms/Categories/CategoryForm.razor *@
 @using Backend.CMS.Application.DTOs
-@using Frontend.Components.Common.ImagePicker
+@using Frontend.Components.Common.ConfirmationDialogComponent
+@using Frontend.Components.Common.ObjectSelector
+@using Frontend.Components.Common
 @using Frontend.Interfaces
-@using Frontend.Components.Files
+@using Frontend.Extensions
 @using System.Text
 @inject ICategoryService CategoryService
 @inject IFileService FileService
@@ -163,28 +166,101 @@
 
     <!-- Images -->
     <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-        <div class="flex items-center mb-4">
-            <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center mr-3">
-                <i class="fas fa-images text-white text-sm"></i>
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center">
+                <div class="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center mr-3">
+                    <i class="fas fa-images text-white text-sm"></i>
+                </div>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Category Images</h3>
             </div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Category Images</h3>
         </div>
-        <ImagePicker SelectedImages="@categoryImageObjects"
-                     SelectedImagesChanged="@OnCategoryImagesChanged"
-                     AllowMultiple="true"
-                     AllowFeatured="true"
-                     AllowUpload="true"
-                     EntityName="category"
-                     EntityId="@EditingCategoryId"
-                     GetImageUrlFunc="@GetCategoryImageUrl"
-                     GetImageAltFunc="@GetCategoryImageAlt"
-                     GetIsFeaturedFunc="@GetCategoryImageIsFeatured"
-                     GetImageIdFunc="@GetCategoryImageId"
-                     CreateImageFromFileFunc="@CreateCategoryImageFromFile"
-                     UpdateImageFunc="@UpdateCategoryImage"
-                     AddImageApiFunc="@AddCategoryImageApi"
-                     UpdateImageApiFunc="@UpdateCategoryImageApi"
-                     DeleteImageApiFunc="@DeleteCategoryImageApi" />
+
+        <!-- ObjectSelector for Images -->
+        <ObjectSelector @ref="imageSelector"
+                        TEntity="FileDto"
+                        EntitySingularName="Image"
+                        EntityPluralName="Images"
+                        SelectedEntities="@selectedImages"
+                        OnEntitiesChanged="@OnSelectedImagesChanged"
+                        Title="Category Images"
+                        HeaderIcon="fas fa-images"
+                        IconColor="green"
+                        DisplayMode="ObjectSelector<FileDto>.EntityDisplayMode.Grid"
+                        GridSize="medium"
+                        ShowBrowse="true"
+                        ShowPreview="true"
+                        AllowRemove="true"
+                        AllowClear="true"
+                        AllowMultiple="true"
+                        MaxEntities="10"
+                        CanBrowse="true"
+                        EmptyStateTitle="No images selected"
+                        EmptyStateMessage="Browse existing images or upload new ones to make your category more attractive"
+                        GetEntityId="@(file => file.Id)"
+                        GetEntityDisplayName="@(file => file.OriginalFileName)"
+                        GetEntitySubtitle="@(file => $"{file.FileSizeFormatted} • {file.CreatedAt:MMM dd, yyyy}")"
+                        GetEntityIcon="@(() => "fas fa-image")"
+                        GetEntityIconColor="@(() => "text-green-500")"
+                        LoadEntitiesFunc="@LoadImageFiles"
+                        SearchFunc="@SearchImageFiles"
+                        OnEntityPreview="@OnImagePreview"
+                        OnEntityAdded="@OnImageAdded"
+                        OnEntityRemoved="@OnImageRemoved">
+
+            <!-- Custom Header Actions for Upload -->
+            <CustomHeaderActions>
+                <button type="button"
+                        class="@StyleService.GetButtonClass("success", "small")"
+                        @onclick="ShowUploadDialog"
+                        disabled="@isProcessingImages">
+                    <i class="fas fa-upload mr-1"></i>
+                    Upload Images
+                </button>
+            </CustomHeaderActions>
+        </ObjectSelector>
+
+        <!-- Featured Image Selection -->
+        @if (selectedImages.Any())
+        {
+            <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <div class="flex items-center mb-4">
+                    <div class="w-6 h-6 bg-yellow-600 rounded-md flex items-center justify-center mr-2">
+                        <i class="fas fa-star text-white text-xs"></i>
+                    </div>
+                    <h4 class="text-md font-semibold text-gray-900 dark:text-white">Featured Image</h4>
+                </div>
+                <div class="space-y-3">
+                    <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Select which image should be featured for this category:
+                    </label>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                        @foreach (var image in selectedImages)
+                        {
+                            <div class="relative group cursor-pointer @(featuredImageId == image.Id ? "ring-2 ring-yellow-500" : "")"
+                                 @onclick="() => SetFeaturedImage(image.Id)">
+                                <div class="aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+                                    <img src="@GetImageThumbnailUrl(image)"
+                                         alt="@(image.Alt ?? image.OriginalFileName)"
+                                         class="w-full h-full object-cover transition-transform duration-200 group-hover:scale-105" />
+                                </div>
+                                @if (featuredImageId == image.Id)
+                                {
+                                    <div class="absolute top-1 right-1">
+                                        <div class="w-6 h-6 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg">
+                                            <i class="fas fa-star text-white text-xs"></i>
+                                        </div>
+                                    </div>
+                                }
+                                <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-200 rounded-lg"></div>
+                            </div>
+                        }
+                    </div>
+                    <p class="text-gray-500 dark:text-gray-400 text-xs">
+                        The featured image will be used as the main image for this category in listings and previews.
+                    </p>
+                </div>
+            </div>
+        }
     </div>
 
     <!-- Status & Visibility -->
@@ -283,3 +359,98 @@
     </div>
 </div>
 
+<!-- Image Upload Dialog -->
+<GenericDialog @ref="uploadDialog"
+               Title="Upload Category Images"
+               Description="Upload new images to add to this category"
+               HeaderIcon="fas fa-upload"
+               IsVisible="@showUploadDialog"
+               IsSaving="@isUploadingImages"
+               OnClose="@CloseUploadDialog"
+               OnSave="@UploadImages"
+               SaveText="Upload"
+               SavingText="Uploading..."
+               SaveIcon="fas fa-upload"
+               Size="large">
+    <BodyContent>
+        <div class="space-y-4">
+            <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6">
+                <div class="text-center">
+                    <i class="fas fa-cloud-upload-alt text-gray-400 text-4xl mb-4"></i>
+                    <div class="flex text-sm text-gray-600 dark:text-gray-400">
+                        <label for="file-upload" class="relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                            <span>Upload files</span>
+                            <InputFile id="file-upload" class="sr-only" OnChange="@OnFileInputChange" multiple accept="image/*" />
+                        </label>
+                        <p class="pl-1">or drag and drop</p>
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">PNG, JPG, GIF, WebP up to 5MB each</p>
+                </div>
+            </div>
+
+            @if (pendingUploadFiles.Any())
+            {
+                <div class="space-y-2">
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white">Files to upload:</h4>
+                    <div class="space-y-1">
+                        @foreach (var file in pendingUploadFiles)
+                        {
+                            <div class="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                                <div class="flex items-center space-x-2">
+                                    <i class="fas fa-image text-green-500"></i>
+                                    <span class="text-sm text-gray-900 dark:text-white">@file.Name</span>
+                                    <span class="text-xs text-gray-500">(@(file.GetFormattedSize()))</span>
+                                </div>
+                                <button type="button"
+                                        class="text-red-500 hover:text-red-700"
+                                        @onclick="() => RemovePendingFile(file)">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </BodyContent>
+</GenericDialog>
+
+<!-- Image Preview Dialog -->
+@if (showImagePreviewDialog && previewingFile != null)
+{
+    <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="fixed inset-0 bg-black bg-opacity-75 transition-opacity" @onclick="CloseImagePreview"></div>
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="inline-block align-bottom bg-white dark:bg-gray-800 rounded-xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle w-full max-w-4xl relative z-50"
+                 @onclick:stopPropagation="true">
+                <div class="bg-white dark:bg-gray-800 px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                            @previewingFile.OriginalFileName
+                        </h3>
+                        <button @onclick="CloseImagePreview"
+                                class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="flex justify-center">
+                        <img src="@GetImagePreviewUrl(previewingFile)"
+                             alt="@(previewingFile.Alt ?? previewingFile.OriginalFileName)"
+                             class="max-w-full max-h-96 object-contain rounded-lg shadow-lg" />
+                    </div>
+                    <div class="mt-4 text-center">
+                        <div class="flex items-center justify-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
+                            <span>@previewingFile.FileSizeFormatted</span>
+                            <span>•</span>
+                            <span>@(previewingFile.ImageDimensions)</span>
+                            <span>•</span>
+                            <span>@previewingFile.CreatedAt.ToString("MMM dd, yyyy")</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}

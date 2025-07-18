@@ -55,6 +55,7 @@ namespace Frontend.Components.Common.GenericCrudPage
         [Parameter] public EventCallback<int> OnEntityDeleted { get; set; }
         [Parameter] public EventCallback<int> OnView { get; set; }
         [Parameter] public EventCallback<int> OnDuplicate { get; set; }
+        private object? currentOriginalEntity = null;
 
         // Private fields
         private PaginatedResult<TListItem> pagedResult = new();
@@ -166,6 +167,10 @@ namespace Frontend.Components.Common.GenericCrudPage
                 {
                     entityModel = EditModelFactory(entity);
                     validationErrors.Clear();
+
+                    // Store the original entity for form access
+                    currentOriginalEntity = entity;
+
                     showEntityDialog = true;
                     StateHasChanged();
                 }
@@ -348,6 +353,10 @@ namespace Frontend.Components.Common.GenericCrudPage
             public Dictionary<string, string> ValidationErrors { get; set; } = new();
             public bool IsEditMode { get; set; }
             public bool IsSaving { get; set; }
+            public int? EditingEntityId { get; set; }
+            public object? OriginalEntity { get; set; }
+            public string? EntityType { get; set; }
         }
+
     }
 }

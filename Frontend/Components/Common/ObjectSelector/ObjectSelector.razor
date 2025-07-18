@@ -1,0 +1,306 @@
+﻿@* Frontend/Components/Common/ObjectSelector/ObjectSelector.razor *@
+@typeparam TEntity where TEntity : class
+@using Backend.CMS.Application.DTOs
+@using Frontend.Components.Common.ConfirmationDialogComponent
+@using Frontend.Interfaces
+@inject IStyleService StyleService
+@inject INotificationService NotificationService
+@inject IJSRuntime JSRuntime
+
+<div class="space-y-4">
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+            <h4 class="text-md font-semibold text-gray-900 dark:text-white flex items-center">
+                <i class="@HeaderIcon text-@IconColor-600 dark:text-@IconColor-400 mr-2"></i>
+                @Title
+            </h4>
+            @if (showEntityCount)
+            {
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200">
+                    @selectedEntities.Count @(selectedEntities.Count == 1 ? EntitySingularName.ToLower() : EntityPluralName.ToLower())
+                </span>
+            }
+        </div>
+
+        <div class="flex items-center space-x-2">
+            @if (CustomHeaderActions != null)
+            {
+                @CustomHeaderActions
+            }
+
+            @if (ShowBrowse && CanBrowse)
+            {
+                <button type="button"
+                        class="@StyleService.GetButtonClass("primary", "small")"
+                        @onclick="OpenEntityBrowser"
+                        disabled="@isProcessing">
+                    <i class="fas fa-search mr-1"></i>
+                    Browse @EntityPluralName
+                </button>
+            }
+
+            @if (selectedEntities.Any() && AllowClear)
+            {
+                <button type="button"
+                        class="@StyleService.GetButtonClass("danger", "small")"
+                        @onclick="ShowClearConfirmation"
+                        disabled="@isProcessing">
+                    <i class="fas fa-trash mr-1"></i>
+                    Clear All
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Entities Display -->
+    @if (isLoading)
+    {
+        <div class="flex items-center justify-center py-8">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-2"></div>
+                <p class="text-gray-500 dark:text-gray-400 text-sm">Loading @EntityPluralName.ToLower()...</p>
+            </div>
+        </div>
+    }
+    else if (selectedEntities.Any())
+    {
+        @if (DisplayMode == EntityDisplayMode.Grid)
+        {
+            <!-- Grid View -->
+            <div class="grid @GetGridClasses() gap-4">
+                @foreach (var entity in selectedEntities)
+                {
+                    <div class="relative group @GetEntityCardClasses()">
+                        <!-- Entity Preview -->
+                        <div class="@GetEntityPreviewClasses()">
+                            <div class="w-full h-full flex flex-col items-center justify-center p-4">
+                                <i class="@GetEntityIcon() text-3xl @GetEntityIconColor() mb-2"></i>
+                                <span class="text-xs text-gray-600 dark:text-gray-400 text-center truncate w-full">
+                                    @GetEntityDisplayName(entity)
+                                </span>
+                            </div>
+
+                            <!-- Overlay Actions -->
+                            <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                                <div class="flex space-x-1">
+                                    @if (ShowPreview && OnEntityPreview.HasDelegate)
+                                    {
+                                        <button type="button"
+                                                class="p-2 bg-white text-gray-700 rounded-full hover:bg-gray-100 transition-colors shadow-lg"
+                                                @onclick="() => PreviewEntity(entity)"
+                                                title="Preview">
+                                            <i class="fas fa-eye text-sm"></i>
+                                        </button>
+                                    }
+
+                                    @if (AllowRemove)
+                                    {
+                                        <button type="button"
+                                                class="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+                                                @onclick="() => ShowRemoveConfirmation(entity)"
+                                                title="Remove">
+                                            <i class="fas fa-trash text-sm"></i>
+                                        </button>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Entity Info -->
+                        <div class="p-3 space-y-1">
+                            <p class="text-sm font-medium text-gray-900 dark:text-white truncate"
+                               title="@GetEntityDisplayName(entity)">
+                                @GetEntityDisplayName(entity)
+                            </p>
+                            @if (GetEntitySubtitle != null)
+                            {
+                                <p class="text-xs text-gray-500 dark:text-gray-400">
+                                    @GetEntitySubtitle(entity)
+                                </p>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <!-- List View -->
+            <div class="space-y-2">
+                @foreach (var entity in selectedEntities)
+                {
+                    <div class="flex items-center justify-between p-3 @GetEntityListItemClasses() rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                        <div class="flex items-center space-x-3 flex-1 min-w-0">
+                            <div class="w-10 h-10 @GetEntityIconBackgroundClass() rounded-lg flex items-center justify-center flex-shrink-0">
+                                <i class="@GetEntityIcon() text-white"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-medium text-gray-900 dark:text-white truncate"
+                                   title="@GetEntityDisplayName(entity)">
+                                    @GetEntityDisplayName(entity)
+                                </p>
+                                @if (GetEntitySubtitle != null)
+                                {
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                                        @GetEntitySubtitle(entity)
+                                    </p>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="flex items-center space-x-2 flex-shrink-0">
+                            @if (ShowPreview && OnEntityPreview.HasDelegate)
+                            {
+                                <button type="button"
+                                        class="@StyleService.GetTableActionButtonClass("view")"
+                                        @onclick="() => PreviewEntity(entity)"
+                                        title="Preview">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            }
+
+                            @if (AllowRemove)
+                            {
+                                <button type="button"
+                                        class="@StyleService.GetTableActionButtonClass("delete")"
+                                        @onclick="() => ShowRemoveConfirmation(entity)"
+                                        title="Remove">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        <!-- Empty State -->
+        <div class="text-center py-8 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+            <div class="w-16 h-16 mx-auto bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
+                <i class="@HeaderIcon text-2xl text-gray-400"></i>
+            </div>
+            <h4 class="text-lg font-medium text-gray-900 dark:text-white mb-2">@EmptyStateTitle</h4>
+            <p class="text-gray-500 dark:text-gray-400 mb-4">@EmptyStateMessage</p>
+
+            @if (ShowBrowse && CanBrowse)
+            {
+                <button type="button"
+                        class="@StyleService.GetButtonClass("primary")"
+                        @onclick="OpenEntityBrowser">
+                    <i class="fas fa-search mr-2"></i>
+                    Browse @EntityPluralName
+                </button>
+            }
+        </div>
+    }
+</div>
+
+<!-- Entity Browser Dialog -->
+<FormDialog @ref="entityBrowserDialog"
+            Title="@($"Select {EntityPluralName}")"
+            Description="@($"Choose {EntityPluralName.ToLower()} from the available options")"
+            HeaderIcon="fas fa-search"
+            IsVisible="@showEntityBrowserDialog"
+            OnClose="@CloseEntityBrowser"
+            OnSave="@AddSelectedBrowserEntities"
+            SaveText="@($"Add Selected {EntityPluralName}")"
+            SaveIcon="fas fa-plus"
+            Size="xlarge">
+    <BodyContent>
+        <EntityBrowser TEntity="TEntity"
+                       AllowMultiSelect="@AllowMultiple"
+                       EntitySingularName="@EntitySingularName"
+                       EntityPluralName="@EntityPluralName"
+                       GetEntityDisplayName="@GetEntityDisplayName"
+                       GetEntitySubtitle="@GetEntitySubtitle"
+                       GetEntityIcon="@GetEntityIcon"
+                       GetEntityIconColor="@GetEntityIconColor"
+                       GetEntityId="@GetEntityId"
+                       LoadEntitiesFunc="@LoadEntitiesFunc"
+                       SearchFunc="@SearchFunc"
+                       OnEntitiesSelected="OnEntityBrowserSelectionChanged"
+                       ExcludeEntityIds="@GetExcludedEntityIds()" />
+    </BodyContent>
+</FormDialog>
+
+<!-- Remove Confirmation Dialog -->
+<ConfirmationDialog @ref="removeEntityDialog"
+                    Title="@($"Remove {EntitySingularName}")"
+                    Message="@($"Are you sure you want to remove this {EntitySingularName.ToLower()}? This will not delete the {EntitySingularName.ToLower()}, just remove the association.")"
+                    ConfirmText="Remove"
+                    ConfirmClass="@StyleService.GetButtonClass("danger")"
+                    ConfirmIcon="fas fa-trash"
+                    Type="danger"
+                    OnConfirm="@RemoveSelectedEntity" />
+
+<!-- Clear All Confirmation Dialog -->
+<ConfirmationDialog @ref="clearAllDialog"
+                    Title="@($"Clear All {EntityPluralName}")"
+                    Message="@($"Are you sure you want to remove all {EntityPluralName.ToLower()}? This will not delete the {EntityPluralName.ToLower()}, just remove all associations.")"
+                    ConfirmText="Clear All"
+                    ConfirmClass="@StyleService.GetButtonClass("danger")"
+                    ConfirmIcon="fas fa-trash"
+                    Type="danger"
+                    OnConfirm="@ClearAllEntities" />
+
+@code {
+    // Public API properties
+    [Parameter] public string EntitySingularName { get; set; } = "Item";
+    [Parameter] public string EntityPluralName { get; set; } = "Items";
+    [Parameter] public List<TEntity> SelectedEntities { get; set; } = new();
+    [Parameter] public EventCallback<List<TEntity>> OnEntitiesChanged { get; set; }
+
+    // Display configuration
+    [Parameter] public string Title { get; set; } = "Selected Items";
+    [Parameter] public string HeaderIcon { get; set; } = "fas fa-list";
+    [Parameter] public string IconColor { get; set; } = "blue";
+    [Parameter] public EntityDisplayMode DisplayMode { get; set; } = EntityDisplayMode.Grid;
+    [Parameter] public string GridSize { get; set; } = "medium"; // small, medium, large
+
+    // Feature toggles
+    [Parameter] public bool ShowBrowse { get; set; } = true;
+    [Parameter] public bool ShowPreview { get; set; } = true;
+    [Parameter] public bool AllowRemove { get; set; } = true;
+    [Parameter] public bool AllowClear { get; set; } = true;
+    [Parameter] public bool AllowMultiple { get; set; } = true;
+
+    // Entity restrictions
+    [Parameter] public int MaxEntities { get; set; } = 100;
+
+    // Permissions
+    [Parameter] public bool CanBrowse { get; set; } = true;
+
+    // Empty state customization
+    [Parameter] public string EmptyStateTitle { get; set; } = "No items selected";
+    [Parameter] public string EmptyStateMessage { get; set; } = "Browse and select items to add them here";
+
+    // Entity property accessors
+    [Parameter] public Func<TEntity, int> GetEntityId { get; set; } = null!;
+    [Parameter] public Func<TEntity, string> GetEntityDisplayName { get; set; } = null!;
+    [Parameter] public Func<TEntity, string>? GetEntitySubtitle { get; set; }
+
+    // Display customization
+    [Parameter] public Func<string> GetEntityIcon { get; set; } = () => "fas fa-cube";
+    [Parameter] public Func<string> GetEntityIconColor { get; set; } = () => "text-blue-500";
+
+    // Data loading functions
+    [Parameter] public Func<int, int, string?, Task<PaginatedResult<TEntity>>> LoadEntitiesFunc { get; set; } = null!;
+    [Parameter] public Func<string, Task<List<TEntity>>>? SearchFunc { get; set; }
+
+    // Events
+    [Parameter] public EventCallback<TEntity> OnEntityPreview { get; set; }
+    [Parameter] public EventCallback<TEntity> OnEntityAdded { get; set; }
+    [Parameter] public EventCallback<TEntity> OnEntityRemoved { get; set; }
+
+    // Custom content parameters
+    [Parameter] public RenderFragment? CustomHeaderActions { get; set; }
+
+    public enum EntityDisplayMode
+    {
+        Grid,
+        List
+    }
+}

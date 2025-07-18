@@ -1,0 +1,141 @@
+﻿@typeparam TEntity where TEntity : class
+@using Backend.CMS.Application.DTOs
+@inject IStyleService StyleService
+@inject INotificationService NotificationService
+
+<div class="space-y-4">
+    <!-- Search and Filters -->
+    <div class="flex flex-col sm:flex-row gap-4">
+        <div class="flex-1">
+            <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <i class="fas fa-search text-gray-400"></i>
+                </div>
+                <input @bind="searchTerm" @bind:event="oninput" @onkeyup="OnSearchKeyUp"
+                       type="text"
+                       placeholder="Search @EntityPluralName.ToLower()..."
+                       class="@StyleService.GetFormInputClass() pl-10" />
+            </div>
+        </div>
+    </div>
+
+    <!-- Entities Grid -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+        @if (isLoading)
+        {
+            <div class="p-8 text-center">
+                <div class="@StyleService.GetLoadingSpinnerClass("large") mx-auto mb-4"></div>
+                <p class="text-gray-500 dark:text-gray-400">Loading @EntityPluralName.ToLower()...</p>
+            </div>
+        }
+        else if (entities.Any())
+        {
+            <div class="p-4">
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    @foreach (var entity in entities)
+                    {
+                        var isSelected = selectedEntities.Contains(entity);
+                        var isExcluded = ExcludeEntityIds.Contains(GetEntityId(entity));
+
+                        <div class="relative group cursor-pointer @(isExcluded ? "opacity-50 pointer-events-none" : "")"
+                             @onclick="() => ToggleEntitySelection(entity)">
+                            <div class="@GetEntityCardClass(isSelected, isExcluded)">
+                                <!-- Entity Preview -->
+                                <div class="aspect-square bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden mb-2">
+                                    <div class="w-full h-full flex items-center justify-center">
+                                        <i class="@GetEntityIcon() text-3xl @GetEntityIconColor()"></i>
+                                    </div>
+                                </div>
+
+                                <!-- Entity Info -->
+                                <div class="text-center">
+                                    <p class="text-xs font-medium text-gray-900 dark:text-white truncate" title="@GetEntityDisplayName(entity)">
+                                        @GetEntityDisplayName(entity)
+                                    </p>
+                                    @if (GetEntitySubtitle != null)
+                                    {
+                                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                                            @GetEntitySubtitle(entity)
+                                        </p>
+                                    }
+                                </div>
+
+                                <!-- Selection Indicator -->
+                                @if (isSelected)
+                                {
+                                    <div class="absolute top-2 right-2">
+                                        <div class="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center">
+                                            <i class="fas fa-check text-white text-xs"></i>
+                                        </div>
+                                    </div>
+                                }
+
+                                @if (isExcluded)
+                                {
+                                    <div class="absolute top-2 left-2">
+                                        <div class="w-6 h-6 bg-gray-600 rounded-full flex items-center justify-center">
+                                            <i class="fas fa-ban text-white text-xs"></i>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            @if (totalPages > 1)
+            {
+                <div class="border-t border-gray-200 dark:border-gray-700 p-4">
+                    <div class="flex items-center justify-between">
+                        <div class="text-sm text-gray-700 dark:text-gray-300">
+                            Showing @((currentPage - 1) * pageSize + 1) to @Math.Min(currentPage * pageSize, totalCount) of @totalCount @EntityPluralName.ToLower()
+                        </div>
+                        <div class="flex space-x-2">
+                            <button @onclick="() => GoToPage(currentPage - 1)"
+                                    disabled="@(currentPage <= 1)"
+                                    class="@StyleService.GetButtonClass("secondary", "small")">
+                                <i class="fas fa-chevron-left"></i>
+                            </button>
+                            <span class="text-sm text-gray-700 dark:text-gray-300 px-3 py-1">
+                                Page @currentPage of @totalPages
+                            </span>
+                            <button @onclick="() => GoToPage(currentPage + 1)"
+                                    disabled="@(currentPage >= totalPages)"
+                                    class="@StyleService.GetButtonClass("secondary", "small")">
+                                <i class="fas fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="p-8 text-center">
+                <i class="fas fa-search text-gray-400 text-4xl mb-4"></i>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">No @EntityPluralName.ToLower() found</h3>
+                <p class="text-gray-500 dark:text-gray-400 mb-4">No @EntityPluralName.ToLower() match your search criteria.</p>
+            </div>
+        }
+    </div>
+
+    <!-- Selected Entities Summary -->
+    @if (selectedEntities.Any())
+    {
+        <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <i class="fas fa-check-circle text-blue-600 dark:text-blue-400 mr-2"></i>
+                    <span class="text-sm font-medium text-blue-900 dark:text-blue-100">
+                        @selectedEntities.Count @(selectedEntities.Count == 1 ? EntitySingularName.ToLower() : EntityPluralName.ToLower()) selected
+                    </span>
+                </div>
+                <button @onclick="ClearSelection" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 text-sm">
+                    Clear Selection
+                </button>
+            </div>
+        </div>
+    }
+</div>

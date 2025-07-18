@@ -1090,6 +1090,413 @@ namespace Backend.CMS.API.Controllers
             }
         }
 
+        /// <summary>
+        /// Get files linked to a specific entity
+        /// </summary>
+        /// <param name="entityType">Entity type (e.g., "Category", "Product")</param>
+        /// <param name="entityId">Entity identifier</param>
+        /// <param name="fileType">Optional file type filter</param>
+        /// <returns>List of files linked to the entity</returns>
+        [HttpGet("entity")]
+        [ProducesResponseType(typeof(List<FileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<List<FileDto>>> GetFilesForEntity(
+            [FromQuery] string entityType,
+            [FromQuery] int entityId,
+            [FromQuery] FileType? fileType = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(entityType))
+                {
+                    return BadRequest(new { Message = "Entity type is required" });
+                }
+
+                if (entityId <= 0)
+                {
+                    return BadRequest(new { Message = "Entity ID must be greater than 0" });
+                }
+
+                var searchDto = new FileSearchDto
+                {
+                    PageNumber = 1,
+                    PageSize = 1000, // Get all files for the entity
+                    EntityType = entityType,
+                    EntityId = entityId,
+                    FileType = fileType,
+                    SortBy = "CreatedAt",
+                    SortDirection = "Desc"
+                };
+
+                var result = await _fileService.SearchFilesPagedAsync(searchDto);
+                var files = result.Data?.ToList() ?? new List<FileDto>();
+
+                _logger.LogDebug("Retrieved {FileCount} files for entity {EntityType}:{EntityId}",
+                    files.Count, entityType, entityId);
+
+                return Ok(files);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting files for entity {EntityType}:{EntityId}", entityType, entityId);
+                return StatusCode(500, new { Message = "An error occurred while retrieving files" });
+            }
+        }
+
+        /// <summary>
+        /// Count files linked to a specific entity
+        /// </summary>
+        /// <param name="entityType">Entity type</param>
+        /// <param name="entityId">Entity identifier</param>
+        /// <param name="fileType">Optional file type filter</param>
+        /// <returns>Number of files linked to the entity</returns>
+        [HttpGet("entity/count")]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<object>> CountFilesForEntity(
+            [FromQuery] string entityType,
+            [FromQuery] int entityId,
+            [FromQuery] FileType? fileType = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(entityType))
+                {
+                    return BadRequest(new { Message = "Entity type is required" });
+                }
+
+                if (entityId <= 0)
+                {
+                    return BadRequest(new { Message = "Entity ID must be greater than 0" });
+                }
+
+                var searchDto = new FileSearchDto
+                {
+                    PageNumber = 1,
+                    PageSize = 1,
+                    EntityType = entityType,
+                    EntityId = entityId,
+                    FileType = fileType
+                };
+
+                var result = await _fileService.SearchFilesPagedAsync(searchDto);
+
+                return Ok(new { Count = result.TotalCount });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error counting files for entity {EntityType}:{EntityId}", entityType, entityId);
+                return StatusCode(500, new { Message = "An error occurred while counting files" });
+            }
+        }
+
+        /// <summary>
+        /// Delete all files linked to a specific entity
+        /// </summary>
+        /// <param name="deleteDto">Entity deletion data</param>
+        /// <returns>Bulk operation result</returns>
+        [HttpPost("delete-for-entity")]
+        [ProducesResponseType(typeof(BulkOperationResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<BulkOperationResultDto>> DeleteFilesForEntity([FromBody] DeleteEntityFilesDto deleteDto)
+        {
+            try
+            {
+                if (deleteDto == null)
+                {
+                    return BadRequest(new { Message = "Delete data is required" });
+                }
+
+                if (string.IsNullOrWhiteSpace(deleteDto.EntityType))
+                {
+                    return BadRequest(new { Message = "Entity type is required" });
+                }
+
+                if (deleteDto.EntityId <= 0)
+                {
+                    return BadRequest(new { Message = "Entity ID must be greater than 0" });
+                }
+
+                // First, get all files for the entity
+                var searchDto = new FileSearchDto
+                {
+                    PageNumber = 1,
+                    PageSize = 1000,
+                    EntityType = deleteDto.EntityType,
+                    EntityId = deleteDto.EntityId
+                };
+
+                var result = await _fileService.SearchFilesPagedAsync(searchDto);
+                var fileIds = result.Data?.Select(f => f.Id).ToList() ?? new List<int>();
+
+                if (!fileIds.Any())
+                {
+                    return Ok(new BulkOperationResultDto
+                    {
+                        TotalRequested = 0,
+                        SuccessCount = 0,
+                        FailureCount = 0
+                    });
+                }
+
+                // Delete all files
+                var deleteResult = await _fileService.DeleteMultipleFilesAsync(fileIds);
+
+                _logger.LogInformation("Deleted {SuccessCount} of {TotalCount} files for entity {EntityType}:{EntityId}",
+                    deleteResult ? fileIds.Count : 0, fileIds.Count, deleteDto.EntityType, deleteDto.EntityId);
+
+                return Ok(new BulkOperationResultDto
+                {
+                    TotalRequested = fileIds.Count,
+                    SuccessCount = deleteResult ? fileIds.Count : 0,
+                    FailureCount = deleteResult ? 0 : fileIds.Count
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting files for entity");
+                return StatusCode(500, new { Message = "An error occurred while deleting files" });
+            }
+        }
+
+        /// <summary>
+        /// Upload file with entity linking in form data
+        /// This is an override of the existing upload method to handle entity parameters
+        /// </summary>
+        [HttpPost("upload-for-entity")]
+        [EnableRateLimiting("FileUploadPolicy")]
+        [ProducesResponseType(typeof(FileUploadResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<FileUploadResultDto>> UploadFileForEntity([FromForm] FileUploadForEntityDto uploadDto)
+        {
+            try
+            {
+                if (uploadDto?.File == null)
+                {
+                    return BadRequest(new { Message = "File is required" });
+                }
+
+                if (string.IsNullOrWhiteSpace(uploadDto.EntityType))
+                {
+                    return BadRequest(new { Message = "Entity type is required" });
+                }
+
+                if (uploadDto.EntityId <= 0)
+                {
+                    return BadRequest(new { Message = "Entity ID must be greater than 0" });
+                }
+
+                // Create the standard upload DTO
+                var standardUploadDto = new FileUploadDto
+                {
+                    File = uploadDto.File,
+                    Description = uploadDto.Description ?? $"File uploaded for {uploadDto.EntityType} {uploadDto.EntityId}",
+                    Alt = uploadDto.Alt,
+                    FolderId = uploadDto.FolderId,
+                    IsPublic = uploadDto.IsPublic,
+                    GenerateThumbnail = uploadDto.GenerateThumbnail,
+                    ProcessImmediately = uploadDto.ProcessImmediately,
+                    Tags = uploadDto.Tags ?? new Dictionary<string, object>()
+                };
+
+                // Add entity information to tags for tracking
+                standardUploadDto.Tags["EntityType"] = uploadDto.EntityType;
+                standardUploadDto.Tags["EntityId"] = uploadDto.EntityId.ToString();
+
+                var result = await _fileService.UploadFileAsync(standardUploadDto);
+
+                if (result != null)
+                {
+                    _logger.LogInformation("Successfully uploaded file {FileName} for entity {EntityType}:{EntityId}",
+                        uploadDto.File.FileName, uploadDto.EntityType, uploadDto.EntityId);
+                }
+
+                return Ok(result);
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, "File upload validation failed for entity");
+                return BadRequest(new FileUploadResultDto
+                {
+                    Success = false,
+                    ErrorMessage = ex.Message
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading file for entity");
+                return StatusCode(500, new FileUploadResultDto
+                {
+                    Success = false,
+                    ErrorMessage = "An error occurred while uploading the file"
+                });
+            }
+        }
+
+        /// <summary>
+        /// Upload multiple files with entity linking
+        /// </summary>
+        [HttpPost("upload-multiple-for-entity")]
+        [EnableRateLimiting("FileUploadPolicy")]
+        [ProducesResponseType(typeof(BulkOperationResultDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<BulkOperationResultDto>> UploadMultipleFilesForEntity([FromForm] MultipleFileUploadForEntityDto uploadDto)
+        {
+            try
+            {
+                if (uploadDto?.Files == null || !uploadDto.Files.Any())
+                {
+                    return BadRequest(new { Message = "At least one file is required" });
+                }
+
+                if (string.IsNullOrWhiteSpace(uploadDto.EntityType))
+                {
+                    return BadRequest(new { Message = "Entity type is required" });
+                }
+
+                if (uploadDto.EntityId <= 0)
+                {
+                    return BadRequest(new { Message = "Entity ID must be greater than 0" });
+                }
+
+                var standardUploadDto = new MultipleFileUploadDto
+                {
+                    Files = uploadDto.Files,
+                    FolderId = uploadDto.FolderId,
+                    IsPublic = uploadDto.IsPublic,
+                    GenerateThumbnails = uploadDto.GenerateThumbnails,
+                    ProcessImmediately = uploadDto.ProcessImmediately,
+                    ProcessInParallel = uploadDto.ProcessInParallel
+                };
+
+                var results = await _fileService.UploadMultipleFilesAsync(standardUploadDto);
+
+                // Update the uploaded files with entity information
+                if (results != null)
+                {
+                    foreach (var file in results)
+                    {
+                        // Add entity tags to each uploaded file
+                        var updateDto = new UpdateFileDto
+                        {
+                            Description = file.Description,
+                            Alt = file.Alt,
+                            IsPublic = file.IsPublic,
+                            Tags = file.Tags ?? new Dictionary<string, object>()
+                        };
+
+                        updateDto.Tags["EntityType"] = uploadDto.EntityType;
+                        updateDto.Tags["EntityId"] = uploadDto.EntityId.ToString();
+
+                        try
+                        {
+                            await _fileService.UpdateFileAsync(file.Id, updateDto);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to update entity tags for file {FileId}", file.Id);
+                        }
+                    }
+
+                    _logger.LogInformation("Successfully uploaded {FileCount} files for entity {EntityType}:{EntityId}",
+                        results.Count, uploadDto.EntityType, uploadDto.EntityId);
+                }
+
+                return Ok(results);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading multiple files for entity");
+                return StatusCode(500, new BulkOperationResultDto
+                {
+                    TotalRequested = uploadDto?.Files?.Count ?? 0,
+                    SuccessCount = 0,
+                    FailureCount = uploadDto?.Files?.Count ?? 0,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = "An error occurred while uploading files" }
+                    }
+                });
+            }
+        }
+
+        /// <summary>
+        /// DTO for deleting files linked to an entity
+        /// </summary>
+        public class DeleteEntityFilesDto
+        {
+            [Required]
+            [MaxLength(50)]
+            public string EntityType { get; set; } = string.Empty;
+
+            [Required]
+            public int EntityId { get; set; }
+        }
+
+        /// <summary>
+        /// DTO for uploading a file with entity linking
+        /// </summary>
+        public class FileUploadForEntityDto
+        {
+            [Required]
+            public IFormFile File { get; set; } = null!;
+
+            [MaxLength(1000)]
+            public string? Description { get; set; }
+
+            [MaxLength(255)]
+            public string? Alt { get; set; }
+
+            public int? FolderId { get; set; }
+
+            public bool IsPublic { get; set; } = false;
+
+            public bool GenerateThumbnail { get; set; } = true;
+
+            public bool ProcessImmediately { get; set; } = true;
+
+            public Dictionary<string, object>? Tags { get; set; }
+
+            [Required]
+            [MaxLength(50)]
+            public string EntityType { get; set; } = string.Empty;
+
+            [Required]
+            public int EntityId { get; set; }
+        }
+
+        /// <summary>
+        /// DTO for uploading multiple files with entity linking
+        /// </summary>
+        public class MultipleFileUploadForEntityDto
+        {
+            [Required]
+            public IFormFileCollection Files { get; set; } = null!;
+
+            public int? FolderId { get; set; }
+
+            public bool IsPublic { get; set; } = false;
+
+            public bool GenerateThumbnails { get; set; } = true;
+
+            public bool ProcessImmediately { get; set; } = true;
+
+            public bool ProcessInParallel { get; set; } = true;
+
+            [Required]
+            [MaxLength(50)]
+            public string EntityType { get; set; } = string.Empty;
+
+            [Required]
+            public int EntityId { get; set; }
+        }
+
         #region Private Helper Methods
 
         /// <summary>

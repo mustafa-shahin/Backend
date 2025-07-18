@@ -221,7 +221,10 @@
                 Model = formContext.Model,
                 ValidationErrors = formContext.ValidationErrors,
                 IsEditMode = formContext.IsEditMode,
-                IsSaving = formContext.IsSaving
+                IsSaving = formContext.IsSaving,
+                EditingEntityId = selectedEntityId,
+                OriginalEntity = currentOriginalEntity,
+                EntityType = EntitySingularName
                 })
                 }
         else

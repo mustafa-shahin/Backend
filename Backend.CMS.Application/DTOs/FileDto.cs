@@ -1,7 +1,6 @@
 ﻿using Backend.CMS.Domain.Enums;
 using Microsoft.AspNetCore.Http;
 using System.ComponentModel.DataAnnotations;
-using System.Text.Json.Serialization;
 
 namespace Backend.CMS.Application.DTOs
 {
@@ -109,6 +108,17 @@ namespace Backend.CMS.Application.DTOs
         public bool GenerateThumbnail { get; set; } = true;
 
         public bool ProcessImmediately { get; set; } = true;
+
+        /// <summary>
+        /// Entity type this file is linked to (e.g., "Category", "Product")
+        /// </summary>
+        [MaxLength(50)]
+        public string? EntityType { get; set; }
+
+        /// <summary>
+        /// Entity ID this file is linked to
+        /// </summary>
+        public int? EntityId { get; set; }
     }
 
     public class MultipleFileUploadDto
@@ -128,6 +138,17 @@ namespace Backend.CMS.Application.DTOs
         /// Whether to process files in parallel (faster but more resource intensive)
         /// </summary>
         public bool ProcessInParallel { get; set; } = true;
+
+        /// <summary>
+        /// Entity type these files are linked to (e.g., "Category", "Product")
+        /// </summary>
+        [MaxLength(50)]
+        public string? EntityType { get; set; }
+
+        /// <summary>
+        /// Entity ID these files are linked to
+        /// </summary>
+        public int? EntityId { get; set; }
     }
 
     public class UpdateFileDto
@@ -217,84 +238,16 @@ namespace Backend.CMS.Application.DTOs
         /// Search only in user's files
         /// </summary>
         public bool UserFilesOnly { get; set; } = false;
-    }
 
-    public class FolderDto
-    {
-        public int Id { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public string? Description { get; set; }
-        public string Path { get; set; } = string.Empty;
-        public int? ParentFolderId { get; set; }
-        public string? ParentFolderPath { get; set; }
-        public List<FolderDto> SubFolders { get; set; } = new();
-        public List<FileDto> Files { get; set; } = new();
-        public bool IsPublic { get; set; }
-        public Dictionary<string, object> Metadata { get; set; } = new();
-        public FolderType FolderType { get; set; }
-        public DateTime CreatedAt { get; set; }
-        public DateTime UpdatedAt { get; set; }
+        /// <summary>
+        /// Filter by entity type (e.g., "Category", "Product")
+        /// </summary>
+        public string? EntityType { get; set; }
 
-        // Computed properties
-        public int FileCount { get; set; }
-        public int SubFolderCount { get; set; }
-        public long TotalSize { get; set; }
-        public string TotalSizeFormatted { get; set; } = string.Empty;
-    }
-
-    public class CreateFolderDto
-    {
-        [Required]
-        [MaxLength(255)]
-        public string Name { get; set; } = string.Empty;
-
-        [MaxLength(1000)]
-        public string? Description { get; set; }
-
-        public int? ParentFolderId { get; set; }
-
-        public bool IsPublic { get; set; } = false;
-
-        public FolderType FolderType { get; set; } = FolderType.General;
-
-        public Dictionary<string, object> Metadata { get; set; } = new();
-    }
-
-    public class UpdateFolderDto
-    {
-        [Required]
-        [MaxLength(255)]
-        public string Name { get; set; } = string.Empty;
-
-        [MaxLength(1000)]
-        public string? Description { get; set; }
-
-        public bool IsPublic { get; set; }
-
-        public Dictionary<string, object> Metadata { get; set; } = new();
-    }
-
-    public class MoveFolderDto
-    {
-        [Required]
-        public int FolderId { get; set; }
-
-        public int? NewParentFolderId { get; set; }
-    }
-
-    public class FolderTreeDto
-    {
-        public int Id { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public string Path { get; set; } = string.Empty;
-        public int? ParentFolderId { get; set; }
-        public List<FolderTreeDto> Children { get; set; } = new();
-        public FolderType FolderType { get; set; }
-        public bool IsPublic { get; set; }
-        public int FileCount { get; set; }
-        public bool HasSubFolders { get; set; }
-        public int Level { get; set; }
-        public bool IsExpanded { get; set; }
+        /// <summary>
+        /// Filter by entity ID
+        /// </summary>
+        public int? EntityId { get; set; }
     }
 
     public class FilePreviewDto
@@ -313,29 +266,6 @@ namespace Backend.CMS.Application.DTOs
         public Dictionary<string, object> Metadata { get; set; } = new();
     }
 
-    public class RenameFolderDto
-    {
-        [Required]
-        [MaxLength(255)]
-        public string NewName { get; set; } = string.Empty;
-    }
-
-    public class CopyFolderDto
-    {
-        [Required]
-        public int FolderId { get; set; }
-
-        public int? DestinationFolderId { get; set; }
-
-        [MaxLength(255)]
-        public string? NewName { get; set; }
-
-        /// <summary>
-        /// Whether to copy all files and subfolders
-        /// </summary>
-        public bool DeepCopy { get; set; } = true;
-    }
-
     /// <summary>
     /// File upload result with detailed information
     /// </summary>
@@ -346,6 +276,8 @@ namespace Backend.CMS.Application.DTOs
         public string? ErrorMessage { get; set; }
         public List<string> Warnings { get; set; } = new();
         public Dictionary<string, object> ProcessingInfo { get; set; } = new();
+        public int SuccessCount { get; set; }
+        public List<FileDto> SuccessfulFiles { get; set; } = new();
     }
     public class ThumbnailResult
     {

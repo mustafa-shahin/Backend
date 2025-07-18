@@ -9,7 +9,7 @@ using System.Collections.Concurrent;
 
 namespace Frontend.Services
 {
-    public class FileService : IFileService
+    public class FileService : IFileService, IDisposable
     {
         private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonOptions;
@@ -1202,7 +1202,414 @@ namespace Frontend.Services
 
         #endregion
 
-        #region IDisposable
+        public async Task<List<FileDto>> GetFilesForEntityAsync(string entityType, int entityId, FileType? fileType = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(entityType) || entityId <= 0)
+                {
+                    return new List<FileDto>();
+                }
+
+                // Create cache key for entity files
+                var cacheKey = $"entity_files_{entityType}_{entityId}_{fileType}";
+
+                // Check if we have a recent cached result
+                if (_entityFileCache.TryGetValue(cacheKey, out var cachedFiles))
+                {
+                    var cacheAge = DateTime.UtcNow - cachedFiles.CachedAt;
+                    if (cacheAge.TotalMinutes < 5) // Cache for 5 minutes
+                    {
+                        return cachedFiles.Files;
+                    }
+                    _entityFileCache.TryRemove(cacheKey, out _);
+                }
+
+                // Use the existing API endpoint for entity files
+                var queryParams = new List<string>
+                {
+                    $"entityType={Uri.EscapeDataString(entityType)}",
+                    $"entityId={entityId}"
+                };
+
+                if (fileType.HasValue)
+                {
+                    queryParams.Add($"fileType={fileType}");
+                }
+
+                var query = $"api/v1/file/entity?{string.Join("&", queryParams)}";
+                var response = await _httpClient.GetAsync(query);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    throw new HttpRequestException($"Failed to get entity files: {response.StatusCode} - {errorContent}");
+                }
+
+                var entityFiles = await response.Content.ReadFromJsonAsync<List<FileDto>>(_jsonOptions);
+                var files = entityFiles ?? new List<FileDto>();
+
+                // Cache individual files and the entity result
+                foreach (var file in files)
+                {
+                    _fileCache.TryAdd(file.Id, file);
+                }
+
+                _entityFileCache.TryAdd(cacheKey, new EntityFilesCacheEntry
+                {
+                    Files = files,
+                    CachedAt = DateTime.UtcNow
+                });
+
+                return files;
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error getting files for entity {entityType}:{entityId}: {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Upload file and link it to a specific entity with immediate association
+        /// </summary>
+        /// <param name="uploadDto">Upload data with entity information</param>
+        /// <returns>Upload result with file DTO</returns>
+        public async Task<FileUploadResultDto?> UploadFileForEntityAsync(FileUploadDto uploadDto)
+        {
+            try
+            {
+                if (uploadDto?.File == null)
+                    throw new ArgumentException("File is required");
+
+                // Ensure entity information is properly set
+                if (!string.IsNullOrEmpty(uploadDto.EntityType) && uploadDto.EntityId.HasValue)
+                {
+                    uploadDto.Tags = uploadDto.Tags ?? new Dictionary<string, object>();
+                    uploadDto.Tags["EntityType"] = uploadDto.EntityType;
+                    uploadDto.Tags["EntityId"] = uploadDto.EntityId.Value.ToString();
+                }
+
+                using var content = new MultipartFormDataContent();
+
+                var fileContent = new StreamContent(uploadDto.File.OpenReadStream());
+                fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(uploadDto.File.ContentType);
+                content.Add(fileContent, "File", uploadDto.File.Name);
+
+                // Add all form parameters including entity information
+                AddFormParametersWithEntity(content, uploadDto);
+
+                var response = await _httpClient.PostAsync("api/v1/file/upload-for-entity", content);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    return new FileUploadResultDto
+                    {
+                        Success = false,
+                        ErrorMessage = $"Upload failed: {response.StatusCode} - {errorContent}"
+                    };
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<FileUploadResultDto>(_jsonOptions);
+
+                if (result?.File != null)
+                {
+                    // Cache the uploaded file
+                    _fileCache.TryAdd(result.File.Id, result.File);
+
+                    // Invalidate entity file cache for this entity
+                    InvalidateEntityFileCache(uploadDto.EntityType!, uploadDto.EntityId!.Value);
+
+                    // Invalidate general pagination cache
+                    InvalidatePaginationCache();
+                }
+
+                return result;
+            }
+            catch (Exception ex)
+            {
+                return new FileUploadResultDto
+                {
+                    Success = false,
+                    ErrorMessage = $"Error uploading file for entity: {ex.Message}"
+                };
+            }
+        }
+
+        /// <summary>
+        /// Upload multiple files and link them to a specific entity
+        /// </summary>
+        /// <param name="uploadDto">Multiple upload data with entity information</param>
+        /// <returns>Bulk operation result</returns>
+        public async Task<BulkOperationResultDto> UploadMultipleFilesForEntityAsync(MultipleFileUploadDto uploadDto)
+        {
+            try
+            {
+                if (uploadDto?.Files == null || !uploadDto.Files.Any())
+                {
+                    return new BulkOperationResultDto
+                    {
+                        TotalRequested = 0,
+                        SuccessCount = 0,
+                        FailureCount = 0
+                    };
+                }
+
+                using var content = new MultipartFormDataContent();
+
+                foreach (var file in uploadDto.Files)
+                {
+                    var fileContent = new StreamContent(file.OpenReadStream());
+                    fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+                    content.Add(fileContent, "Files", file.Name);
+                }
+
+                // Add entity parameters
+                AddMultipleUploadParametersWithEntity(content, uploadDto);
+
+                var response = await _httpClient.PostAsync("api/v1/file/upload-multiple-for-entity", content);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    return new BulkOperationResultDto
+                    {
+                        TotalRequested = uploadDto.Files.Count,
+                        SuccessCount = 0,
+                        FailureCount = uploadDto.Files.Count,
+                        Errors = new List<BulkOperationErrorDto>
+                        {
+                            new() { ErrorMessage = $"Upload failed: {response.StatusCode} - {errorContent}" }
+                        }
+                    };
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions);
+
+                if (result?.SuccessfulFiles != null)
+                {
+                    // Cache uploaded files
+                    foreach (var file in result.SuccessfulFiles)
+                    {
+                        _fileCache.TryAdd(file.Id, file);
+                    }
+
+                    // Invalidate caches
+                    if (!string.IsNullOrEmpty(uploadDto.EntityType) && uploadDto.EntityId.HasValue)
+                    {
+                        InvalidateEntityFileCache(uploadDto.EntityType, uploadDto.EntityId.Value);
+                    }
+                    InvalidatePaginationCache();
+                }
+
+                return result ?? new BulkOperationResultDto();
+            }
+            catch (Exception ex)
+            {
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = uploadDto?.Files?.Count ?? 0,
+                    SuccessCount = 0,
+                    FailureCount = uploadDto?.Files?.Count ?? 0,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Error uploading files for entity: {ex.Message}" }
+                    }
+                };
+            }
+        }
+
+        /// <summary>
+        /// Delete all files linked to a specific entity
+        /// </summary>
+        /// <param name="entityType">Entity type</param>
+        /// <param name="entityId">Entity identifier</param>
+        /// <returns>Bulk operation result</returns>
+        public async Task<BulkOperationResultDto> DeleteFilesForEntityAsync(string entityType, int entityId)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(entityType) || entityId <= 0)
+                {
+                    return new BulkOperationResultDto();
+                }
+
+                var deleteDto = new
+                {
+                    EntityType = entityType,
+                    EntityId = entityId
+                };
+
+                var response = await _httpClient.PostAsJsonAsync("api/v1/file/delete-for-entity", deleteDto, _jsonOptions);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    return new BulkOperationResultDto
+                    {
+                        TotalRequested = 0,
+                        FailureCount = 0,
+                        Errors = new List<BulkOperationErrorDto>
+                        {
+                            new() { ErrorMessage = $"Delete failed: {response.StatusCode} - {errorContent}" }
+                        }
+                    };
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<BulkOperationResultDto>(_jsonOptions);
+
+                if (result?.IsCompleteSuccess == true || result?.IsPartialSuccess == true)
+                {
+                    // Remove files from cache and invalidate entity cache
+                    InvalidateEntityFileCache(entityType, entityId);
+                    InvalidatePaginationCache();
+                }
+
+                return result ?? new BulkOperationResultDto();
+            }
+            catch (Exception ex)
+            {
+                return new BulkOperationResultDto
+                {
+                    TotalRequested = 0,
+                    FailureCount = 0,
+                    Errors = new List<BulkOperationErrorDto>
+                    {
+                        new() { ErrorMessage = $"Error deleting files for entity: {ex.Message}" }
+                    }
+                };
+            }
+        }
+        public async Task<int> CountFilesForEntityAsync(string entityType, int entityId, FileType? fileType = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(entityType) || entityId <= 0)
+                {
+                    return 0;
+                }
+
+                var queryParams = new List<string>
+                {
+                    $"entityType={Uri.EscapeDataString(entityType)}",
+                    $"entityId={entityId}"
+                };
+
+                if (fileType.HasValue)
+                {
+                    queryParams.Add($"fileType={fileType}");
+                }
+
+                var query = $"api/v1/file/entity/count?{string.Join("&", queryParams)}";
+                var response = await _httpClient.GetAsync(query);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return 0;
+                }
+
+                var result = await response.Content.ReadFromJsonAsync<JsonElement>(_jsonOptions);
+                return result.GetProperty("count").GetInt32();
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error counting files for entity {entityType}:{entityId}: {ex.Message}", ex);
+            }
+        }
+
+
+        #region Enhanced Private Methods for Entity Support
+
+        // Entity file cache for better performance
+        private readonly ConcurrentDictionary<string, EntityFilesCacheEntry> _entityFileCache = new();
+
+        private class EntityFilesCacheEntry
+        {
+            public List<FileDto> Files { get; set; } = new();
+            public DateTime CachedAt { get; set; }
+        }
+
+        private void AddFormParametersWithEntity(MultipartFormDataContent content, FileUploadDto uploadDto)
+        {
+            // Add standard form parameters
+            AddFormParameters(content, uploadDto);
+
+            // Add entity-specific parameters
+            if (!string.IsNullOrEmpty(uploadDto.EntityType))
+                content.Add(new StringContent(uploadDto.EntityType), "EntityType");
+
+            if (uploadDto.EntityId.HasValue)
+                content.Add(new StringContent(uploadDto.EntityId.Value.ToString()), "EntityId");
+        }
+
+        private void AddMultipleUploadParametersWithEntity(MultipartFormDataContent content, MultipleFileUploadDto uploadDto)
+        {
+            // Add standard parameters
+            AddMultipleUploadParameters(content, uploadDto);
+
+            // Add entity-specific parameters
+            if (!string.IsNullOrEmpty(uploadDto.EntityType))
+                content.Add(new StringContent(uploadDto.EntityType), "EntityType");
+
+            if (uploadDto.EntityId.HasValue)
+                content.Add(new StringContent(uploadDto.EntityId.Value.ToString()), "EntityId");
+        }
+
+        private void InvalidateEntityFileCache(string entityType, int entityId)
+        {
+            var keysToRemove = _entityFileCache.Keys
+                .Where(key => key.Contains($"entity_files_{entityType}_{entityId}"))
+                .ToList();
+
+            foreach (var key in keysToRemove)
+            {
+                _entityFileCache.TryRemove(key, out _);
+            }
+        }
+
+        private void CleanupEntityFileCache(object? state)
+        {
+            try
+            {
+                const int maxCacheSize = 500;
+
+                if (_entityFileCache.Count > maxCacheSize)
+                {
+                    var expiredEntries = _entityFileCache
+                        .Where(kvp => DateTime.UtcNow - kvp.Value.CachedAt > TimeSpan.FromMinutes(10))
+                        .Select(kvp => kvp.Key)
+                        .ToList();
+
+                    foreach (var key in expiredEntries)
+                    {
+                        _entityFileCache.TryRemove(key, out _);
+                    }
+
+                    // If still too many, remove oldest entries
+                    if (_entityFileCache.Count > maxCacheSize)
+                    {
+                        var oldestEntries = _entityFileCache
+                            .OrderBy(kvp => kvp.Value.CachedAt)
+                            .Take(_entityFileCache.Count - maxCacheSize)
+                            .Select(kvp => kvp.Key)
+                            .ToList();
+
+                        foreach (var key in oldestEntries)
+                        {
+                            _entityFileCache.TryRemove(key, out _);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+
+        #endregion
+
+        #region Updated Dispose Method
 
         public void Dispose()
         {
@@ -1210,6 +1617,7 @@ namespace Frontend.Services
             _cacheCleanupTimer?.Dispose();
             _fileCache?.Clear();
             _paginationCache?.Clear();
+            _entityFileCache?.Clear();
         }
 
         #endregion

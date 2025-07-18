@@ -294,5 +294,49 @@ namespace Frontend.Interfaces
         Task PreloadFilesAsync(List<int> fileIds);
 
         #endregion
+
+        #region Entity-Specific Operations
+
+        /// <summary>
+        /// Get files linked to a specific entity
+        /// </summary>
+        /// <param name="entityType">Entity type (e.g., "Category", "Product")</param>
+        /// <param name="entityId">Entity identifier</param>
+        /// <param name="fileType">Optional file type filter</param>
+        /// <returns>List of files linked to the entity</returns>
+        Task<List<FileDto>> GetFilesForEntityAsync(string entityType, int entityId, FileType? fileType = null);
+
+        /// <summary>
+        /// Upload file and link it to a specific entity
+        /// </summary>
+        /// <param name="uploadDto">Upload data with entity information</param>
+        /// <returns>Upload result with file DTO</returns>
+        Task<FileUploadResultDto?> UploadFileForEntityAsync(FileUploadDto uploadDto);
+
+        /// <summary>
+        /// Upload multiple files and link them to a specific entity
+        /// </summary>
+        /// <param name="uploadDto">Multiple upload data with entity information</param>
+        /// <returns>Bulk operation result</returns>
+        Task<BulkOperationResultDto> UploadMultipleFilesForEntityAsync(MultipleFileUploadDto uploadDto);
+
+        /// <summary>
+        /// Delete all files linked to a specific entity
+        /// </summary>
+        /// <param name="entityType">Entity type</param>
+        /// <param name="entityId">Entity identifier</param>
+        /// <returns>Bulk operation result</returns>
+        Task<BulkOperationResultDto> DeleteFilesForEntityAsync(string entityType, int entityId);
+
+        /// <summary>
+        /// Count files linked to a specific entity
+        /// </summary>
+        /// <param name="entityType">Entity type</param>
+        /// <param name="entityId">Entity identifier</param>
+        /// <param name="fileType">Optional file type filter</param>
+        /// <returns>Number of files linked to the entity</returns>
+        Task<int> CountFilesForEntityAsync(string entityType, int entityId, FileType? fileType = null);
+
+        #endregion
     }
 }
