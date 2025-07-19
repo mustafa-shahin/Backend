@@ -143,12 +143,6 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        protected override async Task ApplyTypeSpecificUpdatesAsync(ArchiveFileEntity entity, UpdateFileDto updateDto)
-        {
-            // No specific updates for archive files in simplified version
-            await Task.CompletedTask;
-        }
-
         protected override async Task<ArchiveFileDto> MapEntityToDto(ArchiveFileEntity entity)
         {
             var urlSet = _fileUrlBuilder.GenerateFileUrls(entity);

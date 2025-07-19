@@ -128,12 +128,6 @@ namespace Backend.CMS.Infrastructure.Services
             }
         }
 
-        protected override async Task ApplyTypeSpecificUpdatesAsync(AudioFileEntity entity, UpdateFileDto updateDto)
-        {
-            // No specific updates for audio files in simplified version
-            await Task.CompletedTask;
-        }
-
         protected override async Task<AudioFileDto> MapEntityToDto(AudioFileEntity entity)
         {
             var urlSet = _fileUrlBuilder.GenerateFileUrls(entity);

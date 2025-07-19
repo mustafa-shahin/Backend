@@ -158,25 +158,8 @@ namespace Backend.CMS.Infrastructure.Services
                 await _unitOfWork.SaveChangesAsync();
             }
         }
-
-        protected override async Task ApplyTypeSpecificUpdatesAsync(DocumentFileEntity entity, UpdateFileDto updateDto)
-        {
-            if (updateDto is UpdateDocumentDto documentUpdateDto)
-            {
-                if (documentUpdateDto.RegenerateThumbnail)
-                {
-                    try
-                    {
-                        // Document thumbnail regeneration logic would go here
-                        _logger.LogDebug("Regenerated thumbnail for document {FileId}", entity.Id);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to regenerate thumbnail for document {FileId}", entity.Id);
-                    }
-                }
-            }
-        }
+  
+       
 
         protected override async Task<DocumentFileDto> MapEntityToDto(DocumentFileEntity entity)
         {
