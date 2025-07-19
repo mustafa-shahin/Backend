@@ -31,30 +31,22 @@ namespace Backend.CMS.Infrastructure.IRepositories
         Task<IEnumerable<BaseFileEntity>> GetFilesWithThumbnailsAsync();
         Task<IEnumerable<BaseFileEntity>> GetFilesWithoutThumbnailsAsync();
 
-        // Type-specific queries
+        // Type-specific queries - basic operations only
         Task<IEnumerable<ImageFileEntity>> GetImageFilesAsync(int? folderId = null);
         Task<IEnumerable<ImageFileEntity>> GetImagesByDimensionsAsync(int? minWidth = null, int? maxWidth = null, int? minHeight = null, int? maxHeight = null);
-        Task<IEnumerable<ImageFileEntity>> GetImagesWithGeoLocationAsync();
         
         Task<IEnumerable<VideoFileEntity>> GetVideoFilesAsync(int? folderId = null);
-        Task<IEnumerable<VideoFileEntity>> GetVideosByQualityAsync(int minWidth, int minHeight);
         Task<IEnumerable<VideoFileEntity>> GetVideosByDurationAsync(TimeSpan? minDuration = null, TimeSpan? maxDuration = null);
         
         Task<IEnumerable<AudioFileEntity>> GetAudioFilesAsync(int? folderId = null);
-        Task<IEnumerable<AudioFileEntity>> GetAudioByArtistAsync(string artist);
-        Task<IEnumerable<AudioFileEntity>> GetAudioByAlbumAsync(string album);
-        Task<IEnumerable<AudioFileEntity>> GetAudioByGenreAsync(string genre);
+        Task<IEnumerable<AudioFileEntity>> GetAudioByDurationAsync(TimeSpan? minDuration = null, TimeSpan? maxDuration = null);
         
         Task<IEnumerable<DocumentFileEntity>> GetDocumentFilesAsync(int? folderId = null);
-        Task<IEnumerable<DocumentFileEntity>> GetDocumentsByAuthorAsync(string author);
-        Task<IEnumerable<DocumentFileEntity>> GetPasswordProtectedDocumentsAsync();
+        Task<IEnumerable<DocumentFileEntity>> GetDocumentsByPageCountAsync(int? minPages = null, int? maxPages = null);
         
         Task<IEnumerable<ArchiveFileEntity>> GetArchiveFilesAsync(int? folderId = null);
-        Task<IEnumerable<ArchiveFileEntity>> GetCorruptedArchivesAsync();
-        Task<IEnumerable<ArchiveFileEntity>> GetPasswordProtectedArchivesAsync();
+        Task<IEnumerable<ArchiveFileEntity>> GetArchivesByFileCountAsync(int? minFiles = null, int? maxFiles = null);
         
         Task<IEnumerable<OtherFileEntity>> GetOtherFilesAsync(int? folderId = null);
-        Task<IEnumerable<OtherFileEntity>> GetExecutableFilesAsync();
-        Task<IEnumerable<OtherFileEntity>> GetPotentiallyDangerousFilesAsync();
     }
 }

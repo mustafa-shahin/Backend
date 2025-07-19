@@ -268,14 +268,6 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await query.OrderByDescending(f => f.CreatedAt).ToListAsync();
         }
 
-        public async Task<IEnumerable<ImageFileEntity>> GetImagesWithGeoLocationAsync()
-        {
-            return await _dbSet.AsNoTracking()
-                              .OfType<ImageFileEntity>()
-                              .Where(f => !f.IsDeleted && f.Latitude != null && f.Longitude != null)
-                              .OrderByDescending(f => f.CreatedAt)
-                              .ToListAsync();
-        }
 
         public async Task<IEnumerable<VideoFileEntity>> GetVideoFilesAsync(int? folderId = null)
         {
@@ -327,40 +319,20 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await query.OrderByDescending(f => f.CreatedAt).ToListAsync();
         }
 
-        public async Task<IEnumerable<AudioFileEntity>> GetAudioByArtistAsync(string artist)
+        public async Task<IEnumerable<AudioFileEntity>> GetAudioByDurationAsync(TimeSpan? minDuration = null, TimeSpan? maxDuration = null)
         {
-            return await _dbSet.AsNoTracking()
-                              .OfType<AudioFileEntity>()
-                              .Where(f => !f.IsDeleted && 
-                                     f.Artist != null && 
-                                     f.Artist.ToLower().Contains(artist.ToLower()))
-                              .OrderBy(f => f.Album)
-                              .ThenBy(f => f.TrackNumber)
-                              .ToListAsync();
+            var query = _dbSet.AsNoTracking()
+                             .OfType<AudioFileEntity>()
+                             .Where(f => !f.IsDeleted && f.Duration != null);
+
+            if (minDuration.HasValue)
+                query = query.Where(f => f.Duration >= minDuration);
+            if (maxDuration.HasValue)
+                query = query.Where(f => f.Duration <= maxDuration);
+
+            return await query.OrderByDescending(f => f.Duration).ToListAsync();
         }
 
-        public async Task<IEnumerable<AudioFileEntity>> GetAudioByAlbumAsync(string album)
-        {
-            return await _dbSet.AsNoTracking()
-                              .OfType<AudioFileEntity>()
-                              .Where(f => !f.IsDeleted && 
-                                     f.Album != null && 
-                                     f.Album.ToLower().Contains(album.ToLower()))
-                              .OrderBy(f => f.TrackNumber)
-                              .ToListAsync();
-        }
-
-        public async Task<IEnumerable<AudioFileEntity>> GetAudioByGenreAsync(string genre)
-        {
-            return await _dbSet.AsNoTracking()
-                              .OfType<AudioFileEntity>()
-                              .Where(f => !f.IsDeleted && 
-                                     f.Genre != null && 
-                                     f.Genre.ToLower().Contains(genre.ToLower()))
-                              .OrderBy(f => f.Artist)
-                              .ThenBy(f => f.Album)
-                              .ToListAsync();
-        }
 
         public async Task<IEnumerable<DocumentFileEntity>> GetDocumentFilesAsync(int? folderId = null)
         {
@@ -374,25 +346,21 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await query.OrderByDescending(f => f.CreatedAt).ToListAsync();
         }
 
-        public async Task<IEnumerable<DocumentFileEntity>> GetDocumentsByAuthorAsync(string author)
+        public async Task<IEnumerable<DocumentFileEntity>> GetDocumentsByPageCountAsync(int? minPages = null, int? maxPages = null)
         {
-            return await _dbSet.AsNoTracking()
-                              .OfType<DocumentFileEntity>()
-                              .Where(f => !f.IsDeleted && 
-                                     f.Author != null && 
-                                     f.Author.ToLower().Contains(author.ToLower()))
-                              .OrderByDescending(f => f.CreationDate)
-                              .ToListAsync();
+            var query = _dbSet.AsNoTracking()
+                             .OfType<DocumentFileEntity>()
+                             .Where(f => !f.IsDeleted && f.PageCount != null);
+
+            if (minPages.HasValue)
+                query = query.Where(f => f.PageCount >= minPages);
+            if (maxPages.HasValue)
+                query = query.Where(f => f.PageCount <= maxPages);
+
+            return await query.OrderByDescending(f => f.PageCount).ToListAsync();
         }
 
-        public async Task<IEnumerable<DocumentFileEntity>> GetPasswordProtectedDocumentsAsync()
-        {
-            return await _dbSet.AsNoTracking()
-                              .OfType<DocumentFileEntity>()
-                              .Where(f => !f.IsDeleted && f.IsPasswordProtected)
-                              .OrderByDescending(f => f.CreatedAt)
-                              .ToListAsync();
-        }
+
 
         public async Task<IEnumerable<ArchiveFileEntity>> GetArchiveFilesAsync(int? folderId = null)
         {
@@ -406,23 +374,21 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await query.OrderByDescending(f => f.CreatedAt).ToListAsync();
         }
 
-        public async Task<IEnumerable<ArchiveFileEntity>> GetCorruptedArchivesAsync()
+        public async Task<IEnumerable<ArchiveFileEntity>> GetArchivesByFileCountAsync(int? minFiles = null, int? maxFiles = null)
         {
-            return await _dbSet.AsNoTracking()
-                              .OfType<ArchiveFileEntity>()
-                              .Where(f => !f.IsDeleted && f.IsCorrupted)
-                              .OrderByDescending(f => f.CreatedAt)
-                              .ToListAsync();
+            var query = _dbSet.AsNoTracking()
+                             .OfType<ArchiveFileEntity>()
+                             .Where(f => !f.IsDeleted && f.FileCount != null);
+
+            if (minFiles.HasValue)
+                query = query.Where(f => f.FileCount >= minFiles);
+            if (maxFiles.HasValue)
+                query = query.Where(f => f.FileCount <= maxFiles);
+
+            return await query.OrderByDescending(f => f.FileCount).ToListAsync();
         }
 
-        public async Task<IEnumerable<ArchiveFileEntity>> GetPasswordProtectedArchivesAsync()
-        {
-            return await _dbSet.AsNoTracking()
-                              .OfType<ArchiveFileEntity>()
-                              .Where(f => !f.IsDeleted && f.IsPasswordProtected)
-                              .OrderByDescending(f => f.CreatedAt)
-                              .ToListAsync();
-        }
+
 
         public async Task<IEnumerable<OtherFileEntity>> GetOtherFilesAsync(int? folderId = null)
         {
@@ -436,23 +402,6 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await query.OrderByDescending(f => f.CreatedAt).ToListAsync();
         }
 
-        public async Task<IEnumerable<OtherFileEntity>> GetExecutableFilesAsync()
-        {
-            return await _dbSet.AsNoTracking()
-                              .OfType<OtherFileEntity>()
-                              .Where(f => !f.IsDeleted && f.IsExecutable)
-                              .OrderByDescending(f => f.CreatedAt)
-                              .ToListAsync();
-        }
-
-        public async Task<IEnumerable<OtherFileEntity>> GetPotentiallyDangerousFilesAsync()
-        {
-            return await _dbSet.AsNoTracking()
-                              .OfType<OtherFileEntity>()
-                              .Where(f => !f.IsDeleted && f.IsPotentiallyDangerous)
-                              .OrderByDescending(f => f.CreatedAt)
-                              .ToListAsync();
-        }
 
         #endregion
 

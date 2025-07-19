@@ -14,6 +14,12 @@ namespace Backend.CMS.Infrastructure.Interfaces
         IProductRepository Products { get; }
         IProductVariantRepository ProductVariants { get; }
         IFileRepository Files { get; }
+        IImageFileRepository ImageFiles { get; }
+        IVideoFileRepository VideoFiles { get; }
+        IAudioFileRepository AudioFiles { get; }
+        IDocumentFileRepository DocumentFiles { get; }
+        IArchiveFileRepository ArchiveFiles { get; }
+        IOtherFileRepository OtherFiles { get; }
         IFolderRepository Folders { get; }
         IAddressRepository Addresses { get; }
         IContactDetailsRepository ContactDetails { get; }

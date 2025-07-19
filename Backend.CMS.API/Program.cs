@@ -8,6 +8,7 @@ using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.Events;
+using Backend.CMS.Infrastructure.Extensions;
 using Backend.CMS.Infrastructure.Interfaces;
 using Backend.CMS.Infrastructure.IRepositories;
 using Backend.CMS.Infrastructure.Jobs;
@@ -619,6 +620,8 @@ static void RegisterFileServices(WebApplicationBuilder builder)
     // Register file and folder services with their interfaces
     builder.Services.AddScoped<IFileService, FileService>();
     builder.Services.AddScoped<IFolderService, FolderService>();
+
+    builder.Services.AddFileServices();
 }
 
 static void RegisterBackgroundJobs(WebApplicationBuilder builder)

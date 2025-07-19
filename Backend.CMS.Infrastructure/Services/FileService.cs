@@ -1370,10 +1370,6 @@ namespace Backend.CMS.Infrastructure.Services
                 FolderId = file.FolderId,
                 DownloadCount = file.DownloadCount,
                 LastAccessedAt = file.LastAccessedAt,
-                Width = GetFileWidth(file),
-                Height = GetFileHeight(file),
-                Duration = GetFileDuration(file),
-                DurationFormatted = FormatDuration(GetFileDuration(file)),
                 Hash = file.Hash,
                 IsProcessed = file.IsProcessed,
                 ProcessingStatus = file.ProcessingStatus,
@@ -1728,137 +1724,25 @@ namespace Backend.CMS.Infrastructure.Services
                 case (ImageFileEntity sourceImage, ImageFileEntity destImage):
                     destImage.Width = sourceImage.Width;
                     destImage.Height = sourceImage.Height;
-                    destImage.ColorProfile = sourceImage.ColorProfile;
-                    destImage.DPI = sourceImage.DPI;
-                    destImage.HasTransparency = sourceImage.HasTransparency;
-                    destImage.CameraModel = sourceImage.CameraModel;
-                    destImage.CameraMake = sourceImage.CameraMake;
-                    destImage.DateTaken = sourceImage.DateTaken;
-                    destImage.Latitude = sourceImage.Latitude;
-                    destImage.Longitude = sourceImage.Longitude;
-                    destImage.Orientation = sourceImage.Orientation;
-                    destImage.ExposureTime = sourceImage.ExposureTime;
-                    destImage.FNumber = sourceImage.FNumber;
-                    destImage.ISO = sourceImage.ISO;
-                    destImage.FocalLength = sourceImage.FocalLength;
-                    destImage.IsAnimated = sourceImage.IsAnimated;
-                    destImage.FrameCount = sourceImage.FrameCount;
                     break;
 
                 case (VideoFileEntity sourceVideo, VideoFileEntity destVideo):
                     destVideo.Width = sourceVideo.Width;
                     destVideo.Height = sourceVideo.Height;
                     destVideo.Duration = sourceVideo.Duration;
-                    destVideo.VideoCodec = sourceVideo.VideoCodec;
-                    destVideo.AudioCodec = sourceVideo.AudioCodec;
-                    destVideo.FrameRate = sourceVideo.FrameRate;
-                    destVideo.Bitrate = sourceVideo.Bitrate;
-                    destVideo.AspectRatio = sourceVideo.AspectRatio;
-                    destVideo.ThumbnailTimestamp = sourceVideo.ThumbnailTimestamp;
-                    destVideo.HasAudio = sourceVideo.HasAudio;
-                    destVideo.HasVideo = sourceVideo.HasVideo;
-                    destVideo.AudioChannels = sourceVideo.AudioChannels;
-                    destVideo.AudioSampleRate = sourceVideo.AudioSampleRate;
-                    destVideo.Container = sourceVideo.Container;
-                    destVideo.IsHDR = sourceVideo.IsHDR;
-                    destVideo.ColorSpace = sourceVideo.ColorSpace;
-                    destVideo.RotationAngle = sourceVideo.RotationAngle;
-                    destVideo.IsVR360 = sourceVideo.IsVR360;
-                    destVideo.HasSubtitles = sourceVideo.HasSubtitles;
-                    destVideo.ChapterCount = sourceVideo.ChapterCount;
                     break;
 
                 case (AudioFileEntity sourceAudio, AudioFileEntity destAudio):
                     destAudio.Duration = sourceAudio.Duration;
-                    destAudio.AudioCodec = sourceAudio.AudioCodec;
-                    destAudio.Bitrate = sourceAudio.Bitrate;
-                    destAudio.SampleRate = sourceAudio.SampleRate;
-                    destAudio.Channels = sourceAudio.Channels;
-                    destAudio.BitDepth = sourceAudio.BitDepth;
-                    destAudio.Artist = sourceAudio.Artist;
-                    destAudio.Album = sourceAudio.Album;
-                    destAudio.Title = sourceAudio.Title;
-                    destAudio.Genre = sourceAudio.Genre;
-                    destAudio.Year = sourceAudio.Year;
-                    destAudio.TrackNumber = sourceAudio.TrackNumber;
-                    destAudio.TotalTracks = sourceAudio.TotalTracks;
-                    destAudio.Composer = sourceAudio.Composer;
-                    destAudio.AlbumArtist = sourceAudio.AlbumArtist;
-                    destAudio.AlbumArtFormat = sourceAudio.AlbumArtFormat;
-                    destAudio.IsLossless = sourceAudio.IsLossless;
-                    destAudio.HasLyrics = sourceAudio.HasLyrics;
-                    destAudio.Lyrics = sourceAudio.Lyrics;
-                    destAudio.Copyright = sourceAudio.Copyright;
-                    destAudio.Comment = sourceAudio.Comment;
-                    destAudio.ReplayGain = sourceAudio.ReplayGain;
-                    destAudio.Peak = sourceAudio.Peak;
                     break;
 
                 case (DocumentFileEntity sourceDoc, DocumentFileEntity destDoc):
-                    destDoc.PageCount = sourceDoc.PageCount;
-                    destDoc.Author = sourceDoc.Author;
-                    destDoc.DocumentTitle = sourceDoc.DocumentTitle;
-                    destDoc.Subject = sourceDoc.Subject;
-                    destDoc.Keywords = sourceDoc.Keywords;
-                    destDoc.Creator = sourceDoc.Creator;
-                    destDoc.Producer = sourceDoc.Producer;
-                    destDoc.CreationDate = sourceDoc.CreationDate;
-                    destDoc.ModificationDate = sourceDoc.ModificationDate;
-                    destDoc.DocumentVersion = sourceDoc.DocumentVersion;
-                    destDoc.IsPasswordProtected = sourceDoc.IsPasswordProtected;
-                    destDoc.AllowPrinting = sourceDoc.AllowPrinting;
-                    destDoc.AllowCopying = sourceDoc.AllowCopying;
-                    destDoc.AllowModification = sourceDoc.AllowModification;
-                    destDoc.IsDigitallySigned = sourceDoc.IsDigitallySigned;
-                    destDoc.SignatureAuthor = sourceDoc.SignatureAuthor;
-                    destDoc.SignatureDate = sourceDoc.SignatureDate;
-                    destDoc.HasComments = sourceDoc.HasComments;
-                    destDoc.HasAnnotations = sourceDoc.HasAnnotations;
-                    destDoc.HasBookmarks = sourceDoc.HasBookmarks;
-                    destDoc.HasForms = sourceDoc.HasForms;
-                    destDoc.HasEmbeddedFiles = sourceDoc.HasEmbeddedFiles;
-                    destDoc.Language = sourceDoc.Language;
-                    destDoc.ThumbnailPageNumber = sourceDoc.ThumbnailPageNumber;
-                    destDoc.WordCount = sourceDoc.WordCount;
-                    destDoc.CharacterCount = sourceDoc.CharacterCount;
-                    destDoc.ParagraphCount = sourceDoc.ParagraphCount;
-                    destDoc.LineCount = sourceDoc.LineCount;
-                    destDoc.DocumentFormat = sourceDoc.DocumentFormat;
-                    destDoc.IsOptimizedForWeb = sourceDoc.IsOptimizedForWeb;
+                    destDoc.PageCount = sourceDoc.PageCount;                
                     break;
 
                 case (ArchiveFileEntity sourceArchive, ArchiveFileEntity destArchive):
                     destArchive.FileCount = sourceArchive.FileCount;
                     destArchive.UncompressedSize = sourceArchive.UncompressedSize;
-                    destArchive.CompressionRatio = sourceArchive.CompressionRatio;
-                    destArchive.CompressionMethod = sourceArchive.CompressionMethod;
-                    destArchive.IsPasswordProtected = sourceArchive.IsPasswordProtected;
-                    destArchive.IsEncrypted = sourceArchive.IsEncrypted;
-                    destArchive.EncryptionMethod = sourceArchive.EncryptionMethod;
-                    destArchive.IsSelfExtracting = sourceArchive.IsSelfExtracting;
-                    destArchive.IsMultiVolume = sourceArchive.IsMultiVolume;
-                    destArchive.VolumeCount = sourceArchive.VolumeCount;
-                    destArchive.HasComment = sourceArchive.HasComment;
-                    destArchive.ArchiveComment = sourceArchive.ArchiveComment;
-                    destArchive.CreatedBy = sourceArchive.CreatedBy;
-                    destArchive.ArchiveDate = sourceArchive.ArchiveDate;
-                    destArchive.IsCorrupted = sourceArchive.IsCorrupted;
-                    destArchive.IsTestable = sourceArchive.IsTestable;
-                    destArchive.LastTestedAt = sourceArchive.LastTestedAt;
-                    destArchive.TestResult = sourceArchive.TestResult;
-                    destArchive.TestErrorMessage = sourceArchive.TestErrorMessage;
-                    break;
-
-                case (OtherFileEntity sourceOther, OtherFileEntity destOther):
-                    destOther.IsSuspicious = sourceOther.IsSuspicious;
-                    destOther.IsExecutable = sourceOther.IsExecutable;
-                    destOther.HasMacros = sourceOther.HasMacros;
-                    destOther.SecurityAnalysisResult = sourceOther.SecurityAnalysisResult;
-                    destOther.SecurityScanDate = sourceOther.SecurityScanDate;
-                    destOther.ThreatLevel = sourceOther.ThreatLevel;
-                    destOther.DetectedFileType = sourceOther.DetectedFileType;
-                    destOther.MimeTypeDetected = sourceOther.MimeTypeDetected;
-                    destOther.RequiresSpecialHandling = sourceOther.RequiresSpecialHandling;
                     break;
             }
         }

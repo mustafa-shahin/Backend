@@ -64,7 +64,6 @@ namespace Backend.CMS.Infrastructure.Data
         public DbSet<DocumentFileEntity> DocumentFiles { get; set; }
         public DbSet<ArchiveFileEntity> ArchiveFiles { get; set; }
         public DbSet<OtherFileEntity> OtherFiles { get; set; }
-        public DbSet<ArchiveEntry> ArchiveEntries { get; set; }
         
         public DbSet<Folder> Folders { get; set; }
         public DbSet<Backend.CMS.Domain.Entities.FileAccess> FileAccesses { get; set; }
@@ -120,7 +119,7 @@ namespace Backend.CMS.Infrastructure.Data
 
         private void ConfigureFileEntities(ModelBuilder modelBuilder)
         {
-            // Configure inheritance hierarchy using Table Per Hierarchy (TPH)
+            // Configure inheritance hierarchy using Table Per Type (TPT)
             ConfigureBaseFileEntity(modelBuilder);
             ConfigureImageFileEntity(modelBuilder);
             ConfigureVideoFileEntity(modelBuilder);
@@ -128,7 +127,6 @@ namespace Backend.CMS.Infrastructure.Data
             ConfigureDocumentFileEntity(modelBuilder);
             ConfigureArchiveFileEntity(modelBuilder);
             ConfigureOtherFileEntity(modelBuilder);
-            ConfigureArchiveEntryEntity(modelBuilder);
         }
 
         private void ConfigureBaseFileEntity(ModelBuilder modelBuilder)
@@ -137,14 +135,8 @@ namespace Backend.CMS.Infrastructure.Data
             {
                 entity.HasKey(e => e.Id);
 
-                // Configure Table Per Hierarchy (TPH) inheritance
-                entity.HasDiscriminator<string>("FileTypeDiscriminator")
-                    .HasValue<ImageFileEntity>("Image")
-                    .HasValue<VideoFileEntity>("Video")
-                    .HasValue<AudioFileEntity>("Audio")
-                    .HasValue<DocumentFileEntity>("Document")
-                    .HasValue<ArchiveFileEntity>("Archive")
-                    .HasValue<OtherFileEntity>("Other");
+                // Configure Table Per Type (TPT) inheritance - each derived type gets its own table
+                entity.UseTptMappingStrategy();
 
                 // Basic string properties
                 entity.Property(e => e.OriginalFileName).HasMaxLength(255).IsRequired();
@@ -191,21 +183,16 @@ namespace Backend.CMS.Infrastructure.Data
                 entity.HasIndex(e => e.FolderId)
                     .HasDatabaseName("IX_Files_FolderId");
 
-                entity.HasIndex("FileTypeDiscriminator")
-                    .HasDatabaseName("IX_Files_FileTypeDiscriminator");
-
                 // Composite indexes for common query patterns
-                entity.HasIndex(new[] { "FolderId", "FileTypeDiscriminator" })
-                    .HasDatabaseName("IX_Files_Folder_Type")
-                    .HasFilter("\"IsDeleted\" = false");
+                entity.HasIndex(e => new { e.FolderId, e.IsDeleted })
+                    .HasDatabaseName("IX_Files_Folder_Deleted");
 
                 entity.HasIndex(e => new { e.IsPublic, e.CreatedAt })
                     .HasDatabaseName("IX_Files_Public_Created")
                     .HasFilter("\"IsDeleted\" = false");
 
-                entity.HasIndex(new[] { "FileTypeDiscriminator", "IsPublic" })
-                    .HasDatabaseName("IX_Files_Type_Public")
-                    .HasFilter("\"IsDeleted\" = false");
+                entity.HasIndex(e => new { e.IsPublic, e.IsDeleted })
+                    .HasDatabaseName("IX_Files_Public_Deleted");
 
                 entity.HasIndex(e => new { e.CreatedAt, e.IsDeleted })
                     .HasDatabaseName("IX_Files_Created_Deleted");
@@ -225,23 +212,11 @@ namespace Backend.CMS.Infrastructure.Data
         {
             modelBuilder.Entity<ImageFileEntity>(entity =>
             {
+                entity.ToTable("ImageFiles");
                 // Image-specific properties
                 entity.Property(e => e.Width);
                 entity.Property(e => e.Height);
                 entity.Property(e => e.ThumbnailContent).HasColumnType("bytea");
-                entity.Property(e => e.ColorProfile).HasMaxLength(50);
-                entity.Property(e => e.CameraModel).HasMaxLength(100);
-                entity.Property(e => e.CameraMake).HasMaxLength(100);
-                entity.Property(e => e.Orientation).HasMaxLength(50);
-
-                // Geographic properties with precision for GPS coordinates
-                entity.Property(e => e.Latitude).HasPrecision(18, 15);
-                entity.Property(e => e.Longitude).HasPrecision(18, 15);
-
-                // Index for geographic queries
-                entity.HasIndex(e => new { e.Latitude, e.Longitude })
-                    .HasDatabaseName("IX_ImageFiles_GeoLocation")
-                    .HasFilter("\"Latitude\" IS NOT NULL AND \"Longitude\" IS NOT NULL");
 
                 // Index for dimension-based queries
                 entity.HasIndex(e => new { e.Width, e.Height })
@@ -254,21 +229,12 @@ namespace Backend.CMS.Infrastructure.Data
         {
             modelBuilder.Entity<VideoFileEntity>(entity =>
             {
+                entity.ToTable("VideoFiles");
                 // Video-specific properties
                 entity.Property(e => e.Width);
                 entity.Property(e => e.Height);
                 entity.Property(e => e.Duration);
-                entity.Property(e => e.VideoCodec).HasMaxLength(50);
-                entity.Property(e => e.AudioCodec).HasMaxLength(50);
-                entity.Property(e => e.AspectRatio).HasMaxLength(20);
-                entity.Property(e => e.Container).HasMaxLength(100);
-                entity.Property(e => e.ColorSpace).HasMaxLength(50);
                 entity.Property(e => e.ThumbnailContent).HasColumnType("bytea");
-
-                // Index for video quality queries
-                entity.HasIndex(e => new { e.Width, e.Height, e.FrameRate })
-                    .HasDatabaseName("IX_VideoFiles_Quality")
-                    .HasFilter("\"Width\" IS NOT NULL AND \"Height\" IS NOT NULL");
 
                 // Index for duration-based queries
                 entity.HasIndex(e => e.Duration)
@@ -281,38 +247,9 @@ namespace Backend.CMS.Infrastructure.Data
         {
             modelBuilder.Entity<AudioFileEntity>(entity =>
             {
+                entity.ToTable("AudioFiles");
                 // Audio-specific properties
                 entity.Property(e => e.Duration);
-                entity.Property(e => e.AudioCodec).HasMaxLength(50);
-                entity.Property(e => e.BitDepth).HasMaxLength(20);
-                entity.Property(e => e.Artist).HasMaxLength(100);
-                entity.Property(e => e.Album).HasMaxLength(100);
-                entity.Property(e => e.Title).HasMaxLength(100);
-                entity.Property(e => e.Genre).HasMaxLength(50);
-                entity.Property(e => e.Composer).HasMaxLength(100);
-                entity.Property(e => e.AlbumArtist).HasMaxLength(100);
-                entity.Property(e => e.AlbumArtFormat).HasMaxLength(20);
-                entity.Property(e => e.Lyrics).HasMaxLength(5000);
-                entity.Property(e => e.Copyright).HasMaxLength(100);
-                entity.Property(e => e.Comment).HasMaxLength(1000);
-                entity.Property(e => e.AlbumArt).HasColumnType("bytea");
-
-                // Indexes for music library queries
-                entity.HasIndex(e => e.Artist)
-                    .HasDatabaseName("IX_AudioFiles_Artist")
-                    .HasFilter("\"Artist\" IS NOT NULL");
-
-                entity.HasIndex(e => e.Album)
-                    .HasDatabaseName("IX_AudioFiles_Album")
-                    .HasFilter("\"Album\" IS NOT NULL");
-
-                entity.HasIndex(e => new { e.Artist, e.Album })
-                    .HasDatabaseName("IX_AudioFiles_Artist_Album")
-                    .HasFilter("\"Artist\" IS NOT NULL AND \"Album\" IS NOT NULL");
-
-                entity.HasIndex(e => e.Genre)
-                    .HasDatabaseName("IX_AudioFiles_Genre")
-                    .HasFilter("\"Genre\" IS NOT NULL");
             });
         }
 
@@ -320,34 +257,15 @@ namespace Backend.CMS.Infrastructure.Data
         {
             modelBuilder.Entity<DocumentFileEntity>(entity =>
             {
+                entity.ToTable("DocumentFiles");
                 // Document-specific properties
-                entity.Property(e => e.Author).HasMaxLength(100);
-                entity.Property(e => e.DocumentTitle).HasMaxLength(200);
-                entity.Property(e => e.Subject).HasMaxLength(500);
-                entity.Property(e => e.Keywords).HasMaxLength(1000);
-                entity.Property(e => e.Creator).HasMaxLength(100);
-                entity.Property(e => e.Producer).HasMaxLength(100);
-                entity.Property(e => e.DocumentVersion).HasMaxLength(20);
-                entity.Property(e => e.SignatureAuthor).HasMaxLength(100);
-                entity.Property(e => e.Language).HasMaxLength(50);
-                entity.Property(e => e.DocumentFormat).HasMaxLength(50);
+                entity.Property(e => e.PageCount);
                 entity.Property(e => e.ThumbnailContent).HasColumnType("bytea");
-
-                // Indexes for document searches
-                entity.HasIndex(e => e.Author)
-                    .HasDatabaseName("IX_DocumentFiles_Author")
-                    .HasFilter("\"Author\" IS NOT NULL");
-
-                entity.HasIndex(e => e.DocumentTitle)
-                    .HasDatabaseName("IX_DocumentFiles_Title")
-                    .HasFilter("\"DocumentTitle\" IS NOT NULL");
-
+                
+                // Index for page count queries
                 entity.HasIndex(e => e.PageCount)
                     .HasDatabaseName("IX_DocumentFiles_PageCount")
                     .HasFilter("\"PageCount\" IS NOT NULL");
-
-                entity.HasIndex(e => e.IsPasswordProtected)
-                    .HasDatabaseName("IX_DocumentFiles_PasswordProtected");
             });
         }
 
@@ -355,23 +273,20 @@ namespace Backend.CMS.Infrastructure.Data
         {
             modelBuilder.Entity<ArchiveFileEntity>(entity =>
             {
+                entity.ToTable("ArchiveFiles");
                 // Archive-specific properties
-                entity.Property(e => e.CompressionMethod).HasMaxLength(50);
-                entity.Property(e => e.EncryptionMethod).HasMaxLength(50);
-                entity.Property(e => e.ArchiveComment).HasMaxLength(1000);
-                entity.Property(e => e.CreatedBy).HasMaxLength(100);
-                entity.Property(e => e.TestErrorMessage).HasMaxLength(500);
-
-                // Indexes for archive management
-                entity.HasIndex(e => e.IsPasswordProtected)
-                    .HasDatabaseName("IX_ArchiveFiles_PasswordProtected");
-
-                entity.HasIndex(e => e.CompressionMethod)
-                    .HasDatabaseName("IX_ArchiveFiles_CompressionMethod")
-                    .HasFilter("\"CompressionMethod\" IS NOT NULL");
-
-                entity.HasIndex(e => e.IsCorrupted)
-                    .HasDatabaseName("IX_ArchiveFiles_Corrupted");
+                entity.Property(e => e.FileCount);
+                entity.Property(e => e.UncompressedSize);
+                
+                // Index for file count queries
+                entity.HasIndex(e => e.FileCount)
+                    .HasDatabaseName("IX_ArchiveFiles_FileCount")
+                    .HasFilter("\"FileCount\" IS NOT NULL");
+                    
+                // Index for size comparison queries
+                entity.HasIndex(e => e.UncompressedSize)
+                    .HasDatabaseName("IX_ArchiveFiles_UncompressedSize")
+                    .HasFilter("\"UncompressedSize\" IS NOT NULL");
             });
         }
 
@@ -379,61 +294,8 @@ namespace Backend.CMS.Infrastructure.Data
         {
             modelBuilder.Entity<OtherFileEntity>(entity =>
             {
-                // Other file type properties
-                entity.Property(e => e.ApplicationName).HasMaxLength(100);
-                entity.Property(e => e.ApplicationVersion).HasMaxLength(50);
-                entity.Property(e => e.ScriptLanguage).HasMaxLength(50);
-                entity.Property(e => e.Encoding).HasMaxLength(50);
-                entity.Property(e => e.SignaturePublisher).HasMaxLength(100);
-                entity.Property(e => e.FileFormat).HasMaxLength(100);
-                entity.Property(e => e.FormatVersion).HasMaxLength(50);
-                entity.Property(e => e.EncryptionMethod).HasMaxLength(50);
-                entity.Property(e => e.RequiredSoftware).HasMaxLength(200);
-                entity.Property(e => e.FileTypeDescription).HasMaxLength(1000);
-                entity.Property(e => e.SecurityWarning).HasMaxLength(500);
-                entity.Property(e => e.ProgrammingLanguage).HasMaxLength(50);
-                entity.Property(e => e.DatabaseType).HasMaxLength(50);
-
-                // Indexes for security and analysis
-                entity.HasIndex(e => e.IsPotentiallyDangerous)
-                    .HasDatabaseName("IX_OtherFiles_PotentiallyDangerous");
-
-                entity.HasIndex(e => e.IsExecutable)
-                    .HasDatabaseName("IX_OtherFiles_Executable");
-
-                entity.HasIndex(e => e.HasDigitalSignature)
-                    .HasDatabaseName("IX_OtherFiles_DigitalSignature");
-            });
-        }
-
-        private void ConfigureArchiveEntryEntity(ModelBuilder modelBuilder)
-        {
-            modelBuilder.Entity<ArchiveEntry>(entity =>
-            {
-                entity.HasKey(e => e.Id);
-
-                entity.Property(e => e.RelativePath).HasMaxLength(500).IsRequired();
-                entity.Property(e => e.FileName).HasMaxLength(255);
-                entity.Property(e => e.CompressionMethod).HasMaxLength(50);
-                entity.Property(e => e.Checksum).HasMaxLength(64);
-
-                // Foreign key relationship
-                entity.HasOne(e => e.ArchiveFile)
-                    .WithMany(f => f.ArchiveEntries)
-                    .HasForeignKey(e => e.ArchiveFileId)
-                    .OnDelete(DeleteBehavior.Cascade);
-
-                // Indexes
-                entity.HasIndex(e => e.ArchiveFileId)
-                    .HasDatabaseName("IX_ArchiveEntries_ArchiveFileId");
-
-                entity.HasIndex(e => new { e.ArchiveFileId, e.RelativePath })
-                    .HasDatabaseName("IX_ArchiveEntries_Archive_Path");
-
-                entity.HasIndex(e => e.IsDirectory)
-                    .HasDatabaseName("IX_ArchiveEntries_IsDirectory");
-
-                entity.ToTable("ArchiveEntries");
+                entity.ToTable("OtherFiles");
+                // No additional properties for OtherFileEntity
             });
         }
 
