@@ -35,7 +35,7 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(typeof(PaginatedResult<OtherFileDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PaginatedResult<OtherFileDto>>> GetOtherFiles([FromQuery] OtherSearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<OtherFileDto>>> GetOtherFiles([FromQuery] OtherFileSearchDto searchDto)
         {
             try
             {
@@ -148,7 +148,7 @@ namespace Backend.CMS.API.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<OtherFileDto>> UpdateOtherFile([FromRoute] int id, [FromBody] UpdateOtherDto updateDto)
+        public async Task<ActionResult<OtherFileDto>> UpdateOtherFile([FromRoute] int id, [FromBody] UpdateOtherFileDto updateDto)
         {
             try
             {

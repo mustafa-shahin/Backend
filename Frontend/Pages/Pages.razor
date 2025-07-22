@@ -412,12 +412,12 @@
         {
             if (action == "create")
             {
-                await Task.Delay(100); // Wait for render
+                await Task.Delay(TimeSpan.FromMilliseconds(100)); // Wait for render
                 ShowCreateDialog();
             }
             else if (action == "edit" && query.TryGetValue("id", out var id) && int.TryParse(id, out var pageId))
             {
-                await Task.Delay(100);
+                await Task.Delay(TimeSpan.FromMilliseconds(100));
                 await ShowEditDialog(pageId);
             }
         }

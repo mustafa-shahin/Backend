@@ -179,7 +179,7 @@
             _debounceTokenSource = new CancellationTokenSource();
 
             // Debounce rapid page changes
-            await Task.Delay(50, _debounceTokenSource.Token);
+            await Task.Delay(TimeSpan.FromMilliseconds(50), _debounceTokenSource.Token);
 
             if (!_debounceTokenSource.Token.IsCancellationRequested)
             {

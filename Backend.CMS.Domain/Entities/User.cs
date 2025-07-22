@@ -2,7 +2,6 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 using Backend.CMS.Domain.Common;
-using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
 
 namespace Backend.CMS.Domain.Entities
@@ -49,11 +48,11 @@ namespace Backend.CMS.Domain.Entities
         [JsonIgnore] 
         public List<string> RecoveryCodes { get; set; } = [];
 
-        public int? PictureFileId { get; set; }
+        public int? PictureId { get; set; }
 
-        [ForeignKey("PictureFileId")]
+        [ForeignKey("PictureId")]
         [JsonIgnore] 
-        public BaseFileEntity? Picture { get; set; }
+        public Image? Picture { get; set; }
 
         public DateTime? EmailVerifiedAt { get; set; }
 
@@ -107,7 +106,7 @@ namespace Backend.CMS.Domain.Entities
 
         [NotMapped]
         [JsonIgnore]
-        public string? PictureUrl => Picture != null ? $"/api/v1/files/{PictureFileId}/download" : null;
+        public string? PictureUrl => Picture != null ? $"/api/v1/images/{PictureId}/download" : null;
     }
 
     public class UserExternalLogin : BaseEntity

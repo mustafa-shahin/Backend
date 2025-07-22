@@ -687,7 +687,7 @@
             FirstName = user.FirstName,
             LastName = user.LastName,
             IsActive = user.IsActive,
-            PictureFileId = user.PictureFileId,
+            PictureId = user.PictureId,
             Role = user.Role,
             Addresses = user.Addresses.Select(a => new CreateAddressDto
             {
@@ -734,7 +734,7 @@
             FirstName = createDto.FirstName,
             LastName = createDto.LastName,
             IsActive = createDto.IsActive,
-            PictureFileId = createDto.PictureFileId,
+            PictureId = createDto.PictureId,
             Role = createDto.Role,
             Addresses = createDto.Addresses.Select(a => new UpdateAddressDto
             {

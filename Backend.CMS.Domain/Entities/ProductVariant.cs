@@ -61,6 +61,6 @@ namespace Backend.CMS.Domain.Entities
 
         // Computed property for featured image
         [NotMapped]
-        public string? FeaturedImageUrl => Images.OrderBy(i => i.Position).FirstOrDefault()?.ImageUrl;
+        public Image? FeaturedImage => Images.OrderBy(i => i.Position).FirstOrDefault()?.Image;
     }
 }

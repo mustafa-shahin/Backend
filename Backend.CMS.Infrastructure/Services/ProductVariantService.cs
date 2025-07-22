@@ -126,7 +126,7 @@ namespace Backend.CMS.Infrastructure.Services
             // Validate images
             if (createVariantDto.Images.Any())
             {
-                await ValidateImagesAsync(createVariantDto.Images.Select(i => i.FileId).ToList());
+                await ValidateImagesAsync(createVariantDto.Images.Select(i => i.ImageId).ToList());
             }
 
             var variant = _mapper.Map<ProductVariant>(createVariantDto);
@@ -179,7 +179,7 @@ namespace Backend.CMS.Infrastructure.Services
             // Validate images
             if (updateVariantDto.Images.Any())
             {
-                await ValidateImagesAsync(updateVariantDto.Images.Select(i => i.FileId).ToList());
+                await ValidateImagesAsync(updateVariantDto.Images.Select(i => i.ImageId).ToList());
             }
 
             _mapper.Map(updateVariantDto, variant);
@@ -362,7 +362,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (variant == null)
                 throw new ArgumentException($"Product variant with ID {variantId} not found");
 
-            await ValidateImageAsync(createImageDto.FileId);
+            await ValidateImageAsync(createImageDto.ImageId);
 
             var variantImage = _mapper.Map<ProductVariantImage>(createImageDto);
             variantImage.ProductVariantId = variantId;
@@ -376,7 +376,7 @@ namespace Backend.CMS.Infrastructure.Services
             await _unitOfWork.GetRepository<ProductVariantImage>().AddAsync(variantImage);
             await _unitOfWork.GetRepository<ProductVariantImage>().SaveChangesAsync();
 
-            _logger.LogInformation("Added image to variant {VariantId}: FileId {FileId}", variantId, createImageDto.FileId);
+            _logger.LogInformation("Added image to variant {VariantId}: FileId {FileId}", variantId, createImageDto.ImageId);
             return _mapper.Map<ProductVariantImageDto>(variantImage);
         }
 
@@ -385,8 +385,6 @@ namespace Backend.CMS.Infrastructure.Services
             var variantImage = await _unitOfWork.GetRepository<ProductVariantImage>().GetByIdAsync(imageId);
             if (variantImage == null)
                 throw new ArgumentException($"Product variant image with ID {imageId} not found");
-
-            await ValidateImageAsync(updateImageDto.FileId);
 
             var oldIsFeatured = variantImage.IsFeatured;
             _mapper.Map(updateImageDto, variantImage);
@@ -445,12 +443,9 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task ValidateImageAsync(int fileId)
         {
-            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
-            if (file == null)
-                throw new ArgumentException($"File with ID {fileId} not found");
-
-            if (file.FileType != Domain.Enums.FileType.Image)
-                throw new ArgumentException($"File with ID {fileId} is not an image");
+            var image = await _unitOfWork.Images.GetByIdAsync(fileId);
+            if (image == null)
+                throw new ArgumentException($"Image with ID {fileId} not found");
         }
 
         private async Task AddVariantImagesAsync(int variantId, List<CreateProductVariantImageDto> images)
@@ -482,7 +477,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var variantImage = new ProductVariantImage
                 {
                     ProductVariantId = variantId,
-                    FileId = imageDto.FileId,
+                    ImageId = imageDto.ImageId,
                     Alt = imageDto.Alt,
                     Caption = imageDto.Caption,
                     Position = imageDto.Position,

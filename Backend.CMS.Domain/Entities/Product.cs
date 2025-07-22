@@ -1,6 +1,5 @@
 ﻿using Backend.CMS.Domain.Common;
 using Backend.CMS.Domain.Enums;
-using Backend.CMS.Domain.Entities.Files;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 namespace Backend.CMS.Domain.Entities
@@ -60,7 +59,7 @@ namespace Backend.CMS.Domain.Entities
 
         // Computed property for featured image
         [NotMapped]
-        public string? FeaturedImageUrl => Images.OrderBy(i => i.Position).FirstOrDefault()?.ImageUrl;
+        public Image? FeaturedImage => Images.OrderBy(i => i.Position).FirstOrDefault()?.Image;
 
         [NotMapped]
         public bool IsAvailable => Status == ProductStatus.Active && Variants.Any(v => v.Quantity > 0);
@@ -94,10 +93,10 @@ namespace Backend.CMS.Domain.Entities
         public Product Product { get; set; } = null!;
 
         [Required]
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
 
-        [ForeignKey("FileId")]
-        public BaseFileEntity File { get; set; } = null!;
+        [ForeignKey("ImageId")]
+        public Image Image { get; set; } = null!;
 
         [MaxLength(255)]
         public string? Alt { get; set; }
@@ -108,13 +107,6 @@ namespace Backend.CMS.Domain.Entities
         public int Position { get; set; } = 0;
 
         public bool IsFeatured { get; set; } = false;
-
-        // Computed property for image URL
-        [NotMapped]
-        public string ImageUrl => $"/api/files/{FileId}/download";
-
-        [NotMapped]
-        public string? ThumbnailUrl => $"/api/files/{FileId}/thumbnail";
     }
 
     public class ProductVariantImage : BaseEntity
@@ -126,10 +118,10 @@ namespace Backend.CMS.Domain.Entities
         public ProductVariant ProductVariant { get; set; } = null!;
 
         [Required]
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
 
-        [ForeignKey("FileId")]
-        public BaseFileEntity File { get; set; } = null!;
+        [ForeignKey("ImageId")]
+        public Image Image { get; set; } = null!;
 
         [MaxLength(255)]
         public string? Alt { get; set; }
@@ -140,13 +132,6 @@ namespace Backend.CMS.Domain.Entities
         public int Position { get; set; } = 0;
 
         public bool IsFeatured { get; set; } = false;
-
-        // Computed property for image URL
-        [NotMapped]
-        public string ImageUrl => $"/api/files/{FileId}/download";
-
-        [NotMapped]
-        public string? ThumbnailUrl => $"/api/files/{FileId}/thumbnail";
     }
 
 }

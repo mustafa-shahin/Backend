@@ -16,18 +16,16 @@ namespace Backend.CMS.Infrastructure.Extensions
         public static IServiceCollection AddFileServices(this IServiceCollection services)
         {
             // Register base file service (keep the existing one for backward compatibility)
-            services.AddScoped<FileService>();
+           
 
             // Register type-specific services
-            services.AddScoped<IImageFileService, ImageFileService>();
-            services.AddScoped<IVideoFileService, VideoFileService>();
-            services.AddScoped<IAudioFileService, AudioFileService>();
-            services.AddScoped<IDocumentFileService, DocumentFileService>();
-            services.AddScoped<IArchiveFileService, ArchiveFileService>();
+            services.AddScoped<IImageService, ImageService>();
+            services.AddScoped<IVideoService, VideoService>();
+            services.AddScoped<IAudioService, AudioService>();
+            services.AddScoped<IDocumentService, DocumentService>();
+            services.AddScoped<IArchiveService, ArchiveService>();
             services.AddScoped<IOtherFileService, OtherFileService>();
 
-            // Register the service factory
-            services.AddScoped<IFileServiceFactory, FileServiceFactory>();
 
             return services;
         }
@@ -41,10 +39,10 @@ namespace Backend.CMS.Infrastructure.Extensions
             services.AddScoped<IImageProcessingService, ImageProcessingService>();
             
             // Register file validation service if not already registered
-            services.AddScoped<IFileValidationService, FileValidationService>();
+            services.AddScoped<IFileAggregatorService, FileAggregatorService>();
             
             // Register file URL builder if not already registered
-            services.AddScoped<IFileUrlBuilder, FileUrlBuilder>();
+            services.AddScoped<IFileUrlService, FileUrlService>();
 
             return services;
         }

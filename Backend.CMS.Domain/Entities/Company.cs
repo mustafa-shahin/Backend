@@ -1,4 +1,5 @@
 ﻿using Backend.CMS.Domain.Common;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Backend.CMS.Domain.Entities
 {
@@ -6,8 +7,15 @@ namespace Backend.CMS.Domain.Entities
     {
         public string Name { get; set; } = string.Empty;
         public string? Description { get; set; }
-        public string? Logo { get; set; }
-        public string? Favicon { get; set; }
+        
+        public int? LogoId { get; set; }
+        [ForeignKey("LogoId")]
+        public Image? Logo { get; set; }
+        
+        public int? FaviconId { get; set; }
+        [ForeignKey("FaviconId")]
+        public Image? Favicon { get; set; }
+        
         public Dictionary<string, object> BrandingSettings { get; set; } = [];
         public Dictionary<string, object> BusinessSettings { get; set; } = [];
         public bool IsActive { get; set; } = true;

@@ -17,7 +17,15 @@ namespace Backend.CMS.Application.DTOs
         public int? ParentFolderId { get; set; }
         public string? ParentFolderPath { get; set; }
         public List<FolderDto> SubFolders { get; set; } = new();
-        public List<FileDto> Files { get; set; } = new();
+        
+        // File type collections
+        public List<ImageDto> Images { get; set; } = new();
+        public List<DocumentDto> Documents { get; set; } = new();
+        public List<AudioDto> Audios { get; set; } = new();
+        public List<VideoDto> Videos { get; set; } = new();
+        public List<ArchiveDto> Archives { get; set; } = new();
+        public List<OtherFileDto> OtherFiles { get; set; } = new();
+        
         public bool IsPublic { get; set; }
         public Dictionary<string, object> Metadata { get; set; } = new();
         public FolderType FolderType { get; set; }
@@ -25,7 +33,7 @@ namespace Backend.CMS.Application.DTOs
         public DateTime UpdatedAt { get; set; }
 
         // Computed properties
-        public int FileCount { get; set; }
+        public int TotalFileCount { get; set; }
         public int SubFolderCount { get; set; }
         public long TotalSize { get; set; }
         public string TotalSizeFormatted { get; set; } = string.Empty;
@@ -79,7 +87,7 @@ namespace Backend.CMS.Application.DTOs
         public List<FolderTreeDto> Children { get; set; } = new();
         public FolderType FolderType { get; set; }
         public bool IsPublic { get; set; }
-        public int FileCount { get; set; }
+        public int TotalFileCount { get; set; }
         public bool HasSubFolders { get; set; }
         public int Level { get; set; }
         public bool IsExpanded { get; set; }

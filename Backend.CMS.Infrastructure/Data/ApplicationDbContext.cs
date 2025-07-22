@@ -1,13 +1,11 @@
 ﻿using Backend.CMS.Domain.Common;
 using Backend.CMS.Domain.Entities;
-using Backend.CMS.Domain.Entities.Files;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using System.Linq.Expressions;
 using System.Text.Json;
-using FileAccess = Backend.CMS.Domain.Entities.FileAccess;
 
 namespace Backend.CMS.Infrastructure.Data
 {
@@ -56,17 +54,15 @@ namespace Backend.CMS.Infrastructure.Data
         public DbSet<RolePermission> RolePermissions { get; set; }
         public DbSet<UserPermission> UserPermissions { get; set; }
 
-        // Files - New inheritance hierarchy
-        public DbSet<BaseFileEntity> Files { get; set; }
-        public DbSet<ImageFileEntity> ImageFiles { get; set; }
-        public DbSet<VideoFileEntity> VideoFiles { get; set; }
-        public DbSet<AudioFileEntity> AudioFiles { get; set; }
-        public DbSet<DocumentFileEntity> DocumentFiles { get; set; }
-        public DbSet<ArchiveFileEntity> ArchiveFiles { get; set; }
-        public DbSet<OtherFileEntity> OtherFiles { get; set; }
+        // Files - New separate entities
+        public DbSet<Image> Images { get; set; }
+        public DbSet<Video> Videos { get; set; }
+        public DbSet<Audio> Audios { get; set; }
+        public DbSet<Document> Documents { get; set; }
+        public DbSet<Archive> Archives { get; set; }
+        public DbSet<OtherFile> OtherFiles { get; set; }
         
         public DbSet<Folder> Folders { get; set; }
-        public DbSet<Backend.CMS.Domain.Entities.FileAccess> FileAccesses { get; set; }
 
         // Search and Indexing
         public DbSet<SearchIndex> SearchIndexes { get; set; }
@@ -119,187 +115,214 @@ namespace Backend.CMS.Infrastructure.Data
 
         private void ConfigureFileEntities(ModelBuilder modelBuilder)
         {
-            // Configure inheritance hierarchy using Table Per Type (TPT)
-            ConfigureBaseFileEntity(modelBuilder);
-            ConfigureImageFileEntity(modelBuilder);
-            ConfigureVideoFileEntity(modelBuilder);
-            ConfigureAudioFileEntity(modelBuilder);
-            ConfigureDocumentFileEntity(modelBuilder);
-            ConfigureArchiveFileEntity(modelBuilder);
+            // Configure new separate file entities
+            ConfigureImageEntity(modelBuilder);
+            ConfigureVideoEntity(modelBuilder);
+            ConfigureAudioEntity(modelBuilder);
+            ConfigureDocumentEntity(modelBuilder);
+            ConfigureArchiveEntity(modelBuilder);
             ConfigureOtherFileEntity(modelBuilder);
         }
 
-        private void ConfigureBaseFileEntity(ModelBuilder modelBuilder)
+        private void ConfigureImageEntity(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<BaseFileEntity>(entity =>
+            modelBuilder.Entity<Image>(entity =>
             {
                 entity.HasKey(e => e.Id);
+                entity.ToTable("Images");
 
-                // Configure Table Per Type (TPT) inheritance - each derived type gets its own table
-                entity.UseTptMappingStrategy();
-
-                // Basic string properties
-                entity.Property(e => e.OriginalFileName).HasMaxLength(255).IsRequired();
-                entity.Property(e => e.StoredFileName).HasMaxLength(255).IsRequired();
+                // Basic properties
+                entity.Property(e => e.Name).HasMaxLength(255).IsRequired();
+                entity.Property(e => e.FileName).HasMaxLength(255).IsRequired();
                 entity.Property(e => e.ContentType).HasMaxLength(100).IsRequired();
-                entity.Property(e => e.FileExtension).HasMaxLength(20);
+                entity.Property(e => e.Extension).HasMaxLength(20);
                 entity.Property(e => e.Description).HasMaxLength(1000);
                 entity.Property(e => e.Alt).HasMaxLength(255);
-                entity.Property(e => e.Hash).HasMaxLength(512);
-                entity.Property(e => e.ProcessingStatus).HasMaxLength(100);
 
-                // File content stored as byte arrays
-                entity.Property(e => e.FileContent)
+                // File content
+                entity.Property(e => e.Content)
                     .IsRequired()
-                    .HasColumnType("bytea"); // PostgreSQL binary data type
+                    .HasColumnType("bytea");
 
-                // Numeric properties
-                entity.Property(e => e.FileSize).IsRequired();
-                entity.Property(e => e.DownloadCount).HasDefaultValue(0);
+                // Image-specific properties
+                entity.Property(e => e.ThumbnailContent).HasColumnType("bytea");
 
-                // Boolean properties
-                entity.Property(e => e.IsPublic).HasDefaultValue(false);
-                entity.Property(e => e.IsProcessed).HasDefaultValue(true);
-
-                // JSON properties
-                entity.Property(e => e.Metadata)
-                    .HasConversion(dictionaryConverter)
-                    .HasColumnType("jsonb"); // PostgreSQL JSONB for better performance
-
-                entity.Property(e => e.Tags)
-                    .HasConversion(dictionaryConverter)
-                    .HasColumnType("jsonb"); // PostgreSQL JSONB for better performance
-
-                // Performance indexes
-                entity.HasIndex(e => e.Hash)
-                    .HasDatabaseName("IX_Files_Hash");
-
-                entity.HasIndex(e => e.ContentType)
-                    .HasDatabaseName("IX_Files_ContentType");
-
-                entity.HasIndex(e => e.IsPublic)
-                    .HasDatabaseName("IX_Files_IsPublic");
-
-                entity.HasIndex(e => e.FolderId)
-                    .HasDatabaseName("IX_Files_FolderId");
-
-                // Composite indexes for common query patterns
-                entity.HasIndex(e => new { e.FolderId, e.IsDeleted })
-                    .HasDatabaseName("IX_Files_Folder_Deleted");
-
-                entity.HasIndex(e => new { e.IsPublic, e.CreatedAt })
-                    .HasDatabaseName("IX_Files_Public_Created")
-                    .HasFilter("\"IsDeleted\" = false");
-
-                entity.HasIndex(e => new { e.IsPublic, e.IsDeleted })
-                    .HasDatabaseName("IX_Files_Public_Deleted");
-
-                entity.HasIndex(e => new { e.CreatedAt, e.IsDeleted })
-                    .HasDatabaseName("IX_Files_Created_Deleted");
+                // Indexes
+                entity.HasIndex(e => e.ContentType);
+                entity.HasIndex(e => e.FolderId);
+                entity.HasIndex(e => new { e.Width, e.Height })
+                    .HasFilter("\"Width\" IS NOT NULL AND \"Height\" IS NOT NULL");
 
                 // Foreign key relationship
                 entity.HasOne(e => e.Folder)
-                    .WithMany(f => f.Files)
+                    .WithMany()
+                    .HasForeignKey(e => e.FolderId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+        }
+
+        private void ConfigureVideoEntity(ModelBuilder modelBuilder)
+        {
+            modelBuilder.Entity<Video>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.ToTable("Videos");
+
+                // Basic properties
+                entity.Property(e => e.Name).HasMaxLength(255).IsRequired();
+                entity.Property(e => e.FileName).HasMaxLength(255).IsRequired();
+                entity.Property(e => e.ContentType).HasMaxLength(100).IsRequired();
+                entity.Property(e => e.Extension).HasMaxLength(20);
+                entity.Property(e => e.Description).HasMaxLength(1000);
+
+                // File content
+                entity.Property(e => e.Content)
+                    .IsRequired()
+                    .HasColumnType("bytea");
+
+                // Indexes
+                entity.HasIndex(e => e.ContentType);
+                entity.HasIndex(e => e.FolderId);
+                entity.HasIndex(e => e.ThumbnailImageId);
+
+                // Foreign key relationships
+                entity.HasOne(e => e.Folder)
+                    .WithMany()
                     .HasForeignKey(e => e.FolderId)
                     .OnDelete(DeleteBehavior.SetNull);
 
-                // Table name
-                entity.ToTable("Files");
+                entity.HasOne(e => e.ThumbnailImage)
+                    .WithMany()
+                    .HasForeignKey(e => e.ThumbnailImageId)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
         }
 
-        private void ConfigureImageFileEntity(ModelBuilder modelBuilder)
+        private void ConfigureAudioEntity(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<ImageFileEntity>(entity =>
+            modelBuilder.Entity<Audio>(entity =>
             {
-                entity.ToTable("ImageFiles");
-                // Image-specific properties
-                entity.Property(e => e.Width);
-                entity.Property(e => e.Height);
-                entity.Property(e => e.ThumbnailContent).HasColumnType("bytea");
+                entity.HasKey(e => e.Id);
+                entity.ToTable("Audios");
 
-                // Index for dimension-based queries
-                entity.HasIndex(e => new { e.Width, e.Height })
-                    .HasDatabaseName("IX_ImageFiles_Dimensions")
-                    .HasFilter("\"Width\" IS NOT NULL AND \"Height\" IS NOT NULL");
+                // Basic properties
+                entity.Property(e => e.Name).HasMaxLength(255).IsRequired();
+                entity.Property(e => e.FileName).HasMaxLength(255).IsRequired();
+                entity.Property(e => e.ContentType).HasMaxLength(100).IsRequired();
+                entity.Property(e => e.Extension).HasMaxLength(20);
+                entity.Property(e => e.Description).HasMaxLength(1000);
+
+                // File content
+                entity.Property(e => e.Content)
+                    .IsRequired()
+                    .HasColumnType("bytea");
+
+                // Indexes
+                entity.HasIndex(e => e.ContentType);
+                entity.HasIndex(e => e.FolderId);
+
+                // Foreign key relationship
+                entity.HasOne(e => e.Folder)
+                    .WithMany()
+                    .HasForeignKey(e => e.FolderId)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
         }
 
-        private void ConfigureVideoFileEntity(ModelBuilder modelBuilder)
+        private void ConfigureDocumentEntity(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<VideoFileEntity>(entity =>
+            modelBuilder.Entity<Document>(entity =>
             {
-                entity.ToTable("VideoFiles");
-                // Video-specific properties
-                entity.Property(e => e.Width);
-                entity.Property(e => e.Height);
-                entity.Property(e => e.Duration);
-                entity.Property(e => e.ThumbnailContent).HasColumnType("bytea");
+                entity.HasKey(e => e.Id);
+                entity.ToTable("Documents");
 
-                // Index for duration-based queries
-                entity.HasIndex(e => e.Duration)
-                    .HasDatabaseName("IX_VideoFiles_Duration")
-                    .HasFilter("\"Duration\" IS NOT NULL");
+                // Basic properties
+                entity.Property(e => e.Name).HasMaxLength(255).IsRequired();
+                entity.Property(e => e.FileName).HasMaxLength(255).IsRequired();
+                entity.Property(e => e.ContentType).HasMaxLength(100).IsRequired();
+                entity.Property(e => e.Extension).HasMaxLength(20);
+                entity.Property(e => e.Description).HasMaxLength(1000);
+
+                // File content
+                entity.Property(e => e.Content)
+                    .IsRequired()
+                    .HasColumnType("bytea");
+
+                // Indexes
+                entity.HasIndex(e => e.ContentType);
+                entity.HasIndex(e => e.FolderId);
+
+                // Foreign key relationship
+                entity.HasOne(e => e.Folder)
+                    .WithMany()
+                    .HasForeignKey(e => e.FolderId)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
         }
 
-        private void ConfigureAudioFileEntity(ModelBuilder modelBuilder)
+        private void ConfigureArchiveEntity(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<AudioFileEntity>(entity =>
+            modelBuilder.Entity<Archive>(entity =>
             {
-                entity.ToTable("AudioFiles");
-                // Audio-specific properties
-                entity.Property(e => e.Duration);
-            });
-        }
+                entity.HasKey(e => e.Id);
+                entity.ToTable("Archives");
 
-        private void ConfigureDocumentFileEntity(ModelBuilder modelBuilder)
-        {
-            modelBuilder.Entity<DocumentFileEntity>(entity =>
-            {
-                entity.ToTable("DocumentFiles");
-                // Document-specific properties
-                entity.Property(e => e.PageCount);
-                entity.Property(e => e.ThumbnailContent).HasColumnType("bytea");
-                
-                // Index for page count queries
-                entity.HasIndex(e => e.PageCount)
-                    .HasDatabaseName("IX_DocumentFiles_PageCount")
-                    .HasFilter("\"PageCount\" IS NOT NULL");
-            });
-        }
+                // Basic properties
+                entity.Property(e => e.Name).HasMaxLength(255).IsRequired();
+                entity.Property(e => e.FileName).HasMaxLength(255).IsRequired();
+                entity.Property(e => e.ContentType).HasMaxLength(100).IsRequired();
+                entity.Property(e => e.Extension).HasMaxLength(20);
+                entity.Property(e => e.Description).HasMaxLength(1000);
 
-        private void ConfigureArchiveFileEntity(ModelBuilder modelBuilder)
-        {
-            modelBuilder.Entity<ArchiveFileEntity>(entity =>
-            {
-                entity.ToTable("ArchiveFiles");
-                // Archive-specific properties
-                entity.Property(e => e.FileCount);
-                entity.Property(e => e.UncompressedSize);
-                
-                // Index for file count queries
-                entity.HasIndex(e => e.FileCount)
-                    .HasDatabaseName("IX_ArchiveFiles_FileCount")
-                    .HasFilter("\"FileCount\" IS NOT NULL");
-                    
-                // Index for size comparison queries
-                entity.HasIndex(e => e.UncompressedSize)
-                    .HasDatabaseName("IX_ArchiveFiles_UncompressedSize")
-                    .HasFilter("\"UncompressedSize\" IS NOT NULL");
+                // File content
+                entity.Property(e => e.Content)
+                    .IsRequired()
+                    .HasColumnType("bytea");
+
+                // Indexes
+                entity.HasIndex(e => e.ContentType);
+                entity.HasIndex(e => e.FolderId);
+
+                // Foreign key relationship
+                entity.HasOne(e => e.Folder)
+                    .WithMany()
+                    .HasForeignKey(e => e.FolderId)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
         }
 
         private void ConfigureOtherFileEntity(ModelBuilder modelBuilder)
         {
-            modelBuilder.Entity<OtherFileEntity>(entity =>
+            modelBuilder.Entity<OtherFile>(entity =>
             {
+                entity.HasKey(e => e.Id);
                 entity.ToTable("OtherFiles");
-                // No additional properties for OtherFileEntity
+
+                // Basic properties
+                entity.Property(e => e.Name).HasMaxLength(255).IsRequired();
+                entity.Property(e => e.FileName).HasMaxLength(255).IsRequired();
+                entity.Property(e => e.ContentType).HasMaxLength(100).IsRequired();
+                entity.Property(e => e.Extension).HasMaxLength(20);
+                entity.Property(e => e.Description).HasMaxLength(1000);
+
+                // File content
+                entity.Property(e => e.Content)
+                    .IsRequired()
+                    .HasColumnType("bytea");
+
+                // Indexes
+                entity.HasIndex(e => e.ContentType);
+                entity.HasIndex(e => e.FolderId);
+
+                // Foreign key relationship
+                entity.HasOne(e => e.Folder)
+                    .WithMany()
+                    .HasForeignKey(e => e.FolderId)
+                    .OnDelete(DeleteBehavior.SetNull);
             });
         }
 
-        private void ConfigureFolderAndFileAccessEntities(ModelBuilder modelBuilder)
+        private void ConfigureFolderEntities(ModelBuilder modelBuilder)
         {
             // Folder configuration
             modelBuilder.Entity<Folder>(entity =>
@@ -329,45 +352,40 @@ namespace Backend.CMS.Infrastructure.Data
                     .HasForeignKey(e => e.ParentFolderId)
                     .OnDelete(DeleteBehavior.Restrict);
 
-                // Relationship with files (updated to use BaseFileEntity)
-                entity.HasMany(f => f.Files)
-                    .WithOne(file => file.Folder)
-                    .HasForeignKey(file => file.FolderId)
+                // Configure relationships with all file types
+                entity.HasMany(f => f.Images)
+                    .WithOne(i => i.Folder)
+                    .HasForeignKey(i => i.FolderId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasMany(f => f.Documents)
+                    .WithOne(d => d.Folder)
+                    .HasForeignKey(d => d.FolderId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasMany(f => f.Audios)
+                    .WithOne(a => a.Folder)
+                    .HasForeignKey(a => a.FolderId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasMany(f => f.Videos)
+                    .WithOne(v => v.Folder)
+                    .HasForeignKey(v => v.FolderId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasMany(f => f.Archives)
+                    .WithOne(ar => ar.Folder)
+                    .HasForeignKey(ar => ar.FolderId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasMany(f => f.OtherFiles)
+                    .WithOne(o => o.Folder)
+                    .HasForeignKey(o => o.FolderId)
                     .OnDelete(DeleteBehavior.SetNull);
 
                 entity.ToTable("Folders");
             });
 
-            // FileAccess configuration
-            modelBuilder.Entity<FileAccess>(entity =>
-            {
-                entity.HasKey(e => e.Id);
-
-                entity.Property(e => e.IpAddress).HasMaxLength(45); // IPv6 support
-                entity.Property(e => e.UserAgent).HasMaxLength(500);
-                entity.Property(e => e.AccessType).HasConversion<string>().HasMaxLength(20);
-                entity.Property(e => e.AccessedAt).IsRequired();
-
-                // Indexes for analytics
-                entity.HasIndex(e => e.FileId);
-                entity.HasIndex(e => e.UserId);
-                entity.HasIndex(e => e.AccessedAt);
-                entity.HasIndex(e => new { e.FileId, e.AccessedAt });
-                entity.HasIndex(e => new { e.UserId, e.AccessedAt });
-
-                // Foreign key relationships
-                entity.HasOne(e => e.File)
-                    .WithMany()
-                    .HasForeignKey(e => e.FileId)
-                    .OnDelete(DeleteBehavior.Cascade);
-
-                entity.HasOne(e => e.User)
-                    .WithMany()
-                    .HasForeignKey(e => e.UserId)
-                    .OnDelete(DeleteBehavior.SetNull);
-
-                entity.ToTable("FileAccess");
-            });
         }
 
         private void ConfigureSearchEntities(ModelBuilder modelBuilder)
@@ -463,10 +481,10 @@ namespace Backend.CMS.Infrastructure.Data
 
                 entity.HasOne(e => e.Picture)
                     .WithMany()
-                    .HasForeignKey(e => e.PictureFileId)
+                    .HasForeignKey(e => e.PictureId)
                     .OnDelete(DeleteBehavior.SetNull);
 
-                entity.HasIndex(e => e.PictureFileId);
+                entity.HasIndex(e => e.PictureId);
 
                 // User relationships
                 entity.HasMany(e => e.Sessions)
@@ -763,16 +781,16 @@ namespace Backend.CMS.Infrastructure.Data
                     .HasForeignKey(e => e.CategoryId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                entity.HasOne(e => e.File)
+                entity.HasOne(e => e.Image)
                     .WithMany()
-                    .HasForeignKey(e => e.FileId)
+                    .HasForeignKey(e => e.ImageId)
                     .OnDelete(DeleteBehavior.Cascade);
 
                 entity.Property(e => e.Alt).HasMaxLength(255);
                 entity.Property(e => e.Caption).HasMaxLength(500);
 
                 entity.HasIndex(e => e.CategoryId);
-                entity.HasIndex(e => e.FileId);
+                entity.HasIndex(e => e.ImageId);
                 entity.HasIndex(e => new { e.CategoryId, e.Position });
                 entity.HasIndex(e => new { e.CategoryId, e.IsFeatured });
             });
@@ -843,16 +861,16 @@ namespace Backend.CMS.Infrastructure.Data
                     .HasForeignKey(e => e.ProductVariantId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                entity.HasOne(e => e.File)
+                entity.HasOne(e => e.Image)
                     .WithMany()
-                    .HasForeignKey(e => e.FileId)
+                    .HasForeignKey(e => e.ImageId)
                     .OnDelete(DeleteBehavior.Cascade);
 
                 entity.Property(e => e.Alt).HasMaxLength(255);
                 entity.Property(e => e.Caption).HasMaxLength(500);
 
                 entity.HasIndex(e => e.ProductVariantId);
-                entity.HasIndex(e => e.FileId);
+                entity.HasIndex(e => e.ImageId);
                 entity.HasIndex(e => new { e.ProductVariantId, e.Position });
                 entity.HasIndex(e => new { e.ProductVariantId, e.IsFeatured });
             });
@@ -884,16 +902,16 @@ namespace Backend.CMS.Infrastructure.Data
                     .HasForeignKey(e => e.ProductId)
                     .OnDelete(DeleteBehavior.Cascade);
 
-                entity.HasOne(e => e.File)
+                entity.HasOne(e => e.Image)
                     .WithMany()
-                    .HasForeignKey(e => e.FileId)
+                    .HasForeignKey(e => e.ImageId)
                     .OnDelete(DeleteBehavior.Cascade);
 
                 entity.Property(e => e.Alt).HasMaxLength(255);
                 entity.Property(e => e.Caption).HasMaxLength(500);
 
                 entity.HasIndex(e => e.ProductId);
-                entity.HasIndex(e => e.FileId);
+                entity.HasIndex(e => e.ImageId);
                 entity.HasIndex(e => new { e.ProductId, e.Position });
                 entity.HasIndex(e => new { e.ProductId, e.IsFeatured });
             });
@@ -906,7 +924,7 @@ namespace Backend.CMS.Infrastructure.Data
             SetValueComparers(modelBuilder);
             ConfigureIndexes(modelBuilder);
             ConfigureFileEntities(modelBuilder);
-            ConfigureFolderAndFileAccessEntities(modelBuilder);
+            ConfigureFolderEntities(modelBuilder);
         }
 
         private void ConfigureAuditTrailRelationships(ModelBuilder modelBuilder)
@@ -994,7 +1012,6 @@ namespace Backend.CMS.Infrastructure.Data
             ApplyComparersToEntity<Company>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<Location>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<ContactDetails>(modelBuilder, dictionaryComparer, listComparer);
-            ApplyComparersToEntity<BaseFileEntity>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<Folder>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<SearchIndex>(modelBuilder, dictionaryComparer, listComparer);
             ApplyComparersToEntity<IndexingJob>(modelBuilder, dictionaryComparer, listComparer);

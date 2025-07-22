@@ -231,7 +231,7 @@ namespace Frontend.Components.Files.FileBrowser
                 {
                     for (int i = 10; i <= 90; i += 10)
                     {
-                        await Task.Delay(100);
+                        await Task.Delay(TimeSpan.FromMilliseconds(100));
                         uploadProgress[file.Name] = i;
                         await InvokeAsync(() =>
                         {
@@ -296,9 +296,17 @@ namespace Frontend.Components.Files.FileBrowser
             public string Name => _browserFile.Name;
             public string FileName => _browserFile.Name;
 
-            public void CopyTo(Stream target) => throw new NotImplementedException();
-            public Task CopyToAsync(Stream target, CancellationToken cancellationToken = default)
-                => _browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100, cancellationToken: cancellationToken).CopyToAsync(target, cancellationToken);
+            public void CopyTo(Stream target)
+            {
+                using var stream = _browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100);
+                stream.CopyTo(target);
+            }
+
+            public async Task CopyToAsync(Stream target, CancellationToken cancellationToken = default)
+            {
+                using var stream = _browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100, cancellationToken: cancellationToken);
+                await stream.CopyToAsync(target, cancellationToken);
+            }
             public Stream OpenReadStream() => _browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100); // 100MB limit
         }
     }

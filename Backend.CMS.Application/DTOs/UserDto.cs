@@ -1,5 +1,4 @@
 ﻿using Backend.CMS.Domain.Entities;
-using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
 using System.Text.Json.Serialization;
 
@@ -16,7 +15,8 @@ namespace Backend.CMS.Application.DTOs
         public bool IsActive { get; set; }
         public bool IsLocked { get; set; }
         public DateTime? LastLoginAt { get; set; }
-        public int? PictureFileId { get; set; }
+        public int? PictureId { get; set; }
+        public ImageDto? Picture { get; set; }
         public string? PictureUrl { get; set; }
         public DateTime? EmailVerifiedAt { get; set; }
         public DateTime CreatedAt { get; set; }
@@ -35,11 +35,10 @@ namespace Backend.CMS.Application.DTOs
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public bool IsActive { get; set; } = true;
-        public int? PictureFileId { get; set; }
+        public int? PictureId { get; set; }
         public UserRole Role { get; set; } = UserRole.Customer;
         public List<CreateAddressDto> Addresses { get; set; } = [];
         public List<CreateContactDetailsDto> ContactDetails { get; set; } = [];
-        public BaseFileEntity? Picture { get; set; }
     }
 
     public class UpdateUserDto
@@ -49,7 +48,7 @@ namespace Backend.CMS.Application.DTOs
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
         public bool IsActive { get; set; }
-        public int? PictureFileId { get; set; }
+        public int? PictureId { get; set; }
         public UserRole Role { get; set; }
         public List<UpdateAddressDto> Addresses { get; set; } = [];
         public List<UpdateContactDetailsDto> ContactDetails { get; set; } = [];
@@ -109,7 +108,7 @@ namespace Backend.CMS.Application.DTOs
         public bool IsActive { get; set; }
         public bool IsLocked { get; set; }
         public DateTime? LastLoginAt { get; set; }
-        public int? PictureFileId { get; set; }
+        public int? PictureId { get; set; }
         public DateTime? EmailVerifiedAt { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
@@ -128,7 +127,7 @@ namespace Backend.CMS.Application.DTOs
         public string FullName => $"{FirstName} {LastName}".Trim();
 
         [JsonIgnore]
-        public string? PictureUrl => PictureFileId.HasValue ? $"/api/files/{PictureFileId}/download" : null;
+        public string? PictureUrl => null; // Will be set by service layer
 
         [JsonIgnore]
         public bool IsAdmin => Role == UserRole.Admin;

@@ -1,5 +1,4 @@
 ﻿using Backend.CMS.Domain.Entities;
-using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
 using System.Text.Json.Serialization;
 
@@ -22,7 +21,7 @@ namespace Backend.CMS.Application.Common
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
         public UserRole? Role { get; set; }
-        public BaseFileEntity? Picture { get; set; }
+        public Image? Picture { get; set; }
         public bool IsActive { get; set; }
         public bool IsLocked { get; set; }
         public string? Timezone { get; set; }

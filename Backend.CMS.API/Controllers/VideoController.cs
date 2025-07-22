@@ -17,11 +17,11 @@ namespace Backend.CMS.API.Controllers
     [EnableRateLimiting("ApiPolicy")]
     public class VideoController : ControllerBase
     {
-        private readonly IVideoFileService _videoService;
+        private readonly IVideoService _videoService;
         private readonly ILogger<VideoController> _logger;
 
         public VideoController(
-            IVideoFileService videoService,
+            IVideoService videoService,
             ILogger<VideoController> logger)
         {
             _videoService = videoService ?? throw new ArgumentNullException(nameof(videoService));
@@ -32,14 +32,14 @@ namespace Backend.CMS.API.Controllers
         /// Get paginated list of videos
         /// </summary>
         [HttpGet]
-        [ProducesResponseType(typeof(PaginatedResult<VideoFileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<VideoDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PaginatedResult<VideoFileDto>>> GetVideos([FromQuery] VideoSearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<VideoDto>>> GetVideos([FromQuery] VideoSearchDto searchDto)
         {
             try
             {
-                var result = await _videoService.GetVideosPagedAsync(searchDto);
+                var result = await _videoService.GetPagedAsync(searchDto.PageNumber, searchDto.PageSize);
                 return Ok(result);
             }
             catch (ArgumentException ex)
@@ -59,11 +59,11 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPost("upload")]
         [EnableRateLimiting("FileUploadPolicy")]
-        [ProducesResponseType(typeof(VideoFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(VideoDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<VideoFileDto>> UploadVideo([FromForm] FileUploadDto uploadDto)
+        public async Task<ActionResult<VideoDto>> UploadVideo([FromForm] FileUploadDto uploadDto)
         {
             try
             {
@@ -72,7 +72,19 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Video file is required" });
                 }
 
-                var result = await _videoService.UploadVideoAsync(uploadDto);
+                // Convert to CreateVideoDto
+                var createDto = new CreateVideoDto
+                {
+                    Name = uploadDto.Name ?? uploadDto.File.FileName,
+                    Description = uploadDto.Description,
+                    FolderId = uploadDto.FolderId,
+                    ContentType = uploadDto.File.ContentType
+                };
+
+                using var memoryStream = new MemoryStream();
+                await uploadDto.File.CopyToAsync(memoryStream);
+                createDto.Content = memoryStream.ToArray();
+                var result = await _videoService.CreateAsync(createDto);
                 return Ok(result);
             }
             catch (ArgumentException ex)
@@ -92,10 +104,10 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPost("upload/multiple")]
         [EnableRateLimiting("FileUploadPolicy")]
-        [ProducesResponseType(typeof(List<VideoFileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(List<VideoDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<List<VideoFileDto>>> UploadMultipleVideos([FromForm] MultipleFileUploadDto uploadDto)
+        public async Task<ActionResult<List<VideoDto>>> UploadMultipleVideos([FromForm] MultipleFileUploadDto uploadDto)
         {
             try
             {
@@ -104,7 +116,19 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "At least one video file is required" });
                 }
 
-                var results = await _videoService.UploadMultipleVideosAsync(uploadDto);
+                // Basic implementation - should be moved to service
+                var results = new List<VideoDto>();
+                foreach (var file in uploadDto.Files)
+                {
+                    var createDto = new CreateVideoDto
+                    {
+                        Name = file.FileName,
+                        Description = uploadDto.Description,
+                        FolderId = uploadDto.FolderId
+                    };
+                    var result = await _videoService.CreateAsync(createDto);
+                    results.Add(result);
+                }
                 return Ok(results);
             }
             catch (Exception ex)
@@ -118,14 +142,14 @@ namespace Backend.CMS.API.Controllers
         /// Get video by ID
         /// </summary>
         [HttpGet("{id:int}")]
-        [ProducesResponseType(typeof(VideoFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(VideoDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<VideoFileDto>> GetVideo([FromRoute] int id)
+        public async Task<ActionResult<VideoDto>> GetVideo([FromRoute] int id)
         {
             try
             {
-                var video = await _videoService.GetVideoByIdAsync(id);
+                var video = await _videoService.GetByIdAsync(id);
                 if (video == null)
                 {
                     return NotFound(new { Message = "Video not found" });
@@ -144,11 +168,11 @@ namespace Backend.CMS.API.Controllers
         /// Update video information
         /// </summary>
         [HttpPut("{id:int}")]
-        [ProducesResponseType(typeof(VideoFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(VideoDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<VideoFileDto>> UpdateVideo([FromRoute] int id, [FromBody] UpdateVideoDto updateDto)
+        public async Task<ActionResult<VideoDto>> UpdateVideo([FromRoute] int id, [FromBody] UpdateVideoDto updateDto)
         {
             try
             {
@@ -157,7 +181,7 @@ namespace Backend.CMS.API.Controllers
                     return BadRequest(new { Message = "Update data is required" });
                 }
 
-                var result = await _videoService.UpdateVideoAsync(id, updateDto);
+                var result = await _videoService.UpdateAsync(id, updateDto);
                 return Ok(result);
             }
             catch (ArgumentException ex)
@@ -182,7 +206,7 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
-                var success = await _videoService.DeleteVideoAsync(id);
+                var success = await _videoService.DeleteAsync(id);
                 if (!success)
                     return NotFound(new { Message = "Video not found" });
 
@@ -196,23 +220,61 @@ namespace Backend.CMS.API.Controllers
         }
 
         /// <summary>
-        /// Get videos by duration
+        /// Get videos by duration (in seconds)
         /// </summary>
         [HttpGet("by-duration")]
-        [ProducesResponseType(typeof(List<VideoFileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(List<VideoDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<List<VideoFileDto>>> GetVideosByDuration(
-            [FromQuery] TimeSpan? minDuration = null,
-            [FromQuery] TimeSpan? maxDuration = null)
+        public async Task<ActionResult<List<VideoDto>>> GetVideosByDuration(
+            [FromQuery] int? minDuration = null,
+            [FromQuery] int? maxDuration = null)
         {
             try
             {
-                var videos = await _videoService.GetVideosByDurationAsync(minDuration, maxDuration);
-                return Ok(videos);
+                // Basic implementation using existing methods
+                var allVideos = await _videoService.GetAllAsync();
+                var filteredVideos = allVideos.Where(v => 
+                    (!minDuration.HasValue || v.Duration >= minDuration) &&
+                    (!maxDuration.HasValue || v.Duration <= maxDuration)
+                ).ToList();
+                return Ok(filteredVideos);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting videos by duration");
+                return StatusCode(500, new { Message = "An error occurred while retrieving videos" });
+            }
+        }
+
+        /// <summary>
+        /// Get videos linked to a specific entity
+        /// </summary>
+        [HttpGet("entity")]
+        [ProducesResponseType(typeof(List<VideoDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<List<VideoDto>>> GetVideosForEntity(
+            [FromQuery] string entityType,
+            [FromQuery] int entityId)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(entityType))
+                {
+                    return BadRequest(new { Message = "Entity type is required" });
+                }
+
+                if (entityId <= 0)
+                {
+                    return BadRequest(new { Message = "Entity ID must be greater than 0" });
+                }
+
+                var videos = await _videoService.GetVideosByEntityAsync(entityType, entityId);
+                return Ok(videos);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting videos for entity {EntityType}:{EntityId}", entityType, entityId);
                 return StatusCode(500, new { Message = "An error occurred while retrieving videos" });
             }
         }

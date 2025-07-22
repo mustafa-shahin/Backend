@@ -17,11 +17,11 @@ namespace Backend.CMS.API.Controllers
     [EnableRateLimiting("ApiPolicy")]
     public class DocumentController : ControllerBase
     {
-        private readonly IDocumentFileService _documentService;
+        private readonly IDocumentService _documentService;
         private readonly ILogger<DocumentController> _logger;
 
         public DocumentController(
-            IDocumentFileService documentService,
+            IDocumentService documentService,
             ILogger<DocumentController> logger)
         {
             _documentService = documentService ?? throw new ArgumentNullException(nameof(documentService));
@@ -32,10 +32,10 @@ namespace Backend.CMS.API.Controllers
         /// Get paginated list of documents
         /// </summary>
         [HttpGet]
-        [ProducesResponseType(typeof(PaginatedResult<DocumentFileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<DocumentDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PaginatedResult<DocumentFileDto>>> GetDocuments([FromQuery] DocumentSearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<DocumentDto>>> GetDocuments([FromQuery] DocumentSearchDto searchDto)
         {
             try
             {
@@ -59,11 +59,11 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPost("upload")]
         [EnableRateLimiting("FileUploadPolicy")]
-        [ProducesResponseType(typeof(DocumentFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(DocumentDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<DocumentFileDto>> UploadDocument([FromForm] FileUploadDto uploadDto)
+        public async Task<ActionResult<DocumentDto>> UploadDocument([FromForm] FileUploadDto uploadDto)
         {
             try
             {
@@ -92,10 +92,10 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPost("upload/multiple")]
         [EnableRateLimiting("FileUploadPolicy")]
-        [ProducesResponseType(typeof(List<DocumentFileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(List<DocumentDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<List<DocumentFileDto>>> UploadMultipleDocuments([FromForm] MultipleFileUploadDto uploadDto)
+        public async Task<ActionResult<List<DocumentDto>>> UploadMultipleDocuments([FromForm] MultipleFileUploadDto uploadDto)
         {
             try
             {
@@ -118,10 +118,10 @@ namespace Backend.CMS.API.Controllers
         /// Get document by ID
         /// </summary>
         [HttpGet("{id:int}")]
-        [ProducesResponseType(typeof(DocumentFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(DocumentDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<DocumentFileDto>> GetDocument([FromRoute] int id)
+        public async Task<ActionResult<DocumentDto>> GetDocument([FromRoute] int id)
         {
             try
             {
@@ -144,11 +144,11 @@ namespace Backend.CMS.API.Controllers
         /// Update document information
         /// </summary>
         [HttpPut("{id:int}")]
-        [ProducesResponseType(typeof(DocumentFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(DocumentDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<DocumentFileDto>> UpdateDocument([FromRoute] int id, [FromBody] UpdateDocumentDto updateDto)
+        public async Task<ActionResult<DocumentDto>> UpdateDocument([FromRoute] int id, [FromBody] UpdateDocumentDto updateDto)
         {
             try
             {
@@ -192,6 +192,31 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error deleting document {DocumentId}", id);
                 return StatusCode(500, new { Message = "An error occurred while deleting the document" });
+            }
+        }
+
+        /// <summary>
+        /// Download document file
+        /// </summary>
+        [HttpGet("{id:int}/download")]
+        [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult> DownloadDocument([FromRoute] int id)
+        {
+            try
+            {
+                var fileModel = await _documentService.DownloadDocumentAsync(id);
+                return File(fileModel.Content, fileModel.ContentType, fileModel.FileName);
+            }
+            catch (KeyNotFoundException)
+            {
+                return NotFound(new { Message = "Document not found" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error downloading document {DocumentId}", id);
+                return StatusCode(500, new { Message = "An error occurred while downloading the document" });
             }
         }
     }

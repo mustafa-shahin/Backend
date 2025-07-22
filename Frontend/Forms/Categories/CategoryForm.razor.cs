@@ -153,7 +153,7 @@ namespace Frontend.Forms.Categories
                         var featuredImage = existingCategory.Images.FirstOrDefault(i => i.IsFeatured);
                         if (featuredImage != null)
                         {
-                            var matchingFile = selectedImages.FirstOrDefault(f => f.Id == featuredImage.FileId);
+                            var matchingFile = selectedImages.FirstOrDefault(f => f.Id == featuredImage.ImageId);
                             if (matchingFile != null)
                             {
                                 featuredImageId = matchingFile.Id;
@@ -333,7 +333,7 @@ namespace Frontend.Forms.Categories
                 // Update the model's images collection
                 Model.Images = selectedImages.Select((file, index) => new CreateCategoryImageDto
                 {
-                    FileId = file.Id,
+                    ImageId = file.Id,
                     Alt = file.Alt ?? file.OriginalFileName,
                     Caption = file.Description,
                     Position = index,
@@ -347,7 +347,7 @@ namespace Frontend.Forms.Categories
                     {
                         Id = 0,
                         CategoryId = GetEffectiveEntityId(),
-                        FileId = file.Id,
+                        ImageId = file.Id,
                         Alt = file.Alt ?? file.OriginalFileName,
                         Caption = file.Description,
                         Position = index,

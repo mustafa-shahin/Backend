@@ -27,7 +27,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Include(c => c.ParentCategory)
                     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                     .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted, cancellationToken);
 
                 _logger.LogDebug("Retrieved category by ID {CategoryId}: {Found}", id, category != null ? "Found" : "Not found");
@@ -49,7 +49,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Include(c => c.ParentCategory)
                     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                     .Where(c => !c.IsDeleted)
                     .OrderBy(c => c.SortOrder)
                     .ThenBy(c => c.Name)
@@ -77,7 +77,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Include(c => c.ParentCategory)
                     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                     .FirstOrDefaultAsync(c => c.Slug == slug && !c.IsDeleted);
 
                 _logger.LogDebug("Retrieved category by slug {Slug}: {Found}", slug, category != null ? "Found" : "Not found");
@@ -98,7 +98,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .AsNoTracking()
                     .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                     .Where(c => !c.IsDeleted && c.ParentCategoryId == null)
                     .OrderBy(c => c.SortOrder)
                     .ThenBy(c => c.Name)
@@ -121,7 +121,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 var categories = await _dbSet
                     .AsNoTracking()
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                     .Where(c => !c.IsDeleted && c.ParentCategoryId == null)
                     .OrderBy(c => c.SortOrder)
                     .ThenBy(c => c.Name)
@@ -144,7 +144,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 var categories = await _dbSet
                     .AsNoTracking()
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                     .Where(c => !c.IsDeleted && c.ParentCategoryId == parentCategoryId)
                     .OrderBy(c => c.SortOrder)
                     .ThenBy(c => c.Name)
@@ -168,7 +168,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                    .AsNoTracking()
                    .Include(c => c.SubCategories.Where(sc => !sc.IsDeleted))
                    .Include(c => c.Images.Where(i => !i.IsDeleted))
-                       .ThenInclude(i => i.File)
+                       .ThenInclude(i => i.Image)
                    .FirstOrDefaultAsync(c => c.Id == categoryId && !c.IsDeleted);
 
                 _logger.LogDebug("Retrieved category with subcategories {CategoryId}: {Found}", categoryId, category != null ? "Found" : "Not found");
@@ -190,7 +190,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .Include(c => c.ProductCategories.Where(pc => !pc.IsDeleted))
                         .ThenInclude(pc => pc.Product)
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                     .FirstOrDefaultAsync(c => c.Id == categoryId && !c.IsDeleted);
 
                 _logger.LogDebug("Retrieved category with products {CategoryId}: {Found}", categoryId, category != null ? "Found" : "Not found");
@@ -243,7 +243,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                         c.Slug.Contains(searchTerm)))
                     .Include(c => c.ParentCategory)
                     .Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                     .OrderBy(c => c.Name)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
@@ -550,37 +550,6 @@ namespace Backend.CMS.Infrastructure.Repositories
             }
         }
 
-        public IQueryable<Category> ApplyIncludes(IQueryable<Category> query, bool includeImages = true, bool includeParent = true, bool includeSubCategories = false)
-        {
-            try
-            {
-                if (includeParent)
-                {
-                    query = query.Include(c => c.ParentCategory);
-                }
-
-                if (includeSubCategories)
-                {
-                    query = query.Include(c => c.SubCategories.Where(sc => !sc.IsDeleted));
-                }
-
-                if (includeImages)
-                {
-                    query = query.Include(c => c.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File);
-                }
-
-                _logger.LogDebug("Applied includes: Images={IncludeImages}, Parent={IncludeParent}, SubCategories={IncludeSubCategories}",
-                    includeImages, includeParent, includeSubCategories);
-
-                return query;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error applying includes to query");
-                throw;
-            }
-        }
 
         #endregion
 
@@ -711,6 +680,38 @@ namespace Backend.CMS.Infrastructure.Repositories
 
             if (pageSize > 1000)
                 throw new ArgumentException("Page size cannot exceed 1000", nameof(pageSize));
+        }
+
+        public IQueryable<Category> ApplyIncludes(IQueryable<Category> query, bool includeImages = true, bool includeParent = true, bool includeSubCategories = false)
+        {
+            try
+            {
+                if (includeParent)
+                {
+                    query = query.Include(c => c.ParentCategory);
+                }
+
+                if (includeSubCategories)
+                {
+                    query = query.Include(c => c.SubCategories.Where(sc => !sc.IsDeleted));
+                }
+
+                if (includeImages)
+                {
+                    query = query.Include(c => c.Images.Where(i => !i.IsDeleted))
+                                 .ThenInclude(ci => ci.Image);
+                }
+
+                // Always include FeaturedImage when loading categories
+                query = query.Include(c => c.FeaturedImage);
+
+                return query;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error applying includes to category query");
+                throw;
+            }
         }
 
         #endregion

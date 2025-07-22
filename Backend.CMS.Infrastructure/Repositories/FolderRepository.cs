@@ -1,5 +1,4 @@
 ﻿using Backend.CMS.Domain.Entities;
-using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Data;
 using Backend.CMS.Infrastructure.IRepositories;
@@ -124,44 +123,84 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public async Task<bool> HasFilesAsync(int folderId)
         {
-            return await _context.Set<BaseFileEntity>()
-                                .AnyAsync(f => !f.IsDeleted && f.FolderId == folderId);
+            // Check all file types
+            var hasImages = await _context.Set<Image>().AnyAsync(f => !f.IsDeleted && f.FolderId == folderId);
+            if (hasImages) return true;
+            
+            var hasVideos = await _context.Set<Video>().AnyAsync(f => !f.IsDeleted && f.FolderId == folderId);
+            if (hasVideos) return true;
+            
+            var hasAudios = await _context.Set<Audio>().AnyAsync(f => !f.IsDeleted && f.FolderId == folderId);
+            if (hasAudios) return true;
+            
+            var hasDocuments = await _context.Set<Document>().AnyAsync(f => !f.IsDeleted && f.FolderId == folderId);
+            if (hasDocuments) return true;
+            
+            var hasArchives = await _context.Set<Archive>().AnyAsync(f => !f.IsDeleted && f.FolderId == folderId);
+            if (hasArchives) return true;
+            
+            var hasOtherFiles = await _context.Set<OtherFile>().AnyAsync(f => !f.IsDeleted && f.FolderId == folderId);
+            return hasOtherFiles;
         }
 
         public async Task<int> GetTotalFileCountAsync(int folderId, bool includeSubfolders = false)
         {
             if (!includeSubfolders)
             {
-                return await _context.Set<BaseFileEntity>()
-                                   .Where(f => !f.IsDeleted && f.FolderId == folderId)
-                                   .CountAsync();
+                // Count all file types in the folder
+                var imageCount = await _context.Set<Image>().Where(f => !f.IsDeleted && f.FolderId == folderId).CountAsync();
+                var videoCount = await _context.Set<Video>().Where(f => !f.IsDeleted && f.FolderId == folderId).CountAsync();
+                var audioCount = await _context.Set<Audio>().Where(f => !f.IsDeleted && f.FolderId == folderId).CountAsync();
+                var documentCount = await _context.Set<Document>().Where(f => !f.IsDeleted && f.FolderId == folderId).CountAsync();
+                var archiveCount = await _context.Set<Archive>().Where(f => !f.IsDeleted && f.FolderId == folderId).CountAsync();
+                var otherFileCount = await _context.Set<OtherFile>().Where(f => !f.IsDeleted && f.FolderId == folderId).CountAsync();
+                
+                return imageCount + videoCount + audioCount + documentCount + archiveCount + otherFileCount;
             }
 
             // Get all descendant folder IDs
             var descendantIds = await GetDescendantIdsAsync(folderId);
             descendantIds.Add(folderId);
 
-            return await _context.Set<BaseFileEntity>()
-                               .Where(f => !f.IsDeleted && descendantIds.Contains(f.Id))
-                               .CountAsync();
+            // Count all file types in descendant folders
+            var descendantImageCount = await _context.Set<Image>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).CountAsync();
+            var descendantVideoCount = await _context.Set<Video>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).CountAsync();
+            var descendantAudioCount = await _context.Set<Audio>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).CountAsync();
+            var descendantDocumentCount = await _context.Set<Document>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).CountAsync();
+            var descendantArchiveCount = await _context.Set<Archive>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).CountAsync();
+            var descendantOtherFileCount = await _context.Set<OtherFile>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).CountAsync();
+            
+            return descendantImageCount + descendantVideoCount + descendantAudioCount + descendantDocumentCount + descendantArchiveCount + descendantOtherFileCount;
         }
 
         public async Task<long> GetTotalSizeAsync(int folderId, bool includeSubfolders = false)
         {
             if (!includeSubfolders)
             {
-                return await _context.Set<BaseFileEntity>()
-                                   .Where(f => !f.IsDeleted && f.FolderId == folderId)
-                                   .SumAsync(f => f.FileSize);
+                // Sum sizes of all file types in the folder
+                var imageSize = await _context.Set<Image>().Where(f => !f.IsDeleted && f.FolderId == folderId).SumAsync(f => f.Size);
+                var videoSize = await _context.Set<Video>().Where(f => !f.IsDeleted && f.FolderId == folderId).SumAsync(f => f.Size);
+                var audioSize = await _context.Set<Audio>().Where(f => !f.IsDeleted && f.FolderId == folderId).SumAsync(f => f.Size);
+                var documentSize = await _context.Set<Document>().Where(f => !f.IsDeleted && f.FolderId == folderId).SumAsync(f => f.Size);
+                var archiveSize = await _context.Set<Archive>().Where(f => !f.IsDeleted && f.FolderId == folderId).SumAsync(f => f.Size);
+                var otherFileSize = await _context.Set<OtherFile>().Where(f => !f.IsDeleted && f.FolderId == folderId).SumAsync(f => f.Size);
+                
+                return imageSize + videoSize + audioSize + documentSize + archiveSize + otherFileSize;
             }
 
             // Get all descendant folder IDs
             var descendantIds = await GetDescendantIdsAsync(folderId);
             descendantIds.Add(folderId);
 
-            return await _context.Set<BaseFileEntity>()
-                               .Where(f => !f.IsDeleted && descendantIds.Contains(f.Id))
-                               .SumAsync(f => f.FileSize);
+            // Sum sizes of all file types in descendant folders
+            var descendantImageSize = await _context.Set<Image>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).SumAsync(f => f.Size);
+            var descendantVideoSize = await _context.Set<Video>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).SumAsync(f => f.Size);
+            var descendantAudioSize = await _context.Set<Audio>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).SumAsync(f => f.Size);
+            var descendantDocumentSize = await _context.Set<Document>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).SumAsync(f => f.Size);
+            var descendantArchiveSize = await _context.Set<Archive>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).SumAsync(f => f.Size);
+            var descendantOtherFileSize = await _context.Set<OtherFile>().Where(f => !f.IsDeleted && descendantIds.Contains(f.FolderId ?? 0)).SumAsync(f => f.Size);
+            
+            return descendantImageSize + descendantVideoSize + descendantAudioSize + descendantDocumentSize + descendantArchiveSize + descendantOtherFileSize;
         }
 
         public async Task<int> GetDepthAsync(int folderId)
@@ -233,11 +272,15 @@ namespace Backend.CMS.Infrastructure.Repositories
 
         public async Task<IEnumerable<Folder>> GetEmptyFoldersAsync()
         {
-            var foldersWithFiles = await _context.Set<BaseFileEntity>()
-                                                .Where(f => !f.IsDeleted && f.FolderId.HasValue)
-                                                .Select(f => f.FolderId.Value)
-                                                .Distinct()
-                                                .ToListAsync();
+            // Get folder IDs that contain files from all file types
+            var imagefolders = await _context.Set<Image>().Where(f => !f.IsDeleted && f.FolderId.HasValue).Select(f => f.FolderId.Value).ToListAsync();
+            var videoFolders = await _context.Set<Video>().Where(f => !f.IsDeleted && f.FolderId.HasValue).Select(f => f.FolderId.Value).ToListAsync();
+            var audioFolders = await _context.Set<Audio>().Where(f => !f.IsDeleted && f.FolderId.HasValue).Select(f => f.FolderId.Value).ToListAsync();
+            var documentFolders = await _context.Set<Document>().Where(f => !f.IsDeleted && f.FolderId.HasValue).Select(f => f.FolderId.Value).ToListAsync();
+            var archiveFolders = await _context.Set<Archive>().Where(f => !f.IsDeleted && f.FolderId.HasValue).Select(f => f.FolderId.Value).ToListAsync();
+            var otherFileFolders = await _context.Set<OtherFile>().Where(f => !f.IsDeleted && f.FolderId.HasValue).Select(f => f.FolderId.Value).ToListAsync();
+            
+            var foldersWithFiles = imagefolders.Union(videoFolders).Union(audioFolders).Union(documentFolders).Union(archiveFolders).Union(otherFileFolders).Distinct().ToList();
 
             var foldersWithSubfolders = await _dbSet.Where(f => !f.IsDeleted && f.ParentFolderId.HasValue)
                                                    .Select(f => f.ParentFolderId.Value)

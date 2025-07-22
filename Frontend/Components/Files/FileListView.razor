@@ -51,7 +51,7 @@
                                 @folder.Name
                             </h4>
                             <p class="text-xs text-gray-500 dark:text-gray-400">
-                                @folder.FileCount file@(folder.FileCount == 1 ? "" : "s")
+                                @folder.TotalFileCount file@(folder.TotalFileCount == 1 ? "" : "s")
                                 @if (folder.SubFolderCount > 0)
                                 {
                                     <span>, @folder.SubFolderCount folder@(folder.SubFolderCount == 1 ? "" : "s")</span>

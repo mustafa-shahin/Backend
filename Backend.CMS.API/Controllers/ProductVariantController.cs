@@ -319,7 +319,7 @@ namespace Backend.CMS.API.Controllers
                     Images = variant.Images.Select(i => new UpdateProductVariantImageDto
                     {
                         Id = i.Id,
-                        FileId = i.FileId,
+                        ImageId = i.ImageId,
                         Alt = i.Alt,
                         Caption = i.Caption,
                         Position = i.Position,

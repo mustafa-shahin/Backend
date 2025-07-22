@@ -1,6 +1,4 @@
 ﻿using Backend.CMS.Domain.Entities;
-using Backend.CMS.Domain.Entities.Files;
-using Backend.CMS.Infrastructure.IRepositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
 using System.Text;
@@ -143,23 +141,56 @@ namespace Backend.CMS.Infrastructure.Services
 
             try
             {
-                var files = fileIds?.Any() == true
-                    ? await _unitOfWork.Files.FindAsync(f => fileIds.Contains(f.Id))
-                    : await _unitOfWork.Files.GetAllAsync();
+                // Get all file types from different repositories
+                var allFiles = new List<object>();
+                
+                if (fileIds?.Any() == true)
+                {
+                    // Get specific files by IDs from all repositories
+                    var images = await _unitOfWork.Images.FindAsync(f => fileIds.Contains(f.Id));
+                    var videos = await _unitOfWork.Videos.FindAsync(f => fileIds.Contains(f.Id));
+                    var audios = await _unitOfWork.Audios.FindAsync(f => fileIds.Contains(f.Id));
+                    var documents = await _unitOfWork.Documents.FindAsync(f => fileIds.Contains(f.Id));
+                    var archives = await _unitOfWork.Archives.FindAsync(f => fileIds.Contains(f.Id));
+                    var otherFiles = await _unitOfWork.OtherFiles.FindAsync(f => fileIds.Contains(f.Id));
+                    
+                    allFiles.AddRange(images.Cast<object>());
+                    allFiles.AddRange(videos.Cast<object>());
+                    allFiles.AddRange(audios.Cast<object>());
+                    allFiles.AddRange(documents.Cast<object>());
+                    allFiles.AddRange(archives.Cast<object>());
+                    allFiles.AddRange(otherFiles.Cast<object>());
+                }
+                else
+                {
+                    // Get all files from all repositories
+                    var images = await _unitOfWork.Images.GetAllAsync();
+                    var videos = await _unitOfWork.Videos.GetAllAsync();
+                    var audios = await _unitOfWork.Audios.GetAllAsync();
+                    var documents = await _unitOfWork.Documents.GetAllAsync();
+                    var archives = await _unitOfWork.Archives.GetAllAsync();
+                    var otherFiles = await _unitOfWork.OtherFiles.GetAllAsync();
+                    
+                    allFiles.AddRange(images.Cast<object>());
+                    allFiles.AddRange(videos.Cast<object>());
+                    allFiles.AddRange(audios.Cast<object>());
+                    allFiles.AddRange(documents.Cast<object>());
+                    allFiles.AddRange(archives.Cast<object>());
+                    allFiles.AddRange(otherFiles.Cast<object>());
+                }
 
-                var filesList = files.ToList();
-                if (!filesList.Any())
+                if (!allFiles.Any())
                 {
                     _logger.LogInformation("No files found to index");
                     return true;
                 }
 
-                _logger.LogInformation("Starting to index {Count} files", filesList.Count);
+                _logger.LogInformation("Starting to index {Count} files", allFiles.Count);
 
                 var successCount = 0;
                 var errorCount = 0;
 
-                foreach (var batch in filesList.Chunk(_batchSize))
+                foreach (var batch in allFiles.Chunk(_batchSize))
                 {
                     foreach (var file in batch)
                     {
@@ -171,7 +202,8 @@ namespace Backend.CMS.Infrastructure.Services
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "Error indexing file {FileId}", file.Id);
+                            var fileId = GetFileId(file);
+                            _logger.LogError(ex, "Error indexing file {FileId}", fileId);
                             errorCount++;
                         }
                     }
@@ -324,7 +356,13 @@ namespace Backend.CMS.Infrastructure.Services
 
                     // Count total entities
                     var pageCount = await _unitOfWork.Pages.CountAsync();
-                    var fileCount = await _unitOfWork.Files.CountAsync();
+                    var imageCount = await _unitOfWork.Images.CountAsync();
+                    var videoCount = await _unitOfWork.Videos.CountAsync();
+                    var audioCount = await _unitOfWork.Audios.CountAsync();
+                    var documentCount = await _unitOfWork.Documents.CountAsync();
+                    var archiveCount = await _unitOfWork.Archives.CountAsync();
+                    var otherFileCount = await _unitOfWork.OtherFiles.CountAsync();
+                    var fileCount = imageCount + videoCount + audioCount + documentCount + archiveCount + otherFileCount;
                     var userCount = await _unitOfWork.Users.CountAsync();
                     totalEntities = pageCount + fileCount + userCount;
 
@@ -548,11 +586,27 @@ namespace Backend.CMS.Infrastructure.Services
 
         private async Task<(int processed, int failed)> IndexUpdatedFilesAsync(DateTime since)
         {
-            var updatedFiles = await _unitOfWork.Files.FindAsync(f => f.UpdatedAt >= since);
+            // Get updated files from all repositories
+            var allUpdatedFiles = new List<object>();
+            
+            var updatedImages = await _unitOfWork.Images.FindAsync(f => f.UpdatedAt >= since);
+            var updatedVideos = await _unitOfWork.Videos.FindAsync(f => f.UpdatedAt >= since);
+            var updatedAudios = await _unitOfWork.Audios.FindAsync(f => f.UpdatedAt >= since);
+            var updatedDocuments = await _unitOfWork.Documents.FindAsync(f => f.UpdatedAt >= since);
+            var updatedArchives = await _unitOfWork.Archives.FindAsync(f => f.UpdatedAt >= since);
+            var updatedOtherFiles = await _unitOfWork.OtherFiles.FindAsync(f => f.UpdatedAt >= since);
+            
+            allUpdatedFiles.AddRange(updatedImages.Cast<object>());
+            allUpdatedFiles.AddRange(updatedVideos.Cast<object>());
+            allUpdatedFiles.AddRange(updatedAudios.Cast<object>());
+            allUpdatedFiles.AddRange(updatedDocuments.Cast<object>());
+            allUpdatedFiles.AddRange(updatedArchives.Cast<object>());
+            allUpdatedFiles.AddRange(updatedOtherFiles.Cast<object>());
+            
             var processed = 0;
             var failed = 0;
 
-            foreach (var file in updatedFiles)
+            foreach (var file in allUpdatedFiles)
             {
                 try
                 {
@@ -561,7 +615,8 @@ namespace Backend.CMS.Infrastructure.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error indexing updated file {FileId}", file.Id);
+                    var fileId = GetFileId(file);
+                    _logger.LogError(ex, "Error indexing updated file {FileId}", fileId);
                     failed++;
                 }
             }
@@ -628,25 +683,26 @@ namespace Backend.CMS.Infrastructure.Services
             _lastIndexedTimes[$"Page_{page.Id}"] = DateTime.UtcNow;
         }
 
-        private async Task IndexFileAsync(BaseFileEntity file, CancellationToken cancellationToken = default)
+        private async Task IndexFileAsync(object file, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var content = $"{file.OriginalFileName} {file.Description} {file.Alt}".Trim();
-            var searchVector = GenerateSearchVector(file.OriginalFileName, content);
+            var fileInfo = GetFileInfo(file);
+            var content = $"{fileInfo.Name} {fileInfo.Description}".Trim();
+            var searchVector = GenerateSearchVector(fileInfo.Name, content);
 
-            var searchIndex = await GetOrCreateSearchIndexAsync("File", file.Id);
-            searchIndex.Title = TruncateString(file.OriginalFileName, 500);
+            var searchIndex = await GetOrCreateSearchIndexAsync("File", fileInfo.Id);
+            searchIndex.Title = TruncateString(fileInfo.Name, 500);
             searchIndex.Content = TruncateString(content, 10000);
             searchIndex.SearchVector = TruncateString(searchVector, 5000);
-            searchIndex.IsPublic = file.IsPublic;
+            searchIndex.IsPublic = true; // Default to public for now
             searchIndex.LastIndexedAt = DateTime.UtcNow;
             searchIndex.Metadata = new Dictionary<string, object>
             {
-                { "fileType", file.FileType.ToString() },
-                { "contentType", file.ContentType ?? "" },
-                { "fileSize", file.FileSize },
-                { "folderId", file.FolderId ?? 0 },
+                { "fileType", fileInfo.Type },
+                { "contentType", fileInfo.ContentType ?? "" },
+                { "fileSize", fileInfo.Size },
+                { "folderId", fileInfo.FolderId ?? 0 },
             };
 
             if (searchIndex.Id == 0)
@@ -658,7 +714,35 @@ namespace Backend.CMS.Infrastructure.Services
                 _unitOfWork.GetRepository<SearchIndex>().Update(searchIndex);
             }
 
-            _lastIndexedTimes[$"File_{file.Id}"] = DateTime.UtcNow;
+            _lastIndexedTimes[$"File_{fileInfo.Id}"] = DateTime.UtcNow;
+        }
+
+        private int GetFileId(object file)
+        {
+            return file switch
+            {
+                Image img => img.Id,
+                Video vid => vid.Id,
+                Audio aud => aud.Id,
+                Document doc => doc.Id,
+                Archive arc => arc.Id,
+                OtherFile other => other.Id,
+                _ => throw new ArgumentException($"Unsupported file type: {file.GetType()}")
+            };
+        }
+
+        private (int Id, string Name, string? Description, string Type, string? ContentType, long Size, int? FolderId) GetFileInfo(object file)
+        {
+            return file switch
+            {
+                Image img => (img.Id, img.Name, img.Description, "Image", img.ContentType, img.Size, img.FolderId),
+                Video vid => (vid.Id, vid.Name, vid.Description, "Video", vid.ContentType, vid.Size, vid.FolderId),
+                Audio aud => (aud.Id, aud.Name, aud.Description, "Audio", aud.ContentType, aud.Size, aud.FolderId),
+                Document doc => (doc.Id, doc.Name, doc.Description, "Document", doc.ContentType, doc.Size, doc.FolderId),
+                Archive arc => (arc.Id, arc.Name, arc.Description, "Archive", arc.ContentType, arc.Size, arc.FolderId),
+                OtherFile other => (other.Id, other.Name, other.Description, "OtherFile", other.ContentType, other.Size, other.FolderId),
+                _ => throw new ArgumentException($"Unsupported file type: {file.GetType()}")
+            };
         }
 
         private async Task IndexUserAsync(User user, CancellationToken cancellationToken = default)

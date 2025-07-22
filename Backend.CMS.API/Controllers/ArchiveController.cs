@@ -17,11 +17,11 @@ namespace Backend.CMS.API.Controllers
     [EnableRateLimiting("ApiPolicy")]
     public class ArchiveController : ControllerBase
     {
-        private readonly IArchiveFileService _archiveService;
+        private readonly IArchiveService _archiveService;
         private readonly ILogger<ArchiveController> _logger;
 
         public ArchiveController(
-            IArchiveFileService archiveService,
+            IArchiveService archiveService,
             ILogger<ArchiveController> logger)
         {
             _archiveService = archiveService ?? throw new ArgumentNullException(nameof(archiveService));
@@ -32,10 +32,10 @@ namespace Backend.CMS.API.Controllers
         /// Get paginated list of archives
         /// </summary>
         [HttpGet]
-        [ProducesResponseType(typeof(PaginatedResult<ArchiveFileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<ArchiveDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PaginatedResult<ArchiveFileDto>>> GetArchives([FromQuery] ArchiveSearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<ArchiveDto>>> GetArchives([FromQuery] ArchiveSearchDto searchDto)
         {
             try
             {
@@ -59,11 +59,11 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPost("upload")]
         [EnableRateLimiting("FileUploadPolicy")]
-        [ProducesResponseType(typeof(ArchiveFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ArchiveDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<ArchiveFileDto>> UploadArchive([FromForm] FileUploadDto uploadDto)
+        public async Task<ActionResult<ArchiveDto>> UploadArchive([FromForm] FileUploadDto uploadDto)
         {
             try
             {
@@ -92,10 +92,10 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPost("upload/multiple")]
         [EnableRateLimiting("FileUploadPolicy")]
-        [ProducesResponseType(typeof(List<ArchiveFileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(List<ArchiveDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<List<ArchiveFileDto>>> UploadMultipleArchives([FromForm] MultipleFileUploadDto uploadDto)
+        public async Task<ActionResult<List<ArchiveDto>>> UploadMultipleArchives([FromForm] MultipleFileUploadDto uploadDto)
         {
             try
             {
@@ -118,10 +118,10 @@ namespace Backend.CMS.API.Controllers
         /// Get archive by ID
         /// </summary>
         [HttpGet("{id:int}")]
-        [ProducesResponseType(typeof(ArchiveFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ArchiveDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<ArchiveFileDto>> GetArchive([FromRoute] int id)
+        public async Task<ActionResult<ArchiveDto>> GetArchive([FromRoute] int id)
         {
             try
             {
@@ -144,11 +144,11 @@ namespace Backend.CMS.API.Controllers
         /// Update archive information
         /// </summary>
         [HttpPut("{id:int}")]
-        [ProducesResponseType(typeof(ArchiveFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ArchiveDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<ArchiveFileDto>> UpdateArchive([FromRoute] int id, [FromBody] UpdateArchiveDto updateDto)
+        public async Task<ActionResult<ArchiveDto>> UpdateArchive([FromRoute] int id, [FromBody] UpdateArchiveDto updateDto)
         {
             try
             {

@@ -273,7 +273,6 @@ namespace Frontend.Components.Files.FileManagementBase
                     Alt = file.Alt,
                     IsPublic = file.IsPublic,
                     FolderId = file.FolderId,
-                    Tags = file.Tags ?? new Dictionary<string, object>()
                 };
                 fileValidationErrors.Clear();
                 dialogState.ShowFileDialog = true;

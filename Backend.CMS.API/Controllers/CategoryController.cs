@@ -592,7 +592,7 @@ namespace Backend.CMS.API.Controllers
 
                 var image = await _categoryService.AddCategoryImageAsync(id, createImageDto);
 
-                _logger.LogInformation("Added image {FileId} to category {CategoryId}", createImageDto.FileId, id);
+                _logger.LogInformation("Added image {ImageId} to category {CategoryId}", createImageDto.ImageId, id);
 
                 return CreatedAtAction(nameof(GetCategory), new { id }, image);
             }

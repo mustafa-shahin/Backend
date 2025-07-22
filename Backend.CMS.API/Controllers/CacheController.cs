@@ -1,7 +1,6 @@
 using Asp.Versioning;
 using Backend.CMS.API.Authorization;
 using Backend.CMS.Domain.Entities;
-using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Infrastructure.Caching.Interfaces;
 using Backend.CMS.Infrastructure.Caching.Services;
 using Backend.CMS.Infrastructure.Services;
@@ -442,8 +441,20 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
-                await _cacheInvalidationService.InvalidateEntityAsync<BaseFileEntity>(fileId);
-                await _cacheInvalidationService.InvalidateRelatedAsync<BaseFileEntity>(fileId);
+                // Try to invalidate cache for all file types since we don't know which type the ID belongs to
+                await _cacheInvalidationService.InvalidateEntityAsync<Image>(fileId);
+                await _cacheInvalidationService.InvalidateEntityAsync<Video>(fileId);
+                await _cacheInvalidationService.InvalidateEntityAsync<Audio>(fileId);
+                await _cacheInvalidationService.InvalidateEntityAsync<Document>(fileId);
+                await _cacheInvalidationService.InvalidateEntityAsync<Archive>(fileId);
+                await _cacheInvalidationService.InvalidateEntityAsync<OtherFile>(fileId);
+                
+                await _cacheInvalidationService.InvalidateRelatedAsync<Image>(fileId);
+                await _cacheInvalidationService.InvalidateRelatedAsync<Video>(fileId);
+                await _cacheInvalidationService.InvalidateRelatedAsync<Audio>(fileId);
+                await _cacheInvalidationService.InvalidateRelatedAsync<Document>(fileId);
+                await _cacheInvalidationService.InvalidateRelatedAsync<Archive>(fileId);
+                await _cacheInvalidationService.InvalidateRelatedAsync<OtherFile>(fileId);
 
                 _logger.LogInformation("File cache cleared for file {FileId} by user {UserId}", fileId, GetCurrentUserId());
                 return Ok(new { Message = $"File cache cleared for file {fileId}" });
@@ -463,7 +474,13 @@ namespace Backend.CMS.API.Controllers
         {
             try
             {
-                await _cacheInvalidationService.InvalidateEntityTypeAsync<BaseFileEntity>();
+                // Invalidate all file type caches
+                await _cacheInvalidationService.InvalidateEntityTypeAsync<Image>();
+                await _cacheInvalidationService.InvalidateEntityTypeAsync<Video>();
+                await _cacheInvalidationService.InvalidateEntityTypeAsync<Audio>();
+                await _cacheInvalidationService.InvalidateEntityTypeAsync<Document>();
+                await _cacheInvalidationService.InvalidateEntityTypeAsync<Archive>();
+                await _cacheInvalidationService.InvalidateEntityTypeAsync<OtherFile>();
                 await _cacheInvalidationService.InvalidateByPatternAsync(CacheKeys.FilePattern);
 
                 _logger.LogInformation("All file cache cleared by user {UserId}", GetCurrentUserId());
@@ -591,7 +608,13 @@ namespace Backend.CMS.API.Controllers
 
                 if (includeHeavyOperations)
                 {
-                    warmupTasks.Add(WarmupEntityType<BaseFileEntity>("files", warmedItems));
+                    // Warmup all file types
+                    warmupTasks.Add(WarmupEntityType<Image>("images", warmedItems));
+                    warmupTasks.Add(WarmupEntityType<Video>("videos", warmedItems));
+                    warmupTasks.Add(WarmupEntityType<Audio>("audios", warmedItems));
+                    warmupTasks.Add(WarmupEntityType<Document>("documents", warmedItems));
+                    warmupTasks.Add(WarmupEntityType<Archive>("archives", warmedItems));
+                    warmupTasks.Add(WarmupEntityType<OtherFile>("otherFiles", warmedItems));
                     warmupTasks.Add(WarmupEntityType<Folder>("folders", warmedItems));
                 }
 
@@ -663,7 +686,7 @@ namespace Backend.CMS.API.Controllers
                 // This is a placeholder for warmup logic
                 // In a real implementation, you would call actual service methods to load common data
                 warmedItems.Add(entityName);
-                await Task.Delay(100); // Simulate warmup time
+                await Task.Delay(TimeSpan.FromMilliseconds(100)); // Simulate warmup time
             }
             catch (Exception ex)
             {

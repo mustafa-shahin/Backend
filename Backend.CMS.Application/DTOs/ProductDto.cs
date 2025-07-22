@@ -33,7 +33,7 @@ namespace Backend.CMS.Application.DTOs
         public string StatusName => Status.ToString();
         public string TypeName => Type.ToString();
         public bool IsAvailable => Status == ProductStatus.Active && Variants.Any(v => v.Quantity > 0);
-        public string? FeaturedImageUrl => Images.OrderBy(i => i.Position).FirstOrDefault()?.ImageUrl;
+        public string? FeaturedImageUrl { get; set; }
     }
 
     public class CreateProductDto

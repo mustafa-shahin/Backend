@@ -13,6 +13,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly ILogger<ProductService> _logger;
+        private readonly IFileUrlService _fileUrlService;
 
         private const int DefaultPageSize = 10;
         private const int MaxPageSize = 100;
@@ -20,11 +21,13 @@ namespace Backend.CMS.Infrastructure.Services
         public ProductService(
             IUnitOfWork unitOfWork,
             IMapper mapper,
-            ILogger<ProductService> logger)
+            ILogger<ProductService> logger,
+            IFileUrlService fileUrlService)
         {
-            _unitOfWork = unitOfWork;
-            _mapper = mapper;
-            _logger = logger;
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _fileUrlService = fileUrlService ?? throw new ArgumentNullException(nameof(fileUrlService));
         }
 
         public async Task<ProductDto?> GetProductByIdAsync(int productId)
@@ -39,6 +42,7 @@ namespace Backend.CMS.Infrastructure.Services
                 }
 
                 var productDto = _mapper.Map<ProductDto>(product);
+                EnrichProductDtoWithImageUrls(productDto);
                 _logger.LogDebug("GetProductByIdAsync for ID '{ProductId}' completed. Product found", productId);
                 return productDto;
             }
@@ -52,7 +56,10 @@ namespace Backend.CMS.Infrastructure.Services
         public async Task<ProductDto?> GetProductBySlugAsync(string slug)
         {
             var product = await _unitOfWork.Products.GetBySlugAsync(slug);
-            return product != null ? _mapper.Map<ProductDto>(product) : null;
+            if (product == null) return null;
+            var productDto = _mapper.Map<ProductDto>(product);
+            EnrichProductDtoWithImageUrls(productDto);
+            return productDto;
         }
 
         public async Task<PaginatedResult<ProductDto>> GetProductsAsync(int page = 1, int pageSize = 10)
@@ -73,6 +80,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Map entities to DTOs
                 var productDtos = _mapper.Map<List<ProductDto>>(products);
+                EnrichProductDtosWithImageUrls(productDtos);
 
                 return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
@@ -101,6 +109,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Map entities to DTOs
                 var productDtos = _mapper.Map<List<ProductDto>>(products);
+                EnrichProductDtosWithImageUrls(productDtos);
 
                 return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
@@ -132,7 +141,7 @@ namespace Backend.CMS.Infrastructure.Services
             // Validate images
             if (createProductDto.Images.Any())
             {
-                await ValidateImagesAsync(createProductDto.Images.Select(i => i.FileId).ToList());
+                await ValidateImagesAsync(createProductDto.Images.Select(i => i.ImageId).ToList());
             }
 
             var product = _mapper.Map<Product>(createProductDto);
@@ -183,7 +192,9 @@ namespace Backend.CMS.Infrastructure.Services
 
             // Return the complete product with all relations
             var createdProduct = await _unitOfWork.Products.GetWithDetailsAsync(product.Id);
-            return _mapper.Map<ProductDto>(createdProduct!);
+            var productDto = _mapper.Map<ProductDto>(createdProduct!);
+            EnrichProductDtoWithImageUrls(productDto);
+            return productDto;
         }
 
         public async Task<ProductDto> UpdateProductAsync(int productId, UpdateProductDto updateProductDto)
@@ -199,7 +210,7 @@ namespace Backend.CMS.Infrastructure.Services
             // Validate images
             if (updateProductDto.Images.Any())
             {
-                await ValidateImagesAsync(updateProductDto.Images.Select(i => i.FileId).ToList());
+                await ValidateImagesAsync(updateProductDto.Images.Select(i => i.ImageId).ToList());
             }
 
             var oldStatus = product.Status;
@@ -240,7 +251,9 @@ namespace Backend.CMS.Infrastructure.Services
 
             // Return the complete updated product
             var updatedProduct = await _unitOfWork.Products.GetWithDetailsAsync(product.Id);
-            return _mapper.Map<ProductDto>(updatedProduct!);
+            var productDto = _mapper.Map<ProductDto>(updatedProduct!);
+            EnrichProductDtoWithImageUrls(productDto);
+            return productDto;
         }
 
         public async Task<bool> DeleteProductAsync(int productId)
@@ -272,6 +285,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Map entities to DTOs
                 var productDtos = _mapper.Map<List<ProductDto>>(products);
+                EnrichProductDtosWithImageUrls(productDtos);
 
                 return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
@@ -305,7 +319,9 @@ namespace Backend.CMS.Infrastructure.Services
             await _unitOfWork.Products.SaveChangesAsync();
 
             _logger.LogInformation("Published product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
-            return _mapper.Map<ProductDto>(product);
+            var productDto = _mapper.Map<ProductDto>(product);
+            EnrichProductDtoWithImageUrls(productDto);
+            return productDto;
         }
 
         public async Task<ProductDto> UnpublishProductAsync(int productId)
@@ -320,7 +336,9 @@ namespace Backend.CMS.Infrastructure.Services
             await _unitOfWork.Products.SaveChangesAsync();
 
             _logger.LogInformation("Unpublished product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
-            return _mapper.Map<ProductDto>(product);
+            var productDto = _mapper.Map<ProductDto>(product);
+            EnrichProductDtoWithImageUrls(productDto);
+            return productDto;
         }
 
         public async Task<ProductDto> ArchiveProductAsync(int productId)
@@ -334,7 +352,9 @@ namespace Backend.CMS.Infrastructure.Services
             await _unitOfWork.Products.SaveChangesAsync();
 
             _logger.LogInformation("Archived product: {ProductName} (ID: {ProductId})", product.Name, product.Id);
-            return _mapper.Map<ProductDto>(product);
+            var productDto = _mapper.Map<ProductDto>(product);
+            EnrichProductDtoWithImageUrls(productDto);
+            return productDto;
         }
 
         public async Task<ProductDto> DuplicateProductAsync(int productId, string newName)
@@ -383,7 +403,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var newImage = new ProductImage
                 {
                     ProductId = duplicatedProduct.Id,
-                    FileId = image.FileId,
+                    ImageId = image.ImageId,
                     Alt = image.Alt,
                     Caption = image.Caption,
                     Position = image.Position,
@@ -398,7 +418,9 @@ namespace Backend.CMS.Infrastructure.Services
                 originalProduct.Name, newName, duplicatedProduct.Id);
 
             var createdProduct = await _unitOfWork.Products.GetWithDetailsAsync(duplicatedProduct.Id);
-            return _mapper.Map<ProductDto>(createdProduct!);
+            var productDto = _mapper.Map<ProductDto>(createdProduct!);
+            EnrichProductDtoWithImageUrls(productDto);
+            return productDto;
         }
 
         public async Task<PaginatedResult<ProductDto>> GetFeaturedProductsAsync(int page = 1, int pageSize = 10)
@@ -419,6 +441,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Map entities to DTOs
                 var productDtos = _mapper.Map<List<ProductDto>>(products);
+                EnrichProductDtosWithImageUrls(productDtos);
 
                 return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
@@ -446,6 +469,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Map entities to DTOs
                 var productDtos = _mapper.Map<List<ProductDto>>(products);
+                EnrichProductDtosWithImageUrls(productDtos);
 
                 return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
@@ -475,6 +499,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Map entities to DTOs
                 var productDtos = _mapper.Map<List<ProductDto>>(products);
+                EnrichProductDtosWithImageUrls(productDtos);
 
                 return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
@@ -533,6 +558,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Map entities to DTOs
                 var productDtos = _mapper.Map<List<ProductDto>>(products);
+                EnrichProductDtosWithImageUrls(productDtos);
 
                 return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
@@ -562,6 +588,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Map entities to DTOs
                 var productDtos = _mapper.Map<List<ProductDto>>(products);
+                EnrichProductDtosWithImageUrls(productDtos);
 
                 return new PaginatedResult<ProductDto>(productDtos, page, pageSize, totalCount);
             }
@@ -579,7 +606,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (product == null)
                 throw new ArgumentException($"Product with ID {productId} not found");
 
-            await ValidateImageAsync(createImageDto.FileId);
+            await ValidateImageAsync(createImageDto.ImageId);
 
             var productImage = _mapper.Map<ProductImage>(createImageDto);
             productImage.ProductId = productId;
@@ -593,7 +620,7 @@ namespace Backend.CMS.Infrastructure.Services
             await _unitOfWork.GetRepository<ProductImage>().AddAsync(productImage);
             await _unitOfWork.GetRepository<ProductImage>().SaveChangesAsync();
 
-            _logger.LogInformation("Added image to product {ProductId}: FileId {FileId}", productId, createImageDto.FileId);
+            _logger.LogInformation("Added image to product {ProductId}: ImageId {ImageId}", productId, createImageDto.ImageId);
             return _mapper.Map<ProductImageDto>(productImage);
         }
 
@@ -603,7 +630,7 @@ namespace Backend.CMS.Infrastructure.Services
             if (productImage == null)
                 throw new ArgumentException($"Product image with ID {imageId} not found");
 
-            await ValidateImageAsync(updateImageDto.FileId);
+            await ValidateImageAsync(updateImageDto.ImageId);
 
             var oldIsFeatured = productImage.IsFeatured;
             _mapper.Map(updateImageDto, productImage);
@@ -669,22 +696,19 @@ namespace Backend.CMS.Infrastructure.Services
             return slug;
         }
 
-        private async Task ValidateImagesAsync(List<int> fileIds)
+        private async Task ValidateImagesAsync(List<int> imageIds)
         {
-            foreach (var fileId in fileIds)
+            foreach (var imageId in imageIds)
             {
-                await ValidateImageAsync(fileId);
+                await ValidateImageAsync(imageId);
             }
         }
 
-        private async Task ValidateImageAsync(int fileId)
+        private async Task ValidateImageAsync(int imageId)
         {
-            var file = await _unitOfWork.Files.GetByIdAsync(fileId);
-            if (file == null)
-                throw new ArgumentException($"File with ID {fileId} not found");
-
-            if (file.FileType != Domain.Enums.FileType.Image)
-                throw new ArgumentException($"File with ID {fileId} is not an image");
+            var image = await _unitOfWork.Images.GetByIdAsync(imageId);
+            if (image == null)
+                throw new ArgumentException($"Image with ID {imageId} not found");
         }
 
         private async Task AddProductImagesAsync(int productId, List<CreateProductImageDto> images)
@@ -714,7 +738,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var productImage = new ProductImage
                 {
                     ProductId = productId,
-                    FileId = imageDto.FileId,
+                    ImageId = imageDto.ImageId,
                     Alt = imageDto.Alt,
                     Caption = imageDto.Caption,
                     Position = imageDto.Position,
@@ -769,5 +793,76 @@ namespace Backend.CMS.Infrastructure.Services
                 }
             }
         }
+
+        #region Image URL Enrichment Methods
+
+        private void EnrichProductDtoWithImageUrls(ProductDto productDto)
+        {
+            if (productDto == null) return;
+
+            // Enrich product images
+            foreach (var image in productDto.Images)
+            {
+                EnrichProductImageDtoWithUrls(image);
+            }
+
+            // Set featured image URL
+            var featuredImage = productDto.Images.OrderBy(i => i.Position).FirstOrDefault();
+            if (featuredImage != null)
+            {
+                productDto.FeaturedImageUrl = featuredImage.ImageUrl;
+            }
+
+            // Enrich variant images
+            foreach (var variant in productDto.Variants)
+            {
+                EnrichProductVariantDtoWithImageUrls(variant);
+            }
+        }
+
+        private void EnrichProductDtosWithImageUrls(IEnumerable<ProductDto> productDtos)
+        {
+            foreach (var productDto in productDtos)
+            {
+                EnrichProductDtoWithImageUrls(productDto);
+            }
+        }
+
+        private void EnrichProductImageDtoWithUrls(ProductImageDto imageDto)
+        {
+            if (imageDto?.Image != null)
+            {
+                imageDto.ImageUrl = _fileUrlService.GenerateImagePreviewUrl(imageDto.Image.Id);
+                imageDto.ThumbnailUrl = _fileUrlService.GenerateImageThumbnailUrl(imageDto.Image.Id);
+            }
+        }
+
+        private void EnrichProductVariantDtoWithImageUrls(ProductVariantDto variantDto)
+        {
+            if (variantDto == null) return;
+
+            foreach (var image in variantDto.Images)
+            {
+                EnrichProductVariantImageDtoWithUrls(image);
+            }
+
+            // Set featured image URL
+            var featuredImage = variantDto.Images.OrderBy(i => i.Position).FirstOrDefault();
+            if (featuredImage != null)
+            {
+                variantDto.FeaturedImageUrl = featuredImage.ImageUrl;
+            }
+        }
+
+        private void EnrichProductVariantImageDtoWithUrls(ProductVariantImageDto imageDto)
+        {
+            if (imageDto?.Image != null)
+            {
+                imageDto.ImageUrl = _fileUrlService.GenerateImagePreviewUrl(imageDto.Image.Id);
+                imageDto.ThumbnailUrl = _fileUrlService.GenerateImageThumbnailUrl(imageDto.Image.Id);
+            }
+        }
+
+        #endregion
     }
 }

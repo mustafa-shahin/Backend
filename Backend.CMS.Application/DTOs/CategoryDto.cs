@@ -233,15 +233,17 @@ namespace Backend.CMS.Application.DTOs
     {
         public int Id { get; set; }
         public int CategoryId { get; set; }
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
+        public ImageDto? Image { get; set; }
         public string? Alt { get; set; }
         public string? Caption { get; set; }
         public int Position { get; set; }
         public bool IsFeatured { get; set; }
-        public string? ImageUrl { get; set; }
-        public string? ThumbnailUrl { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+        
+        public string ThumbnailUrl { get; set; } = string.Empty;
+        public string ImageUrl { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -250,7 +252,7 @@ namespace Backend.CMS.Application.DTOs
     public class CreateCategoryImageDto
     {
         [Required]
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
 
         [StringLength(255)]
         public string? Alt { get; set; }
@@ -268,7 +270,7 @@ namespace Backend.CMS.Application.DTOs
         public int Id { get; set; }
 
         [Required]
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
 
         [StringLength(255)]
         public string? Alt { get; set; }

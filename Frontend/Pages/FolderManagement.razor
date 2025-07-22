@@ -201,7 +201,7 @@
                                                         @folder.Name
                                                     </h4>
                                                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                                                        @folder.FileCount file@(folder.FileCount == 1 ? "" : "s")
+                                                        @folder.TotalFileCount file@(folder.TotalFileCount == 1 ? "" : "s")
                                                         @if (folder.SubFolderCount > 0)
                                                         {
                                                             <span>, @folder.SubFolderCount folder@(folder.SubFolderCount == 1 ? "" : "s")</span>
@@ -309,11 +309,11 @@
                                                         @folder.TotalSizeFormatted
                                                     </span>
                                                 }
-                                                else if (folder.FileCount > 0)
+                                                else if (folder.TotalFileCount > 0)
                                                 {
                                                     <span class="flex items-center">
                                                         <i class="fas fa-file mr-1"></i>
-                                                        @folder.FileCount
+                                                        @folder.TotalFileCount
                                                     </span>
                                                 }
                                             </div>
@@ -371,7 +371,7 @@
                                             <div class="flex items-center space-x-2">
                                                 <span class="flex items-center">
                                                     <i class="fas fa-file mr-1 text-gray-400"></i>
-                                                    @folder.FileCount
+                                                    @folder.TotalFileCount
                                                 </span>
                                                 @if (folder.SubFolderCount > 0)
                                                 {
@@ -1161,7 +1161,7 @@
     {
         if (!displayedFolders.Any()) return string.Empty;
 
-        var totalFiles = displayedFolders.Sum(f => f.FileCount);
+        var totalFiles = displayedFolders.Sum(f => f.TotalFileCount);
         var totalSubfolders = displayedFolders.Sum(f => f.SubFolderCount);
 
         var parts = new List<string>();

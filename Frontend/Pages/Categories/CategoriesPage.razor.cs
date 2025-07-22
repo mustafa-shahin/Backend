@@ -241,7 +241,7 @@ namespace Frontend.Pages.Categories
                 CustomFields = category.CustomFields ?? new Dictionary<string, object>(),
                 Images = category.Images?.Select(img => new CreateCategoryImageDto
                 {
-                    FileId = img.FileId,
+                    ImageId = img.ImageId,
                     Alt = img.Alt,
                     Caption = img.Caption,
                     Position = img.Position,
@@ -269,7 +269,7 @@ namespace Frontend.Pages.Categories
                 Images = createDto.Images?.Select(img => new UpdateCategoryImageDto
                 {
                     Id = 0, // Will be handled by the backend
-                    FileId = img.FileId,
+                    ImageId = img.ImageId,
                     Alt = img.Alt,
                     Caption = img.Caption,
                     Position = img.Position,
@@ -458,15 +458,15 @@ namespace Frontend.Pages.Categories
                     {
                         try
                         {
-                            var file = await FileService.GetFileByIdAsync(image.FileId);
+                            var file = await FileService.GetFileByIdAsync(image.ImageId);
                             if (file == null || file.FileType != Backend.CMS.Domain.Enums.FileType.Image)
                             {
-                                invalidImages.Add($"Image {image.FileId}");
+                                invalidImages.Add($"Image {image.ImageId}");
                             }
                         }
                         catch
                         {
-                            invalidImages.Add($"Image {image.FileId}");
+                            invalidImages.Add($"Image {image.ImageId}");
                         }
                     }
 

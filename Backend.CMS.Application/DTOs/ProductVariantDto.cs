@@ -86,12 +86,13 @@
     {
         public int Id { get; set; }
         public int ProductId { get; set; }
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
+        public ImageDto? Image { get; set; }
         public string? Alt { get; set; }
         public string? Caption { get; set; }
         public int Position { get; set; }
         public bool IsFeatured { get; set; }
-        public string ImageUrl { get; set; } = string.Empty;
+        public string? ImageUrl { get; set; }
         public string? ThumbnailUrl { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
@@ -100,7 +101,7 @@
 
     public class CreateProductImageDto
     {
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
         public string? Alt { get; set; }
         public string? Caption { get; set; }
         public int Position { get; set; }
@@ -110,7 +111,7 @@
     public class UpdateProductImageDto
     {
         public int Id { get; set; }
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
         public string? Alt { get; set; }
         public string? Caption { get; set; }
         public int Position { get; set; }
@@ -123,12 +124,13 @@
     {
         public int Id { get; set; }
         public int ProductVariantId { get; set; }
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
+        public ImageDto? Image { get; set; }
         public string? Alt { get; set; }
         public string? Caption { get; set; }
         public int Position { get; set; }
         public bool IsFeatured { get; set; }
-        public string ImageUrl { get; set; } = string.Empty;
+        public string? ImageUrl { get; set; }
         public string? ThumbnailUrl { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
@@ -137,7 +139,7 @@
 
     public class CreateProductVariantImageDto
     {
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
         public string? Alt { get; set; }
         public string? Caption { get; set; }
         public int Position { get; set; }
@@ -147,7 +149,7 @@
     public class UpdateProductVariantImageDto
     {
         public int Id { get; set; }
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
         public string? Alt { get; set; }
         public string? Caption { get; set; }
         public int Position { get; set; }

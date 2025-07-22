@@ -50,10 +50,10 @@
                         </div>
 
                         <!-- Duration badge -->
-                        @if (file.Duration.HasValue)
+                        @if (file.DurationTimeSpan.HasValue)
                         {
                             <div class="absolute bottom-2 right-2 bg-black bg-opacity-75 text-white text-xs px-2 py-1 rounded">
-                                @FileService.FormatDuration(file.Duration.Value)
+                                @FileService.FormatDuration(file.DurationTimeSpan.Value)
                             </div>
                         }
                     </div>
@@ -72,10 +72,10 @@
                         </div>
 
                         <!-- Duration badge -->
-                        @if (file.Duration.HasValue)
+                        @if (file.DurationTimeSpan.HasValue)
                         {
                             <div class="absolute bottom-2 right-2 bg-black bg-opacity-75 text-white text-xs px-2 py-1 rounded">
-                                @FileService.FormatDuration(file.Duration.Value)
+                                @FileService.FormatDuration(file.DurationTimeSpan.Value)
                             </div>
                         }
                     </div>
@@ -94,16 +94,16 @@
                         @if (file.FileType == FileType.Video)
                         {
                             <i class="fas fa-video mr-1"></i>
-                            @file.FileExtension.Replace(".", "").ToUpper()
+                            @file.Extension.Replace(".", "").ToUpper()
                         }
                         else if (file.FileType == FileType.Audio)
                         {
                             <i class="fas fa-music mr-1"></i>
-                            @file.FileExtension.Replace(".", "").ToUpper()
+                            @file.Extension.Replace(".", "").ToUpper()
                         }
                         else
                         {
-                            @file.FileExtension.Replace(".", "")
+                            @file.Extension.Replace(".", "")
                         }
                     </span>
                 </div>
@@ -188,11 +188,11 @@
                 @if (file.FileType == FileType.Video)
                 {
                     <div class="space-y-1 mb-2">
-                        @if (file.Duration.HasValue)
+                        @if (file.DurationTimeSpan.HasValue)
                         {
                             <div class="flex items-center text-xs text-gray-500 dark:text-gray-400">
                                 <i class="fas fa-clock mr-1"></i>
-                                <span>@FileService.FormatDuration(file.Duration.Value)</span>
+                                <span>@FileService.FormatDuration(file.DurationTimeSpan.Value)</span>
                             </div>
                         }
                         @if (file.Width.HasValue && file.Height.HasValue)
@@ -206,32 +206,14 @@
                 }
 
                 <!-- Additional file info for audio -->
-                @if (file.FileType == FileType.Audio && file.Duration.HasValue)
+                @if (file.FileType == FileType.Audio && file.DurationTimeSpan.HasValue)
                 {
                     <div class="flex items-center text-xs text-gray-500 dark:text-gray-400 mb-2">
                         <i class="fas fa-clock mr-1"></i>
-                        <span>@FileService.FormatDuration(file.Duration.Value)</span>
+                        <span>@FileService.FormatDuration(file.DurationTimeSpan.Value)</span>
                     </div>
                 }
 
-                <!-- Tags -->
-                @if (file.Tags?.Any() == true)
-                {
-                    <div class="flex flex-wrap gap-1 mb-3">
-                        @foreach (var tag in file.Tags.Take(3))
-                        {
-                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
-                                @tag.Value
-                            </span>
-                        }
-                        @if (file.Tags.Count > 3)
-                        {
-                            <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
-                                +@(file.Tags.Count - 3)
-                            </span>
-                        }
-                    </div>
-                }
 
                 <!-- Quick Actions -->
                 <div class="flex items-center justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -264,17 +246,6 @@
                         <i class="fas fa-trash text-sm"></i>
                     </button>
                 </div>
-
-                <!-- Download count -->
-                @if (file.DownloadCount > 0)
-                {
-                    <div class="flex items-center justify-center mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-                        <span class="text-xs text-gray-500 dark:text-gray-400">
-                            <i class="@(file.FileType == FileType.Video || file.FileType == FileType.Audio ? "fas fa-play" : "fas fa-download") mr-1"></i>
-                            @(file.FileType == FileType.Video ? "Played" : file.FileType == FileType.Audio ? "Played" : "Downloaded") @file.DownloadCount time@(file.DownloadCount == 1 ? "" : "s")
-                        </span>
-                    </div>
-                }
             </div>
         </div>
     }

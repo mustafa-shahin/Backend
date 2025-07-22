@@ -1,7 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using Backend.CMS.Domain.Common;
-using Backend.CMS.Domain.Entities.Files;
 
 namespace Backend.CMS.Domain.Entities
 {
@@ -50,7 +49,10 @@ namespace Backend.CMS.Domain.Entities
         // Images relationship
         public ICollection<CategoryImage> Images { get; set; } = new List<CategoryImage>();
 
-        public string? FeaturedImageUrl { get; set; }
+        public int? FeaturedImageId { get; set; }
+
+        [ForeignKey("FeaturedImageId")]
+        public Image? FeaturedImage { get; set; }
     }
 
     public class CategoryImage : BaseEntity
@@ -62,10 +64,10 @@ namespace Backend.CMS.Domain.Entities
         public Category Category { get; set; } = null!;
 
         [Required]
-        public int FileId { get; set; }
+        public int ImageId { get; set; }
 
-        [ForeignKey("FileId")]
-        public BaseFileEntity File { get; set; } = null!;
+        [ForeignKey("ImageId")]
+        public Image Image { get; set; } = null!;
 
         [MaxLength(255)]
         public string? Alt { get; set; }
@@ -76,12 +78,5 @@ namespace Backend.CMS.Domain.Entities
         public int Position { get; set; } = 0;
 
         public bool IsFeatured { get; set; } = false;
-
-        // Computed property for image URL
-
-        public string? ImageUrl { get; set; }
-
-        [NotMapped]
-        public string? ThumbnailUrl { get; set; }
     }
 }

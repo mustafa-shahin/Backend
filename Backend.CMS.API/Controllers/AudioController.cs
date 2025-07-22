@@ -17,11 +17,11 @@ namespace Backend.CMS.API.Controllers
     [EnableRateLimiting("ApiPolicy")]
     public class AudioController : ControllerBase
     {
-        private readonly IAudioFileService _audioService;
+        private readonly IAudioService _audioService;
         private readonly ILogger<AudioController> _logger;
 
         public AudioController(
-            IAudioFileService audioService,
+            IAudioService audioService,
             ILogger<AudioController> logger)
         {
             _audioService = audioService ?? throw new ArgumentNullException(nameof(audioService));
@@ -32,10 +32,10 @@ namespace Backend.CMS.API.Controllers
         /// Get paginated list of audio files
         /// </summary>
         [HttpGet]
-        [ProducesResponseType(typeof(PaginatedResult<AudioFileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(PaginatedResult<AudioDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<PaginatedResult<AudioFileDto>>> GetAudios([FromQuery] AudioSearchDto searchDto)
+        public async Task<ActionResult<PaginatedResult<AudioDto>>> GetAudios([FromQuery] AudioSearchDto searchDto)
         {
             try
             {
@@ -59,11 +59,11 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPost("upload")]
         [EnableRateLimiting("FileUploadPolicy")]
-        [ProducesResponseType(typeof(AudioFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(AudioDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status413PayloadTooLarge)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<AudioFileDto>> UploadAudio([FromForm] FileUploadDto uploadDto)
+        public async Task<ActionResult<AudioDto>> UploadAudio([FromForm] FileUploadDto uploadDto)
         {
             try
             {
@@ -92,10 +92,10 @@ namespace Backend.CMS.API.Controllers
         /// </summary>
         [HttpPost("upload/multiple")]
         [EnableRateLimiting("FileUploadPolicy")]
-        [ProducesResponseType(typeof(List<AudioFileDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(List<AudioDto>), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<List<AudioFileDto>>> UploadMultipleAudios([FromForm] MultipleFileUploadDto uploadDto)
+        public async Task<ActionResult<List<AudioDto>>> UploadMultipleAudios([FromForm] MultipleFileUploadDto uploadDto)
         {
             try
             {
@@ -118,10 +118,10 @@ namespace Backend.CMS.API.Controllers
         /// Get audio by ID
         /// </summary>
         [HttpGet("{id:int}")]
-        [ProducesResponseType(typeof(AudioFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(AudioDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<AudioFileDto>> GetAudio([FromRoute] int id)
+        public async Task<ActionResult<AudioDto>> GetAudio([FromRoute] int id)
         {
             try
             {
@@ -144,11 +144,11 @@ namespace Backend.CMS.API.Controllers
         /// Update audio information
         /// </summary>
         [HttpPut("{id:int}")]
-        [ProducesResponseType(typeof(AudioFileDto), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(AudioDto), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<AudioFileDto>> UpdateAudio([FromRoute] int id, [FromBody] UpdateAudioDto updateDto)
+        public async Task<ActionResult<AudioDto>> UpdateAudio([FromRoute] int id, [FromBody] UpdateAudioDto updateDto)
         {
             try
             {
@@ -192,6 +192,39 @@ namespace Backend.CMS.API.Controllers
             {
                 _logger.LogError(ex, "Error deleting audio {AudioId}", id);
                 return StatusCode(500, new { Message = "An error occurred while deleting the audio file" });
+            }
+        }
+
+        /// <summary>
+        /// Get audios linked to a specific entity
+        /// </summary>
+        [HttpGet("entity")]
+        [ProducesResponseType(typeof(List<AudioDto>), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<List<AudioDto>>> GetAudiosForEntity(
+            [FromQuery] string entityType,
+            [FromQuery] int entityId)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(entityType))
+                {
+                    return BadRequest(new { Message = "Entity type is required" });
+                }
+
+                if (entityId <= 0)
+                {
+                    return BadRequest(new { Message = "Entity ID must be greater than 0" });
+                }
+
+                var audios = await _audioService.GetAudiosByEntityAsync(entityType, entityId);
+                return Ok(audios);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting audios for entity {EntityType}:{EntityId}", entityType, entityId);
+                return StatusCode(500, new { Message = "An error occurred while retrieving audios" });
             }
         }
     }

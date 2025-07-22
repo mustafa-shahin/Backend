@@ -34,6 +34,7 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly ICacheInvalidationService _cacheInvalidationService;
         private readonly ICacheKeyService _cacheKeyService;
         private readonly IUserCacheService _userCacheService;
+        private readonly IFileUrlService _fileUrlService;
         private readonly CacheOptions _cacheOptions;
 
         // Pagination constants
@@ -48,6 +49,7 @@ namespace Backend.CMS.Infrastructure.Services
             ICacheInvalidationService cacheInvalidationService,
             ICacheKeyService cacheKeyService,
             IUserCacheService userCacheService,
+            IFileUrlService fileUrlService,
             IMapper mapper,
             ILogger<UserService> logger,
             IOptions<CacheOptions> cacheOptions)
@@ -58,6 +60,7 @@ namespace Backend.CMS.Infrastructure.Services
             _cacheInvalidationService = cacheInvalidationService ?? throw new ArgumentNullException(nameof(cacheInvalidationService));
             _cacheKeyService = cacheKeyService ?? throw new ArgumentNullException(nameof(cacheKeyService));
             _userCacheService = userCacheService ?? throw new ArgumentNullException(nameof(userCacheService));
+            _fileUrlService = fileUrlService ?? throw new ArgumentNullException(nameof(fileUrlService));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _cacheOptions = cacheOptions?.Value ?? throw new ArgumentNullException(nameof(cacheOptions));
@@ -74,7 +77,9 @@ namespace Backend.CMS.Infrastructure.Services
                 if (cachedUser != null)
                 {
                     _logger.LogDebug("Retrieved user {UserId} from cache", userId);
-                    return _mapper.Map<UserDto>(cachedUser);
+                    var cachedUserDto = _mapper.Map<UserDto>(cachedUser);
+                    EnrichUserDtoWithPictureUrl(cachedUserDto);
+                    return cachedUserDto;
                 }
 
                 var user = await _unitOfWork.Users.GetByIdAsync(userId);
@@ -88,7 +93,9 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _logger.LogDebug("Cached user {UserId} for {CacheExpiration}", userId, _cacheOptions.DefaultExpiration);
 
-                return _mapper.Map<UserDto>(user);
+                var userDto = _mapper.Map<UserDto>(user);
+                EnrichUserDtoWithPictureUrl(userDto);
+                return userDto;
             }
             catch (Exception ex) when (!(ex is KeyNotFoundException))
             {
@@ -110,7 +117,9 @@ namespace Backend.CMS.Infrastructure.Services
                 if (cachedUser != null)
                 {
                     _logger.LogDebug("Retrieved user by email {Email} from cache", normalizedEmail);
-                    return _mapper.Map<UserDto>(cachedUser);
+                    var cachedUserDto = _mapper.Map<UserDto>(cachedUser);
+                    EnrichUserDtoWithPictureUrl(cachedUserDto);
+                    return cachedUserDto;
                 }
 
                 var user = await _unitOfWork.Users.GetByEmailAsync(normalizedEmail);
@@ -124,7 +133,9 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _logger.LogDebug("Cached user by email {Email} for {CacheExpiration}", normalizedEmail, _cacheOptions.DefaultExpiration);
 
-                return _mapper.Map<UserDto>(user);
+                var userDto = _mapper.Map<UserDto>(user);
+                EnrichUserDtoWithPictureUrl(userDto);
+                return userDto;
             }
             catch (Exception ex) when (!(ex is KeyNotFoundException))
             {
@@ -146,7 +157,9 @@ namespace Backend.CMS.Infrastructure.Services
                 if (cachedUser != null)
                 {
                     _logger.LogDebug("Retrieved user by username {Username} from cache", normalizedUsername);
-                    return _mapper.Map<UserDto>(cachedUser);
+                    var cachedUserDto = _mapper.Map<UserDto>(cachedUser);
+                    EnrichUserDtoWithPictureUrl(cachedUserDto);
+                    return cachedUserDto;
                 }
 
                 var user = await _unitOfWork.Users.GetByUsernameAsync(normalizedUsername);
@@ -160,7 +173,9 @@ namespace Backend.CMS.Infrastructure.Services
 
                 _logger.LogDebug("Cached user by username {Username} for {CacheExpiration}", normalizedUsername, _cacheOptions.DefaultExpiration);
 
-                return _mapper.Map<UserDto>(user);
+                var userDto = _mapper.Map<UserDto>(user);
+                EnrichUserDtoWithPictureUrl(userDto);
+                return userDto;
             }
             catch (Exception ex) when (!(ex is KeyNotFoundException))
             {
@@ -221,6 +236,7 @@ namespace Backend.CMS.Infrastructure.Services
                     : await _unitOfWork.Users.SearchUsersAsync(normalizedSearch, adjustedPageNumber, validatedPageSize);
 
                 var userDtos = _mapper.Map<List<UserDto>>(users);
+                EnrichUserDtosWithPictureUrls(userDtos);
 
                 var result = new PaginatedResult<UserDto>(
                     userDtos.AsReadOnly(),
@@ -294,6 +310,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                     var createdUser = await _unitOfWork.Users.GetByIdAsync(user.Id);
                     var result = _mapper.Map<UserDto>(createdUser);
+                    EnrichUserDtoWithPictureUrl(result);
 
                     _logger.LogInformation("User {UserId} successfully created and cached", user.Id);
                     return result;
@@ -375,7 +392,9 @@ namespace Backend.CMS.Infrastructure.Services
                     await RefreshSessionIfCurrentUser(userId);
 
                     var updatedUser = await _unitOfWork.Users.GetByIdAsync(userId);
-                    return _mapper.Map<UserDto>(updatedUser);
+                    var userDto = _mapper.Map<UserDto>(updatedUser);
+                    EnrichUserDtoWithPictureUrl(userDto);
+                    return userDto;
                 });
             }
             catch (Exception ex) when (!(ex is KeyNotFoundException))
@@ -592,6 +611,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var totalCount = await _unitOfWork.Users.CountSearchAsync(searchDto.SearchTerm ?? "");
 
                 var userDtos = _mapper.Map<List<UserDto>>(users);
+                EnrichUserDtosWithPictureUrls(userDtos);
 
                 var result = new PaginatedResult<UserDto>(
                     userDtos.AsReadOnly(),
@@ -676,7 +696,9 @@ namespace Backend.CMS.Infrastructure.Services
                 await _userCacheService.SetUserAsync(user);
 
                 _logger.LogInformation("User preferences updated for user {UserId}", userId);
-                return _mapper.Map<UserDto>(user);
+                var userDto = _mapper.Map<UserDto>(user);
+                EnrichUserDtoWithPictureUrl(userDto);
+                return userDto;
             }
             catch (Exception ex) when (!(ex is KeyNotFoundException))
             {
@@ -698,7 +720,7 @@ namespace Backend.CMS.Infrastructure.Services
                     throw new KeyNotFoundException($"User with ID {userId} not found");
                 }
 
-                user.PictureFileId = pictureFileId;
+                user.Picture.Id = pictureFileId.Value;
                 user.UpdatedAt = DateTime.UtcNow;
 
                 _unitOfWork.Users.Update(user);
@@ -707,7 +729,9 @@ namespace Backend.CMS.Infrastructure.Services
                 await _userCacheService.SetUserAsync(user);
 
                 _logger.LogInformation("User avatar updated for user {UserId}", userId);
-                return _mapper.Map<UserDto>(user);
+                var userDto = _mapper.Map<UserDto>(user);
+                EnrichUserDtoWithPictureUrl(userDto);
+                return userDto;
             }
             catch (Exception ex) when (!(ex is KeyNotFoundException))
             {
@@ -1048,6 +1072,26 @@ namespace Backend.CMS.Infrastructure.Services
             var random = new Random();
             return new string(Enumerable.Repeat(chars, length)
                 .Select(s => s[random.Next(s.Length)]).ToArray());
+        }
+
+        #endregion
+
+        #region Picture URL Enrichment Methods
+
+        private void EnrichUserDtoWithPictureUrl(UserDto userDto)
+        {
+            if (userDto?.Picture != null)
+            {
+                userDto.PictureUrl = _fileUrlService.GenerateImagePreviewUrl(userDto.Picture.Id);
+            }
+        }
+
+        private void EnrichUserDtosWithPictureUrls(IEnumerable<UserDto> userDtos)
+        {
+            foreach (var userDto in userDtos)
+            {
+                EnrichUserDtoWithPictureUrl(userDto);
+            }
         }
 
         #endregion

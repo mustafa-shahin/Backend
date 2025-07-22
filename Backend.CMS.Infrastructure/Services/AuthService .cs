@@ -118,7 +118,7 @@ namespace Backend.CMS.Infrastructure.Services
                     await HandleFailedLoginAttemptAsync(user, clientIp);
 
                     // Add delay to prevent timing attacks
-                    await Task.Delay(new Random().Next(100, 500));
+                    await Task.Delay(TimeSpan.FromMilliseconds(new Random().Next(100, 500)));
 
                     throw new UnauthorizedAccessException("Invalid email or password");
                 }

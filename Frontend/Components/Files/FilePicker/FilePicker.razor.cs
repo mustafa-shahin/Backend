@@ -189,7 +189,7 @@ namespace Frontend.Components.Files.FilePicker
                 {
                     entityFiles = entityFiles.Where(f =>
                         AllowedExtensions.Any(ext =>
-                            f.FileExtension.Equals(ext, StringComparison.OrdinalIgnoreCase))).ToList();
+                            f.Extension.Equals(ext, StringComparison.OrdinalIgnoreCase))).ToList();
                 }
 
                 files = entityFiles;
@@ -238,7 +238,7 @@ namespace Frontend.Components.Files.FilePicker
             files = temporaryFiles.ToList();
 
             // Automatically set first image as featured if none is set
-            if (AllowFeaturedSelection && file.IsImage && !featuredFileId.HasValue)
+            if (AllowFeaturedSelection && !featuredFileId.HasValue)
             {
                 featuredFileId = file.Id;
                 await NotifyFeaturedFileChanged();
@@ -393,7 +393,7 @@ namespace Frontend.Components.Files.FilePicker
                     {
                         uploadProgress[file.Name] = i;
                         await InvokeAsync(StateHasChanged);
-                        await Task.Delay(50);
+                        await Task.Delay(TimeSpan.FromMilliseconds(50));
                     }
 
                     processedFiles.Add(tempFile);
@@ -420,23 +420,35 @@ namespace Frontend.Components.Files.FilePicker
 
         private async Task ProcessDirectUpload(List<IBrowserFile> selectedFiles)
         {
-            var uploadTasks = new List<Task>();
-
-            foreach (var file in selectedFiles)
+            try
             {
-                if (!ValidateFile(file))
-                    continue;
+                isUploading = true;
+                await InvokeAsync(StateHasChanged);
 
-                uploadTasks.Add(UploadSingleFile(file));
+                var uploadTasks = new List<Task>();
+
+                foreach (var file in selectedFiles)
+                {
+                    if (!ValidateFile(file))
+                        continue;
+
+                    uploadTasks.Add(UploadSingleFile(file));
+                }
+
+                await Task.WhenAll(uploadTasks);
+
+                var successCount = uploadTasks.Count;
+                if (successCount > 0)
+                {
+                    NotificationService.ShowSuccess($"Successfully uploaded {successCount} file(s)");
+                    await LoadFilesAsync();
+                }
             }
-
-            await Task.WhenAll(uploadTasks);
-
-            var successCount = uploadTasks.Count;
-            if (successCount > 0)
+            finally
             {
-                NotificationService.ShowSuccess($"Successfully uploaded {successCount} file(s)");
-                await LoadFilesAsync();
+                isUploading = false;
+                uploadProgress.Clear();
+                await InvokeAsync(StateHasChanged);
             }
         }
 
@@ -447,20 +459,16 @@ namespace Frontend.Components.Files.FilePicker
                 Id = nextTemporaryId--,
                 OriginalFileName = file.Name,
                 ContentType = file.ContentType,
+                Size = file.Size,
                 FileSize = file.Size,
-                FileSizeFormatted = FileService.FormatFileSize(file.Size),
-                FileExtension = Path.GetExtension(file.Name).ToLower(),
+                Extension = Path.GetExtension(file.Name).ToLower(),
                 FileType = DetermineFileType(file.ContentType),
                 IsPublic = false,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 Urls = new FileUrlsDto(),
-                HasThumbnail = false,
-                CanPreview = false
+                HasThumbnail = false
             };
-
-            // Set file type name
-            tempFile.FileTypeName = tempFile.FileType.ToString();
 
             // Generate thumbnail for images
             if (tempFile.IsImage && ShowThumbnails)
@@ -567,7 +575,7 @@ namespace Frontend.Components.Files.FilePicker
                 {
                     for (int i = 10; i <= 90; i += 10)
                     {
-                        await Task.Delay(100);
+                        await Task.Delay(TimeSpan.FromMilliseconds(100));
                         uploadProgress[file.Name] = i;
                         await InvokeAsync(StateHasChanged);
                     }
@@ -581,7 +589,7 @@ namespace Frontend.Components.Files.FilePicker
                 {
                     uploadProgress[file.Name] = 100;
                     await InvokeAsync(StateHasChanged);
-                    await Task.Delay(200);
+                    await Task.Delay(TimeSpan.FromMilliseconds(200));
                 }
                 else
                 {
@@ -698,11 +706,7 @@ namespace Frontend.Components.Files.FilePicker
                             Description = file.Description,
                             Alt = file.Alt,
                             IsPublic = file.IsPublic,
-                            Tags = file.Tags ?? new Dictionary<string, object>()
                         };
-
-                        updateDto.Tags["EntityType"] = EntityType;
-                        updateDto.Tags["EntityId"] = EntityId.ToString();
 
                         var updatedFile = await FileService.UpdateFileAsync(file.Id, updateDto);
                         if (updatedFile != null)
@@ -806,9 +810,6 @@ namespace Frontend.Components.Files.FilePicker
                         Description = fileToRemove.Description,
                         Alt = fileToRemove.Alt,
                         IsPublic = fileToRemove.IsPublic,
-                        Tags = fileToRemove.Tags?.Where(t =>
-                            t.Key != "EntityType" && t.Key != "EntityId")
-                            .ToDictionary(t => t.Key, t => t.Value) ?? new Dictionary<string, object>()
                     };
 
                     var updatedFile = await FileService.UpdateFileAsync(fileToRemove.Id, updateDto);
@@ -1067,11 +1068,17 @@ namespace Frontend.Components.Files.FilePicker
             public string Name => _browserFile.Name;
             public string FileName => _browserFile.Name;
 
-            public void CopyTo(Stream target) => throw new NotImplementedException();
+            public void CopyTo(Stream target)
+            {
+                using var stream = _browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100);
+                stream.CopyTo(target);
+            }
 
-            public Task CopyToAsync(Stream target, CancellationToken cancellationToken = default)
-                => _browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100, cancellationToken: cancellationToken)
-                    .CopyToAsync(target, cancellationToken);
+            public async Task CopyToAsync(Stream target, CancellationToken cancellationToken = default)
+            {
+                using var stream = _browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100, cancellationToken: cancellationToken);
+                await stream.CopyToAsync(target, cancellationToken);
+            }
 
             public Stream OpenReadStream() => _browserFile.OpenReadStream(maxAllowedSize: 1024 * 1024 * 100);
         }

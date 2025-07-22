@@ -1,7 +1,6 @@
 ﻿using AutoMapper;
 using Backend.CMS.Application.DTOs;
 using Backend.CMS.Domain.Entities;
-using Backend.CMS.Domain.Entities.Files;
 using Backend.CMS.Domain.Enums;
 
 namespace Backend.CMS.Infrastructure.Mapping
@@ -52,7 +51,8 @@ namespace Backend.CMS.Infrastructure.Mapping
         {
             CreateMap<User, UserDto>()
                 .ForMember(dest => dest.RoleName, opt => opt.MapFrom(src => src.Role.ToString()))
-                .ForMember(dest => dest.PictureUrl, opt => opt.MapFrom(src => src.PictureUrl))
+                .ForMember(dest => dest.Picture, opt => opt.MapFrom(src => src.Picture))
+                .ForMember(dest => dest.PictureUrl, opt => opt.Ignore()) // Will be set by service
                 .ForMember(dest => dest.Addresses, opt => opt.MapFrom(src => src.Addresses.Where(a => !a.IsDeleted)))
                 .ForMember(dest => dest.ContactDetails, opt => opt.MapFrom(src => src.ContactDetails.Where(c => !c.IsDeleted)));
 
@@ -189,17 +189,18 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .ForMember(dest => dest.ParentCategoryName, opt => opt.MapFrom(src => src.ParentCategory != null ? src.ParentCategory.Name : null))
                 .ForMember(dest => dest.SubCategories, opt => opt.MapFrom(src => src.SubCategories.Where(sc => !sc.IsDeleted)))
                 .ForMember(dest => dest.Images, opt => opt.MapFrom(src => src.Images.Where(i => !i.IsDeleted).OrderBy(i => i.Position)))
-                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl))
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.Ignore()) // Will be set by service from FeaturedImage
                 .ForMember(dest => dest.ProductCount, opt => opt.Ignore()); // Will be set by service
 
             CreateMap<Category, CategoryTreeDto>()
                 .ForMember(dest => dest.Children, opt => opt.MapFrom(src => src.SubCategories.Where(sc => !sc.IsDeleted)))
-                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl))
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.Ignore()) // Will be set by service from FeaturedImage
                 .ForMember(dest => dest.ProductCount, opt => opt.Ignore()); // Will be set by service
 
             CreateMap<CreateCategoryDto, Category>()
                 .IgnoreAuditProperties()
                 .ForMember(dest => dest.Images, opt => opt.Ignore())
+                .ForMember(dest => dest.FeaturedImage, opt => opt.Ignore())
                 .ForMember(dest => dest.ParentCategory, opt => opt.Ignore())
                 .ForMember(dest => dest.SubCategories, opt => opt.Ignore())
                 .ForMember(dest => dest.ProductCategories, opt => opt.Ignore());
@@ -207,6 +208,7 @@ namespace Backend.CMS.Infrastructure.Mapping
             CreateMap<UpdateCategoryDto, Category>()
                 .IgnoreBaseEntityProperties()
                 .ForMember(dest => dest.Images, opt => opt.Ignore())
+                .ForMember(dest => dest.FeaturedImage, opt => opt.Ignore())
                 .ForMember(dest => dest.ParentCategory, opt => opt.Ignore())
                 .ForMember(dest => dest.SubCategories, opt => opt.Ignore())
                 .ForMember(dest => dest.ProductCategories, opt => opt.Ignore());
@@ -221,7 +223,7 @@ namespace Backend.CMS.Infrastructure.Mapping
                     src.Variants.Where(v => !v.IsDeleted)))
                 .ForMember(dest => dest.Images, opt => opt.MapFrom(src =>
                     src.Images.Where(i => !i.IsDeleted).OrderBy(i => i.Position)))
-                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl))
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.Ignore()) // Will be set by service
                 .ForMember(dest => dest.StatusName, opt => opt.MapFrom(src => src.Status.ToString()))
                 .ForMember(dest => dest.TypeName, opt => opt.MapFrom(src => src.Type.ToString()))
                 .ForMember(dest => dest.IsAvailable, opt => opt.MapFrom(src =>
@@ -230,15 +232,13 @@ namespace Backend.CMS.Infrastructure.Mapping
                                                                                 src.Variants != null &&
                                                                                 src.Variants.Any(v => v.Quantity > 0)
                                                                             ))
-
-                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.Images.OrderBy(i => i.Position).FirstOrDefault() != null ? $"/api/files/{src.Images.OrderBy(i => i.Position).FirstOrDefault().FileId}/download" : null))
                 .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type))
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status));
 
             CreateMap<Product, ProductListDto>()
                 .ForMember(dest => dest.CategoryNames, opt => opt.MapFrom(src =>
                     src.ProductCategories.Where(pc => !pc.IsDeleted).Select(pc => pc.Category.Name).ToList()))
-                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl))
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.Ignore()) // Will be set by service
                 .ForMember(dest => dest.StatusName, opt => opt.MapFrom(src => src.Status.ToString()))
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status))
                 .ForMember(dest => dest.Type, opt => opt.MapFrom(src => src.Type));
@@ -264,11 +264,10 @@ namespace Backend.CMS.Infrastructure.Mapping
         {
             CreateMap<ProductVariant, ProductVariantDto>()
                 .ForMember(dest => dest.Images, opt => opt.MapFrom(src => src.Images.Where(i => !i.IsDeleted).OrderBy(i => i.Position)))
-                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.FeaturedImageUrl))
+                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.Ignore()) // Will be set by service
                 .ForMember(dest => dest.IsAvailable, opt => opt.MapFrom(src => src.Quantity > 0 || src.ContinueSellingWhenOutOfStock))
                 .ForMember(dest => dest.DiscountPercentage, opt => opt.MapFrom(src => src.CompareAtPrice.HasValue && src.CompareAtPrice > src.Price ? Math.Round(((src.CompareAtPrice.Value - src.Price) / src.CompareAtPrice.Value) * 100, 2) : (decimal?)null))
-                .ForMember(dest => dest.DisplayTitle, opt => opt.MapFrom(src => !string.IsNullOrEmpty(src.Title) ? src.Title : string.Join(" / ", new[] { src.Option1, src.Option2, src.Option3 }.Where(o => !string.IsNullOrEmpty(o)))))
-                .ForMember(dest => dest.FeaturedImageUrl, opt => opt.MapFrom(src => src.Images.OrderBy(i => i.Position).FirstOrDefault() != null ? $"/api/files/{src.Images.OrderBy(i => i.Position).FirstOrDefault().FileId}/download" : null));
+                .ForMember(dest => dest.DisplayTitle, opt => opt.MapFrom(src => !string.IsNullOrEmpty(src.Title) ? src.Title : string.Join(" / ", new[] { src.Option1, src.Option2, src.Option3 }.Where(o => !string.IsNullOrEmpty(o)))));
 
             CreateMap<CreateProductVariantDto, ProductVariant>()
                 .IgnoreAuditProperties()
@@ -286,23 +285,21 @@ namespace Backend.CMS.Infrastructure.Mapping
         private void ConfigureProductImageMappings()
         {
             CreateMap<ProductImage, ProductImageDto>()
-                .ForMember(dest => dest.ImageUrl, opt => opt.MapFrom(src => $"/api/files/{src.FileId}/download"))
-                .ForMember(dest => dest.ThumbnailUrl, opt => opt.MapFrom(src => $"/api/files/{src.FileId}/thumbnail"));
-
-            CreateMap<CreateProductImageDto, ProductImage>();
-            CreateMap<UpdateProductImageDto, ProductImage>();
+                .ForMember(dest => dest.Image, opt => opt.MapFrom(src => src.Image))
+                .ForMember(dest => dest.ImageUrl, opt => opt.Ignore()) // Will be set by service
+                .ForMember(dest => dest.ThumbnailUrl, opt => opt.Ignore()); // Will be set by service
 
             CreateMap<CreateProductImageDto, ProductImage>()
                 .IgnoreAuditProperties()
                 .ForMember(dest => dest.Product, opt => opt.Ignore())
                 .ForMember(dest => dest.ProductId, opt => opt.Ignore())
-                .ForMember(dest => dest.File, opt => opt.Ignore());
+                .ForMember(dest => dest.Image, opt => opt.Ignore());
 
             CreateMap<UpdateProductImageDto, ProductImage>()
                 .IgnoreBaseEntityProperties()
                 .ForMember(dest => dest.Product, opt => opt.Ignore())
                 .ForMember(dest => dest.ProductId, opt => opt.Ignore())
-                .ForMember(dest => dest.File, opt => opt.Ignore());
+                .ForMember(dest => dest.Image, opt => opt.Ignore());
         }
 
 
@@ -310,8 +307,7 @@ namespace Backend.CMS.Infrastructure.Mapping
         {
             // Category Image mappings
             CreateMap<CategoryImage, CategoryImageDto>()
-                .ForMember(dest => dest.ImageUrl, opt => opt.MapFrom(src => src.ImageUrl))
-                .ForMember(dest => dest.ThumbnailUrl, opt => opt.MapFrom(src => src.ThumbnailUrl));
+                .ForMember(dest => dest.Image, opt => opt.MapFrom(src => src.Image));
             CreateMap<CreateCategoryImageDto, CategoryImage>();
             CreateMap<UpdateCategoryImageDto, CategoryImage>();
 
@@ -319,86 +315,139 @@ namespace Backend.CMS.Infrastructure.Mapping
                 .IgnoreAuditProperties()
                 .ForMember(dest => dest.Category, opt => opt.Ignore())
                 .ForMember(dest => dest.CategoryId, opt => opt.Ignore())
-                .ForMember(dest => dest.File, opt => opt.Ignore());
+                .ForMember(dest => dest.Image, opt => opt.Ignore());
 
             CreateMap<UpdateCategoryImageDto, CategoryImage>()
                 .IgnoreBaseEntityProperties()
                 .ForMember(dest => dest.Category, opt => opt.Ignore())
                 .ForMember(dest => dest.CategoryId, opt => opt.Ignore())
-                .ForMember(dest => dest.File, opt => opt.Ignore());
+                .ForMember(dest => dest.Image, opt => opt.Ignore());
 
             // Product Variant Image mappings
             CreateMap<ProductVariantImage, ProductVariantImageDto>()
-                .ForMember(dest => dest.ImageUrl, opt => opt.MapFrom(src => src.ImageUrl))
-                .ForMember(dest => dest.ThumbnailUrl, opt => opt.MapFrom(src => src.ThumbnailUrl));
-
-            CreateMap<CreateProductVariantImageDto, ProductVariantImage>();
-            CreateMap<UpdateProductVariantImageDto, ProductVariantImage>();
+                .ForMember(dest => dest.Image, opt => opt.MapFrom(src => src.Image))
+                .ForMember(dest => dest.ImageUrl, opt => opt.Ignore()) // Will be set by service
+                .ForMember(dest => dest.ThumbnailUrl, opt => opt.Ignore()); // Will be set by service
 
             CreateMap<CreateProductVariantImageDto, ProductVariantImage>()
                 .IgnoreAuditProperties()
                 .ForMember(dest => dest.ProductVariant, opt => opt.Ignore())
                 .ForMember(dest => dest.ProductVariantId, opt => opt.Ignore())
-                .ForMember(dest => dest.File, opt => opt.Ignore());
+                .ForMember(dest => dest.Image, opt => opt.Ignore());
 
             CreateMap<UpdateProductVariantImageDto, ProductVariantImage>()
                 .IgnoreBaseEntityProperties()
                 .ForMember(dest => dest.ProductVariant, opt => opt.Ignore())
                 .ForMember(dest => dest.ProductVariantId, opt => opt.Ignore())
-                .ForMember(dest => dest.File, opt => opt.Ignore());
+                .ForMember(dest => dest.Image, opt => opt.Ignore());
         }
 
         private void ConfigureFileMappings()
         {
-            // Base file entity mappings
-            CreateMap<BaseFileEntity, FileDto>()
-                .ForMember(dest => dest.Urls, opt => opt.Ignore()) // Will be populated by URL builder
-                .ForMember(dest => dest.HasThumbnail, opt => opt.Ignore()) // Computed property
-                .ForMember(dest => dest.CanPreview, opt => opt.Ignore()) // Computed property
-                .ForMember(dest => dest.FileSizeFormatted, opt => opt.Ignore()) // Computed property
-                .ForMember(dest => dest.FileTypeName, opt => opt.MapFrom(src => src.FileType.ToString()))
-                .ForMember(dest => dest.FolderPath, opt => opt.MapFrom(src => src.Folder != null ? src.Folder.Path : null));
-
-
-
-            CreateMap<OtherFileEntity, FileDto>()
-                .IncludeBase<BaseFileEntity, FileDto>();
-
-            // Upload DTO to entity mappings - these will be handled by factory
-            CreateMap<FileUploadDto, BaseFileEntity>()
+            // Image mappings
+            CreateMap<Image, ImageDto>()
+                .ForMember(dest => dest.HasThumbnail, opt => opt.MapFrom(src => src.ThumbnailContent != null));
+            CreateMap<CreateImageDto, Image>()
                 .IgnoreAuditProperties()
-                .ForMember(dest => dest.StoredFileName, opt => opt.Ignore())
-                .ForMember(dest => dest.FileContent, opt => opt.Ignore())
-                .ForMember(dest => dest.FileSize, opt => opt.Ignore())
-                .ForMember(dest => dest.ContentType, opt => opt.Ignore())
-                .ForMember(dest => dest.FileExtension, opt => opt.Ignore())
-                .ForMember(dest => dest.Hash, opt => opt.Ignore())
-                .ForMember(dest => dest.IsProcessed, opt => opt.Ignore())
-                .ForMember(dest => dest.ProcessingStatus, opt => opt.Ignore())
-                .ForMember(dest => dest.DownloadCount, opt => opt.Ignore())
-                .ForMember(dest => dest.LastAccessedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.Folder, opt => opt.Ignore())
-                .ForMember(dest => dest.FileAccesses, opt => opt.Ignore())
-                .ForMember(dest => dest.FileType, opt => opt.Ignore()); // Will be set by factory
-
-            // Update DTO mappings
-            CreateMap<UpdateFileDto, BaseFileEntity>()
+                .ForMember(dest => dest.ThumbnailContent, opt => opt.Ignore());
+            CreateMap<UpdateImageDto, Image>()
                 .IgnoreBaseEntityProperties()
-                .ForMember(dest => dest.OriginalFileName, opt => opt.Ignore())
-                .ForMember(dest => dest.StoredFileName, opt => opt.Ignore())
-                .ForMember(dest => dest.FileContent, opt => opt.Ignore())
-                .ForMember(dest => dest.FileSize, opt => opt.Ignore())
-                .ForMember(dest => dest.ContentType, opt => opt.Ignore())
-                .ForMember(dest => dest.FileExtension, opt => opt.Ignore())
-                .ForMember(dest => dest.Hash, opt => opt.Ignore())
-                .ForMember(dest => dest.IsProcessed, opt => opt.Ignore())
-                .ForMember(dest => dest.ProcessingStatus, opt => opt.Ignore())
-                .ForMember(dest => dest.DownloadCount, opt => opt.Ignore())
-                .ForMember(dest => dest.LastAccessedAt, opt => opt.Ignore())
                 .ForMember(dest => dest.Folder, opt => opt.Ignore())
-                .ForMember(dest => dest.FileAccesses, opt => opt.Ignore())
-                .ForMember(dest => dest.FileType, opt => opt.Ignore());
+                .ForMember(dest => dest.Content, opt => opt.Ignore())
+                .ForMember(dest => dest.FileName, opt => opt.Ignore())
+                .ForMember(dest => dest.ContentType, opt => opt.Ignore())
+                .ForMember(dest => dest.Extension, opt => opt.Ignore())
+                .ForMember(dest => dest.Size, opt => opt.Ignore())
+                .ForMember(dest => dest.Width, opt => opt.Ignore())
+                .ForMember(dest => dest.Height, opt => opt.Ignore())
+                .ForMember(dest => dest.ThumbnailContent, opt => opt.Ignore());
 
+            // Document mappings
+            CreateMap<Document, DocumentDto>();
+            CreateMap<CreateDocumentDto, Document>()
+                .IgnoreAuditProperties()
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.FileName, opt => opt.Ignore())
+                .ForMember(dest => dest.Extension, opt => opt.Ignore())
+                .ForMember(dest => dest.Size, opt => opt.Ignore());
+            CreateMap<UpdateDocumentDto, Document>()
+                .IgnoreBaseEntityProperties()
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.Content, opt => opt.Ignore())
+                .ForMember(dest => dest.FileName, opt => opt.Ignore())
+                .ForMember(dest => dest.ContentType, opt => opt.Ignore())
+                .ForMember(dest => dest.Extension, opt => opt.Ignore())
+                .ForMember(dest => dest.Size, opt => opt.Ignore());
+
+            // Audio mappings
+            CreateMap<Audio, AudioDto>();
+            CreateMap<CreateAudioDto, Audio>()
+                .IgnoreAuditProperties()
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.FileName, opt => opt.Ignore())
+                .ForMember(dest => dest.Extension, opt => opt.Ignore())
+                .ForMember(dest => dest.Size, opt => opt.Ignore());
+            CreateMap<UpdateAudioDto, Audio>()
+                .IgnoreBaseEntityProperties()
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.Content, opt => opt.Ignore())
+                .ForMember(dest => dest.FileName, opt => opt.Ignore())
+                .ForMember(dest => dest.ContentType, opt => opt.Ignore())
+                .ForMember(dest => dest.Extension, opt => opt.Ignore())
+                .ForMember(dest => dest.Size, opt => opt.Ignore());
+
+            // Video mappings
+            CreateMap<Video, VideoDto>()
+                .ForMember(dest => dest.ThumbnailImage, opt => opt.MapFrom(src => src.ThumbnailImage));
+            CreateMap<CreateVideoDto, Video>()
+                .IgnoreAuditProperties()
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.FileName, opt => opt.Ignore())
+                .ForMember(dest => dest.Extension, opt => opt.Ignore())
+                .ForMember(dest => dest.Size, opt => opt.Ignore());
+            CreateMap<UpdateVideoDto, Video>()
+                .IgnoreBaseEntityProperties()
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.Content, opt => opt.Ignore())
+                .ForMember(dest => dest.FileName, opt => opt.Ignore())
+                .ForMember(dest => dest.ContentType, opt => opt.Ignore())
+                .ForMember(dest => dest.Extension, opt => opt.Ignore())
+                .ForMember(dest => dest.Size, opt => opt.Ignore());
+
+            // Archive mappings
+            CreateMap<Archive, ArchiveDto>();
+            CreateMap<CreateArchiveDto, Archive>()
+                .IgnoreAuditProperties()
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.FileName, opt => opt.Ignore())
+                .ForMember(dest => dest.Extension, opt => opt.Ignore())
+                .ForMember(dest => dest.Size, opt => opt.Ignore());
+            CreateMap<UpdateArchiveDto, Archive>()
+                .IgnoreBaseEntityProperties()
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.Content, opt => opt.Ignore())
+                .ForMember(dest => dest.FileName, opt => opt.Ignore())
+                .ForMember(dest => dest.ContentType, opt => opt.Ignore())
+                .ForMember(dest => dest.Extension, opt => opt.Ignore())
+                .ForMember(dest => dest.Size, opt => opt.Ignore());
+
+            // OtherFile mappings
+            CreateMap<OtherFile, OtherFileDto>();
+            CreateMap<CreateOtherFileDto, OtherFile>()
+                .IgnoreAuditProperties()
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.FileName, opt => opt.Ignore())
+                .ForMember(dest => dest.Extension, opt => opt.Ignore())
+                .ForMember(dest => dest.Size, opt => opt.Ignore());
+            CreateMap<UpdateOtherFileDto, OtherFile>()
+                .IgnoreBaseEntityProperties()
+                .ForMember(dest => dest.Folder, opt => opt.Ignore())
+                .ForMember(dest => dest.Content, opt => opt.Ignore())
+                .ForMember(dest => dest.FileName, opt => opt.Ignore())
+                .ForMember(dest => dest.ContentType, opt => opt.Ignore())
+                .ForMember(dest => dest.Extension, opt => opt.Ignore())
+                .ForMember(dest => dest.Size, opt => opt.Ignore());
         }
         private void ConfigureDesignerMapping()
         {

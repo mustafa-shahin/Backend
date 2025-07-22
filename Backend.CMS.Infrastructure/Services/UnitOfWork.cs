@@ -23,12 +23,11 @@ namespace Backend.CMS.Infrastructure.Services
         private IPageRepository? _pages;
         private IProductRepository? _products;
         private IProductVariantRepository? _productVariants;
-        private IFileRepository? _files;
-        private IImageFileRepository? _imageFiles;
-        private IVideoFileRepository? _videoFiles;
-        private IAudioFileRepository? _audioFiles;
-        private IDocumentFileRepository? _documentFiles;
-        private IArchiveFileRepository? _archiveFiles;
+        private IImageRepository? _images;
+        private IVideoRepository? _videos;
+        private IAudioRepository? _audios;
+        private IDocumentRepository? _documents;
+        private IArchiveRepository? _archives;
         private IOtherFileRepository? _otherFiles;
         private IFolderRepository? _folders;
         private IAddressRepository? _addresses;
@@ -64,23 +63,20 @@ namespace Backend.CMS.Infrastructure.Services
         public IProductVariantRepository ProductVariants =>
             _productVariants ??= new ProductVariantRepository(_context);
 
-        public IFileRepository Files =>
-            _files ??= new FileRepository(_context);
+        public IImageRepository Images =>
+            _images ??= new ImageRepository(_context);
 
-        public IImageFileRepository ImageFiles =>
-            _imageFiles ??= new ImageFileRepository(_context);
+        public IVideoRepository Videos =>
+            _videos ??= new VideoRepository(_context);
 
-        public IVideoFileRepository VideoFiles =>
-            _videoFiles ??= new VideoFileRepository(_context);
+        public IAudioRepository Audios =>
+            _audios ??= new AudioRepository(_context);
 
-        public IAudioFileRepository AudioFiles =>
-            _audioFiles ??= new AudioFileRepository(_context);
+        public IDocumentRepository Documents =>
+            _documents ??= new DocumentRepository(_context);
 
-        public IDocumentFileRepository DocumentFiles =>
-            _documentFiles ??= new DocumentFileRepository(_context);
-
-        public IArchiveFileRepository ArchiveFiles =>
-            _archiveFiles ??= new ArchiveFileRepository(_context);
+        public IArchiveRepository Archives =>
+            _archives ??= new ArchiveRepository(_context);
 
         public IOtherFileRepository OtherFiles =>
             _otherFiles ??= new OtherFileRepository(_context);

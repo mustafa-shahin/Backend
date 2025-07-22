@@ -27,9 +27,9 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .ThenInclude(pc => pc.Category)
                 .Include(p => p.Variants.Where(v => !v.IsDeleted))
                     .ThenInclude(v => v.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted);
         }
 
@@ -39,7 +39,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
                     .ThenInclude(pc => pc.Category)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .Include(p => p.Variants.Where(v => !v.IsDeleted))
                 .Where(p => !p.IsDeleted)
                 .OrderBy(p => p.Name)
@@ -57,9 +57,9 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .ThenInclude(pc => pc.Category)
                 .Include(p => p.Variants.Where(v => !v.IsDeleted))
                     .ThenInclude(v => v.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .FirstOrDefaultAsync(p => p.Slug == slug && !p.IsDeleted);
         }
 
@@ -70,9 +70,9 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .ThenInclude(pc => pc.Category)
                 .Include(p => p.Variants.Where(v => !v.IsDeleted))
                     .ThenInclude(v => v.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
         }
 
@@ -81,7 +81,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await _dbSet
                 .Include(p => p.Variants.Where(v => !v.IsDeleted))
                     .ThenInclude(v => v.Images.Where(i => !i.IsDeleted))
-                        .ThenInclude(i => i.File)
+                        .ThenInclude(i => i.Image)
                 .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
         }
 
@@ -97,7 +97,7 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             return await _dbSet
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .FirstOrDefaultAsync(p => p.Id == productId && !p.IsDeleted);
         }
 
@@ -131,7 +131,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
                     .ThenInclude(pc => pc.Category)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .OrderBy(p => p.Name);
 
             if (skip > 0)
@@ -161,7 +161,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
                     .ThenInclude(pc => pc.Category)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .OrderBy(p => p.Name);
 
             if (skip > 0)
@@ -196,7 +196,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Include(p => p.ProductCategories.Where(pc => !pc.IsDeleted))
                     .ThenInclude(pc => pc.Category)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File);
+                    .ThenInclude(i => i.Image);
 
             if (skip > 0)
                 query = query.Skip(skip);
@@ -291,7 +291,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             var query = _dbSet
                 .Where(p => p.Status == ProductStatus.Active && !p.IsDeleted)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .OrderBy(p => Guid.NewGuid()); // Random order for featured products
 
             if (skip > 0)
@@ -326,7 +326,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                            !p.IsDeleted &&
                            p.ProductCategories.Any(pc => categoryIds.Contains(pc.CategoryId) && !pc.IsDeleted))
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .OrderBy(p => Guid.NewGuid());
 
             if (skip > 0)
@@ -363,7 +363,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             var query = _dbSet
                 .Where(p => p.Status == ProductStatus.Active && !p.IsDeleted)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .OrderByDescending(p => p.CreatedAt);
 
             if (skip > 0)
@@ -425,7 +425,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                             p.Status == ProductStatus.Active &&
                             p.Variants.Any(v => v.Price >= minPrice && v.Price <= maxPrice))
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .OrderBy(p => p.Variants.Min(v => v.Price))
                 .ToListAsync();
         }
@@ -449,7 +449,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await _dbSet
                 .Where(p => p.Vendor == vendor && !p.IsDeleted)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .OrderBy(p => p.Name)
                 .ToListAsync();
         }
@@ -464,7 +464,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Where(p => !p.IsDeleted &&
                             p.Variants.Any(v => v.Quantity > 0 && v.Quantity <= threshold))
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .OrderBy(p => p.Variants.Min(v => v.Quantity))
                 .ThenBy(p => p.Name);
 
@@ -491,7 +491,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 .Where(p => !p.IsDeleted &&
                             p.Variants.All(v => v.Quantity <= 0))
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .OrderBy(p => p.Name);
 
             if (skip > 0)
@@ -611,7 +611,7 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             return await _context.Set<ProductImage>()
                 .Where(pi => pi.ProductId == productId && !pi.IsDeleted)
-                .Include(pi => pi.File)
+                .Include(pi => pi.Image)
                 .OrderBy(pi => pi.Position)
                 .ToListAsync();
         }
@@ -620,7 +620,7 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             return await _context.Set<ProductImage>()
                 .Where(pi => pi.ProductId == productId && pi.IsFeatured && !pi.IsDeleted)
-                .Include(pi => pi.File)
+                .Include(pi => pi.Image)
                 .FirstOrDefaultAsync();
         }
 
@@ -640,7 +640,7 @@ namespace Backend.CMS.Infrastructure.Repositories
             return await _dbSet
                 .Where(p => productIds.Contains(p.Id) && !p.IsDeleted)
                 .Include(p => p.Images.Where(i => !i.IsDeleted))
-                    .ThenInclude(i => i.File)
+                    .ThenInclude(i => i.Image)
                 .ToListAsync();
         }
 

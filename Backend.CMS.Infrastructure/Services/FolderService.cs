@@ -588,7 +588,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 var statistics = await GetFolderStatisticsAsync(folderDto.Id);
 
-                folderDto.FileCount = (int)(statistics.GetValueOrDefault("fileCount", 0));
+                folderDto.TotalFileCount = (int)(statistics.GetValueOrDefault("fileCount", 0));
                 folderDto.SubFolderCount = (int)(statistics.GetValueOrDefault("subFolderCount", 0));
                 folderDto.TotalSize = (long)(statistics.GetValueOrDefault("totalSize", 0L));
                 folderDto.TotalSizeFormatted = statistics.GetValueOrDefault("totalSizeFormatted", "0 B")?.ToString() ?? "0 B";
@@ -597,7 +597,7 @@ namespace Backend.CMS.Infrastructure.Services
             {
                 _logger.LogWarning(ex, "Failed to populate statistics for folder {FolderId}", folderDto.Id);
                 // Set default values
-                folderDto.FileCount = 0;
+                folderDto.TotalFileCount = 0;
                 folderDto.SubFolderCount = 0;
                 folderDto.TotalSize = 0;
                 folderDto.TotalSizeFormatted = "0 B";
@@ -653,7 +653,7 @@ namespace Backend.CMS.Infrastructure.Services
                     ParentFolderId = folder.ParentFolderId,
                     FolderType = folder.FolderType,
                     IsPublic = folder.IsPublic,
-                    FileCount = await _unitOfWork.Folders.GetTotalFileCountAsync(folder.Id),
+                    TotalFileCount = await _unitOfWork.Folders.GetTotalFileCountAsync(folder.Id),
                     HasSubFolders = await _unitOfWork.Folders.HasSubFoldersAsync(folder.Id)
                 };
 

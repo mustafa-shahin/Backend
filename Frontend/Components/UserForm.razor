@@ -42,7 +42,7 @@
         <div class="flex items-center space-x-4">
             <!-- Current/Preview Image -->
             <div class="flex-shrink-0">
-                @if (Model.PictureFileId.HasValue || !string.IsNullOrEmpty(previewImageUrl))
+                @if (Model.PictureId.HasValue || !string.IsNullOrEmpty(previewImageUrl))
                 {
                     <img class="h-20 w-20 rounded-full object-cover border-4 border-white shadow-lg"
                          src="@GetProfileImageUrl()"
@@ -75,7 +75,7 @@
                         Choose Existing
                     </button>
 
-                    @if (Model.PictureFileId.HasValue || !string.IsNullOrEmpty(previewImageUrl))
+                    @if (Model.PictureId.HasValue || !string.IsNullOrEmpty(previewImageUrl))
                     {
                         <button type="button"
                                 @onclick="RemoveProfilePicture"
@@ -515,8 +515,8 @@
         if (!string.IsNullOrEmpty(previewImageUrl))
             return previewImageUrl;
 
-        if (Model.PictureFileId.HasValue)
-            return $"/api/file/{Model.PictureFileId}/thumbnail";
+        if (Model.PictureId.HasValue)
+            return $"/api/file/{Model.PictureId}/thumbnail";
 
         return string.Empty;
     }
@@ -573,7 +573,7 @@
 
     private void RemoveProfilePicture()
     {
-        Model.PictureFileId = null;
+        Model.PictureId = null;
         previewImageUrl = string.Empty;
         StateHasChanged();
     }

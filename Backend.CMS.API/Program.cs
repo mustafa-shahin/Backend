@@ -1,6 +1,7 @@
+using Asp.Versioning;
+using Backend.CMS.API.Converters;
 using Backend.CMS.API.Filters;
 using Backend.CMS.API.Middleware;
-using Backend.CMS.API.Converters; 
 using Backend.CMS.Domain.Entities;
 using Backend.CMS.Domain.Enums;
 using Backend.CMS.Infrastructure.Caching;
@@ -28,12 +29,13 @@ using Microsoft.OpenApi.Models;
 using Serilog;
 using Serilog.Formatting.Compact;
 using StackExchange.Redis;
+using System;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
-using Asp.Versioning;
+using System.Threading.Tasks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -608,18 +610,34 @@ static void RegisterSearchServices(WebApplicationBuilder builder)
 
 static void RegisterFileServices(WebApplicationBuilder builder)
 {
+    // Register file repositories first (required by services)
+    builder.Services.AddScoped<IImageRepository, ImageRepository>();
+    builder.Services.AddScoped<IVideoRepository, VideoRepository>();
+    builder.Services.AddScoped<IAudioRepository, AudioRepository>();
+    builder.Services.AddScoped<IDocumentRepository, DocumentRepository>();
+    builder.Services.AddScoped<IArchiveRepository, ArchiveRepository>();
+    builder.Services.AddScoped<IOtherFileRepository, OtherFileRepository>();
+    builder.Services.AddScoped<IFolderRepository, FolderRepository>();
+
     // Register file URL builder first as it's a dependency
-    builder.Services.AddScoped<IFileUrlBuilder, FileUrlBuilder>();
+    builder.Services.AddScoped<IFileUrlService, FileUrlService>();
 
     // Register additional file services
     builder.Services.AddScoped<IImageProcessingService, ImageProcessingService>();
-    builder.Services.AddScoped<IFileValidationService, FileValidationService>();
-    builder.Services.AddScoped<DatabaseFilePerformanceService>();
+    builder.Services.AddScoped<IFileAggregatorService, FileAggregatorService>();
+    //builder.Services.AddScoped<DatabaseFilePerformanceService>();
     builder.Services.AddScoped<IDownloadTokenService, DownloadTokenService>();
 
     // Register file and folder services with their interfaces
-    builder.Services.AddScoped<IFileService, FileService>();
     builder.Services.AddScoped<IFolderService, FolderService>();
+
+    // Register type-specific file services
+    builder.Services.AddScoped<IImageService, ImageService>();
+    builder.Services.AddScoped<IVideoService, VideoService>();
+    builder.Services.AddScoped<IAudioService, AudioService>();
+    builder.Services.AddScoped<IDocumentService, DocumentService>();
+    builder.Services.AddScoped<IArchiveService, ArchiveService>();
+    builder.Services.AddScoped<IOtherFileService, OtherFileService>();
 
     builder.Services.AddFileServices();
 }

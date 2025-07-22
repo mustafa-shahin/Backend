@@ -1,7 +1,7 @@
 ﻿
 @inject IStyleService StyleService
 @inject IJSRuntime JSRuntime
-@inject IFileService FileSerive
+@inject IFileService FileService
 
 <div class="space-y-6">
     <!-- Upload Area -->
@@ -58,7 +58,7 @@
                                     @file.Name
                                 </p>
                                 <p class="text-xs text-gray-500 dark:text-gray-400">
-                                    @FileSerive.FormatFileSize(file.Size) • @file.ContentType
+                                    @FileService.FormatFileSize(file.Size) • @file.ContentType
                                 </p>
                             </div>
                         </div>

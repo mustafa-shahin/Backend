@@ -8,7 +8,7 @@ namespace Backend.CMS.Infrastructure.Repositories
 {
     public class UserRepository : Repository<User>, IUserRepository
     {
-        public UserRepository(ApplicationDbContext context, ILogger<UserRepository> logger) 
+        public UserRepository(ApplicationDbContext context, ILogger<UserRepository> logger)
             : base(context, logger)
         {
         }
@@ -24,12 +24,15 @@ namespace Backend.CMS.Infrastructure.Repositories
                 if (string.IsNullOrWhiteSpace(email))
                     throw new ArgumentException("Email cannot be null or empty", nameof(email));
 
-                var user = await _dbSet
-                    .Include(u => u.Picture)
-                    .FirstOrDefaultAsync(u => u.Email == email && !u.IsDeleted);
-
+                var user = await _dbSet.FirstOrDefaultAsync(u => u.Email == email && !u.IsDeleted);
+                if (user != null)
+                {
+                    await _context.Entry(user)
+                                             .Reference(u => u.Picture)
+                                             .LoadAsync();
+                }
                 _logger.LogDebug("Retrieved user by email {Email}: {Found}", email, user != null ? "Found" : "Not found");
-                
+
                 return user;
             }
             catch (Exception ex)
@@ -51,7 +54,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .FirstOrDefaultAsync(u => u.Username == username && !u.IsDeleted);
 
                 _logger.LogDebug("Retrieved user by username {Username}: {Found}", username, user != null ? "Found" : "Not found");
-                
+
                 return user;
             }
             catch (Exception ex)
@@ -72,7 +75,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
 
                 _logger.LogDebug("Retrieved user with addresses and contacts {UserId}: {Found}", userId, user != null ? "Found" : "Not found");
-                
+
                 return user;
             }
             catch (Exception ex)
@@ -91,7 +94,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
 
                 _logger.LogDebug("Retrieved user with roles {UserId}: {Found}", userId, user != null ? "Found" : "Not found");
-                
+
                 return user;
             }
             catch (Exception ex)
@@ -112,7 +115,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
 
                 _logger.LogDebug("Retrieved user with roles and permissions {UserId}: {Found}", userId, user != null ? "Found" : "Not found");
-                
+
                 return user;
             }
             catch (Exception ex)
@@ -147,7 +150,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .ToListAsync();
 
                 _logger.LogDebug("Found {Count} users matching search term '{SearchTerm}'", users.Count, searchTerm);
-                
+
                 return users;
             }
             catch (Exception ex)
@@ -175,7 +178,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .ToListAsync();
 
                 _logger.LogDebug("Retrieved {Count} users with related data, page {Page}", users.Count, page);
-                
+
                 return users;
             }
             catch (Exception ex)
@@ -198,9 +201,9 @@ namespace Backend.CMS.Infrastructure.Repositories
                     query = query.Where(u => u.Id != excludeUserId.Value);
 
                 var exists = await query.AnyAsync();
-                
+
                 _logger.LogDebug("Email {Email} exists: {Exists} (excluding user {ExcludeUserId})", email, exists, excludeUserId);
-                
+
                 return exists;
             }
             catch (Exception ex)
@@ -223,9 +226,9 @@ namespace Backend.CMS.Infrastructure.Repositories
                     query = query.Where(u => u.Id != excludeUserId.Value);
 
                 var exists = await query.AnyAsync();
-                
+
                 _logger.LogDebug("Username {Username} exists: {Exists} (excluding user {ExcludeUserId})", username, exists, excludeUserId);
-                
+
                 return exists;
             }
             catch (Exception ex)
@@ -247,7 +250,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .FirstOrDefaultAsync(u => !u.IsDeleted && u.EmailVerificationToken == token);
 
                 _logger.LogDebug("Retrieved user by email verification token: {Found}", user != null ? "Found" : "Not found");
-                
+
                 return user;
             }
             catch (Exception ex)
@@ -266,14 +269,14 @@ namespace Backend.CMS.Infrastructure.Repositories
 
                 var count = await _dbSet
                     .Where(u => !u.IsDeleted && (
-                        u.Email.Contains(search) || 
+                        u.Email.Contains(search) ||
                         u.Username.Contains(search) ||
-                        u.FirstName.Contains(search) || 
+                        u.FirstName.Contains(search) ||
                         u.LastName.Contains(search)))
                     .CountAsync();
 
                 _logger.LogDebug("Count of users matching search '{Search}': {Count}", search, count);
-                
+
                 return count;
             }
             catch (Exception ex)
@@ -294,7 +297,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted);
 
                 _logger.LogDebug("Retrieved user by ID {UserId}: {Found}", userId, user != null ? "Found" : "Not found");
-                
+
                 return user;
             }
             catch (Exception ex)
@@ -314,11 +317,11 @@ namespace Backend.CMS.Infrastructure.Repositories
                 var user = await _dbSet
                     .Include(u => u.Picture)
                     .Include(u => u.Sessions.Where(s => !s.IsRevoked && s.ExpiresAt > DateTime.UtcNow))
-                    .FirstOrDefaultAsync(u => !u.IsDeleted && 
+                    .FirstOrDefaultAsync(u => !u.IsDeleted &&
                         u.Sessions.Any(s => s.RefreshToken == refreshToken && !s.IsRevoked && s.ExpiresAt > DateTime.UtcNow));
 
                 _logger.LogDebug("Retrieved user by refresh token: {Found}", user != null ? "Found" : "Not found");
-                
+
                 return user;
             }
             catch (Exception ex)
@@ -340,7 +343,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .ToListAsync();
 
                 _logger.LogDebug("Retrieved {Count} active users", users.Count);
-                
+
                 return users;
             }
             catch (Exception ex)
@@ -365,7 +368,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .ToListAsync();
 
                 _logger.LogDebug("Retrieved {Count} users with role {Role}", users.Count, role);
-                
+
                 return users;
             }
             catch (Exception ex)
@@ -384,7 +387,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                     .CountAsync();
 
                 _logger.LogDebug("Active user count: {Count}", count);
-                
+
                 return count;
             }
             catch (Exception ex)
@@ -412,7 +415,7 @@ namespace Backend.CMS.Infrastructure.Repositories
                 await SaveChangesAsync();
 
                 _logger.LogDebug("Updated last login for user {UserId}", userId);
-                
+
                 return true;
             }
             catch (Exception ex)
@@ -426,10 +429,10 @@ namespace Backend.CMS.Infrastructure.Repositories
         {
             if (page < 1)
                 throw new ArgumentException("Page number must be greater than 0", nameof(page));
-            
+
             if (pageSize < 1)
                 throw new ArgumentException("Page size must be greater than 0", nameof(pageSize));
-            
+
             if (pageSize > 1000)
                 throw new ArgumentException("Page size cannot exceed 1000", nameof(pageSize));
         }

@@ -245,7 +245,7 @@
             }
 
             connectionStatus = "Ready to sign in";
-            await Task.Delay(1000); // Show status for a moment
+            await Task.Delay(TimeSpan.FromMilliseconds(1000)); // Show status for a moment
             connectionStatus = string.Empty;
             StateHasChanged();
         }

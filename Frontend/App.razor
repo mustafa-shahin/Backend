@@ -84,7 +84,7 @@
             await ThemeService.InitializeAsync();
 
             // Add a small delay to ensure services are initialized
-            await Task.Delay(100);
+            await Task.Delay(TimeSpan.FromMilliseconds(100));
 
             await JSRuntime.InvokeVoidAsync("console.log", $"Current URL: {Navigation.Uri}");
         }

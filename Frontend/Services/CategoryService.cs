@@ -543,38 +543,38 @@ namespace Frontend.Services
                 if (string.IsNullOrEmpty(image.ImageUrl) && string.IsNullOrEmpty(image.ThumbnailUrl))
                 {
                     // Get file info to determine proper URLs
-                    var fileInfo = await _fileService.GetFileByIdAsync(image.FileId);
+                    var fileInfo = await _fileService.GetFileByIdAsync(image.ImageId);
                     if (fileInfo != null)
                     {
-                        image.ImageUrl = fileInfo.Urls?.Download ?? _fileService.GetFileUrl(image.FileId);
-                        image.ThumbnailUrl = fileInfo.Urls?.Thumbnail ?? _fileService.GetThumbnailUrl(image.FileId);
+                        image.ImageUrl = fileInfo.Urls?.Download ?? _fileService.GetFileUrl(image.ImageId);
+                        image.ThumbnailUrl = fileInfo.Urls?.Thumbnail ?? _fileService.GetThumbnailUrl(image.ImageId);
                     }
                     else
                     {
                         // Fallback to service URL generation
-                        image.ImageUrl = _fileService.GetFileUrl(image.FileId);
-                        image.ThumbnailUrl = _fileService.GetThumbnailUrl(image.FileId);
+                        image.ImageUrl = _fileService.GetFileUrl(image.ImageId);
+                        image.ThumbnailUrl = _fileService.GetThumbnailUrl(image.ImageId);
                     }
                 }
                 else if (string.IsNullOrEmpty(image.ThumbnailUrl))
                 {
                     // Ensure thumbnail URL is set
-                    image.ThumbnailUrl = _fileService.GetThumbnailUrl(image.FileId);
+                    image.ThumbnailUrl = _fileService.GetThumbnailUrl(image.ImageId);
                 }
                 else if (string.IsNullOrEmpty(image.ImageUrl))
                 {
                     // Ensure image URL is set
-                    image.ImageUrl = _fileService.GetFileUrl(image.FileId);
+                    image.ImageUrl = _fileService.GetFileUrl(image.ImageId);
                 }
             }
             catch (Exception ex)
             {
                 // Log error but don't throw - use fallback URLs
-                await _jsRuntime.InvokeVoidAsync("console.warn", $"Failed to populate image URLs for file {image.FileId}: {ex.Message}");
+                await _jsRuntime.InvokeVoidAsync("console.warn", $"Failed to populate image URLs for file {image.ImageId}: {ex.Message}");
 
                 // Fallback URL generation
-                image.ImageUrl ??= _fileService.GetFileUrl(image.FileId);
-                image.ThumbnailUrl ??= _fileService.GetThumbnailUrl(image.FileId);
+                image.ImageUrl ??= _fileService.GetFileUrl(image.ImageId);
+                image.ThumbnailUrl ??= _fileService.GetThumbnailUrl(image.ImageId);
             }
         }
 

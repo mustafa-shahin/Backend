@@ -24,7 +24,7 @@ namespace Frontend.Services
                 // Prevent multiple rapid calls during initialization
                 if (!_isInitialized)
                 {
-                    await Task.Delay(50); // Small delay to prevent race conditions
+                    await Task.Delay(TimeSpan.FromMilliseconds(50)); // Small delay to prevent race conditions
                     _isInitialized = true;
                 }
 

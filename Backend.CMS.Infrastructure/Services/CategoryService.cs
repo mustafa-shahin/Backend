@@ -12,9 +12,9 @@ namespace Backend.CMS.Infrastructure.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly ILogger<CategoryService> _logger;
-        private readonly IFileUrlBuilder _fileUrlBuilder;
         private readonly IScopedDbContextService _scopedDbContextService;
         private readonly IUserSessionService _userSessionService;
+        private readonly IFileUrlService _fileUrlService;
         private const int DefaultPageSize = 10;
         private const int MaxPageSize = 100;
         private const int MinPageSize = 1;
@@ -23,16 +23,16 @@ namespace Backend.CMS.Infrastructure.Services
             IMapper mapper,
             ILogger<CategoryService> logger,
             IUnitOfWork unitOfWork,
-            IFileUrlBuilder fileUrlBuilder,
             IUserSessionService userSessionService,
-            IScopedDbContextService scopedDbContextService)
+            IScopedDbContextService scopedDbContextService,
+            IFileUrlService fileUrlService)
         {
             _mapper = mapper;
             _logger = logger;
             _unitOfWork = unitOfWork;
-            _fileUrlBuilder = fileUrlBuilder;
             _userSessionService = userSessionService;
             _scopedDbContextService = scopedDbContextService;
+            _fileUrlService = fileUrlService;
 
         }
 
@@ -81,6 +81,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
 
                 await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
+                EnrichCategoriesWithFeaturedImageUrls(categoryDtos, categories);
 
                 // Apply additional service-level post-processing
                 categoryDtos = await ApplyPostProcessingFiltersAsync(categoryDtos, searchDto);
@@ -147,6 +148,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
 
                 await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
+                EnrichCategoriesWithFeaturedImageUrls(categoryDtos, categories);
 
                 _logger.LogDebug("Retrieved {CategoryCount} root categories (page {PageNumber}/{TotalPages}) with service-level pagination",
                     categoryDtos.Count, normalizedPageNumber, Math.Ceiling((double)totalCount / normalizedPageSize));
@@ -224,6 +226,7 @@ namespace Backend.CMS.Infrastructure.Services
                 var categoryDtos = _mapper.Map<List<CategoryDto>>(categories);
 
                 await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
+                EnrichCategoriesWithFeaturedImageUrls(categoryDtos, categories);
 
                 _logger.LogDebug("Retrieved {CategoryCount} subcategories for parent {ParentCategoryId} (page {PageNumber}/{TotalPages}) with service-level pagination",
                     categoryDtos.Count, parentCategoryId, normalizedPageNumber, Math.Ceiling((double)totalCount / normalizedPageSize));
@@ -296,6 +299,7 @@ namespace Backend.CMS.Infrastructure.Services
 
                 // Service-level enrichment
                 await EnrichCategoriesWithProductCountsBatchAsync(categoryDtos);
+                EnrichCategoriesWithFeaturedImageUrls(categoryDtos, categories);
 
                 // Apply service-level post-processing
                 categoryDtos = await ApplySearchPostProcessingAsync(categoryDtos, searchDto);
@@ -454,7 +458,7 @@ namespace Backend.CMS.Infrastructure.Services
                     // Validate images
                     if (createCategoryDto.Images.Count != 0)
                     {
-                        await ValidateImagesAsync(createCategoryDto.Images.Select(i => i.FileId).ToList());
+                        await ValidateImagesAsync(createCategoryDto.Images.Select(i => i.ImageId).ToList());
                     }
 
                     // Map DTO to entity
@@ -470,11 +474,7 @@ namespace Backend.CMS.Infrastructure.Services
                         var featured = createCategoryDto.Images.FirstOrDefault(p => p.IsFeatured);
                         if (featured != null)
                         {
-                            category.FeaturedImageUrl = _fileUrlBuilder.GenerateThumbnailUrl(
-                                featured.FileId,
-                                Domain.Enums.FileType.Image,
-                                true
-                            );
+                            category.FeaturedImageId = featured.ImageId;
                         }
                         await _unitOfWork.SaveChangesAsync(); // Save image entities
                     }
@@ -531,7 +531,7 @@ namespace Backend.CMS.Infrastructure.Services
                     // Validate images
                     if (updateCategoryDto.Images.Any())
                     {
-                        await ValidateImagesAsync(updateCategoryDto.Images.Select(i => i.FileId).ToList());
+                        await ValidateImagesAsync(updateCategoryDto.Images.Select(i => i.ImageId).ToList());
                     }
                     category.UpdatedByUserId = _userSessionService.GetCurrentUserId();
                     category.UpdatedAt = DateTime.UtcNow;
@@ -707,7 +707,7 @@ namespace Backend.CMS.Infrastructure.Services
             ArgumentNullException.ThrowIfNull(createImageDto);
 
             var category = await _unitOfWork.Categories.GetByIdAsync(categoryId) ?? throw new ArgumentException($"Category with ID {categoryId} not found");
-            await ValidateImageAsync(createImageDto.FileId);
+            await ValidateImageAsync(createImageDto.ImageId);
             try
             {
                 return await _unitOfWork.ExecuteInTransactionAsync(async () =>
@@ -725,7 +725,7 @@ namespace Backend.CMS.Infrastructure.Services
                     await _unitOfWork.GetRepository<CategoryImage>().AddAsync(categoryImage);
                     await _unitOfWork.SaveChangesAsync();
 
-                    _logger.LogInformation("Added image to category {CategoryId}: FileId {FileId}", categoryId, createImageDto.FileId);
+                    _logger.LogInformation("Added image to category {CategoryId}: ImageId {ImageId}", categoryId, createImageDto.ImageId);
                     return _mapper.Map<CategoryImageDto>(categoryImage);
                 });
             }
@@ -755,12 +755,12 @@ namespace Backend.CMS.Infrastructure.Services
                     if (categoryImage == null)
                         throw new ArgumentException($"Category image with ID {imageId} not found");
 
-                    await ValidateImageAsync(updateImageDto.FileId);
+                    await ValidateImageAsync(updateImageDto.ImageId);
 
                     var oldIsFeatured = categoryImage.IsFeatured;
 
                     // Update properties
-                    categoryImage.FileId = updateImageDto.FileId;
+                    categoryImage.ImageId = updateImageDto.ImageId;
                     categoryImage.Alt = updateImageDto.Alt;
                     categoryImage.Caption = updateImageDto.Caption;
                     categoryImage.Position = updateImageDto.Position;
@@ -1006,6 +1006,33 @@ namespace Backend.CMS.Infrastructure.Services
         }
 
         /// <summary>
+        /// Enrich categories with featured image URLs from their FeaturedImage relationship
+        /// </summary>
+        private void EnrichCategoriesWithFeaturedImageUrls(List<CategoryDto> categoryDtos, List<Category> categories)
+        {
+            if (!categoryDtos.Any() || !categories.Any()) return;
+
+            try
+            {
+                foreach (var categoryDto in categoryDtos)
+                {
+                    var category = categories.FirstOrDefault(c => c.Id == categoryDto.Id);
+                    if (category?.FeaturedImage != null)
+                    {
+                        categoryDto.FeaturedImageUrl = _fileUrlService.GenerateImagePreviewUrl(category.FeaturedImage.Id);
+                    }
+                }
+
+                _logger.LogDebug("Enriched {Count} categories with featured image URLs", categoryDtos.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error enriching categories with featured image URLs");
+                // Don't throw, just log and continue without URLs
+            }
+        }
+
+        /// <summary>
         /// Build hierarchical category tree structure
         /// </summary>
         private async Task<List<CategoryTreeDto>> BuildCategoryTreeAsync(IEnumerable<Category> categories)
@@ -1031,7 +1058,7 @@ namespace Backend.CMS.Infrastructure.Services
                     ParentCategoryId = category.ParentCategoryId,
                     IsActive = category.IsActive,
                     SortOrder = category.SortOrder,
-                    FeaturedImageUrl = category.FeaturedImageUrl,
+                    FeaturedImageUrl = category.FeaturedImage != null ? _fileUrlService.GenerateImagePreviewUrl(category.FeaturedImage.Id) : null,
                     ProductCount = productCount,
                     Children = await BuildCategoryTreeAsync(category.SubCategories),
                     Level = 0, // Will be calculated separately if needed
@@ -1075,34 +1102,31 @@ namespace Backend.CMS.Infrastructure.Services
         /// <summary>
         /// Validate image files
         /// </summary>
-        private async Task ValidateImagesAsync(List<int> fileIds)
+        private async Task ValidateImagesAsync(List<int> imageIds)
         {
-            if (!fileIds.Any()) return;
+            if (!imageIds.Any()) return;
 
             // Validate sequentially to avoid threading issues
-            foreach (var fileId in fileIds)
+            foreach (var imageId in imageIds)
             {
-                await ValidateImageAsync(fileId);
+                await ValidateImageAsync(imageId);
             }
         }
 
         /// <summary>
         /// Validate single image file
         /// </summary>
-        private async Task ValidateImageAsync(int fileId)
+        private async Task ValidateImageAsync(int imageId)
         {
             try
             {
-                var file = await _unitOfWork.Files.GetByIdAsync(fileId);
-                if (file == null)
-                    throw new ArgumentException($"File with ID {fileId} not found");
-
-                if (file.FileType != Domain.Enums.FileType.Image)
-                    throw new ArgumentException($"File with ID {fileId} is not an image");
+                var image = await _unitOfWork.Images.GetByIdAsync(imageId);
+                if (image == null)
+                    throw new ArgumentException($"Image with ID {imageId} not found");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error validating image file {FileId}", fileId);
+                _logger.LogError(ex, "Error validating image {ImageId}", imageId);
                 throw;
             }
         }
@@ -1153,7 +1177,7 @@ namespace Backend.CMS.Infrastructure.Services
                     var existingImage = existingImages.FirstOrDefault(i => i.Id == imageDto.Id);
                     if (existingImage != null)
                     {
-                        existingImage.FileId = imageDto.FileId;
+                        existingImage.ImageId = imageDto.ImageId;
                         existingImage.Alt = imageDto.Alt;
                         existingImage.Caption = imageDto.Caption;
                         existingImage.Position = imageDto.Position;
@@ -1168,7 +1192,7 @@ namespace Backend.CMS.Infrastructure.Services
                     var newImage = new CategoryImage
                     {
                         CategoryId = categoryId,
-                        FileId = imageDto.FileId,
+                        ImageId = imageDto.ImageId,
                         Alt = imageDto.Alt,
                         Caption = imageDto.Caption,
                         Position = imageDto.Position,
